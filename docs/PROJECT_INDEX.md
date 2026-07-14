@@ -56,6 +56,7 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 | UJ-0001 | Free Exploration in Montréal | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001 | Écrans, flux UX et validation sur prototype |
 | UJ-0002 | Intelligent Search in Montréal | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001 | Écrans, flux UX et validation sur prototype |
 | UX-0001 | MVP Screens and Flows | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, UJ-0001, UJ-0002, DATA-0001 | PRD-0001 |
+| PRD-0001 | Pulso Montréal MVP | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001 | RFC-0001 |
 
 ## Ordre de construction validé
 
@@ -64,12 +65,14 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 3. User Journeys — Accepted comme parcours cibles du MVP ; les tests d'utilisabilité restent à réaliser sur prototype.
 4. Modèle de données et de confiance — Draft 0.2, suffisant pour le PRD initial mais insuffisant pour implémenter l'ingestion.
 5. Écrans et flux UX — UX-0001 1.0, terminé et Accepted.
-6. PRD-0001 — prochaine tâche unique.
-7. RFC-0001 — après PRD-0001.
+6. PRD-0001 — exigences produit 1.0 terminées et Accepted.
+7. RFC-0001 — prochaine tâche unique.
 
 ## Prochaine tâche documentaire
 
-Rédiger PRD-0001. RFC-0001 reste postérieur à PRD-0001.
+Rédiger RFC-0001 à partir de PRD-0001 Accepted.
+
+Le Montréal sample d'ingestion documenté, la baseline de prototype d'utilisabilité et l'approbation des seuils numériques de lancement restent des obligations avant le lancement en production. Elles ne bloquent ni la rédaction de RFC-0001 ni l'implémentation initiale.
 
 ## Classification des évolutions
 
