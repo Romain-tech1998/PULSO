@@ -55,6 +55,7 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 | DATA-0001 | Event Data and Trust | 0.2 | Draft | PDR-0001, MVP-0001 | PRD initial, puis recherche préalable à l'ingestion et RFC |
 | UJ-0001 | Free Exploration in Montréal | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001 | Écrans, flux UX et validation sur prototype |
 | UJ-0002 | Intelligent Search in Montréal | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001 | Écrans, flux UX et validation sur prototype |
+| UX-0001 | MVP Screens and Flows | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, UJ-0001, UJ-0002, DATA-0001 | PRD-0001 |
 
 ## Ordre de construction validé
 
@@ -62,13 +63,13 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 2. Modèle d'interaction et périmètre MVP — Accepted.
 3. User Journeys — Accepted comme parcours cibles du MVP ; les tests d'utilisabilité restent à réaliser sur prototype.
 4. Modèle de données et de confiance — Draft 0.2, suffisant pour le PRD initial mais insuffisant pour implémenter l'ingestion.
-5. Écrans et flux UX — prochaine tâche.
-6. PRD-0001 — après la définition des écrans et flux UX.
+5. Écrans et flux UX — UX-0001 1.0, terminé et Accepted.
+6. PRD-0001 — prochaine tâche unique.
 7. RFC-0001 — après PRD-0001.
 
 ## Prochaine tâche documentaire
 
-Définir les écrans et les flux UX du MVP à partir des User Journeys Accepted, puis rédiger PRD-0001. RFC-0001 reste postérieur à PRD-0001.
+Rédiger PRD-0001. RFC-0001 reste postérieur à PRD-0001.
 
 ## Classification des évolutions
 
