@@ -3,11 +3,26 @@ import type {
   MapBoundsQuery,
   PublicEvent
 } from '@pulso/contracts';
+import type { DiscoveryWindow } from '@pulso/domain';
 import type { Pool } from 'pg';
 
+export interface ExternalDestinationRecord {
+  label: string;
+  url: string;
+  status: 'available' | 'unavailable';
+  eventStatus: PublicEvent['status'];
+}
+
 export interface EventRepository {
-  findInBounds(bounds: MapBoundsQuery): Promise<PublicEvent[]>;
+  findInBounds(
+    bounds: MapBoundsQuery,
+    window: DiscoveryWindow
+  ): Promise<PublicEvent[]>;
   findWithinDirectDistance(query: DirectDistanceQuery): Promise<PublicEvent[]>;
+  findById(id: string): Promise<PublicEvent | undefined>;
+  findExternalDestination(
+    id: string
+  ): Promise<ExternalDestinationRecord | undefined>;
 }
 
 const publicEventSelect = `
@@ -23,6 +38,13 @@ const publicEventSelect = `
     e.source_name,
     e.source_url,
     e.observed_at,
+    e.description,
+    e.organizer_name,
+    e.access_information,
+    e.external_destination_label,
+    e.external_destination_url,
+    e.external_destination_status,
+    e.trust_label,
     e.freshness,
     e.location_confidence,
     v.id AS venue_id,
@@ -44,6 +66,13 @@ interface EventRow {
   source_name: string;
   source_url: string;
   observed_at: Date;
+  description: string | null;
+  organizer_name: string | null;
+  access_information: string;
+  external_destination_label: string | null;
+  external_destination_url: string | null;
+  external_destination_status: 'available' | 'unavailable' | null;
+  trust_label: PublicEvent['trust']['label'];
   freshness: PublicEvent['trust']['freshness'];
   location_confidence: PublicEvent['trust']['locationConfidence'];
   venue_id: string;
@@ -63,6 +92,7 @@ function toPublicEvent(row: EventRow): PublicEvent {
     startsAt: row.starts_at.toISOString(),
     timezone: row.timezone,
     price: { kind: row.price_kind, currency: 'CAD' },
+    accessInformation: row.access_information,
     venue: {
       id: row.venue_id,
       name: row.venue_name,
@@ -78,11 +108,21 @@ function toPublicEvent(row: EventRow): PublicEvent {
       observedAt: row.observed_at.toISOString()
     },
     trust: {
+      label: row.trust_label,
       freshness: row.freshness,
       locationConfidence: row.location_confidence
     }
   };
   if (row.ends_at) event.endsAt = row.ends_at.toISOString();
+  if (row.description) event.description = row.description;
+  if (row.organizer_name) event.organizer = row.organizer_name;
+  if (row.external_destination_label && row.external_destination_status) {
+    event.externalDestination = {
+      label: row.external_destination_label,
+      kind: 'event_source',
+      status: row.external_destination_status
+    };
+  }
   if (row.distance_meters !== undefined)
     event.distanceMeters = Number(row.distance_meters);
   return event;
@@ -91,14 +131,27 @@ function toPublicEvent(row: EventRow): PublicEvent {
 export class PostgresEventRepository implements EventRepository {
   constructor(private readonly pool: Pool) {}
 
-  async findInBounds(bounds: MapBoundsQuery): Promise<PublicEvent[]> {
+  async findInBounds(
+    bounds: MapBoundsQuery,
+    window: DiscoveryWindow
+  ): Promise<PublicEvent[]> {
     const result = await this.pool.query<EventRow>(
       `${publicEventSelect}
        FROM events e
        JOIN venues v ON v.id = e.venue_id
        WHERE v.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+         AND e.starts_at >= $5
+         AND e.starts_at <= $6
+         AND e.status IN ('scheduled', 'postponed')
        ORDER BY e.starts_at, e.id`,
-      [bounds.west, bounds.south, bounds.east, bounds.north]
+      [
+        bounds.west,
+        bounds.south,
+        bounds.east,
+        bounds.north,
+        window.startsAt,
+        window.endsAt
+      ]
     );
     return result.rows.map(toPublicEvent);
   }
@@ -123,5 +176,44 @@ export class PostgresEventRepository implements EventRepository {
       [query.longitude, query.latitude, query.radiusMeters]
     );
     return result.rows.map(toPublicEvent);
+  }
+
+  async findById(id: string): Promise<PublicEvent | undefined> {
+    const result = await this.pool.query<EventRow>(
+      `${publicEventSelect}
+       FROM events e
+       JOIN venues v ON v.id = e.venue_id
+       WHERE e.id = $1`,
+      [id]
+    );
+    const row = result.rows[0];
+    return row ? toPublicEvent(row) : undefined;
+  }
+
+  async findExternalDestination(
+    id: string
+  ): Promise<ExternalDestinationRecord | undefined> {
+    const result = await this.pool.query<{
+      label: string | null;
+      url: string | null;
+      status: 'available' | 'unavailable' | null;
+      event_status: PublicEvent['status'];
+    }>(
+      `SELECT external_destination_label AS label,
+              external_destination_url AS url,
+              external_destination_status AS status,
+              status AS event_status
+       FROM events
+       WHERE id = $1`,
+      [id]
+    );
+    const row = result.rows[0];
+    if (!row?.label || !row.url || !row.status) return undefined;
+    return {
+      label: row.label,
+      url: row.url,
+      status: row.status,
+      eventStatus: row.event_status
+    };
   }
 }

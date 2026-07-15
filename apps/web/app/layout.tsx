@@ -5,8 +5,8 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 export const metadata: Metadata = {
-  title: 'Pulso — synthetic map slice',
-  description: 'Technical validation surface for the Pulso Montréal MVP.'
+  title: 'Pulso — Explore Montréal',
+  description: 'Anonymous free exploration for fictional Montréal events.'
 };
 
 export default function RootLayout({

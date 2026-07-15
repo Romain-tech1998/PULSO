@@ -44,6 +44,13 @@ export const events = pgTable(
     sourceName: text('source_name').notNull(),
     sourceUrl: text('source_url').notNull(),
     observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+    description: text(),
+    organizerName: text('organizer_name'),
+    accessInformation: text('access_information').notNull(),
+    externalDestinationLabel: text('external_destination_label'),
+    externalDestinationUrl: text('external_destination_url'),
+    externalDestinationStatus: text('external_destination_status'),
+    trustLabel: text('trust_label').notNull(),
     freshness: text().notNull(),
     locationConfidence: text('location_confidence').notNull(),
     priceKind: text('price_kind').notNull()

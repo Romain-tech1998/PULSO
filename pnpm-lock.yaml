@@ -44,6 +44,9 @@ importers:
       '@pulso/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@pulso/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       fastify:
         specifier: 5.10.0
         version: 5.10.0

@@ -1,8 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../../apps/api/src/app.js';
-import { eventListResponseSchema } from '@pulso/contracts';
+import {
+  eventDetailsResponseSchema,
+  eventListResponseSchema
+} from '@pulso/contracts';
 import { createPool, PostgresEventRepository } from '@pulso/database';
+import { createMontrealDiscoveryWindow } from '@pulso/domain';
+
+// Traceability: PRD-0001 MAP-002/003/005, EVENT-001/005/007/008,
+// REDIRECT-001/003, and RFC-0001 database-backed API boundaries.
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeWithDatabase = databaseUrl ? describe : describe.skip;
@@ -64,12 +71,15 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
   });
 
   it('returns the event in Montréal bounds using the geometry GiST index', async () => {
-    const events = await repository.findInBounds({
-      west: -73.7,
-      south: 45.4,
-      east: -73.4,
-      north: 45.7
-    });
+    const events = await repository.findInBounds(
+      {
+        west: -73.7,
+        south: 45.4,
+        east: -73.4,
+        north: 45.7
+      },
+      createMontrealDiscoveryWindow(new Date())
+    );
     expect(events.map((event) => event.id)).toContain(
       '00000000-0000-4000-8000-000000000001'
     );
@@ -139,6 +149,33 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
       const boundsBody = eventListResponseSchema.parse(boundsResponse.json());
       expect(boundsBody.data[0]?.id).toBe(
         '00000000-0000-4000-8000-000000000001'
+      );
+      expect(boundsBody.data[0]).toMatchObject({
+        accessInformation:
+          'Free entry. No reservation is required for this fictional fixture.',
+        trust: { label: 'confirmed' },
+        externalDestination: {
+          label: 'Synthetic event source (example.com)',
+          status: 'available'
+        }
+      });
+
+      const detailsResponse = await app.inject({
+        method: 'GET',
+        url: '/events/00000000-0000-4000-8000-000000000001'
+      });
+      expect(detailsResponse.statusCode).toBe(200);
+      const details = eventDetailsResponseSchema.parse(detailsResponse.json());
+      expect(details.data.title).toBe('Synthetic Montréal Pulse');
+      expect(details.data.organizer).toBe('Synthetic Montréal Organizer');
+
+      const externalResponse = await app.inject({
+        method: 'GET',
+        url: '/events/00000000-0000-4000-8000-000000000001/external'
+      });
+      expect(externalResponse.statusCode).toBe(302);
+      expect(externalResponse.headers.location).toBe(
+        'https://example.com/pulso-synthetic-event'
       );
 
       const proximityResponse = await app.inject({

@@ -12,6 +12,7 @@
   "dependencies": {
     "@pulso/contracts": "workspace:*",
     "@pulso/database": "workspace:*",
+    "@pulso/domain": "workspace:*",
     "fastify": "5.10.0",
     "zod": "4.4.3"
   },

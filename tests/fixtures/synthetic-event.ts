@@ -9,6 +9,9 @@ export const syntheticMontrealEvent: PublicEvent = {
   endsAt: '2026-08-01T03:00:00.000Z',
   timezone: 'America/Toronto',
   price: { kind: 'free', currency: 'CAD' },
+  description: 'A fictional music event used only to validate Pulso.',
+  organizer: 'Synthetic Montréal Organizer',
+  accessInformation: 'Free entry. No reservation is required for this fixture.',
   venue: {
     id: '00000000-0000-4000-8000-000000000002',
     name: 'Synthetic Montréal Venue',
@@ -20,5 +23,14 @@ export const syntheticMontrealEvent: PublicEvent = {
     url: 'https://example.com/pulso-synthetic-event',
     observedAt: '2026-07-15T12:00:00.000Z'
   },
-  trust: { freshness: 'unknown', locationConfidence: 'confirmed' }
+  trust: {
+    label: 'confirmed',
+    freshness: 'unknown',
+    locationConfidence: 'confirmed'
+  },
+  externalDestination: {
+    label: 'Synthetic event source (example.com)',
+    kind: 'event_source',
+    status: 'available'
+  }
 };

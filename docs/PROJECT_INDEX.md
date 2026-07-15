@@ -71,10 +71,11 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 7. RFC-0001 — architecture cœur 1.0 terminée et Accepted.
 8. L'implémentation est désormais autorisée conformément à AGENTS.md, sous réserve des gates techniques, fonctionnels, d'ingestion, de déploiement et de lancement définis par RFC-0001.
 9. Le monorepo incrémental, les versions exactes, les contrats partagés, l'API, le web, la validation d'exécution PostgreSQL/PostGIS et la validation technique du development build Android natif avec rendu visible MapLibre sont réalisés. Les preuves ont été revues et DEC-0002 version 1.0 est Accepted.
+10. Functional Sprint 1 — Free Exploration est réalisé avec des données fictives : accès anonyme, cadrage initial de Montréal, fenêtre glissante de sept jours, sélection d'un marqueur, aperçu, détails, informations d'adresse et d'accès, destination externe et retour au contexte cartographique ont été validés sur le web responsive et Android.
 
 ## Prochaine tâche
 
-La tâche de validation du socle technique est terminée et Accepted. La prochaine tâche d'implémentation doit être autorisée séparément conformément à la séquence de livraison et aux gates de RFC-0001.
+Functional Sprint 1 — Free Exploration est réalisé. La prochaine tâche d'implémentation doit être autorisée séparément conformément à la séquence de livraison et aux gates de RFC-0001.
 
 Les validations PostgreSQL/PostGIS et Android sont terminées et leurs preuves de compilation, d'installation, de lancement et de rendu visible du même point synthétique avec MapLibre sont acceptées. Cette décision n'ajoute aucune fonctionnalité produit et ne met en œuvre ni ingestion réelle, ni recherche intelligente complète, ni authentification, ni fournisseur de production.
 
