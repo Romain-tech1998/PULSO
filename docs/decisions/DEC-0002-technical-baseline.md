@@ -10,7 +10,7 @@
 
 Record the exact dependency baseline and verification evidence produced by the first implementation task in RFC-0001. This decision does not change product scope or replace the technical gates in RFC-0001.
 
-The document remains Draft because the local PostgreSQL/PostGIS runtime spike and the native Android development-build render could not run on the available workstation.
+The document remains Draft because the native Android development-build render has not yet run on a prepared Android workstation. The local PostgreSQL/PostGIS runtime spike is complete.
 
 ## Exact baseline selected
 
@@ -23,13 +23,13 @@ The document remains Draft because the local PostgreSQL/PostGIS runtime spike an
 | Shared UI runtime | React 19.2.3 / React DOM 19.2.3 | Expo SDK 57 template patch; Next.js 16 peer range accepts React 19 |
 | Mobile | Expo 57.0.6 / React Native 0.86.0 | Expo template-aligned graph; Expo configuration, strict type check, and Android JS export pass |
 | API | Fastify 5.10.0 | Strict type check, build, request injection, and Zod contract tests pass |
-| Database access | Drizzle ORM 0.45.2 / Drizzle Kit 0.31.10 / pg 8.22.0 | Strict type check and build pass; runtime spatial gate remains open |
+| Database access | Drizzle ORM 0.45.2 / Drizzle Kit 0.31.10 / pg 8.22.0 | Strict type check and build pass; live migration, seed, repository, spatial-plan, and API integration checks pass |
 | Runtime contracts | Zod 4.4.3 | Shared domain/API/client contract tests pass |
 | Web map | maplibre-gl 5.24.0 | Next.js production build passes; browser render remains covered by the Playwright surface test |
 | Native map | @maplibre/maplibre-react-native 11.3.6 | Expo 57 / React 19.2 / React Native 0.86 peer ranges pass; configuration, type check, and Android JS export pass; native render gate remains open |
-| Unit/integration tests | Vitest 4.1.10 | Five unit/contract tests pass; three database integration tests are present but skipped without `DATABASE_URL` |
+| Unit/integration tests | Vitest 4.1.10 | Five unit/contract tests and six live-database integration tests pass with `DATABASE_URL` |
 | Browser tests | Playwright 1.61.1 | Test discovery passes; browser execution is assigned to CI or a prepared local browser environment |
-| Local spatial database | postgis/postgis:18-3.6 | Maintained Docker Hub tag verified on 2026-07-15; Docker is unavailable on this workstation |
+| Local spatial database | postgis/postgis:18-3.6 | Docker Engine 29.6.1 and Compose 5.3.0 run the Linux/amd64 image; PostgreSQL 18.4 and PostGIS 3.6.4 pass the runtime gate |
 | Formatting/lint | Prettier 3.9.5 / ESLint 10.0.1 / typescript-eslint 8.64.0 | Repository formatting and lint checks pass |
 
 Package versions were resolved from official npm registry metadata and locked by pnpm. The Node.js line follows the official Node.js release policy. The PostGIS image tag was checked against the official `postgis/postgis` Docker Hub repository. No production provider was selected.
@@ -79,22 +79,36 @@ Completed locally on Windows with Node.js 24.18.0 and pnpm 11.7.0:
 - Android JavaScript export including the MapLibre native module;
 - Playwright test discovery.
 
+Completed locally on 2026-07-15 with Docker Desktop's Linux/WSL 2 engine:
+
+- `postgis/postgis:18-3.6` started healthy and accepted connections through the Compose health check;
+- both existing migrations applied from an empty `pulso` database, and a second migration run completed without reapplying them;
+- the fictional event and venue seed completed and stored their expected identifiers, text fields, source, Montréal coordinates, and trust fields;
+- `pg_extension` reported PostGIS 3.6.4 on PostgreSQL 18.4;
+- the venue point round-tripped at SRID 4326 with longitude `-73.5673` and latitude `45.5017`;
+- the Montréal bounding box returned the fictional event and used `venues_location_gist_idx` in an `EXPLAIN (ANALYZE, BUFFERS)` index scan;
+- the direct-distance query returned the event at `22.228` metres from the test point and used `venues_location_geography_gist_idx` in an `EXPLAIN (ANALYZE, BUFFERS)` index scan;
+- both geometry and geography GiST indexes were present in `pg_indexes`;
+- all six live-database integration tests passed, including Fastify bounds and proximity responses parsed by the shared Zod contracts;
+- the spatial API and contracts expose direct distance in metres only and add no routing, travel-time, or itinerary semantics.
+
 The CI workflow supplies the version-pinned PostGIS service, runs migrations and the synthetic seed before the complete verification command, and executes the browser smoke test. It performs no deployment.
 
-## Open verification gates
+## Verification gates
 
-### PostgreSQL/PostGIS runtime gate
+### PostgreSQL/PostGIS runtime gate — complete
 
-Docker and Docker Compose are not installed on the available workstation. Consequently, the following tests exist but have not produced local runtime evidence:
+The ARC-007 runtime gate completed on 2026-07-15. The live version-pinned container produced evidence for:
 
-- PostGIS extension creation and migrations from an empty database;
+- PostGIS extension creation and tracked migrations from an empty database;
+- idempotent migration and seed execution;
 - SRID 4326 coordinate round trip;
-- bounds query result;
-- direct-distance result in metres;
-- GiST index use for the spatial predicate;
-- API response backed by the live spatial database.
+- bounds and direct-distance results for the fictional event;
+- metre-based geography distance without routing semantics;
+- both GiST index definitions and index-backed execution plans;
+- database-backed Fastify bounds and proximity responses conforming to shared Zod contracts.
 
-This blocks completion of the ARC-007 canonical spatial-schema spike, not the repository structure or non-database builds.
+This gate no longer blocks the ARC-007 canonical spatial-schema spike.
 
 ### Native Android gate
 
@@ -108,13 +122,13 @@ Playwright 1 test discovery passes. Browser binaries were not installed locally.
 
 ## Reversibility
 
-The version pins are isolated in workspace manifests and the lockfile. Product and API contracts do not expose Drizzle, PostGIS, or map-renderer representations. If either mandatory spike fails, a follow-up documented database-layer or renderer revision may replace that boundary without changing Accepted product scope.
+The version pins are isolated in workspace manifests and the lockfile. Product and API contracts do not expose Drizzle, PostGIS, or map-renderer representations. If the remaining mandatory renderer spike fails, a follow-up documented renderer revision may replace that boundary without changing Accepted product scope.
 
 ## Acceptance condition
 
 DEC-0002 may move to version 1.0 Accepted only after:
 
-1. the version-pinned PostGIS container starts and all migration, seed, bounds, distance, SRID, and index-use integration checks pass; and
-2. an Expo SDK 57 Android development build compiles, installs, and visibly renders the synthetic point with MapLibre 11.
+1. **Complete:** the version-pinned PostGIS container starts and all migration, seed, bounds, distance, SRID, index-use, and database-backed API integration checks pass; and
+2. **Outstanding:** an Expo SDK 57 Android development build compiles, installs, and visibly renders the synthetic point with MapLibre 11.
 
 Presentation polish, real ingestion, provider selection, and full product implementation are outside this decision.

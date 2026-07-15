@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { buildApp } from '../../apps/api/src/app.js';
+import { eventListResponseSchema } from '@pulso/contracts';
 import { createPool, PostgresEventRepository } from '@pulso/database';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -16,7 +18,52 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
 
   afterAll(async () => pool.end());
 
-  it('returns the event in Montréal bounds', async () => {
+  it('has PostGIS enabled and the expected spatial indexes', async () => {
+    const extension = await pool.query<{ extversion: string }>(
+      `SELECT extversion FROM pg_extension WHERE extname = 'postgis'`
+    );
+    expect(extension.rows[0]?.extversion).toMatch(/^3\.6\./);
+
+    const indexes = await pool.query<{ indexname: string }>(
+      `SELECT indexname
+       FROM pg_indexes
+       WHERE schemaname = 'public' AND tablename = 'venues'`
+    );
+    expect(indexes.rows.map(({ indexname }) => indexname)).toEqual(
+      expect.arrayContaining([
+        'venues_location_gist_idx',
+        'venues_location_geography_gist_idx'
+      ])
+    );
+  });
+
+  it('stores the explicitly fictional event and venue', async () => {
+    const result = await pool.query<{
+      title: string;
+      category: string;
+      status: string;
+      venue_name: string;
+      address: string;
+      source_url: string;
+    }>(
+      `SELECT e.title, e.category, e.status, e.source_url,
+              v.name AS venue_name, v.address
+       FROM events e
+       JOIN venues v ON v.id = e.venue_id
+       WHERE e.id = $1`,
+      ['00000000-0000-4000-8000-000000000001']
+    );
+    expect(result.rows[0]).toEqual({
+      title: 'Synthetic Montréal Pulse',
+      category: 'music',
+      status: 'scheduled',
+      venue_name: 'Synthetic Montréal Venue',
+      address: '1000 Rue Synthétique, Montréal, QC',
+      source_url: 'https://example.com/pulso-synthetic-event'
+    });
+  });
+
+  it('returns the event in Montréal bounds using the geometry GiST index', async () => {
     const events = await repository.findInBounds({
       west: -73.7,
       south: 45.4,
@@ -25,6 +72,16 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
     });
     expect(events.map((event) => event.id)).toContain(
       '00000000-0000-4000-8000-000000000001'
+    );
+
+    const plan = await pool.query<{ 'QUERY PLAN': string }>(
+      `EXPLAIN (FORMAT TEXT)
+       SELECT id FROM venues
+       WHERE location && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
+      [-73.7, 45.4, -73.4, 45.7]
+    );
+    expect(plan.rows.map((row) => row['QUERY PLAN']).join('\n')).toMatch(
+      /venues_location_gist_idx/i
     );
   });
 
@@ -68,5 +125,37 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
       longitude: -73.5673,
       latitude: 45.5017
     });
+  });
+
+  it('serves database-backed bounds and proximity responses through the shared contracts', async () => {
+    const app = buildApp(repository);
+
+    try {
+      const boundsResponse = await app.inject({
+        method: 'GET',
+        url: '/events?west=-73.7&south=45.4&east=-73.4&north=45.7'
+      });
+      expect(boundsResponse.statusCode).toBe(200);
+      const boundsBody = eventListResponseSchema.parse(boundsResponse.json());
+      expect(boundsBody.data[0]?.id).toBe(
+        '00000000-0000-4000-8000-000000000001'
+      );
+
+      const proximityResponse = await app.inject({
+        method: 'GET',
+        url: '/events/near?longitude=-73.5673&latitude=45.5019&radiusMeters=1000'
+      });
+      expect(proximityResponse.statusCode).toBe(200);
+      const proximityBody = eventListResponseSchema.parse(
+        proximityResponse.json()
+      );
+      expect(proximityBody.data[0]?.distanceMeters).toBeGreaterThan(22);
+      expect(proximityBody.data[0]?.distanceMeters).toBeLessThan(23);
+      expect(proximityBody.data[0]).not.toHaveProperty('route');
+      expect(proximityBody.data[0]).not.toHaveProperty('travelTime');
+      expect(proximityBody.data[0]).not.toHaveProperty('itinerary');
+    } finally {
+      await app.close();
+    }
   });
 });
