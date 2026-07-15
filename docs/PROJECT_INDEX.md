@@ -58,7 +58,7 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 | UX-0001 | MVP Screens and Flows | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, UJ-0001, UJ-0002, DATA-0001 | PRD-0001 |
 | PRD-0001 | Pulso Montréal MVP | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001 | RFC-0001 |
 | RFC-0001 | Pulso Core Architecture | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001, PRD-0001 | Repository scaffold and synthetic geospatial vertical slice |
-| DEC-0002 | Technical Baseline | 0.1 | Draft | PRD-0001, RFC-0001 | Complete the native Android development-build and visible-render validation gate |
+| DEC-0002 | Technical Baseline | 1.0 | Accepted | PRD-0001, RFC-0001 | Authorize the next RFC-0001 implementation task separately |
 
 ## Ordre de construction validé
 
@@ -70,13 +70,13 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 6. PRD-0001 — exigences produit 1.0 terminées et Accepted.
 7. RFC-0001 — architecture cœur 1.0 terminée et Accepted.
 8. L'implémentation est désormais autorisée conformément à AGENTS.md, sous réserve des gates techniques, fonctionnels, d'ingestion, de déploiement et de lancement définis par RFC-0001.
-9. Le monorepo incrémental, les versions exactes, les contrats partagés, l'API, le web, l'export JavaScript Android et la validation d'exécution PostgreSQL/PostGIS sont réalisés. DEC-0002 reste Draft 0.1 jusqu'à la validation du development build Android natif et du rendu visible MapLibre.
+9. Le monorepo incrémental, les versions exactes, les contrats partagés, l'API, le web, la validation d'exécution PostgreSQL/PostGIS et la validation technique du development build Android natif avec rendu visible MapLibre sont réalisés. Les preuves ont été revues et DEC-0002 version 1.0 est Accepted.
 
 ## Prochaine tâche
 
-La tâche unique suivante est : **Complete the native Android development-build and visible MapLibre render validation gate for DEC-0002**.
+La tâche de validation du socle technique est terminée et Accepted. La prochaine tâche d'implémentation doit être autorisée séparément conformément à la séquence de livraison et aux gates de RFC-0001.
 
-La validation PostgreSQL/PostGIS est terminée. La tâche suivante prépare l'environnement Android, compile et installe le development build Android, puis vérifie le rendu visible du même point synthétique avec MapLibre. Elle n'ajoute aucune fonctionnalité produit et ne met en œuvre ni ingestion réelle, ni recherche intelligente complète, ni authentification, ni fournisseur de production.
+Les validations PostgreSQL/PostGIS et Android sont terminées et leurs preuves de compilation, d'installation, de lancement et de rendu visible du même point synthétique avec MapLibre sont acceptées. Cette décision n'ajoute aucune fonctionnalité produit et ne met en œuvre ni ingestion réelle, ni recherche intelligente complète, ni authentification, ni fournisseur de production.
 
 La recherche préalable à l'ingestion, le Montréal sample d'ingestion documenté, la baseline de prototype d'utilisabilité, les choix de fournisseurs de production, la validation du déploiement et l'approbation des seuils numériques de lancement restent des obligations aux étapes définies par RFC-0001. Elles ne bloquent pas le scaffold initial lorsqu'elles ne concernent pas directement sa compatibilité technique.
 

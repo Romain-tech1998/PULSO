@@ -1,8 +1,8 @@
 # DEC-0002 — Technical Baseline
 
 **Identifier:** DEC-0002
-**Version:** 0.1
-**Status:** Draft
+**Version:** 1.0
+**Status:** Accepted
 **Dependencies:** PRD-0001, RFC-0001
 **Last updated:** 2026-07-15
 
@@ -10,7 +10,7 @@
 
 Record the exact dependency baseline and verification evidence produced by the first implementation task in RFC-0001. This decision does not change product scope or replace the technical gates in RFC-0001.
 
-The document remains Draft because the native Android development-build render has not yet run on a prepared Android workstation. The local PostgreSQL/PostGIS runtime spike is complete.
+The local PostgreSQL/PostGIS runtime spike and the native Android development-build render validation are complete. This Accepted decision records the reviewed technical baseline and its successful runtime evidence.
 
 ## Exact baseline selected
 
@@ -26,7 +26,7 @@ The document remains Draft because the native Android development-build render h
 | Database access | Drizzle ORM 0.45.2 / Drizzle Kit 0.31.10 / pg 8.22.0 | Strict type check and build pass; live migration, seed, repository, spatial-plan, and API integration checks pass |
 | Runtime contracts | Zod 4.4.3 | Shared domain/API/client contract tests pass |
 | Web map | maplibre-gl 5.24.0 | Next.js production build passes; browser render remains covered by the Playwright surface test |
-| Native map | @maplibre/maplibre-react-native 11.3.6 | Expo 57 / React 19.2 / React Native 0.86 peer ranges pass; configuration, type check, and Android JS export pass; native render gate remains open |
+| Native map | @maplibre/maplibre-react-native 11.3.6 | Expo 57 / React 19.2 / React Native 0.86 peer ranges pass; an x86_64 Android development build compiles, installs, launches, loads `libmaplibre.so`, and visibly renders the synthetic point and event preview |
 | Unit/integration tests | Vitest 4.1.10 | Five unit/contract tests and six live-database integration tests pass with `DATABASE_URL` |
 | Browser tests | Playwright 1.61.1 | Test discovery passes; browser execution is assigned to CI or a prepared local browser environment |
 | Local spatial database | postgis/postgis:18-3.6 | Docker Engine 29.6.1 and Compose 5.3.0 run the Linux/amd64 image; PostgreSQL 18.4 and PostGIS 3.6.4 pass the runtime gate |
@@ -92,6 +92,19 @@ Completed locally on 2026-07-15 with Docker Desktop's Linux/WSL 2 engine:
 - all six live-database integration tests passed, including Fastify bounds and proximity responses parsed by the shared Zod contracts;
 - the spatial API and contracts expose direct distance in metres only and add no routing, travel-time, or itinerary semantics.
 
+Completed locally on 2026-07-15 with Android Studio Quail 2 (2026.1.2), its bundled OpenJDK 21.0.10 runtime, and the running Android 16 emulator:
+
+- Expo continuous native generation produced the ignored Android project for `com.pulso.mobile` without changing the product contracts;
+- the generated project resolved compile and target SDK 36, minimum SDK 24, Android Gradle Plugin 8.12.0, Gradle 9.3.1, NDK 27.1.12297006, and its required CMake 3.30.5 and 3.22.1 toolchains;
+- the x86_64 development APK compiled successfully after shortening pnpm virtual-store paths for Windows-native CMake/Ninja inputs;
+- ADB 37.0.0 installed version `0.0.1` (`versionCode` 1) on `emulator-5554`, an `sdk_gphone16k_x86_64` Android 16 / API 36 emulator;
+- a cold `MainActivity` launch completed successfully in 2,423 ms and Metro bundled the Android application with 861 modules;
+- the emulator reached the local Fastify API through `10.0.2.2`, and the API returned the existing fictional `Synthetic Montréal Pulse` fixture;
+- Android process logs show the x86_64 MapLibre native library `libmaplibre.so` loading successfully, with no fatal exception in the validated process;
+- the inspected emulator screenshot at `%TEMP%\pulso-android-map.png` shows the MapLibre surface and synthetic Montréal marker;
+- the inspected screenshot at `%TEMP%\pulso-android-event-selected-final.png` shows the selected marker and the expected fictional event name, venue, address, and trust information;
+- the validated mobile interaction adds no routing, travel-time, itinerary, native booking, or production-provider behavior.
+
 The CI workflow supplies the version-pinned PostGIS service, runs migrations and the synthetic seed before the complete verification command, and executes the browser smoke test. It performs no deployment.
 
 ## Verification gates
@@ -110,11 +123,11 @@ The ARC-007 runtime gate completed on 2026-07-15. The live version-pinned contai
 
 This gate no longer blocks the ARC-007 canonical spatial-schema spike.
 
-### Native Android gate
+### Native Android gate — complete
 
-Java, the Android SDK, ADB, and an emulator/device are unavailable. Expo configuration and Android JavaScript export pass, but Android prebuild/compile, development-build installation, and visible MapLibre point rendering remain unverified. Expo Go is not a valid substitute.
+The ARC-009 native renderer gate ran on 2026-07-15. The Expo SDK 57 Android development build compiled for x86_64, installed and launched on the API 36 emulator, loaded MapLibre Native, visibly rendered the fictional Montréal marker, and displayed the expected event preview after selection. Package, launch, filtered logcat, and screenshot evidence was captured outside the repository.
 
-This blocks acceptance of the native renderer evidence, not shared contracts or the web/API scaffold.
+The technical gate no longer blocks the native renderer baseline. The package, launch, logcat, and visible-render evidence was reviewed successfully; Expo Go was not used as a substitute.
 
 ### Browser execution
 
@@ -122,13 +135,15 @@ Playwright 1 test discovery passes. Browser binaries were not installed locally.
 
 ## Reversibility
 
-The version pins are isolated in workspace manifests and the lockfile. Product and API contracts do not expose Drizzle, PostGIS, or map-renderer representations. If the remaining mandatory renderer spike fails, a follow-up documented renderer revision may replace that boundary without changing Accepted product scope.
+The version pins are isolated in workspace manifests and the lockfile. Product and API contracts do not expose Drizzle, PostGIS, or map-renderer representations. If future evidence identifies a native renderer incompatibility, a follow-up documented renderer revision may replace that boundary without changing Accepted product scope.
 
 ## Acceptance condition
 
-DEC-0002 may move to version 1.0 Accepted only after:
+The two technical acceptance criteria now have runtime evidence:
 
 1. **Complete:** the version-pinned PostGIS container starts and all migration, seed, bounds, distance, SRID, index-use, and database-backed API integration checks pass; and
-2. **Outstanding:** an Expo SDK 57 Android development build compiles, installs, and visibly renders the synthetic point with MapLibre 11.
+2. **Complete:** an Expo SDK 57 Android development build compiles, installs, and visibly renders the synthetic point with MapLibre 11.
+
+DEC-0002 is version 1.0 Accepted because the captured PostGIS and native Android evidence, including the visible MapLibre result, satisfies both criteria.
 
 Presentation polish, real ingestion, provider selection, and full product implementation are outside this decision.

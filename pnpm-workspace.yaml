@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 confirmModulesPurge: false
+virtualStoreDirMaxLength: 30
 
 allowBuilds:
   esbuild: true
