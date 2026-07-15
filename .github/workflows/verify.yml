@@ -1,0 +1,41 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:18-3.6
+        env:
+          POSTGRES_DB: pulso
+          POSTGRES_USER: pulso
+          POSTGRES_PASSWORD: pulso
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pulso -d pulso"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://pulso:pulso@localhost:5432/pulso
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - run: pnpm db:seed
+      - run: pnpm verify
+      - run: pnpm exec playwright install chromium
+      - run: pnpm test:e2e

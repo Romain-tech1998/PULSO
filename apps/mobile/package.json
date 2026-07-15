@@ -1,0 +1,28 @@
+{
+  "name": "@pulso/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "main": "expo/AppEntry",
+  "scripts": {
+    "dev": "cross-env __UNSAFE_EXPO_HOME_DIRECTORY=.expo-home EXPO_NO_TELEMETRY=1 expo start --dev-client",
+    "expo:config": "cross-env __UNSAFE_EXPO_HOME_DIRECTORY=.expo-home EXPO_NO_TELEMETRY=1 expo config --type public",
+    "export:android": "cross-env __UNSAFE_EXPO_HOME_DIRECTORY=.expo-home EXPO_NO_TELEMETRY=1 expo export --platform android --output-dir dist",
+    "typecheck": "tsc --noEmit",
+    "validate": "pnpm expo:config && pnpm typecheck && pnpm export:android"
+  },
+  "dependencies": {
+    "@maplibre/maplibre-react-native": "11.3.6",
+    "@pulso/contracts": "workspace:*",
+    "expo": "57.0.6",
+    "expo-status-bar": "57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/geojson": "7946.0.16",
+    "@types/react": "19.2.2",
+    "cross-env": "10.1.0",
+    "typescript": "6.0.3"
+  }
+}

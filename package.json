@@ -1,0 +1,36 @@
+{
+  "name": "pulso",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11 <12"
+  },
+  "scripts": {
+    "build": "pnpm --filter @pulso/domain build && pnpm --filter @pulso/contracts build && pnpm --filter @pulso/database build && pnpm --filter @pulso/api build && pnpm --filter @pulso/web build",
+    "db:migrate": "pnpm --filter @pulso/database db:migrate",
+    "db:seed": "pnpm --filter @pulso/database db:seed",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "test": "vitest run --config vitest.config.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:list": "playwright test --list",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "validate:mobile": "pnpm --filter @pulso/mobile validate",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm test:e2e:list && pnpm build && pnpm validate:mobile"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.61.1",
+    "@types/node": "24.13.3",
+    "eslint": "10.0.1",
+    "globals": "17.7.0",
+    "prettier": "3.9.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.64.0",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@pulso/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@pulso/contracts": "workspace:*",
+    "@pulso/database": "workspace:*",
+    "fastify": "5.10.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "tsx": "4.23.1",
+    "typescript": "6.0.3"
+  }
+}

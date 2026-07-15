@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Pulso",
+    "slug": "pulso",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "plugins": ["@maplibre/maplibre-react-native"],
+    "android": {
+      "package": "com.pulso.mobile"
+    }
+  }
+}

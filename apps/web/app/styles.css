@@ -1,0 +1,89 @@
+:root {
+  color-scheme: dark;
+  font-family: Arial, sans-serif;
+  background: #07191b;
+  color: #f5fcf8;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 1100px;
+  margin: auto;
+  padding: 2rem;
+}
+header {
+  margin-bottom: 1.5rem;
+}
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 4rem);
+}
+.eyebrow {
+  color: #76f0a8;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+.map-shell {
+  min-height: 68vh;
+  position: relative;
+  border: 1px solid #315256;
+  border-radius: 1rem;
+  overflow: hidden;
+}
+.map {
+  position: absolute;
+  inset: 0;
+}
+.status,
+.preview {
+  position: absolute;
+  z-index: 2;
+  background: #07191bee;
+  border: 1px solid #527579;
+  border-radius: 0.75rem;
+}
+.status {
+  top: 1rem;
+  left: 1rem;
+  padding: 0.65rem 0.9rem;
+  margin: 0;
+}
+.preview {
+  left: 1rem;
+  bottom: 1rem;
+  width: min(24rem, calc(100% - 2rem));
+  padding: 1rem;
+}
+.preview h2 {
+  margin: 0.25rem 0;
+}
+.preview button {
+  float: right;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.5rem;
+}
+.marker {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 3px solid white;
+  border-radius: 50%;
+  background: #ff4f71;
+  box-shadow: 0 0 0 0.4rem #ff4f7140;
+  cursor: pointer;
+}
+
+@media (max-width: 600px) {
+  main {
+    padding: 1rem;
+  }
+  .map-shell {
+    min-height: 72vh;
+  }
+}

@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 /.pnp
 .pnp.*
 .yarn/*
@@ -10,13 +11,20 @@ node_modules/
 
 # Testing
 /coverage
+test-results/
+playwright-report/
 
 # Next.js
 /.next/
+**/.next/
 /out/
+/.expo/
+**/.expo/
+**/.expo-home/
 
 # Production
 /build
+**/dist/
 
 # Miscellaneous
 .DS_Store

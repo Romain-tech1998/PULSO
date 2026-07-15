@@ -58,6 +58,7 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 | UX-0001 | MVP Screens and Flows | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, UJ-0001, UJ-0002, DATA-0001 | PRD-0001 |
 | PRD-0001 | Pulso Montréal MVP | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001 | RFC-0001 |
 | RFC-0001 | Pulso Core Architecture | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001, PRD-0001 | Repository scaffold and synthetic geospatial vertical slice |
+| DEC-0002 | Technical Baseline | 0.1 | Draft | PRD-0001, RFC-0001 | Complete blocked PostGIS runtime and native Android validation gates |
 
 ## Ordre de construction validé
 
@@ -69,12 +70,13 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 6. PRD-0001 — exigences produit 1.0 terminées et Accepted.
 7. RFC-0001 — architecture cœur 1.0 terminée et Accepted.
 8. L'implémentation est désormais autorisée conformément à AGENTS.md, sous réserve des gates techniques, fonctionnels, d'ingestion, de déploiement et de lancement définis par RFC-0001.
+9. Le monorepo incrémental, les versions exactes, les contrats partagés, l'API, le web et l'export JavaScript Android sont réalisés. DEC-0002 reste Draft 0.1 jusqu'à la validation d'exécution PostgreSQL/PostGIS et du development build Android natif.
 
 ## Prochaine tâche
 
-La tâche unique suivante est : **Repository scaffold and synthetic geospatial vertical slice**.
+La tâche unique suivante est : **Complete the blocked PostGIS runtime and native Android validation gates for DEC-0002**.
 
-Cette tâche crée uniquement le monorepo incrémental, la configuration PostgreSQL/PostGIS locale, les contrats et fixtures synthétiques nécessaires, puis valide le même point d'événement synthétique à travers la base spatiale, l'API, le web et l'application mobile. Elle ne met en œuvre ni l'ingestion réelle, ni la recherche intelligente complète, ni l'authentification, ni l'interface produit complète.
+Cette tâche démarre la configuration PostgreSQL/PostGIS déjà créée, exécute migrations, seed et tests spatiaux, puis compile et installe le development build Android afin de vérifier le rendu visible du même point synthétique avec MapLibre. Elle n'ajoute aucune fonctionnalité produit et ne met en œuvre ni ingestion réelle, ni recherche intelligente complète, ni authentification, ni fournisseur de production.
 
 La recherche préalable à l'ingestion, le Montréal sample d'ingestion documenté, la baseline de prototype d'utilisabilité, les choix de fournisseurs de production, la validation du déploiement et l'approbation des seuils numériques de lancement restent des obligations aux étapes définies par RFC-0001. Elles ne bloquent pas le scaffold initial lorsqu'elles ne concernent pas directement sa compatibilité technique.
 
