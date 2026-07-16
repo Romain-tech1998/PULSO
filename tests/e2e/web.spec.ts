@@ -13,7 +13,7 @@ test('completes anonymous UJ-0001 and preserves map context', async ({
     page.getByRole('heading', { name: 'Explore Montréal' })
   ).toBeVisible();
   await expect(page.getByLabel('Montréal event map')).toBeVisible();
-  await expect(page.getByText(/rolling seven-day window/)).toBeVisible();
+  await expect(page.getByText(/matching fictional event/)).toBeVisible();
   await expect(page.getByText(/sign in|create account/i)).toHaveCount(0);
 
   const marker = page.getByRole('button', {
@@ -55,4 +55,68 @@ test('completes anonymous UJ-0001 and preserves map context', async ({
     page.getByRole('heading', { name: 'Synthetic Montréal Pulse' })
   ).toBeVisible();
   await expect(page.locator('[data-map-context="preserved"]')).toBeVisible();
+});
+
+test('filters anonymously and preserves the filtered map context', async ({
+  page
+}) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Filters (0)' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Filters (0)' }).click();
+  await page.getByRole('checkbox', { name: 'Comedy' }).check();
+  await expect(
+    page.getByRole('button', { name: 'Clear Comedy filter' })
+  ).toBeVisible();
+  await expect(page.getByText('1 matching fictional event')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Preview Imaginary Montréal Comedy Hour' })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Preview Synthetic Montréal Pulse' })
+  ).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Close filters' }).click();
+  await page
+    .getByRole('button', { name: 'Preview Imaginary Montréal Comedy Hour' })
+    .click();
+  await page.getByRole('button', { name: 'View event details' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Imaginary Montréal Comedy Hour' })
+  ).toBeVisible();
+  await page.getByRole('button', { name: '← Back to map' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Clear Comedy filter' })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Preview Imaginary Montréal Comedy Hour' })
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Clear Comedy filter' }).click();
+  await expect(page.getByRole('button', { name: 'Filters (0)' })).toBeVisible();
+
+  await page
+    .getByRole('button', { name: 'Preview Synthetic Montréal Pulse' })
+    .click();
+  await page.getByRole('button', { name: 'Filters (0)' }).click();
+  await page.getByRole('checkbox', { name: 'Comedy' }).check();
+  await expect(
+    page.getByText(
+      'The open event preview was closed because the filters changed.'
+    )
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Synthetic Montréal Pulse' })
+  ).toHaveCount(0);
+
+  await page.getByRole('radio', { name: 'Paid' }).check();
+  await expect(
+    page.getByText('No events match the active filters')
+  ).toBeVisible();
+  await page
+    .getByLabel('Map filters')
+    .getByRole('button', { name: 'Clear all filters' })
+    .click();
+  await expect(page.getByRole('button', { name: 'Filters (0)' })).toBeVisible();
+  await expect(page.getByText(/matching fictional events/)).toBeVisible();
 });

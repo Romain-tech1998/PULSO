@@ -3,7 +3,74 @@ import { describe, expect, it } from 'vitest';
 // Traceability: PRD-0001 MAP-006/007, EVENT-002/004, TRUST-001/003/004,
 // REDIRECT-004, and STATE-003.
 
-import { presentEvent, publicEventSchema } from './index.js';
+import {
+  buildMapEventsQuery,
+  mapBoundsQuerySchema,
+  presentEvent,
+  publicEventSchema,
+  summarizeActiveFilters
+} from './index.js';
+
+describe('manual map filter contract', () => {
+  const bounds = { west: -73.7, south: 45.4, east: -73.4, north: 45.7 };
+
+  it('parses every Accepted filter value and preserves OR categories', () => {
+    for (const date of ['next7', 'tonight', 'tomorrow', 'weekend'] as const) {
+      expect(mapBoundsQuerySchema.parse({ ...bounds, date }).date).toBe(date);
+    }
+    const parsed = mapBoundsQuerySchema.parse({
+      ...bounds,
+      categories: 'music,comedy',
+      price: 'paid',
+      date: 'custom',
+      dateStart: '2026-07-18',
+      dateEnd: '2026-07-20'
+    });
+    expect(parsed).toMatchObject({
+      categories: ['music', 'comedy'],
+      price: 'paid',
+      date: 'custom'
+    });
+  });
+
+  it.each([
+    { ...bounds, categories: 'music,invalid' },
+    { ...bounds, price: 'unknown' },
+    { ...bounds, date: 'someday' },
+    { ...bounds, unexpected: 'value' },
+    { ...bounds, date: 'custom' },
+    { ...bounds, date: 'custom', dateStart: '2026-02-30' },
+    {
+      ...bounds,
+      date: 'custom',
+      dateStart: '2026-07-20',
+      dateEnd: '2026-07-18'
+    }
+  ])('rejects invalid filter query %#', (query) => {
+    expect(mapBoundsQuerySchema.safeParse(query).success).toBe(false);
+  });
+
+  it('serializes and summarizes shared client filter state', () => {
+    const filters = {
+      date: 'tomorrow' as const,
+      categories: ['music', 'comedy'] as const,
+      price: 'free' as const
+    };
+    const query = buildMapEventsQuery(bounds, {
+      ...filters,
+      categories: [...filters.categories]
+    });
+    expect(query).toContain('date=tomorrow');
+    expect(query).toContain('categories=music%2Ccomedy');
+    expect(query).toContain('price=free');
+    expect(
+      summarizeActiveFilters({
+        ...filters,
+        categories: [...filters.categories]
+      })
+    ).toHaveLength(4);
+  });
+});
 
 describe('public event contract', () => {
   it('rejects a point outside valid latitude bounds', () => {

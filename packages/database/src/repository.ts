@@ -143,6 +143,8 @@ export class PostgresEventRepository implements EventRepository {
          AND e.starts_at >= $5
          AND e.starts_at <= $6
          AND e.status IN ('scheduled', 'postponed')
+         AND ($7::event_category[] IS NULL OR e.category = ANY($7))
+         AND ($8::text = 'all' OR e.price_kind = $8)
        ORDER BY e.starts_at, e.id`,
       [
         bounds.west,
@@ -150,7 +152,9 @@ export class PostgresEventRepository implements EventRepository {
         bounds.east,
         bounds.north,
         window.startsAt,
-        window.endsAt
+        window.endsAt,
+        bounds.categories.length > 0 ? bounds.categories : null,
+        bounds.price
       ]
     );
     return result.rows.map(toPublicEvent);

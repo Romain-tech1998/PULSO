@@ -60,11 +60,132 @@ a:focus-visible {
   border-radius: 0.75rem;
 }
 .status {
-  top: 1rem;
+  top: 5.25rem;
   left: 1rem;
   padding: 0.65rem 0.9rem;
   margin: 0;
   max-width: min(34rem, calc(100% - 5rem));
+}
+.filter-controls {
+  position: absolute;
+  z-index: 3;
+  top: 1rem;
+  left: 1rem;
+  right: 4.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.filter-trigger,
+.active-filters button,
+.filter-overlay button,
+.filter-overlay input {
+  min-height: 2.75rem;
+}
+.filter-trigger,
+.active-filters button,
+.filter-overlay button {
+  border: 1px solid #76f0a8;
+  border-radius: 0.6rem;
+  background: #07191bf5;
+  color: #f5fcf8;
+  cursor: pointer;
+  padding: 0.55rem 0.75rem;
+}
+.active-filters {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.active-filters button {
+  color: #76f0a8;
+  font-size: 0.82rem;
+}
+.default-filter {
+  border-radius: 1rem;
+  background: #07191bee;
+  color: #c6d9da;
+  padding: 0.45rem 0.7rem;
+}
+.filter-overlay {
+  position: absolute;
+  z-index: 4;
+  top: 4.5rem;
+  left: 1rem;
+  width: min(28rem, calc(100% - 2rem));
+  max-height: calc(100% - 5.5rem);
+  overflow-y: auto;
+  border: 1px solid #527579;
+  border-radius: 0.75rem;
+  background: #07191bf9;
+  padding: 1rem;
+}
+.filter-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.filter-heading h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+.filter-overlay fieldset {
+  display: grid;
+  gap: 0.4rem;
+  margin: 1rem 0;
+  border: 1px solid #315256;
+  border-radius: 0.6rem;
+  padding: 0.75rem;
+}
+.filter-overlay legend {
+  color: #76f0a8;
+  font-weight: 700;
+}
+.filter-overlay label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.filter-overlay input[type='checkbox'],
+.filter-overlay input[type='radio'] {
+  width: 1.2rem;
+  min-height: 1.2rem;
+}
+.date-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+.date-range label {
+  align-items: stretch;
+  flex-direction: column;
+}
+.date-range input {
+  max-width: 100%;
+}
+.filter-help {
+  margin: 0;
+  color: #a8c5c8;
+  font-size: 0.85rem;
+}
+.fixed-filter-rules {
+  display: grid;
+  gap: 0.7rem;
+}
+.clear-all {
+  width: 100%;
+}
+.filter-notice {
+  position: absolute;
+  z-index: 2;
+  right: 1rem;
+  bottom: 1rem;
+  max-width: 24rem;
+  border-radius: 0.6rem;
+  background: #07191bee;
+  padding: 0.7rem;
 }
 .status button {
   margin-left: 0.75rem;
@@ -176,5 +297,11 @@ dd {
   .preview-fields,
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+  .date-range {
+    grid-template-columns: 1fr;
+  }
+  .status {
+    top: 7.5rem;
   }
 }

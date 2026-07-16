@@ -76,7 +76,10 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
         west: -73.7,
         south: 45.4,
         east: -73.4,
-        north: 45.7
+        north: 45.7,
+        date: 'next7',
+        categories: [],
+        price: 'all'
       },
       createMontrealDiscoveryWindow(new Date())
     );
@@ -191,6 +194,95 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
       expect(proximityBody.data[0]).not.toHaveProperty('route');
       expect(proximityBody.data[0]).not.toHaveProperty('travelTime');
       expect(proximityBody.data[0]).not.toHaveProperty('itinerary');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('applies OR within categories and AND between category and price in Postgres', async () => {
+    const app = buildApp(repository);
+    try {
+      const categoryResponse = await app.inject({
+        method: 'GET',
+        url: '/events?west=-73.7&south=45.4&east=-73.4&north=45.7&categories=music,comedy'
+      });
+      const categoryEvents = eventListResponseSchema.parse(
+        categoryResponse.json()
+      ).data;
+      expect(categoryEvents.map(({ category }) => category)).toEqual(
+        expect.arrayContaining(['music', 'comedy'])
+      );
+      expect(
+        categoryEvents.every(({ category }) =>
+          ['music', 'comedy'].includes(category)
+        )
+      ).toBe(true);
+
+      const andResponse = await app.inject({
+        method: 'GET',
+        url: '/events?west=-73.7&south=45.4&east=-73.4&north=45.7&categories=comedy&price=paid'
+      });
+      expect(eventListResponseSchema.parse(andResponse.json()).data).toEqual(
+        []
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('implements All, Free, and Paid while keeping unknown price only under All', async () => {
+    const app = buildApp(repository);
+    try {
+      const load = async (price: 'all' | 'free' | 'paid') => {
+        const response = await app.inject({
+          method: 'GET',
+          url: `/events?west=-73.7&south=45.4&east=-73.4&north=45.7&price=${price}`
+        });
+        return eventListResponseSchema.parse(response.json()).data;
+      };
+      const all = await load('all');
+      const free = await load('free');
+      const paid = await load('paid');
+      expect(all.some(({ price }) => price.kind === 'unknown')).toBe(true);
+      expect(free.length).toBeGreaterThan(0);
+      expect(free.every(({ price }) => price.kind === 'free')).toBe(true);
+      expect(paid.length).toBeGreaterThan(0);
+      expect(paid.every(({ price }) => price.kind === 'paid')).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('covers all six categories, includes postponed, and excludes cancelled discovery events', async () => {
+    const app = buildApp(repository);
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/events?west=-73.7&south=45.4&east=-73.4&north=45.7'
+      });
+      const events = eventListResponseSchema.parse(response.json()).data;
+      expect(new Set(events.map(({ category }) => category))).toEqual(
+        new Set(['music', 'nightlife', 'festival', 'show', 'comedy', 'other'])
+      );
+      expect(events.some(({ status }) => status === 'postponed')).toBe(true);
+      expect(events.some(({ status }) => status === 'cancelled')).toBe(false);
+      expect(events.map(({ id }) => id)).not.toContain(
+        '00000000-0000-4000-8000-000000000008'
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('returns a safe 400 for invalid live filter query parameters', async () => {
+    const app = buildApp(repository);
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/events?west=-73.7&south=45.4&east=-73.4&north=45.7&categories=music,not-real'
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe('INVALID_REQUEST');
     } finally {
       await app.close();
     }

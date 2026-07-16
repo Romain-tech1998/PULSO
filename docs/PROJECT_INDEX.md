@@ -4,7 +4,7 @@
 **Version :** 1.0  
 **Statut :** Accepted  
 **Dépendances :** None  
-**Dernière mise à jour :** 2026-07-15
+**Dernière mise à jour :** 2026-07-16
 **Rôle :** point d'entrée commun vers les décisions, documents et prochaines étapes du projet.
 
 INDEX-0001 gouverne l'organisation du référentiel documentaire. Il ne remplace pas et ne prévaut pas sur les décisions produit figurant dans les documents Accepted.
@@ -72,10 +72,11 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 8. L'implémentation est désormais autorisée conformément à AGENTS.md, sous réserve des gates techniques, fonctionnels, d'ingestion, de déploiement et de lancement définis par RFC-0001.
 9. Le monorepo incrémental, les versions exactes, les contrats partagés, l'API, le web, la validation d'exécution PostgreSQL/PostGIS et la validation technique du development build Android natif avec rendu visible MapLibre sont réalisés. Les preuves ont été revues et DEC-0002 version 1.0 est Accepted.
 10. Functional Sprint 1 — Free Exploration est réalisé avec des données fictives : accès anonyme, cadrage initial de Montréal, fenêtre glissante de sept jours, sélection d'un marqueur, aperçu, détails, informations d'adresse et d'accès, destination externe et retour au contexte cartographique ont été validés sur le web responsive et Android.
+11. Functional Sprint 2 — Manual Map Filters est réalisé avec des données fictives : les valeurs et sémantiques Accepted de date/heure, catégorie et prix filtrent la zone cartographique courante côté serveur ; les critères actifs, la suppression individuelle, la réinitialisation, l'état vide et le retour au contexte filtré sont validés sur le web desktop, mobile-responsive et Android natif. Sur Android 16 API 36, la validation interactive a confirmé les catégories en OR, les familles en AND, All/Free/Paid, Tonight, la suppression individuelle, la réinitialisation, la récupération depuis l'état vide, le retour depuis Event Details avec le contexte filtré préservé et la fermeture sûre d'un aperçu devenu obsolète. L'ANR de System UI a été isolé à l'environnement d'émulation, sans erreur fatale de com.pulso.mobile, React Native ou MapLibre.
 
 ## Prochaine tâche
 
-Functional Sprint 1 — Free Exploration est réalisé. La prochaine tâche d'implémentation doit être autorisée séparément conformément à la séquence de livraison et aux gates de RFC-0001.
+Functional Sprint 2 — Manual Map Filters est réalisé. La prochaine tâche d'implémentation doit être autorisée séparément conformément à la séquence de livraison et aux gates de RFC-0001.
 
 Les validations PostgreSQL/PostGIS et Android sont terminées et leurs preuves de compilation, d'installation, de lancement et de rendu visible du même point synthétique avec MapLibre sont acceptées. Cette décision n'ajoute aucune fonctionnalité produit et ne met en œuvre ni ingestion réelle, ni recherche intelligente complète, ni authentification, ni fournisseur de production.
 

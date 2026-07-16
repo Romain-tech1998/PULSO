@@ -5,13 +5,24 @@ import {
   type StyleSpecification
 } from '@maplibre/maplibre-react-native';
 import {
+  buildMapEventsQuery,
+  CATEGORY_FILTER_OPTIONS,
+  DATE_FILTER_OPTIONS,
   eventDetailsResponseSchema,
   eventListResponseSchema,
+  PRICE_FILTER_OPTIONS,
   presentEvent,
+  summarizeActiveFilters,
   type PublicEvent
 } from '@pulso/contracts';
+import {
+  DEFAULT_DISCOVERY_FILTERS,
+  getMontrealCalendarDate,
+  type DiscoveryFilters,
+  type EventCategory
+} from '@pulso/domain';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -20,6 +31,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from 'react-native';
 
@@ -46,9 +58,15 @@ type DetailsState =
   | { kind: 'success'; event: PublicEvent }
   | { kind: 'error'; eventId: string };
 
-function eventUrl(bounds: readonly [number, number, number, number]) {
+function eventUrl(
+  bounds: readonly [number, number, number, number],
+  filters: DiscoveryFilters
+) {
   const [west, south, east, north] = bounds;
-  return `${API_BASE_URL}/events?west=${west}&south=${south}&east=${east}&north=${north}`;
+  return `${API_BASE_URL}/events?${buildMapEventsQuery(
+    { west, south, east, north },
+    filters
+  )}`;
 }
 
 export default function App() {
@@ -58,13 +76,23 @@ export default function App() {
   const [bounds, setBounds] =
     useState<readonly [number, number, number, number]>(initialBounds);
   const [details, setDetails] = useState<DetailsState>({ kind: 'closed' });
+  const filtersRef = useRef<DiscoveryFilters>({
+    ...DEFAULT_DISCOVERY_FILTERS,
+    categories: []
+  });
+  const [filters, setFilters] = useState(filtersRef.current);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterNotice, setFilterNotice] = useState<string>();
 
   const loadEvents = useCallback(
-    async (nextBounds: readonly [number, number, number, number]) => {
+    async (
+      nextBounds: readonly [number, number, number, number],
+      activeFilters = filtersRef.current
+    ) => {
       setBounds(nextBounds);
       setState('loading');
       try {
-        const response = await fetch(eventUrl(nextBounds));
+        const response = await fetch(eventUrl(nextBounds, activeFilters));
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
         setEvents(result.data);
@@ -84,6 +112,20 @@ export default function App() {
   useEffect(() => {
     void loadEvents(initialBounds);
   }, [loadEvents]);
+
+  function applyFilters(nextFilters: DiscoveryFilters) {
+    filtersRef.current = nextFilters;
+    setFilters(nextFilters);
+    if (selected) {
+      setSelected(undefined);
+      setFilterNotice(
+        'The open event preview was closed because the filters changed.'
+      );
+    } else {
+      setFilterNotice(undefined);
+    }
+    void loadEvents(bounds, nextFilters);
+  }
 
   async function openDetails(eventId: string) {
     setDetails({ kind: 'loading', eventId });
@@ -130,24 +172,49 @@ export default function App() {
             </Marker>
           ))}
         </Map>
+        <View style={styles.filterControls}>
+          <Pressable
+            style={styles.filterButton}
+            onPress={() => setFiltersOpen((open) => !open)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: filtersOpen }}
+            accessibilityLabel={`Filters, ${summarizeActiveFilters(filters).length} active`}
+          >
+            <Text style={styles.filterButtonText}>
+              Filters ({summarizeActiveFilters(filters).length})
+            </Text>
+          </Pressable>
+          <MobileActiveFilters filters={filters} onChange={applyFilters} />
+        </View>
         <View style={styles.status} accessibilityLiveRegion="polite">
           {state === 'loading' && <ActivityIndicator color="#76f0a8" />}
           <Text style={styles.statusText}>
             {state === 'loading' && 'Loading events…'}
             {state === 'success' &&
-              `${events.length} fictional event${events.length === 1 ? '' : 's'} visible in the rolling seven-day window.`}
+              `${events.length} matching fictional event${events.length === 1 ? '' : 's'} in this map area.`}
             {state === 'empty' &&
-              'No eligible events are visible in this map area for the next seven Montréal calendar days.'}
+              'No events match the active filters in this map area.'}
             {state === 'error' &&
               'Events could not be loaded. Your map context is preserved.'}
           </Text>
           {(state === 'empty' || state === 'error') && (
             <Pressable
-              onPress={() => void loadEvents(bounds)}
+              onPress={() =>
+                state === 'empty'
+                  ? applyFilters({
+                      ...DEFAULT_DISCOVERY_FILTERS,
+                      categories: []
+                    })
+                  : void loadEvents(bounds)
+              }
               accessibilityRole="button"
-              accessibilityLabel="Retry loading events"
+              accessibilityLabel={
+                state === 'empty' ? 'Clear all filters' : 'Retry loading events'
+              }
             >
-              <Text style={styles.link}>Retry</Text>
+              <Text style={styles.link}>
+                {state === 'empty' ? 'Clear all filters' : 'Retry'}
+              </Text>
             </Pressable>
           )}
           {state === 'success' && (
@@ -168,6 +235,18 @@ export default function App() {
             </View>
           )}
         </View>
+        {filterNotice && (
+          <Text style={styles.filterNotice} accessibilityLiveRegion="polite">
+            {filterNotice}
+          </Text>
+        )}
+        {filtersOpen && (
+          <MobileFilterOverlay
+            filters={filters}
+            onChange={applyFilters}
+            onClose={() => setFiltersOpen(false)}
+          />
+        )}
         {selected && details.kind === 'closed' && (
           <EventPreview
             event={selected}
@@ -184,6 +263,218 @@ export default function App() {
         )}
       </View>
     </SafeAreaView>
+  );
+}
+
+function withoutCustomDates(
+  filters: DiscoveryFilters,
+  date: DiscoveryFilters['date'] = 'next7'
+): DiscoveryFilters {
+  const next = { ...filters, date };
+  delete next.customStartDate;
+  delete next.customEndDate;
+  return next;
+}
+
+function MobileActiveFilters({
+  filters,
+  onChange
+}: {
+  filters: DiscoveryFilters;
+  onChange: (filters: DiscoveryFilters) => void;
+}) {
+  const summary = summarizeActiveFilters(filters);
+  if (summary.length === 0) {
+    return <Text style={styles.defaultFilter}>Next 7 days · map area</Text>;
+  }
+  return (
+    <ScrollView horizontal contentContainerStyle={styles.activeFilters}>
+      {summary.map((item) => (
+        <Pressable
+          key={`${item.key}-${item.value}`}
+          style={styles.filterChip}
+          accessibilityRole="button"
+          accessibilityLabel={`Clear ${item.label} filter`}
+          onPress={() => {
+            if (item.key === 'date') onChange(withoutCustomDates(filters));
+            else if (item.key === 'price')
+              onChange({ ...filters, price: 'all' });
+            else
+              onChange({
+                ...filters,
+                categories: filters.categories.filter(
+                  (category) => category !== item.value
+                )
+              });
+          }}
+        >
+          <Text style={styles.filterChipText}>{item.label} ×</Text>
+        </Pressable>
+      ))}
+    </ScrollView>
+  );
+}
+
+function MobileFilterOverlay({
+  filters,
+  onChange,
+  onClose
+}: {
+  filters: DiscoveryFilters;
+  onChange: (filters: DiscoveryFilters) => void;
+  onClose: () => void;
+}) {
+  const today = getMontrealCalendarDate(new Date());
+  const setDate = (date: DiscoveryFilters['date']) => {
+    if (date === 'custom') {
+      onChange({
+        ...filters,
+        date,
+        customStartDate: filters.customStartDate ?? today,
+        customEndDate: filters.customEndDate ?? filters.customStartDate ?? today
+      });
+    } else {
+      onChange(withoutCustomDates(filters, date));
+    }
+  };
+  const toggleCategory = (category: EventCategory) => {
+    onChange({
+      ...filters,
+      categories: filters.categories.includes(category)
+        ? filters.categories.filter((value) => value !== category)
+        : [...filters.categories, category]
+    });
+  };
+
+  return (
+    <View style={styles.filterOverlay} accessibilityViewIsModal>
+      <View style={styles.filterHeading}>
+        <Text style={styles.filterTitle} accessibilityRole="header">
+          Filters
+        </Text>
+        <Pressable accessibilityRole="button" onPress={onClose}>
+          <Text style={styles.close}>Close filters</Text>
+        </Pressable>
+      </View>
+      <ScrollView contentContainerStyle={styles.filterContent}>
+        <Text style={styles.filterLegend}>Date and time</Text>
+        {DATE_FILTER_OPTIONS.map((option) => (
+          <FilterChoice
+            key={option.value}
+            label={option.label}
+            selected={filters.date === option.value}
+            kind="radio"
+            onPress={() => setDate(option.value)}
+          />
+        ))}
+        {filters.date === 'custom' && (
+          <View style={styles.customDates}>
+            <Text style={styles.detailLabel}>Start date (YYYY-MM-DD)</Text>
+            <TextInput
+              style={styles.dateInput}
+              defaultValue={filters.customStartDate ?? today}
+              accessibilityLabel="Selected start date"
+              onEndEditing={({ nativeEvent: { text: value } }) => {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+                onChange({
+                  ...filters,
+                  date: 'custom',
+                  customStartDate: value,
+                  customEndDate:
+                    filters.customEndDate && filters.customEndDate >= value
+                      ? filters.customEndDate
+                      : value
+                });
+              }}
+            />
+            <Text style={styles.detailLabel}>End date (YYYY-MM-DD)</Text>
+            <TextInput
+              style={styles.dateInput}
+              defaultValue={
+                filters.customEndDate ?? filters.customStartDate ?? today
+              }
+              accessibilityLabel="Selected end date"
+              onEndEditing={({ nativeEvent: { text: value } }) => {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+                if (value < (filters.customStartDate ?? today)) return;
+                onChange({ ...filters, date: 'custom', customEndDate: value });
+              }}
+            />
+          </View>
+        )}
+
+        <Text style={styles.filterLegend}>Categories</Text>
+        <Text style={styles.filterHelp}>
+          Multiple categories match with OR.
+        </Text>
+        {CATEGORY_FILTER_OPTIONS.map((option) => (
+          <FilterChoice
+            key={option.value}
+            label={option.label}
+            selected={filters.categories.includes(option.value)}
+            kind="checkbox"
+            onPress={() => toggleCategory(option.value)}
+          />
+        ))}
+
+        <Text style={styles.filterLegend}>Price</Text>
+        {PRICE_FILTER_OPTIONS.map((option) => (
+          <FilterChoice
+            key={option.value}
+            label={option.label}
+            selected={filters.price === option.value}
+            kind="radio"
+            onPress={() => onChange({ ...filters, price: option.value })}
+          />
+        ))}
+        <Text style={styles.filterHelp}>
+          Unknown prices appear only under All.
+        </Text>
+
+        <Text style={styles.filterLegend}>Geography</Text>
+        <Text style={styles.filterHelp}>
+          Current visible map area. Distance is not applied because no reference
+          location was supplied; no routing or implicit location.
+        </Text>
+        <Text style={styles.filterLegend}>Status</Text>
+        <Text style={styles.filterHelp}>
+          Upcoming and postponed events; cancelled events are excluded.
+        </Text>
+        <Pressable
+          style={styles.clearAll}
+          accessibilityRole="button"
+          onPress={() =>
+            onChange({ ...DEFAULT_DISCOVERY_FILTERS, categories: [] })
+          }
+        >
+          <Text style={styles.filterButtonText}>Clear all filters</Text>
+        </Pressable>
+      </ScrollView>
+    </View>
+  );
+}
+
+function FilterChoice({
+  label,
+  selected,
+  kind,
+  onPress
+}: {
+  label: string;
+  selected: boolean;
+  kind: 'radio' | 'checkbox';
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={styles.filterChoice}
+      accessibilityRole={kind}
+      accessibilityState={{ checked: selected }}
+      onPress={onPress}
+    >
+      <Text style={styles.filterChoiceIndicator}>{selected ? '●' : '○'}</Text>
+      <Text style={styles.body}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -349,13 +640,112 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 64,
-    top: 12,
+    top: 82,
     gap: 8,
     padding: 10,
     borderRadius: 10,
     backgroundColor: '#07191bee'
   },
   statusText: { color: '#f5fcf8', flexShrink: 1 },
+  filterControls: {
+    position: 'absolute',
+    left: 12,
+    right: 58,
+    top: 12,
+    gap: 6
+  },
+  filterButton: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    justifyContent: 'center',
+    borderColor: '#76f0a8',
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: '#07191bf5',
+    paddingHorizontal: 12
+  },
+  filterButtonText: { color: '#f5fcf8', fontWeight: '700' },
+  defaultFilter: {
+    alignSelf: 'flex-start',
+    color: '#c6d9da',
+    backgroundColor: '#07191bee',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 5
+  },
+  activeFilters: { gap: 6 },
+  filterChip: {
+    minHeight: 36,
+    justifyContent: 'center',
+    borderColor: '#76f0a8',
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: '#07191bf5',
+    paddingHorizontal: 9
+  },
+  filterChipText: { color: '#76f0a8', fontSize: 12, fontWeight: '700' },
+  filterNotice: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
+    color: '#f5fcf8',
+    backgroundColor: '#07191bee',
+    borderRadius: 10,
+    padding: 10
+  },
+  filterOverlay: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    top: 66,
+    bottom: 10,
+    zIndex: 10,
+    borderColor: '#527579',
+    borderRadius: 12,
+    borderWidth: 1,
+    backgroundColor: '#07191bfa',
+    padding: 14
+  },
+  filterHeading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  filterTitle: { color: '#f5fcf8', fontSize: 24, fontWeight: '700' },
+  filterContent: { gap: 8, paddingBottom: 28 },
+  filterLegend: {
+    color: '#76f0a8',
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 14
+  },
+  filterHelp: { color: '#a8c5c8' },
+  filterChoice: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    minHeight: 44,
+    gap: 10
+  },
+  filterChoiceIndicator: { color: '#76f0a8', fontSize: 20 },
+  customDates: { gap: 6 },
+  dateInput: {
+    minHeight: 44,
+    borderColor: '#527579',
+    borderRadius: 8,
+    borderWidth: 1,
+    color: '#f5fcf8',
+    paddingHorizontal: 10
+  },
+  clearAll: {
+    alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
+    borderColor: '#76f0a8',
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 16
+  },
   markerActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   markerAction: {
     alignSelf: 'flex-start',

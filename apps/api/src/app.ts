@@ -5,7 +5,7 @@ import {
   mapBoundsQuerySchema
 } from '@pulso/contracts';
 import type { EventRepository } from '@pulso/database';
-import { createMontrealDiscoveryWindow } from '@pulso/domain';
+import { createFilteredDiscoveryWindow } from '@pulso/domain';
 import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 
@@ -43,11 +43,15 @@ export function buildApp(
   });
 
   app.get('/events', async (request) => {
-    const bounds = mapBoundsQuerySchema.parse(request.query);
+    const query = mapBoundsQuerySchema.parse(request.query);
     return eventListResponseSchema.parse({
       data: await repository.findInBounds(
-        bounds,
-        createMontrealDiscoveryWindow(options.now?.() ?? new Date())
+        query,
+        createFilteredDiscoveryWindow(options.now?.() ?? new Date(), {
+          date: query.date,
+          ...(query.dateStart ? { customStartDate: query.dateStart } : {}),
+          ...(query.dateEnd ? { customEndDate: query.dateEnd } : {})
+        })
       )
     });
   });

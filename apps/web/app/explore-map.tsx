@@ -1,10 +1,22 @@
 'use client';
 
 import {
+  buildMapEventsQuery,
+  CATEGORY_FILTER_OPTIONS,
+  DATE_FILTER_OPTIONS,
   eventDetailsResponseSchema,
   eventListResponseSchema,
+  PRICE_FILTER_OPTIONS,
+  summarizeActiveFilters,
   type PublicEvent
 } from '@pulso/contracts';
+import {
+  DEFAULT_DISCOVERY_FILTERS,
+  getMontrealCalendarDate,
+  type DiscoveryFilters,
+  type EventCategory,
+  type MapBounds
+} from '@pulso/domain';
 import maplibregl from 'maplibre-gl';
 import {
   useCallback,
@@ -33,11 +45,8 @@ type DetailsState =
   | { kind: 'success'; event: PublicEvent }
   | { kind: 'error'; eventId: string };
 
-function boundsUrl(bounds: typeof INITIAL_BOUNDS): string {
-  const query = new URLSearchParams(
-    Object.entries(bounds).map(([key, value]) => [key, String(value)])
-  );
-  return `${API_BASE_URL}/events?${query.toString()}`;
+function boundsUrl(bounds: MapBounds, filters: DiscoveryFilters): string {
+  return `${API_BASE_URL}/events?${buildMapEventsQuery(bounds, filters)}`;
 }
 
 export function ExploreMap() {
@@ -45,31 +54,58 @@ export function ExploreMap() {
   const map = useRef<maplibregl.Map | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
   const currentBounds = useRef(INITIAL_BOUNDS);
+  const filtersRef = useRef<DiscoveryFilters>({
+    ...DEFAULT_DISCOVERY_FILTERS,
+    categories: []
+  });
   const detailsButton = useRef<HTMLButtonElement>(null);
   const detailsHeading = useRef<HTMLHeadingElement>(null);
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [selected, setSelected] = useState<PublicEvent>();
   const [state, setState] = useState<LoadState>('loading');
   const [details, setDetails] = useState<DetailsState>({ kind: 'closed' });
+  const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterNotice, setFilterNotice] = useState<string>();
 
-  const loadEvents = useCallback(async (bounds = currentBounds.current) => {
-    currentBounds.current = bounds;
-    setState('loading');
-    try {
-      const response = await fetch(boundsUrl(bounds));
-      if (!response.ok) throw new Error('Event API unavailable');
-      const result = eventListResponseSchema.parse(await response.json());
-      setEvents(result.data);
-      setSelected((current) =>
-        current && result.data.some(({ id }) => id === current.id)
-          ? current
-          : undefined
+  const loadEvents = useCallback(
+    async (
+      bounds = currentBounds.current,
+      activeFilters = filtersRef.current
+    ) => {
+      currentBounds.current = bounds;
+      setState('loading');
+      try {
+        const response = await fetch(boundsUrl(bounds, activeFilters));
+        if (!response.ok) throw new Error('Event API unavailable');
+        const result = eventListResponseSchema.parse(await response.json());
+        setEvents(result.data);
+        setSelected((current) =>
+          current && result.data.some(({ id }) => id === current.id)
+            ? current
+            : undefined
+        );
+        setState(result.data.length === 0 ? 'empty' : 'success');
+      } catch {
+        setState('error');
+      }
+    },
+    []
+  );
+
+  function applyFilters(nextFilters: DiscoveryFilters) {
+    filtersRef.current = nextFilters;
+    setFilters(nextFilters);
+    if (selected) {
+      setSelected(undefined);
+      setFilterNotice(
+        'The open event preview was closed because the filters changed.'
       );
-      setState(result.data.length === 0 ? 'empty' : 'success');
-    } catch {
-      setState('error');
+    } else {
+      setFilterNotice(undefined);
     }
-  }, []);
+    void loadEvents(currentBounds.current, nextFilters);
+  }
 
   useEffect(() => {
     if (!container.current) return;
@@ -156,14 +192,40 @@ export function ExploreMap() {
         data-map-context="preserved"
       >
         <div ref={container} className="map" />
+        <div className="filter-controls">
+          <button
+            type="button"
+            className="filter-trigger"
+            aria-expanded={filtersOpen}
+            aria-controls="map-filters"
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            Filters ({summarizeActiveFilters(filters).length})
+          </button>
+          <ActiveFilters filters={filters} onChange={applyFilters} />
+        </div>
+        {filtersOpen && (
+          <FilterOverlay
+            filters={filters}
+            onChange={applyFilters}
+            onClose={() => setFiltersOpen(false)}
+          />
+        )}
         <div className={`status status-${state}`} role="status">
           {state === 'loading' && 'Loading events…'}
           {state === 'empty' && (
             <>
-              No eligible events are visible in this map area for the next seven
-              Montréal calendar days.
-              <button type="button" onClick={() => void loadEvents()}>
-                Retry
+              No events match the active filters in this map area.
+              <button
+                type="button"
+                onClick={() =>
+                  applyFilters({
+                    ...DEFAULT_DISCOVERY_FILTERS,
+                    categories: []
+                  })
+                }
+              >
+                Clear all filters
               </button>
             </>
           )}
@@ -176,8 +238,13 @@ export function ExploreMap() {
             </>
           )}
           {state === 'success' &&
-            `${events.length} fictional event${events.length === 1 ? '' : 's'} visible in the rolling seven-day window.`}
+            `${events.length} matching fictional event${events.length === 1 ? '' : 's'} in this map area.`}
         </div>
+        {filterNotice && (
+          <p className="filter-notice" role="status">
+            {filterNotice}
+          </p>
+        )}
         {selected && (
           <EventPreview
             event={selected}
@@ -223,6 +290,217 @@ export function ExploreMap() {
       )}
     </>
   );
+}
+
+function ActiveFilters({
+  filters,
+  onChange
+}: {
+  filters: DiscoveryFilters;
+  onChange: (filters: DiscoveryFilters) => void;
+}) {
+  const summary = summarizeActiveFilters(filters);
+  if (summary.length === 0) {
+    return (
+      <span className="default-filter">Next 7 days · current map area</span>
+    );
+  }
+  return (
+    <div className="active-filters" aria-label="Active filters">
+      {summary.map((item) => (
+        <button
+          type="button"
+          key={`${item.key}-${item.value}`}
+          aria-label={`Clear ${item.label} filter`}
+          onClick={() => {
+            if (item.key === 'date') {
+              onChange(withoutCustomDates(filters));
+            } else if (item.key === 'price') {
+              onChange({ ...filters, price: 'all' });
+            } else {
+              onChange({
+                ...filters,
+                categories: filters.categories.filter(
+                  (category) => category !== item.value
+                )
+              });
+            }
+          }}
+        >
+          {item.label} ×
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function FilterOverlay({
+  filters,
+  onChange,
+  onClose
+}: {
+  filters: DiscoveryFilters;
+  onChange: (filters: DiscoveryFilters) => void;
+  onClose: () => void;
+}) {
+  const today = getMontrealCalendarDate(new Date());
+  const setDate = (date: DiscoveryFilters['date']) => {
+    if (date === 'custom') {
+      onChange({
+        ...filters,
+        date,
+        customStartDate: filters.customStartDate ?? today,
+        customEndDate: filters.customEndDate ?? filters.customStartDate ?? today
+      });
+    } else {
+      onChange(withoutCustomDates(filters, date));
+    }
+  };
+  const toggleCategory = (category: EventCategory) => {
+    onChange({
+      ...filters,
+      categories: filters.categories.includes(category)
+        ? filters.categories.filter((value) => value !== category)
+        : [...filters.categories, category]
+    });
+  };
+
+  return (
+    <aside id="map-filters" className="filter-overlay" aria-label="Map filters">
+      <div className="filter-heading">
+        <h2>Filters</h2>
+        <button type="button" onClick={onClose}>
+          Close filters
+        </button>
+      </div>
+      <fieldset>
+        <legend>Date and time</legend>
+        {DATE_FILTER_OPTIONS.map((option) => (
+          <label key={option.value}>
+            <input
+              type="radio"
+              name="date-filter"
+              value={option.value}
+              checked={filters.date === option.value}
+              onChange={() => setDate(option.value)}
+            />
+            {option.label}
+          </label>
+        ))}
+        {filters.date === 'custom' && (
+          <div className="date-range">
+            <label>
+              Start date
+              <input
+                type="date"
+                value={filters.customStartDate ?? today}
+                onChange={(event) =>
+                  applyCustomDate(filters, onChange, event.target.value, true)
+                }
+              />
+            </label>
+            <label>
+              End date
+              <input
+                type="date"
+                min={filters.customStartDate ?? today}
+                value={
+                  filters.customEndDate ?? filters.customStartDate ?? today
+                }
+                onChange={(event) =>
+                  applyCustomDate(filters, onChange, event.target.value, false)
+                }
+              />
+            </label>
+          </div>
+        )}
+      </fieldset>
+      <fieldset>
+        <legend>Categories</legend>
+        <p className="filter-help">Multiple categories match with OR.</p>
+        {CATEGORY_FILTER_OPTIONS.map((option) => (
+          <label key={option.value}>
+            <input
+              type="checkbox"
+              checked={filters.categories.includes(option.value)}
+              onChange={() => toggleCategory(option.value)}
+            />
+            {option.label}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset>
+        <legend>Price</legend>
+        {PRICE_FILTER_OPTIONS.map((option) => (
+          <label key={option.value}>
+            <input
+              type="radio"
+              name="price-filter"
+              value={option.value}
+              checked={filters.price === option.value}
+              onChange={() => onChange({ ...filters, price: option.value })}
+            />
+            {option.label}
+          </label>
+        ))}
+        <p className="filter-help">Unknown prices appear only under All.</p>
+      </fieldset>
+      <dl className="fixed-filter-rules">
+        <div>
+          <dt>Geography</dt>
+          <dd>
+            Current visible map area. Distance is not applied because no
+            reference location was supplied; no routing or implicit location.
+          </dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>Upcoming and postponed events; cancelled events are excluded.</dd>
+        </div>
+      </dl>
+      <button
+        type="button"
+        className="clear-all"
+        onClick={() =>
+          onChange({ ...DEFAULT_DISCOVERY_FILTERS, categories: [] })
+        }
+      >
+        Clear all filters
+      </button>
+    </aside>
+  );
+}
+
+function withoutCustomDates(
+  filters: DiscoveryFilters,
+  date: DiscoveryFilters['date'] = 'next7'
+): DiscoveryFilters {
+  const next = { ...filters, date };
+  delete next.customStartDate;
+  delete next.customEndDate;
+  return next;
+}
+
+function applyCustomDate(
+  filters: DiscoveryFilters,
+  onChange: (filters: DiscoveryFilters) => void,
+  value: string,
+  isStart: boolean
+) {
+  if (!value) return;
+  if (isStart) {
+    onChange({
+      ...filters,
+      date: 'custom',
+      customStartDate: value,
+      customEndDate:
+        filters.customEndDate && filters.customEndDate >= value
+          ? filters.customEndDate
+          : value
+    });
+  } else {
+    onChange({ ...filters, date: 'custom', customEndDate: value });
+  }
 }
 
 function EventPreview({

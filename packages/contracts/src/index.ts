@@ -1,10 +1,14 @@
 import {
+  DATE_FILTER_VALUES,
+  DEFAULT_DISCOVERY_FILTERS,
   EVENT_CATEGORIES,
   EVENT_STATUSES,
   FRESHNESS_STATES,
   LOCATION_CONFIDENCE_STATES,
+  PRICE_FILTER_VALUES,
   TRUST_LABELS
 } from '@pulso/domain';
+import type { DiscoveryFilters, EventCategory, MapBounds } from '@pulso/domain';
 import { z } from 'zod';
 
 export const geographicPointSchema = z.object({
@@ -12,19 +16,69 @@ export const geographicPointSchema = z.object({
   latitude: z.number().min(-90).max(90)
 });
 
+const dateStringSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(Date.UTC(year!, month! - 1, day!));
+    return (
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() + 1 === month &&
+      date.getUTCDate() === day
+    );
+  }, 'The selected Montréal calendar date is invalid.');
+const categoryListQuerySchema = z
+  .string()
+  .min(1)
+  .transform((value) => value.split(','))
+  .pipe(z.array(z.enum(EVENT_CATEGORIES)).min(1))
+  .refine((values) => new Set(values).size === values.length, {
+    message: 'Categories must not contain duplicates.'
+  });
+
 export const mapBoundsQuerySchema = z
   .object({
     west: z.coerce.number().min(-180).max(180),
     south: z.coerce.number().min(-90).max(90),
     east: z.coerce.number().min(-180).max(180),
-    north: z.coerce.number().min(-90).max(90)
+    north: z.coerce.number().min(-90).max(90),
+    date: z.enum(DATE_FILTER_VALUES).default('next7'),
+    categories: categoryListQuerySchema.optional().default([]),
+    price: z.enum(PRICE_FILTER_VALUES).default('all'),
+    dateStart: dateStringSchema.optional(),
+    dateEnd: dateStringSchema.optional()
   })
+  .strict()
   .refine(
     (bounds) => bounds.west < bounds.east && bounds.south < bounds.north,
     {
       message: 'Bounds must have increasing west/east and south/north values.'
     }
-  );
+  )
+  .superRefine((query, context) => {
+    if (query.date === 'custom' && !query.dateStart) {
+      context.addIssue({
+        code: 'custom',
+        path: ['dateStart'],
+        message: 'A selected date is required for a custom date filter.'
+      });
+    }
+    if (query.date !== 'custom' && (query.dateStart || query.dateEnd)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['dateStart'],
+        message: 'Selected dates are valid only with the custom date filter.'
+      });
+    }
+    if (query.dateStart && query.dateEnd && query.dateEnd < query.dateStart) {
+      context.addIssue({
+        code: 'custom',
+        path: ['dateEnd'],
+        message: 'The selected date range must end on or after it starts.'
+      });
+    }
+  });
 
 export const directDistanceQuerySchema = z.object({
   longitude: z.coerce.number().min(-180).max(180),
@@ -91,6 +145,105 @@ export type EventListResponse = z.infer<typeof eventListResponseSchema>;
 export type EventDetailsResponse = z.infer<typeof eventDetailsResponseSchema>;
 export type MapBoundsQuery = z.infer<typeof mapBoundsQuerySchema>;
 export type DirectDistanceQuery = z.infer<typeof directDistanceQuerySchema>;
+
+export const DATE_FILTER_OPTIONS = [
+  { value: 'next7', label: 'Next 7 days' },
+  { value: 'tonight', label: 'Tonight' },
+  { value: 'tomorrow', label: 'Tomorrow' },
+  { value: 'weekend', label: 'This weekend' },
+  { value: 'custom', label: 'Selected date or range' }
+] as const;
+
+export const CATEGORY_FILTER_OPTIONS: ReadonlyArray<{
+  value: EventCategory;
+  label: string;
+}> = [
+  { value: 'music', label: 'Music / concerts' },
+  {
+    value: 'nightlife',
+    label: 'Nightlife / DJ / club / qualifying bar events'
+  },
+  { value: 'festival', label: 'Festivals / festive events' },
+  { value: 'show', label: 'Shows' },
+  { value: 'comedy', label: 'Comedy' },
+  { value: 'other', label: 'Other qualifying scheduled events' }
+];
+
+export const PRICE_FILTER_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'free', label: 'Free' },
+  { value: 'paid', label: 'Paid' }
+] as const;
+
+export function buildMapEventsQuery(
+  bounds: MapBounds,
+  filters: DiscoveryFilters
+): string {
+  const parameters = new URLSearchParams({
+    west: String(bounds.west),
+    south: String(bounds.south),
+    east: String(bounds.east),
+    north: String(bounds.north),
+    date: filters.date,
+    price: filters.price
+  });
+  if (filters.categories.length > 0) {
+    parameters.set('categories', filters.categories.join(','));
+  }
+  if (filters.date === 'custom' && filters.customStartDate) {
+    parameters.set('dateStart', filters.customStartDate);
+    if (filters.customEndDate) {
+      parameters.set('dateEnd', filters.customEndDate);
+    }
+  }
+  return parameters.toString();
+}
+
+export interface ActiveFilterSummary {
+  key: 'date' | 'category' | 'price';
+  value: string;
+  label: string;
+}
+
+export function summarizeActiveFilters(
+  filters: DiscoveryFilters
+): ActiveFilterSummary[] {
+  const summary: ActiveFilterSummary[] = [];
+  if (filters.date !== DEFAULT_DISCOVERY_FILTERS.date) {
+    const dateLabel = DATE_FILTER_OPTIONS.find(
+      ({ value }) => value === filters.date
+    )!.label;
+    const selectedRange =
+      filters.date === 'custom' && filters.customStartDate
+        ? filters.customEndDate &&
+          filters.customEndDate !== filters.customStartDate
+          ? `: ${filters.customStartDate} to ${filters.customEndDate}`
+          : `: ${filters.customStartDate}`
+        : '';
+    summary.push({
+      key: 'date',
+      value: filters.date,
+      label: `${dateLabel}${selectedRange}`
+    });
+  }
+  for (const category of filters.categories) {
+    summary.push({
+      key: 'category',
+      value: category,
+      label: CATEGORY_FILTER_OPTIONS.find(({ value }) => value === category)!
+        .label
+    });
+  }
+  if (filters.price !== DEFAULT_DISCOVERY_FILTERS.price) {
+    summary.push({
+      key: 'price',
+      value: filters.price,
+      label: PRICE_FILTER_OPTIONS.find(({ value }) => value === filters.price)!
+        .label
+    });
+  }
+  return summary;
+}
 
 const CATEGORY_LABELS: Record<PublicEvent['category'], string> = {
   music: 'Music / concerts',

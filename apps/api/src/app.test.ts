@@ -65,6 +65,67 @@ describe('event discovery API', () => {
     await app.close();
   });
 
+  it('passes accepted filter semantics and Montréal time windows to the repository', async () => {
+    let received:
+      | {
+          categories: string[];
+          price: string;
+          startsAt: string;
+          endsAt: string;
+        }
+      | undefined;
+    const filteredRepository: EventRepository = {
+      ...repository,
+      findInBounds: async (query, window) => {
+        received = {
+          categories: query.categories,
+          price: query.price,
+          startsAt: window.startsAt.toISOString(),
+          endsAt: window.endsAt.toISOString()
+        };
+        return [event];
+      }
+    };
+    const app = buildApp(filteredRepository, {
+      now: () => new Date('2026-07-15T23:00:00.000Z')
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/events?west=-73.7&south=45.4&east=-73.4&north=45.7&date=weekend&categories=music,comedy&price=paid'
+    });
+    expect(response.statusCode).toBe(200);
+    expect(received).toEqual({
+      categories: ['music', 'comedy'],
+      price: 'paid',
+      startsAt: '2026-07-17T21:00:00.000Z',
+      endsAt: '2026-07-20T09:00:00.000Z'
+    });
+    await app.close();
+  });
+
+  it.each([
+    'categories=music,invalid',
+    'price=unknown',
+    'date=someday',
+    'unexpected=value',
+    'date=custom',
+    'date=custom&dateStart=2026-02-30'
+  ])('returns a safe client error for invalid filters: %s', async (filter) => {
+    const app = buildApp(repository);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/events?west=-73.7&south=45.4&east=-73.4&north=45.7&${filter}`
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'INVALID_REQUEST',
+        message: 'The request parameters are invalid.'
+      }
+    });
+    await app.close();
+  });
+
   it('returns contract-valid anonymous Event Details', async () => {
     const app = buildApp(repository);
     const response = await app.inject({
