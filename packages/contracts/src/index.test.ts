@@ -16,6 +16,7 @@ import {
 describe('intelligent-search contracts', () => {
   const request = {
     query: 'free comedy tonight',
+    locale: 'en' as const,
     bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
     manualFilters: { date: 'next7', categories: [], price: 'all' },
     disabledDerivedKeys: []
@@ -42,12 +43,21 @@ describe('intelligent-search contracts', () => {
       interpretation: {
         engine: 'deterministic',
         language: 'en',
-        constraints: [{ key: 'price', kind: 'hard', label: 'Free' }],
+        constraints: [
+          {
+            key: 'price',
+            kind: 'hard',
+            message: {
+              code: 'search.constraint.price',
+              params: { price: 'free' }
+            }
+          }
+        ],
         rankingSignals: [],
         effectiveFilters: { date: 'next7', categories: [], price: 'free' }
       },
       condition: 'no_reliable_result',
-      message: 'No reliable result.',
+      message: { code: 'search.message.noReliableResult' },
       data: []
     });
     expect(JSON.stringify(response)).not.toContain(request.query);
@@ -107,10 +117,13 @@ describe('manual map filter contract', () => {
     expect(query).toContain('categories=music%2Ccomedy');
     expect(query).toContain('price=free');
     expect(
-      summarizeActiveFilters({
-        ...filters,
-        categories: [...filters.categories]
-      })
+      summarizeActiveFilters(
+        {
+          ...filters,
+          categories: [...filters.categories]
+        },
+        'en'
+      )
     ).toHaveLength(4);
   });
 });
@@ -175,14 +188,20 @@ describe('public event contract', () => {
       }
     });
 
-    expect(presentEvent(event)).toMatchObject({
+    expect(presentEvent(event, 'en')).toMatchObject({
       price: 'Price unknown',
       description: 'Description unknown',
       organizer: 'Organizer unknown',
       location: 'Location not confirmed',
       materialWarning: 'Some event information is not confirmed.'
     });
-    expect(presentEvent(event).externalAction).toBeUndefined();
+    expect(presentEvent(event, 'en').externalAction).toBeUndefined();
+    expect(presentEvent(event, 'fr')).toMatchObject({
+      price: 'Prix inconnu',
+      description: 'Description inconnue',
+      organizer: 'Organisateur inconnu',
+      location: 'Lieu non confirmé'
+    });
   });
 
   it('suppresses the external action for a cancelled event', () => {
@@ -218,11 +237,53 @@ describe('public event contract', () => {
       }
     });
 
-    expect(presentEvent(cancelled)).toMatchObject({
+    expect(presentEvent(cancelled, 'en')).toMatchObject({
       materialWarning: 'This event is cancelled.',
       externalUnavailable:
         'The external event or ticket-source action is unavailable because this event is cancelled.'
     });
-    expect(presentEvent(cancelled).externalAction).toBeUndefined();
+    expect(presentEvent(cancelled, 'en').externalAction).toBeUndefined();
+  });
+
+  it('localizes Pulso labels while preserving external event content', () => {
+    const event = publicEventSchema.parse({
+      id: '00000000-0000-4000-8000-000000000001',
+      title: 'External source title',
+      category: 'music',
+      status: 'scheduled',
+      startsAt: '2026-07-16T01:00:00.000Z',
+      timezone: 'America/Toronto',
+      price: { kind: 'free', currency: 'CAD' },
+      description: 'Organizer-provided description',
+      organizer: 'External organizer',
+      accessInformation: 'Source-language access text',
+      venue: {
+        id: '00000000-0000-4000-8000-000000000002',
+        name: 'External venue name',
+        address: 'External address',
+        point: { longitude: -73.56, latitude: 45.5 }
+      },
+      source: {
+        name: 'External source',
+        url: 'https://example.com/event',
+        observedAt: '2026-07-15T12:00:00.000Z'
+      },
+      trust: {
+        label: 'confirmed',
+        freshness: 'unknown',
+        locationConfidence: 'confirmed'
+      }
+    });
+    expect(presentEvent(event, 'fr')).toMatchObject({
+      category: 'Musique / concerts',
+      description: 'Organizer-provided description',
+      organizer: 'External organizer'
+    });
+    expect(event).toMatchObject({
+      title: 'External source title',
+      accessInformation: 'Source-language access text',
+      venue: { name: 'External venue name', address: 'External address' },
+      source: { name: 'External source' }
+    });
   });
 });

@@ -24,7 +24,18 @@ import {
   type DiscoveryFilters,
   type EventCategory
 } from '@pulso/domain';
+import {
+  getCategoryLabel,
+  getDateFilterLabel,
+  getPriceLabel,
+  localizeSearchMessage,
+  translate,
+  type SupportedLocale
+} from '@pulso/domain/localization';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MOBILE_SEARCH_PANEL_LAYOUT } from './search-layout';
+import { loadMobileLocale, persistMobileLocale } from './locale';
+import { getLocales } from 'expo-localization';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -98,6 +109,24 @@ export default function App() {
   const [searchResult, setSearchResult] = useState<IntelligentSearchResponse>();
   const [searchProcessing, setSearchProcessing] = useState(false);
   const [searchError, setSearchError] = useState(false);
+  const localeRef = useRef<SupportedLocale>('fr');
+  const [locale, setLocale] = useState<SupportedLocale>();
+
+  useEffect(() => {
+    void loadMobileLocale(
+      getLocales().map(({ languageTag }) => languageTag),
+      AsyncStorage
+    ).then((resolved) => {
+      localeRef.current = resolved;
+      setLocale(resolved);
+    });
+  }, []);
+
+  function selectLocale(nextLocale: SupportedLocale) {
+    localeRef.current = nextLocale;
+    setLocale(nextLocale);
+    void persistMobileLocale(nextLocale, AsyncStorage);
+  }
 
   const loadEvents = useCallback(
     async (
@@ -116,6 +145,7 @@ export default function App() {
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
               query: activeSearch.current.query,
+              locale: localeRef.current,
               bounds: { west, south, east, north },
               manualFilters: activeSearch.current.manualFilters,
               disabledDerivedKeys: activeSearch.current.disabledDerivedKeys
@@ -177,9 +207,7 @@ export default function App() {
     setFilters(nextFilters);
     if (selected) {
       setSelected(undefined);
-      setFilterNotice(
-        'The open event preview was closed because the filters changed.'
-      );
+      setFilterNotice(translate(localeRef.current, 'filters.previewClosed'));
     } else {
       setFilterNotice(undefined);
     }
@@ -235,9 +263,7 @@ export default function App() {
       ]
     };
     setSelected(undefined);
-    setFilterNotice(
-      'The open event preview was closed because the search interpretation changed.'
-    );
+    setFilterNotice(translate(localeRef.current, 'search.previewClosed'));
     void loadEvents(bounds);
   }
 
@@ -253,16 +279,37 @@ export default function App() {
     }
   }
 
+  if (!locale) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.centered} accessibilityLiveRegion="polite">
+          <ActivityIndicator color="#76f0a8" />
+          <Text style={styles.body}>{translate('fr', 'map.loading')}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>Pulso · Free exploration</Text>
-        <Text style={styles.title} accessibilityRole="header">
-          Explore Montréal
-        </Text>
+        <View style={styles.headerRow}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.eyebrow}>
+              {translate(locale, 'app.eyebrow')}
+            </Text>
+            <Text style={styles.title} accessibilityRole="header">
+              {translate(locale, 'app.title')}
+            </Text>
+          </View>
+          <MobileLanguageSelector locale={locale} onChange={selectLocale} />
+        </View>
       </View>
-      <View style={styles.mapShell} accessibilityLabel="Montréal event map">
+      <View
+        style={styles.mapShell}
+        accessibilityLabel={translate(locale, 'map.label')}
+      >
         <Map
           style={styles.map}
           mapStyle={localStyle}
@@ -280,7 +327,9 @@ export default function App() {
               onPress={() => setSelected(event)}
               accessible
               accessibilityRole="button"
-              accessibilityLabel={`Preview ${event.title}`}
+              accessibilityLabel={translate(locale, 'map.previewAria', {
+                title: event.title
+              })}
             >
               <View style={styles.marker} />
             </Marker>
@@ -296,6 +345,7 @@ export default function App() {
           onClear={clearSearch}
           onClearConstraint={clearDerivedConstraint}
           onPreview={setSelected}
+          locale={locale}
         />
         <View style={styles.filterControls}>
           <Pressable
@@ -303,25 +353,37 @@ export default function App() {
             onPress={() => setFiltersOpen((open) => !open)}
             accessibilityRole="button"
             accessibilityState={{ expanded: filtersOpen }}
-            accessibilityLabel={`Filters, ${summarizeActiveFilters(filters).length} active`}
+            accessibilityLabel={translate(locale, 'filters.triggerAria', {
+              count: summarizeActiveFilters(filters, locale).length
+            })}
           >
             <Text style={styles.filterButtonText}>
-              Filters ({summarizeActiveFilters(filters).length})
+              {translate(locale, 'filters.trigger', {
+                count: summarizeActiveFilters(filters, locale).length
+              })}
             </Text>
           </Pressable>
-          <MobileActiveFilters filters={filters} onChange={applyFilters} />
+          <MobileActiveFilters
+            filters={filters}
+            onChange={applyFilters}
+            locale={locale}
+          />
         </View>
         <View style={styles.status} accessibilityLiveRegion="polite">
           {state === 'loading' && <ActivityIndicator color="#76f0a8" />}
           <Text style={styles.statusText}>
-            {state === 'loading' && 'Loading events…'}
+            {state === 'loading' && translate(locale, 'map.loading')}
             {state === 'success' &&
-              `${events.length} matching fictional event${events.length === 1 ? '' : 's'} in this map area.`}
+              translate(
+                locale,
+                events.length === 1 ? 'map.count.one' : 'map.count.many',
+                { count: events.length }
+              )}
             {state === 'empty' &&
-              (searchResult?.message ??
-                'No events match the active filters in this map area.')}
-            {state === 'error' &&
-              'Events could not be loaded. Your map context is preserved.'}
+              (searchResult
+                ? localizeSearchMessage(locale, searchResult.message)
+                : translate(locale, 'map.empty'))}
+            {state === 'error' && translate(locale, 'map.error')}
           </Text>
           {(state === 'empty' || state === 'error') && (
             <Pressable
@@ -336,17 +398,17 @@ export default function App() {
               accessibilityLabel={
                 state === 'empty'
                   ? searchResult
-                    ? 'Clear search'
-                    : 'Clear all filters'
-                  : 'Retry loading events'
+                    ? translate(locale, 'search.clearSearch')
+                    : translate(locale, 'filters.clearAll')
+                  : translate(locale, 'common.retry')
               }
             >
               <Text style={styles.link}>
                 {state === 'empty'
                   ? searchResult
-                    ? 'Clear search'
-                    : 'Clear all filters'
-                  : 'Retry'}
+                    ? translate(locale, 'search.clearSearch')
+                    : translate(locale, 'filters.clearAll')
+                  : translate(locale, 'common.retry')}
               </Text>
             </Pressable>
           )}
@@ -357,11 +419,15 @@ export default function App() {
                   key={event.id}
                   onPress={() => setSelected(event)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Preview ${event.title}`}
+                  accessibilityLabel={translate(locale, 'map.previewAria', {
+                    title: event.title
+                  })}
                   style={styles.markerAction}
                 >
                   <Text style={styles.markerActionText} numberOfLines={1}>
-                    Preview {event.title}
+                    {translate(locale, 'map.previewButton', {
+                      title: event.title
+                    })}
                   </Text>
                 </Pressable>
               ))}
@@ -379,6 +445,7 @@ export default function App() {
             onChange={applyFilters}
             onClose={() => setFiltersOpen(false)}
             onClearAll={clearAll}
+            locale={locale}
           />
         )}
         {selected && details.kind === 'closed' && (
@@ -389,6 +456,7 @@ export default function App() {
             )}
             onClose={() => setSelected(undefined)}
             onDetails={() => void openDetails(selected.id)}
+            locale={locale}
           />
         )}
         {details.kind !== 'closed' && (
@@ -396,10 +464,44 @@ export default function App() {
             state={details}
             onBack={() => setDetails({ kind: 'closed' })}
             onRetry={(eventId) => void openDetails(eventId)}
+            locale={locale}
           />
         )}
       </View>
     </SafeAreaView>
+  );
+}
+
+function MobileLanguageSelector({
+  locale,
+  onChange
+}: {
+  locale: SupportedLocale;
+  onChange: (locale: SupportedLocale) => void;
+}) {
+  return (
+    <View
+      style={styles.languageSelector}
+      accessible
+      accessibilityLabel={translate(locale, 'language.label')}
+    >
+      {(['fr', 'en'] as const).map((value) => (
+        <Pressable
+          key={value}
+          style={[
+            styles.languageChoice,
+            locale === value && styles.languageChoiceActive
+          ]}
+          accessibilityRole="radio"
+          accessibilityState={{ checked: locale === value }}
+          onPress={() => onChange(value)}
+        >
+          <Text style={styles.languageChoiceText}>
+            {translate(locale, `language.${value}`)}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -412,7 +514,8 @@ function MobileSearchPanel({
   onSubmit,
   onClear,
   onClearConstraint,
-  onPreview
+  onPreview,
+  locale
 }: {
   query: string;
   result: IntelligentSearchResponse | undefined;
@@ -423,12 +526,13 @@ function MobileSearchPanel({
   onClear: () => void;
   onClearConstraint: (key: SearchConstraintKey) => void;
   onPreview: (event: PublicEvent) => void;
+  locale: SupportedLocale;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <View
       style={[styles.searchPanel, !open && styles.searchPanelCollapsed]}
-      accessibilityLabel="Optional intelligent search"
+      accessibilityLabel={translate(locale, 'search.panelAria')}
       pointerEvents={open ? 'auto' : 'box-none'}
     >
       <Pressable
@@ -438,7 +542,7 @@ function MobileSearchPanel({
         onPress={() => setOpen((current) => !current)}
       >
         <Text style={styles.filterButtonText}>
-          {open ? 'Collapse search' : 'Intelligent search'}
+          {translate(locale, open ? 'search.collapse' : 'search.expand')}
         </Text>
       </Pressable>
       {open && (
@@ -447,15 +551,17 @@ function MobileSearchPanel({
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.searchLabel}>What do you want to do?</Text>
+          <Text style={styles.searchLabel}>
+            {translate(locale, 'search.question')}
+          </Text>
           <View style={styles.searchRow}>
             <TextInput
               style={styles.searchInput}
               value={query}
               maxLength={240}
-              placeholder="Free music tonight"
+              placeholder={translate(locale, 'search.placeholder')}
               placeholderTextColor="#7f9da0"
-              accessibilityLabel="What do you want to do?"
+              accessibilityLabel={translate(locale, 'search.question')}
               returnKeyType="search"
               onChangeText={onQueryChange}
               onSubmitEditing={onSubmit}
@@ -467,12 +573,13 @@ function MobileSearchPanel({
               disabled={processing || !query.trim()}
               onPress={onSubmit}
             >
-              <Text style={styles.filterButtonText}>Search</Text>
+              <Text style={styles.filterButtonText}>
+                {translate(locale, 'search.submit')}
+              </Text>
             </Pressable>
           </View>
           <Text style={styles.searchHelp}>
-            Optional deterministic matching; manual filters remain available. No
-            external AI provider is used.
+            {translate(locale, 'search.help')}
           </Text>
           {processing && (
             <View
@@ -480,13 +587,14 @@ function MobileSearchPanel({
               accessibilityLiveRegion="polite"
             >
               <ActivityIndicator color="#76f0a8" />
-              <Text style={styles.body}>Interpreting request…</Text>
+              <Text style={styles.body}>
+                {translate(locale, 'search.processing')}
+              </Text>
             </View>
           )}
           {error && (
             <Text style={styles.warning} accessibilityLiveRegion="assertive">
-              Search could not be completed. The map and filters remain
-              available.
+              {translate(locale, 'search.error')}
             </Text>
           )}
           {result && !processing && (
@@ -496,47 +604,68 @@ function MobileSearchPanel({
                   style={styles.searchResultTitle}
                   accessibilityRole="header"
                 >
-                  Pulso understood
+                  {translate(locale, 'search.understood')}
                 </Text>
                 <Pressable accessibilityRole="button" onPress={onClear}>
-                  <Text style={styles.link}>Clear search</Text>
+                  <Text style={styles.link}>
+                    {translate(locale, 'search.clearSearch')}
+                  </Text>
                 </Pressable>
               </View>
-              <Text style={styles.body}>{result.message}</Text>
+              <Text style={styles.body}>
+                {localizeSearchMessage(locale, result.message)}
+              </Text>
               {result.clarification && (
                 <Text style={styles.warningText}>
-                  One clarification: {result.clarification}
+                  {translate(locale, 'search.clarificationPrefix', {
+                    message: localizeSearchMessage(locale, result.clarification)
+                  })}
                 </Text>
               )}
-              <Text style={styles.filterLegend}>Hard constraints</Text>
-              {result.interpretation.constraints.map((constraint) => (
-                <View
-                  style={styles.searchConstraint}
-                  key={`${constraint.key}-${constraint.label}`}
-                >
-                  <Text style={styles.body}>{constraint.label}</Text>
-                  {isSearchConstraintKey(constraint.key) && (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Clear derived constraint ${constraint.label}`}
-                      onPress={() =>
-                        onClearConstraint(constraint.key as SearchConstraintKey)
-                      }
-                    >
-                      <Text style={styles.link}>Clear</Text>
-                    </Pressable>
-                  )}
-                </View>
-              ))}
+              <Text style={styles.filterLegend}>
+                {translate(locale, 'search.hardConstraints')}
+              </Text>
+              {result.interpretation.constraints.map((constraint) => {
+                const label = localizeSearchMessage(locale, constraint.message);
+                return (
+                  <View
+                    style={styles.searchConstraint}
+                    key={`${constraint.key}-${constraint.message.code}`}
+                  >
+                    <Text style={styles.body}>{label}</Text>
+                    {isSearchConstraintKey(constraint.key) && (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={translate(
+                          locale,
+                          'search.clearConstraint',
+                          { label }
+                        )}
+                        onPress={() =>
+                          onClearConstraint(
+                            constraint.key as SearchConstraintKey
+                          )
+                        }
+                      >
+                        <Text style={styles.link}>
+                          {translate(locale, 'search.clear')}
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                );
+              })}
               {result.interpretation.rankingSignals.length > 0 && (
                 <>
-                  <Text style={styles.filterLegend}>Ranking signals</Text>
+                  <Text style={styles.filterLegend}>
+                    {translate(locale, 'search.rankingSignals')}
+                  </Text>
                   {result.interpretation.rankingSignals.map((signal) => (
                     <Text
                       style={styles.body}
-                      key={`${signal.key}-${signal.label}`}
+                      key={`${signal.key}-${signal.message.code}`}
                     >
-                      • {signal.label}
+                      • {localizeSearchMessage(locale, signal.message)}
                     </Text>
                   ))}
                 </>
@@ -545,17 +674,29 @@ function MobileSearchPanel({
           )}
           {result && result.data.length > 0 && (
             <View style={styles.searchResults}>
-              <Text style={styles.filterLegend}>Results on this map</Text>
+              <Text style={styles.filterLegend}>
+                {translate(locale, 'search.results')}
+              </Text>
               {result.data.map(({ event, matchType }, index) => (
                 <Pressable
                   key={event.id}
                   style={styles.markerAction}
                   accessibilityRole="button"
-                  accessibilityLabel={`Preview search result ${index + 1}: ${matchType}`}
+                  accessibilityLabel={translate(
+                    locale,
+                    'search.previewResultAria',
+                    {
+                      index: index + 1,
+                      matchType: translate(locale, `search.match.${matchType}`)
+                    }
+                  )}
                   onPress={() => onPreview(event)}
                 >
                   <Text style={styles.markerActionText}>
-                    Preview {event.title} ({matchType})
+                    {translate(locale, 'search.previewResult', {
+                      title: event.title,
+                      matchType: translate(locale, `search.match.${matchType}`)
+                    })}
                   </Text>
                 </Pressable>
               ))}
@@ -638,14 +779,20 @@ function withoutCustomDates(
 
 function MobileActiveFilters({
   filters,
-  onChange
+  onChange,
+  locale
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
+  locale: SupportedLocale;
 }) {
-  const summary = summarizeActiveFilters(filters);
+  const summary = summarizeActiveFilters(filters, locale);
   if (summary.length === 0) {
-    return <Text style={styles.defaultFilter}>Next 7 days · map area</Text>;
+    return (
+      <Text style={styles.defaultFilter}>
+        {translate(locale, 'filters.default')}
+      </Text>
+    );
   }
   return (
     <ScrollView horizontal contentContainerStyle={styles.activeFilters}>
@@ -654,7 +801,9 @@ function MobileActiveFilters({
           key={`${item.key}-${item.value}`}
           style={styles.filterChip}
           accessibilityRole="button"
-          accessibilityLabel={`Clear ${item.label} filter`}
+          accessibilityLabel={translate(locale, 'filters.clearAria', {
+            label: item.label
+          })}
           onPress={() => {
             if (item.key === 'date') onChange(withoutCustomDates(filters));
             else if (item.key === 'price')
@@ -679,12 +828,14 @@ function MobileFilterOverlay({
   filters,
   onChange,
   onClose,
-  onClearAll
+  onClearAll,
+  locale
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
   onClose: () => void;
   onClearAll: () => void;
+  locale: SupportedLocale;
 }) {
   const today = getMontrealCalendarDate(new Date());
   const setDate = (date: DiscoveryFilters['date']) => {
@@ -712,18 +863,20 @@ function MobileFilterOverlay({
     <View style={styles.filterOverlay} accessibilityViewIsModal>
       <View style={styles.filterHeading}>
         <Text style={styles.filterTitle} accessibilityRole="header">
-          Filters
+          {translate(locale, 'filters.title')}
         </Text>
         <Pressable accessibilityRole="button" onPress={onClose}>
-          <Text style={styles.close}>Close filters</Text>
+          <Text style={styles.close}>{translate(locale, 'filters.close')}</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.filterContent}>
-        <Text style={styles.filterLegend}>Date and time</Text>
+        <Text style={styles.filterLegend}>
+          {translate(locale, 'filters.dateTime')}
+        </Text>
         {DATE_FILTER_OPTIONS.map((option) => (
           <FilterChoice
             key={option.value}
-            label={option.label}
+            label={getDateFilterLabel(locale, option.value)}
             selected={filters.date === option.value}
             kind="radio"
             onPress={() => setDate(option.value)}
@@ -731,11 +884,16 @@ function MobileFilterOverlay({
         ))}
         {filters.date === 'custom' && (
           <View style={styles.customDates}>
-            <Text style={styles.detailLabel}>Start date (YYYY-MM-DD)</Text>
+            <Text style={styles.detailLabel}>
+              {translate(locale, 'filters.startDate')} (YYYY-MM-DD)
+            </Text>
             <TextInput
               style={styles.dateInput}
               defaultValue={filters.customStartDate ?? today}
-              accessibilityLabel="Selected start date"
+              accessibilityLabel={translate(
+                locale,
+                'filters.selectedStartDate'
+              )}
               onEndEditing={({ nativeEvent: { text: value } }) => {
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
                 onChange({
@@ -749,13 +907,15 @@ function MobileFilterOverlay({
                 });
               }}
             />
-            <Text style={styles.detailLabel}>End date (YYYY-MM-DD)</Text>
+            <Text style={styles.detailLabel}>
+              {translate(locale, 'filters.endDate')} (YYYY-MM-DD)
+            </Text>
             <TextInput
               style={styles.dateInput}
               defaultValue={
                 filters.customEndDate ?? filters.customStartDate ?? today
               }
-              accessibilityLabel="Selected end date"
+              accessibilityLabel={translate(locale, 'filters.selectedEndDate')}
               onEndEditing={({ nativeEvent: { text: value } }) => {
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
                 if (value < (filters.customStartDate ?? today)) return;
@@ -765,49 +925,58 @@ function MobileFilterOverlay({
           </View>
         )}
 
-        <Text style={styles.filterLegend}>Categories</Text>
+        <Text style={styles.filterLegend}>
+          {translate(locale, 'filters.categories')}
+        </Text>
         <Text style={styles.filterHelp}>
-          Multiple categories match with OR.
+          {translate(locale, 'filters.categoriesHelp')}
         </Text>
         {CATEGORY_FILTER_OPTIONS.map((option) => (
           <FilterChoice
             key={option.value}
-            label={option.label}
+            label={getCategoryLabel(locale, option.value)}
             selected={filters.categories.includes(option.value)}
             kind="checkbox"
             onPress={() => toggleCategory(option.value)}
           />
         ))}
 
-        <Text style={styles.filterLegend}>Price</Text>
+        <Text style={styles.filterLegend}>
+          {translate(locale, 'filters.price')}
+        </Text>
         {PRICE_FILTER_OPTIONS.map((option) => (
           <FilterChoice
             key={option.value}
-            label={option.label}
+            label={getPriceLabel(locale, option.value)}
             selected={filters.price === option.value}
             kind="radio"
             onPress={() => onChange({ ...filters, price: option.value })}
           />
         ))}
         <Text style={styles.filterHelp}>
-          Unknown prices appear only under All.
+          {translate(locale, 'filters.priceHelp')}
         </Text>
 
-        <Text style={styles.filterLegend}>Geography</Text>
-        <Text style={styles.filterHelp}>
-          Current visible map area. Distance is not applied because no reference
-          location was supplied; no routing or implicit location.
+        <Text style={styles.filterLegend}>
+          {translate(locale, 'filters.geography')}
         </Text>
-        <Text style={styles.filterLegend}>Status</Text>
         <Text style={styles.filterHelp}>
-          Upcoming and postponed events; cancelled events are excluded.
+          {translate(locale, 'filters.geographyHelp')}
+        </Text>
+        <Text style={styles.filterLegend}>
+          {translate(locale, 'filters.status')}
+        </Text>
+        <Text style={styles.filterHelp}>
+          {translate(locale, 'filters.statusHelp')}
         </Text>
         <Pressable
           style={styles.clearAll}
           accessibilityRole="button"
           onPress={onClearAll}
         >
-          <Text style={styles.filterButtonText}>Clear all filters</Text>
+          <Text style={styles.filterButtonText}>
+            {translate(locale, 'filters.clearAll')}
+          </Text>
         </Pressable>
       </ScrollView>
     </View>
@@ -842,18 +1011,20 @@ function EventPreview({
   event,
   searchMatch,
   onClose,
-  onDetails
+  onDetails,
+  locale
 }: {
   event: PublicEvent;
   searchMatch: IntelligentSearchResponse['data'][number] | undefined;
   onClose: () => void;
   onDetails: () => void;
+  locale: SupportedLocale;
 }) {
-  const presentation = presentEvent(event);
+  const presentation = presentEvent(event, locale);
   return (
     <View style={styles.preview} accessibilityLiveRegion="polite">
       <Pressable onPress={onClose} accessibilityRole="button">
-        <Text style={styles.close}>Close preview</Text>
+        <Text style={styles.close}>{translate(locale, 'preview.close')}</Text>
       </Pressable>
       <Text style={styles.chip}>{presentation.category}</Text>
       <Text style={styles.previewTitle} accessibilityRole="header">
@@ -868,21 +1039,24 @@ function EventPreview({
       {searchMatch && (
         <View
           style={styles.matchExplanation}
-          accessibilityLabel="Why this event matches"
+          accessibilityLabel={translate(locale, 'search.whyExact')}
         >
           <Text style={styles.filterLegend}>
             {searchMatch.matchType === 'exact'
-              ? 'Why this matches'
-              : 'Why this is an alternative'}
+              ? translate(locale, 'search.whyExact')
+              : translate(locale, 'search.whyAlternative')}
           </Text>
-          {searchMatch.reasons.map((reason) => (
-            <Text key={reason} style={styles.body}>
-              • {reason}
+          {searchMatch.reasons.map((reason, index) => (
+            <Text key={`${reason.code}-${index}`} style={styles.body}>
+              • {localizeSearchMessage(locale, reason)}
             </Text>
           ))}
-          {searchMatch.differences.map((difference) => (
-            <Text key={difference} style={styles.warningText}>
-              • {difference}
+          {searchMatch.differences.map((difference, index) => (
+            <Text
+              key={`${difference.code}-${index}`}
+              style={styles.warningText}
+            >
+              • {localizeSearchMessage(locale, difference)}
             </Text>
           ))}
         </View>
@@ -892,7 +1066,9 @@ function EventPreview({
         onPress={onDetails}
         accessibilityRole="button"
       >
-        <Text style={styles.primaryActionText}>View event details</Text>
+        <Text style={styles.primaryActionText}>
+          {translate(locale, 'preview.details')}
+        </Text>
       </Pressable>
     </View>
   );
@@ -901,47 +1077,61 @@ function EventPreview({
 function DetailsOverlay({
   state,
   onBack,
-  onRetry
+  onRetry,
+  locale
 }: {
   state: Exclude<DetailsState, { kind: 'closed' }>;
   onBack: () => void;
   onRetry: (eventId: string) => void;
+  locale: SupportedLocale;
 }) {
   return (
     <View style={styles.detailsOverlay} accessibilityViewIsModal>
       <Pressable onPress={onBack} accessibilityRole="button">
-        <Text style={styles.back}>← Back to map</Text>
+        <Text style={styles.back}>{translate(locale, 'details.back')}</Text>
       </Pressable>
       {state.kind === 'loading' && (
         <View style={styles.centered} accessibilityLiveRegion="polite">
           <ActivityIndicator color="#76f0a8" />
-          <Text style={styles.body}>Loading event details…</Text>
+          <Text style={styles.body}>
+            {translate(locale, 'details.loading')}
+          </Text>
         </View>
       )}
       {state.kind === 'error' && (
         <View style={styles.centered} accessibilityLiveRegion="assertive">
           <Text style={styles.warning}>
-            Event details could not be loaded. Your map context is preserved.
+            {translate(locale, 'details.error')}
           </Text>
           <Pressable
             style={styles.primaryAction}
             onPress={() => onRetry(state.eventId)}
             accessibilityRole="button"
           >
-            <Text style={styles.primaryActionText}>Retry details</Text>
+            <Text style={styles.primaryActionText}>
+              {translate(locale, 'details.retry')}
+            </Text>
           </Pressable>
         </View>
       )}
-      {state.kind === 'success' && <EventDetails event={state.event} />}
+      {state.kind === 'success' && (
+        <EventDetails event={state.event} locale={locale} />
+      )}
     </View>
   );
 }
 
-function EventDetails({ event }: { event: PublicEvent }) {
-  const presentation = presentEvent(event);
+function EventDetails({
+  event,
+  locale
+}: {
+  event: PublicEvent;
+  locale: SupportedLocale;
+}) {
+  const presentation = presentEvent(event, locale);
   return (
     <ScrollView contentContainerStyle={styles.detailsContent}>
-      <Text style={styles.eyebrow}>Event Details</Text>
+      <Text style={styles.eyebrow}>{translate(locale, 'details.label')}</Text>
       <Text style={styles.detailsTitle} accessibilityRole="header">
         {event.title}
       </Text>
@@ -951,22 +1141,46 @@ function EventDetails({ event }: { event: PublicEvent }) {
       {presentation.materialWarning && (
         <Text style={styles.warning}>{presentation.materialWarning}</Text>
       )}
-      <Detail label="Date and time" value={presentation.dateTime} />
-      <Detail label="Venue" value={event.venue.name} />
-      <Detail label="Address" value={event.venue.address} />
-      <Detail label="Price" value={presentation.price} />
-      <Detail label="Description" value={presentation.description} />
-      <Detail label="Organizer" value={presentation.organizer} />
       <Detail
-        label="Known access information"
+        label={translate(locale, 'details.dateTime')}
+        value={presentation.dateTime}
+      />
+      <Detail
+        label={translate(locale, 'details.venue')}
+        value={event.venue.name}
+      />
+      <Detail
+        label={translate(locale, 'details.address')}
+        value={event.venue.address}
+      />
+      <Detail
+        label={translate(locale, 'details.price')}
+        value={presentation.price}
+      />
+      <Detail
+        label={translate(locale, 'details.description')}
+        value={presentation.description}
+      />
+      <Detail
+        label={translate(locale, 'details.organizer')}
+        value={presentation.organizer}
+      />
+      <Detail
+        label={translate(locale, 'details.access')}
         value={event.accessInformation}
       />
-      <Detail label="Source" value={event.source.name} />
       <Detail
-        label="Trust"
+        label={translate(locale, 'details.source')}
+        value={event.source.name}
+      />
+      <Detail
+        label={translate(locale, 'details.trust')}
         value={`${presentation.trust} · ${presentation.location}`}
       />
-      <Detail label="Verification" value={presentation.freshness} />
+      <Detail
+        label={translate(locale, 'details.verification')}
+        value={presentation.freshness}
+      />
       {presentation.externalAction ? (
         <Pressable
           style={styles.primaryAction}
@@ -974,18 +1188,18 @@ function EventDetails({ event }: { event: PublicEvent }) {
             void Linking.openURL(`${API_BASE_URL}/events/${event.id}/external`)
           }
           accessibilityRole="link"
-          accessibilityHint="Opens the identified external destination outside Pulso"
+          accessibilityHint={translate(locale, 'details.externalHint')}
         >
           <Text style={styles.primaryActionText}>
-            {presentation.externalAction} — external destination
+            {presentation.externalAction} —{' '}
+            {translate(locale, 'details.externalSuffix')}
           </Text>
         </Pressable>
       ) : (
         <Text style={styles.warning}>{presentation.externalUnavailable}</Text>
       )}
       <Text style={styles.meta}>
-        Pulso does not book, charge, store tickets, route, or create an
-        itinerary.
+        {translate(locale, 'details.externalNote')}
       </Text>
     </ScrollView>
   );
@@ -1003,6 +1217,29 @@ function Detail({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#07191b' },
   header: { paddingHorizontal: 20, paddingVertical: 16 },
+  headerRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between'
+  },
+  headerCopy: { flex: 1 },
+  languageSelector: {
+    borderColor: '#527579',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    padding: 4
+  },
+  languageChoice: {
+    borderRadius: 6,
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 8
+  },
+  languageChoiceActive: { backgroundColor: '#315256' },
+  languageChoiceText: { color: '#f5fcf8', fontWeight: '700' },
   eyebrow: {
     color: '#76f0a8',
     fontSize: 12,

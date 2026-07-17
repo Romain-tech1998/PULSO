@@ -204,6 +204,7 @@ describe('event discovery API', () => {
 describe('deterministic intelligent-search API', () => {
   const body = {
     query: 'free music tonight starting soon',
+    locale: 'en',
     bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
     manualFilters: { date: 'next7', categories: [], price: 'all' },
     disabledDerivedKeys: []
@@ -264,9 +265,9 @@ describe('deterministic intelligent-search API', () => {
           matchType: 'exact',
           event: { id: event.id },
           reasons: expect.arrayContaining([
-            expect.stringContaining('Category matches'),
-            expect.stringContaining('Price matches'),
-            expect.stringContaining('Date matches')
+            expect.objectContaining({ code: 'search.reason.category' }),
+            expect.objectContaining({ code: 'search.reason.price' }),
+            expect.objectContaining({ code: 'search.reason.date' })
           ])
         }
       ]
@@ -298,7 +299,12 @@ describe('deterministic intelligent-search API', () => {
       data: [
         {
           matchType: 'alternative',
-          differences: ['Price differs from paid.']
+          differences: [
+            {
+              code: 'search.difference.price',
+              params: { price: 'paid' }
+            }
+          ]
         }
       ]
     });
@@ -315,7 +321,7 @@ describe('deterministic intelligent-search API', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       condition: 'clarification',
-      clarification: 'Should the price filter be Free or Paid?',
+      clarification: { code: 'search.clarification.price' },
       data: []
     });
     await app.close();
@@ -339,6 +345,33 @@ describe('deterministic intelligent-search API', () => {
       condition: 'no_reliable_result',
       data: []
     });
+    await app.close();
+  });
+
+  it('returns equivalent structured French interpretation without persisting the query', async () => {
+    const app = buildApp(repository, {
+      now: () => new Date('2026-07-15T23:00:00.000Z')
+    });
+    const query = 'musique gratuite ce soir, commence bientôt';
+    const response = await app.inject({
+      method: 'POST',
+      url: '/search',
+      payload: { ...body, query, locale: 'fr' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      condition: 'exact',
+      interpretation: {
+        engine: 'deterministic',
+        language: 'fr',
+        effectiveFilters: {
+          date: 'tonight',
+          categories: ['music'],
+          price: 'free'
+        }
+      }
+    });
+    expect(JSON.stringify(response.json())).not.toContain(query);
     await app.close();
   });
 });

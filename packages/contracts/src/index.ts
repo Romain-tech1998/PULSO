@@ -8,7 +8,20 @@ import {
   PRICE_FILTER_VALUES,
   TRUST_LABELS
 } from '@pulso/domain';
+import {
+  formatCad,
+  formatMontrealDate,
+  formatMontrealDateTime,
+  getCategoryLabel,
+  getDateFilterLabel,
+  getPriceLabel,
+  getTrustLabel,
+  SEARCH_MESSAGE_CODES,
+  SUPPORTED_LOCALES,
+  translate
+} from '@pulso/domain/localization';
 import type { DiscoveryFilters, EventCategory, MapBounds } from '@pulso/domain';
+import type { SupportedLocale } from '@pulso/domain/localization';
 import { z } from 'zod';
 
 export const geographicPointSchema = z.object({
@@ -216,6 +229,7 @@ export const searchFiltersSchema = z
 export const intelligentSearchRequestSchema = z
   .object({
     query: z.string().trim().min(1).max(240),
+    locale: z.enum(SUPPORTED_LOCALES),
     bounds: mapBoundsSchema,
     manualFilters: searchFiltersSchema,
     disabledDerivedKeys: z
@@ -228,11 +242,18 @@ export const intelligentSearchRequestSchema = z
   })
   .strict();
 
+export const searchMessageSchema = z
+  .object({
+    code: z.enum(SEARCH_MESSAGE_CODES),
+    params: z.record(z.string(), z.union([z.string(), z.number()])).optional()
+  })
+  .strict();
+
 export const searchExplanationSchema = z
   .object({
     key: z.string().min(1),
     kind: z.enum(['hard', 'ranking']),
-    label: z.string().min(1)
+    message: searchMessageSchema
   })
   .strict();
 
@@ -241,7 +262,7 @@ export const intelligentSearchResponseSchema = z
     interpretation: z
       .object({
         engine: z.literal('deterministic'),
-        language: z.literal('en'),
+        language: z.enum(SUPPORTED_LOCALES),
         constraints: z.array(searchExplanationSchema),
         rankingSignals: z.array(searchExplanationSchema),
         effectiveFilters: searchFiltersSchema
@@ -253,15 +274,15 @@ export const intelligentSearchResponseSchema = z
       'no_reliable_result',
       'clarification'
     ]),
-    message: z.string().min(1),
-    clarification: z.string().min(1).optional(),
+    message: searchMessageSchema,
+    clarification: searchMessageSchema.optional(),
     data: z.array(
       z
         .object({
           event: publicEventSchema,
           matchType: z.enum(['exact', 'alternative']),
-          reasons: z.array(z.string().min(1)).min(1),
-          differences: z.array(z.string().min(1))
+          reasons: z.array(searchMessageSchema).min(1),
+          differences: z.array(searchMessageSchema)
         })
         .strict()
     )
@@ -269,6 +290,7 @@ export const intelligentSearchResponseSchema = z
   .strict();
 
 export type SearchConstraintKey = z.infer<typeof searchConstraintKeySchema>;
+export type SearchMessage = z.infer<typeof searchMessageSchema>;
 export type SearchExplanation = z.infer<typeof searchExplanationSchema>;
 export type IntelligentSearchRequest = z.infer<
   typeof intelligentSearchRequestSchema
@@ -278,32 +300,28 @@ export type IntelligentSearchResponse = z.infer<
 >;
 
 export const DATE_FILTER_OPTIONS = [
-  { value: 'next7', label: 'Next 7 days' },
-  { value: 'tonight', label: 'Tonight' },
-  { value: 'tomorrow', label: 'Tomorrow' },
-  { value: 'weekend', label: 'This weekend' },
-  { value: 'custom', label: 'Selected date or range' }
+  { value: 'next7' },
+  { value: 'tonight' },
+  { value: 'tomorrow' },
+  { value: 'weekend' },
+  { value: 'custom' }
 ] as const;
 
 export const CATEGORY_FILTER_OPTIONS: ReadonlyArray<{
   value: EventCategory;
-  label: string;
 }> = [
-  { value: 'music', label: 'Music / concerts' },
-  {
-    value: 'nightlife',
-    label: 'Nightlife / DJ / club / qualifying bar events'
-  },
-  { value: 'festival', label: 'Festivals / festive events' },
-  { value: 'show', label: 'Shows' },
-  { value: 'comedy', label: 'Comedy' },
-  { value: 'other', label: 'Other qualifying scheduled events' }
+  { value: 'music' },
+  { value: 'nightlife' },
+  { value: 'festival' },
+  { value: 'show' },
+  { value: 'comedy' },
+  { value: 'other' }
 ];
 
 export const PRICE_FILTER_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'free', label: 'Free' },
-  { value: 'paid', label: 'Paid' }
+  { value: 'all' },
+  { value: 'free' },
+  { value: 'paid' }
 ] as const;
 
 export function buildMapEventsQuery(
@@ -337,18 +355,17 @@ export interface ActiveFilterSummary {
 }
 
 export function summarizeActiveFilters(
-  filters: DiscoveryFilters
+  filters: DiscoveryFilters,
+  locale: SupportedLocale
 ): ActiveFilterSummary[] {
   const summary: ActiveFilterSummary[] = [];
   if (filters.date !== DEFAULT_DISCOVERY_FILTERS.date) {
-    const dateLabel = DATE_FILTER_OPTIONS.find(
-      ({ value }) => value === filters.date
-    )!.label;
+    const dateLabel = getDateFilterLabel(locale, filters.date);
     const selectedRange =
       filters.date === 'custom' && filters.customStartDate
         ? filters.customEndDate &&
           filters.customEndDate !== filters.customStartDate
-          ? `: ${filters.customStartDate} to ${filters.customEndDate}`
+          ? `: ${filters.customStartDate} ${locale === 'fr' ? 'au' : 'to'} ${filters.customEndDate}`
           : `: ${filters.customStartDate}`
         : '';
     summary.push({
@@ -361,42 +378,18 @@ export function summarizeActiveFilters(
     summary.push({
       key: 'category',
       value: category,
-      label: CATEGORY_FILTER_OPTIONS.find(({ value }) => value === category)!
-        .label
+      label: getCategoryLabel(locale, category)
     });
   }
   if (filters.price !== DEFAULT_DISCOVERY_FILTERS.price) {
     summary.push({
       key: 'price',
       value: filters.price,
-      label: PRICE_FILTER_OPTIONS.find(({ value }) => value === filters.price)!
-        .label
+      label: getPriceLabel(locale, filters.price)
     });
   }
   return summary;
 }
-
-const CATEGORY_LABELS: Record<PublicEvent['category'], string> = {
-  music: 'Music / concerts',
-  nightlife: 'Nightlife / DJ / club',
-  festival: 'Festivals / festive events',
-  show: 'Shows',
-  comedy: 'Comedy',
-  other: 'Other scheduled event'
-};
-
-const STATUS_LABELS: Record<PublicEvent['status'], string> = {
-  scheduled: 'Scheduled',
-  cancelled: 'Cancelled',
-  postponed: 'Postponed'
-};
-
-const TRUST_LABEL_TEXT: Record<PublicEvent['trust']['label'], string> = {
-  confirmed: 'Confirmed',
-  probable: 'Probable',
-  to_verify: 'To verify',
-  conflicting: 'Conflicting'
-};
 
 export interface EventPresentation {
   category: string;
@@ -413,74 +406,67 @@ export interface EventPresentation {
   materialWarning?: string;
 }
 
-export function presentEvent(event: PublicEvent): EventPresentation {
-  const startsAt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: event.timezone,
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short'
-  }).format(new Date(event.startsAt));
+export function presentEvent(
+  event: PublicEvent,
+  locale: SupportedLocale
+): EventPresentation {
+  const startsAt = formatMontrealDateTime(event.startsAt, locale);
   const price =
     event.price.kind === 'free'
-      ? 'Free'
+      ? getPriceLabel(locale, 'free')
       : event.price.kind === 'unknown'
-        ? 'Price unknown'
+        ? translate(locale, 'price.unknown')
         : event.price.minimumAmount === undefined
-          ? 'Paid — price not confirmed'
-          : `From ${new Intl.NumberFormat('en-CA', {
-              style: 'currency',
-              currency: event.price.currency
-            }).format(event.price.minimumAmount)}`;
-  const trust = TRUST_LABEL_TEXT[event.trust.label];
+          ? translate(locale, 'price.paidUnknown')
+          : translate(locale, 'price.from', {
+              amount: formatCad(event.price.minimumAmount, locale)
+            });
+  const trust = getTrustLabel(locale, event.trust.label);
   const materialWarning =
     event.status === 'cancelled'
-      ? 'This event is cancelled.'
+      ? translate(locale, 'event.warning.cancelled')
       : event.status === 'postponed'
-        ? 'This event is postponed. Check the known schedule before leaving.'
+        ? translate(locale, 'event.warning.postponed')
         : event.trust.label === 'to_verify'
-          ? 'Some event information is not confirmed.'
+          ? translate(locale, 'event.warning.toVerify')
           : event.trust.label === 'conflicting'
-            ? 'Sources disagree about this event.'
+            ? translate(locale, 'event.warning.conflicting')
             : event.trust.locationConfidence === 'uncertain'
-              ? 'The event location is uncertain.'
+              ? translate(locale, 'event.warning.location')
               : undefined;
   const externalAvailable =
     event.status !== 'cancelled' &&
     event.externalDestination?.status === 'available'
-      ? `Open ${event.externalDestination.label}`
+      ? translate(locale, 'event.external.open', {
+          destination: event.externalDestination.label
+        })
       : undefined;
 
   return {
-    category: CATEGORY_LABELS[event.category],
-    status: STATUS_LABELS[event.status],
+    category: getCategoryLabel(locale, event.category),
+    status: translate(locale, `status.${event.status}`),
     dateTime: startsAt,
     price,
     trust,
     freshness:
       event.trust.freshness === 'stale'
-        ? `Information may be stale. Last checked ${new Intl.DateTimeFormat(
-            'en-CA',
-            { timeZone: event.timezone, dateStyle: 'medium' }
-          ).format(new Date(event.source.observedAt))}.`
-        : `Last checked ${new Intl.DateTimeFormat('en-CA', {
-            timeZone: event.timezone,
-            dateStyle: 'medium'
-          }).format(
-            new Date(event.source.observedAt)
-          )}. No freshness claim is made without an approved policy.`,
+        ? translate(locale, 'event.freshness.stale', {
+            date: formatMontrealDate(event.source.observedAt, locale)
+          })
+        : translate(locale, 'event.freshness.unknown', {
+            date: formatMontrealDate(event.source.observedAt, locale)
+          }),
     location:
       event.trust.locationConfidence === 'confirmed'
-        ? 'Location confirmed'
-        : 'Location not confirmed',
-    description: event.description ?? 'Description unknown',
-    organizer: event.organizer ?? 'Organizer unknown',
+        ? translate(locale, 'location.confirmed')
+        : translate(locale, 'location.uncertain'),
+    description:
+      event.description ?? translate(locale, 'event.descriptionUnknown'),
+    organizer: event.organizer ?? translate(locale, 'event.organizerUnknown'),
     externalUnavailable:
       event.status === 'cancelled'
-        ? 'The external event or ticket-source action is unavailable because this event is cancelled.'
-        : 'No external destination is currently available. Use the known access information above.',
+        ? translate(locale, 'event.external.cancelled')
+        : translate(locale, 'event.external.unavailable'),
     ...(externalAvailable ? { externalAction: externalAvailable } : {}),
     ...(materialWarning ? { materialWarning } : {})
   };

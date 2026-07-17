@@ -11,6 +11,9 @@ export default defineConfig({
       '@pulso/database': fileURLToPath(
         new URL('./packages/database/src/index.ts', import.meta.url)
       ),
+      '@pulso/domain/localization': fileURLToPath(
+        new URL('./packages/domain/src/localization.ts', import.meta.url)
+      ),
       '@pulso/domain': fileURLToPath(
         new URL('./packages/domain/src/index.ts', import.meta.url)
       ),

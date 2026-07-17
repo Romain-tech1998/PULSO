@@ -20,6 +20,15 @@ import {
   type EventCategory,
   type MapBounds
 } from '@pulso/domain';
+import {
+  getCategoryLabel,
+  getDateFilterLabel,
+  getPriceLabel,
+  localizeSearchMessage,
+  LOCALE_COOKIE_NAME,
+  translate,
+  type SupportedLocale
+} from '@pulso/domain/localization';
 import maplibregl from 'maplibre-gl';
 import {
   useCallback,
@@ -30,6 +39,7 @@ import {
 } from 'react';
 
 import { eventDetailsFields, eventPreviewFields } from './event-view-model';
+import { persistBrowserLocale, resolveBrowserLocale } from './locale-client';
 
 const MONTREAL_CENTER: [number, number] = [-73.5673, 45.5017];
 const INITIAL_BOUNDS = {
@@ -58,12 +68,17 @@ function boundsUrl(bounds: MapBounds, filters: DiscoveryFilters): string {
   return `${API_BASE_URL}/events?${buildMapEventsQuery(bounds, filters)}`;
 }
 
-export function ExploreMap() {
+export function ExploreMap({
+  initialLocale
+}: {
+  initialLocale: SupportedLocale;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
   const currentBounds = useRef(INITIAL_BOUNDS);
   const activeSearch = useRef<ActiveSearch | undefined>(undefined);
+  const localeRef = useRef(initialLocale);
   const filtersRef = useRef<DiscoveryFilters>({
     ...DEFAULT_DISCOVERY_FILTERS,
     categories: []
@@ -81,6 +96,22 @@ export function ExploreMap() {
   const [searchResult, setSearchResult] = useState<IntelligentSearchResponse>();
   const [searchProcessing, setSearchProcessing] = useState(false);
   const [searchError, setSearchError] = useState(false);
+  const [locale, setLocale] = useState(initialLocale);
+
+  useEffect(() => {
+    const resolved = resolveBrowserLocale([initialLocale], localStorage);
+    localeRef.current = resolved;
+    setLocale(resolved);
+    document.documentElement.lang = resolved;
+  }, [initialLocale]);
+
+  function selectLocale(nextLocale: SupportedLocale) {
+    localeRef.current = nextLocale;
+    setLocale(nextLocale);
+    persistBrowserLocale(nextLocale, localStorage);
+    document.cookie = `${LOCALE_COOKIE_NAME}=${nextLocale}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    document.documentElement.lang = nextLocale;
+  }
 
   const loadEvents = useCallback(
     async (
@@ -98,6 +129,7 @@ export function ExploreMap() {
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
               query: activeSearch.current.query,
+              locale: localeRef.current,
               bounds,
               manualFilters: activeSearch.current.manualFilters,
               disabledDerivedKeys: activeSearch.current.disabledDerivedKeys
@@ -155,9 +187,7 @@ export function ExploreMap() {
     setFilters(nextFilters);
     if (selected) {
       setSelected(undefined);
-      setFilterNotice(
-        'The open event preview was closed because the filters changed.'
-      );
+      setFilterNotice(translate(localeRef.current, 'filters.previewClosed'));
     } else {
       setFilterNotice(undefined);
     }
@@ -213,9 +243,7 @@ export function ExploreMap() {
       ]
     };
     setSelected(undefined);
-    setFilterNotice(
-      'The open event preview was closed because the search interpretation changed.'
-    );
+    setFilterNotice(translate(localeRef.current, 'search.previewClosed'));
     void loadEvents(currentBounds.current);
   }
 
@@ -264,13 +292,16 @@ export function ExploreMap() {
       const button = document.createElement('button');
       button.className = 'marker';
       button.type = 'button';
-      button.setAttribute('aria-label', `Preview ${event.title}`);
+      button.setAttribute(
+        'aria-label',
+        translate(locale, 'map.previewAria', { title: event.title })
+      );
       button.addEventListener('click', () => setSelected(event));
       return new maplibregl.Marker({ element: button })
         .setLngLat([event.venue.point.longitude, event.venue.point.latitude])
         .addTo(map.current!);
     });
-  }, [events]);
+  }, [events, locale]);
 
   async function openDetails(eventId: string) {
     setDetails({ kind: 'loading', eventId });
@@ -296,10 +327,26 @@ export function ExploreMap() {
   const showingDetails = details.kind !== 'closed';
 
   return (
-    <>
+    <main>
+      <header>
+        <div className="header-row">
+          <div className="brand-row">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo-horizontal.png"
+              alt={translate(locale, 'app.title')}
+              className="brand-logo"
+            />
+            <h1 className="sr-only">{translate(locale, 'app.title')}</h1>
+            <p className="eyebrow">{translate(locale, 'app.eyebrow')}</p>
+          </div>
+          <LanguageSelector locale={locale} onChange={selectLocale} />
+        </div>
+        <p>{translate(locale, 'app.description')}</p>
+      </header>
       <section
         className="map-shell"
-        aria-label="Montréal event map"
+        aria-label={translate(locale, 'map.label')}
         hidden={showingDetails}
         data-map-context="preserved"
       >
@@ -314,6 +361,7 @@ export function ExploreMap() {
           onClear={clearSearch}
           onClearConstraint={clearDerivedConstraint}
           onPreview={setSelected}
+          locale={locale}
         />
         <div className="filter-controls">
           <button
@@ -323,9 +371,15 @@ export function ExploreMap() {
             aria-controls="map-filters"
             onClick={() => setFiltersOpen((open) => !open)}
           >
-            Filters ({summarizeActiveFilters(filters).length})
+            {translate(locale, 'filters.trigger', {
+              count: summarizeActiveFilters(filters, locale).length
+            })}
           </button>
-          <ActiveFilters filters={filters} onChange={applyFilters} />
+          <ActiveFilters
+            filters={filters}
+            onChange={applyFilters}
+            locale={locale}
+          />
         </div>
         {filtersOpen && (
           <FilterOverlay
@@ -333,33 +387,40 @@ export function ExploreMap() {
             onChange={applyFilters}
             onClose={() => setFiltersOpen(false)}
             onClearAll={clearAll}
+            locale={locale}
           />
         )}
         <div className={`status status-${state}`} role="status">
-          {state === 'loading' && 'Loading events…'}
+          {state === 'loading' && translate(locale, 'map.loading')}
           {state === 'empty' && (
             <>
               {searchResult
-                ? searchResult.message
-                : 'No events match the active filters in this map area.'}
+                ? localizeSearchMessage(locale, searchResult.message)
+                : translate(locale, 'map.empty')}
               <button
                 type="button"
                 onClick={searchResult ? clearSearch : clearAll}
               >
-                {searchResult ? 'Clear search' : 'Clear all filters'}
+                {searchResult
+                  ? translate(locale, 'search.clearSearch')
+                  : translate(locale, 'filters.clearAll')}
               </button>
             </>
           )}
           {state === 'error' && (
             <>
-              Events could not be loaded. Your map context is preserved.
+              {translate(locale, 'map.error')}
               <button type="button" onClick={() => void loadEvents()}>
-                Retry
+                {translate(locale, 'common.retry')}
               </button>
             </>
           )}
           {state === 'success' &&
-            `${events.length} matching fictional event${events.length === 1 ? '' : 's'} in this map area.`}
+            translate(
+              locale,
+              events.length === 1 ? 'map.count.one' : 'map.count.many',
+              { count: events.length }
+            )}
         </div>
         {filterNotice && (
           <p className="filter-notice" role="status">
@@ -375,32 +436,37 @@ export function ExploreMap() {
             detailsButton={detailsButton}
             onClose={() => setSelected(undefined)}
             onDetails={() => void openDetails(selected.id)}
+            locale={locale}
           />
         )}
       </section>
 
       {details.kind === 'loading' && (
-        <section className="details-screen" aria-label="Event Details">
+        <section
+          className="details-screen"
+          aria-label={translate(locale, 'details.label')}
+        >
           <button type="button" className="back-button" onClick={returnToMap}>
-            ← Back to map
+            {translate(locale, 'details.back')}
           </button>
-          <p role="status">Loading event details…</p>
+          <p role="status">{translate(locale, 'details.loading')}</p>
         </section>
       )}
 
       {details.kind === 'error' && (
-        <section className="details-screen" aria-label="Event Details">
+        <section
+          className="details-screen"
+          aria-label={translate(locale, 'details.label')}
+        >
           <button type="button" className="back-button" onClick={returnToMap}>
-            ← Back to map
+            {translate(locale, 'details.back')}
           </button>
-          <p role="alert">
-            Event details could not be loaded. Your map context is preserved.
-          </p>
+          <p role="alert">{translate(locale, 'details.error')}</p>
           <button
             type="button"
             onClick={() => void openDetails(details.eventId)}
           >
-            Retry details
+            {translate(locale, 'details.retry')}
           </button>
         </section>
       )}
@@ -410,9 +476,36 @@ export function ExploreMap() {
           event={details.event}
           headingRef={detailsHeading}
           onBack={returnToMap}
+          locale={locale}
         />
       )}
-    </>
+    </main>
+  );
+}
+
+function LanguageSelector({
+  locale,
+  onChange
+}: {
+  locale: SupportedLocale;
+  onChange: (locale: SupportedLocale) => void;
+}) {
+  return (
+    <fieldset className="language-selector">
+      <legend>{translate(locale, 'language.label')}</legend>
+      {(['fr', 'en'] as const).map((value) => (
+        <label key={value}>
+          <input
+            type="radio"
+            name="language"
+            value={value}
+            checked={locale === value}
+            onChange={() => onChange(value)}
+          />
+          {translate(locale, `language.${value}`)}
+        </label>
+      ))}
+    </fieldset>
   );
 }
 
@@ -425,7 +518,8 @@ function SearchPanel({
   onSubmit,
   onClear,
   onClearConstraint,
-  onPreview
+  onPreview,
+  locale
 }: {
   query: string;
   result: IntelligentSearchResponse | undefined;
@@ -436,12 +530,13 @@ function SearchPanel({
   onClear: () => void;
   onClearConstraint: (key: SearchConstraintKey) => void;
   onPreview: (event: PublicEvent) => void;
+  locale: SupportedLocale;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <aside
       className={`search-panel${open ? '' : ' search-panel-collapsed'}`}
-      aria-label="Optional intelligent search"
+      aria-label={translate(locale, 'search.panelAria')}
     >
       <button
         type="button"
@@ -449,7 +544,7 @@ function SearchPanel({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        {open ? 'Collapse search' : 'Intelligent search'}
+        {translate(locale, open ? 'search.collapse' : 'search.expand')}
       </button>
       {open && (
         <>
@@ -460,73 +555,81 @@ function SearchPanel({
               onSubmit();
             }}
           >
-            <label htmlFor="intelligent-search">What do you want to do?</label>
+            <label htmlFor="intelligent-search">
+              {translate(locale, 'search.question')}
+            </label>
             <div>
               <input
                 id="intelligent-search"
                 value={query}
                 maxLength={240}
-                placeholder="Example: free music tonight"
+                placeholder={translate(locale, 'search.placeholder')}
                 onChange={(event) => onQueryChange(event.target.value)}
               />
               <button type="submit" disabled={processing || !query.trim()}>
-                Search
+                {translate(locale, 'search.submit')}
               </button>
             </div>
           </form>
-          <p className="search-help">
-            Optional deterministic matching. Manual filters always remain
-            available; no external AI provider is used.
-          </p>
-          {processing && <p role="status">Interpreting request…</p>}
-          {error && (
-            <p role="alert">
-              Search could not be completed. The map and manual filters remain
-              available.
-            </p>
+          <p className="search-help">{translate(locale, 'search.help')}</p>
+          {processing && (
+            <p role="status">{translate(locale, 'search.processing')}</p>
           )}
+          {error && <p role="alert">{translate(locale, 'search.error')}</p>}
           {result && !processing && (
             <div className="search-interpretation" aria-live="polite">
               <div className="search-heading">
-                <h2>Pulso understood</h2>
+                <h2>{translate(locale, 'search.understood')}</h2>
                 <button type="button" onClick={onClear}>
-                  Clear search
+                  {translate(locale, 'search.clearSearch')}
                 </button>
               </div>
-              <p>{result.message}</p>
+              <p>{localizeSearchMessage(locale, result.message)}</p>
               {result.clarification && (
                 <p className="clarification">
-                  One clarification: {result.clarification}
+                  {translate(locale, 'search.clarificationPrefix', {
+                    message: localizeSearchMessage(locale, result.clarification)
+                  })}
                 </p>
               )}
-              <h3>Hard constraints</h3>
+              <h3>{translate(locale, 'search.hardConstraints')}</h3>
               <ul>
-                {result.interpretation.constraints.map((constraint) => (
-                  <li key={`${constraint.key}-${constraint.label}`}>
-                    {constraint.label}{' '}
-                    {isSearchConstraintKey(constraint.key) && (
-                      <button
-                        type="button"
-                        aria-label={`Clear derived constraint ${constraint.label}`}
-                        onClick={() =>
-                          onClearConstraint(
-                            constraint.key as SearchConstraintKey
-                          )
-                        }
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </li>
-                ))}
+                {result.interpretation.constraints.map((constraint) => {
+                  const label = localizeSearchMessage(
+                    locale,
+                    constraint.message
+                  );
+                  return (
+                    <li key={`${constraint.key}-${constraint.message.code}`}>
+                      {label}{' '}
+                      {isSearchConstraintKey(constraint.key) && (
+                        <button
+                          type="button"
+                          aria-label={translate(
+                            locale,
+                            'search.clearConstraint',
+                            { label }
+                          )}
+                          onClick={() =>
+                            onClearConstraint(
+                              constraint.key as SearchConstraintKey
+                            )
+                          }
+                        >
+                          {translate(locale, 'search.clear')}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
               {result.interpretation.rankingSignals.length > 0 && (
                 <>
-                  <h3>Ranking signals</h3>
+                  <h3>{translate(locale, 'search.rankingSignals')}</h3>
                   <ul>
                     {result.interpretation.rankingSignals.map((signal) => (
-                      <li key={`${signal.key}-${signal.label}`}>
-                        {signal.label}
+                      <li key={`${signal.key}-${signal.message.code}`}>
+                        {localizeSearchMessage(locale, signal.message)}
                       </li>
                     ))}
                   </ul>
@@ -537,17 +640,23 @@ function SearchPanel({
           {result && result.data.length > 0 && (
             <div
               className="search-results"
-              aria-label="Search result map actions"
+              aria-label={translate(locale, 'search.resultsAria')}
             >
-              <h3>Results on this map</h3>
+              <h3>{translate(locale, 'search.results')}</h3>
               {result.data.map(({ event, matchType }, index) => (
                 <button
                   type="button"
                   key={event.id}
-                  aria-label={`Preview search result ${index + 1}: ${matchType}`}
+                  aria-label={translate(locale, 'search.previewResultAria', {
+                    index: index + 1,
+                    matchType: translate(locale, `search.match.${matchType}`)
+                  })}
                   onClick={() => onPreview(event)}
                 >
-                  Preview {event.title} ({matchType})
+                  {translate(locale, 'search.previewResult', {
+                    title: event.title,
+                    matchType: translate(locale, `search.match.${matchType}`)
+                  })}
                 </button>
               ))}
             </div>
@@ -619,24 +728,33 @@ function applySearchFilterEdits(
 
 function ActiveFilters({
   filters,
-  onChange
+  onChange,
+  locale
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
+  locale: SupportedLocale;
 }) {
-  const summary = summarizeActiveFilters(filters);
+  const summary = summarizeActiveFilters(filters, locale);
   if (summary.length === 0) {
     return (
-      <span className="default-filter">Next 7 days · current map area</span>
+      <span className="default-filter">
+        {translate(locale, 'filters.default')}
+      </span>
     );
   }
   return (
-    <div className="active-filters" aria-label="Active filters">
+    <div
+      className="active-filters"
+      aria-label={translate(locale, 'filters.activeAria')}
+    >
       {summary.map((item) => (
         <button
           type="button"
           key={`${item.key}-${item.value}`}
-          aria-label={`Clear ${item.label} filter`}
+          aria-label={translate(locale, 'filters.clearAria', {
+            label: item.label
+          })}
           onClick={() => {
             if (item.key === 'date') {
               onChange(withoutCustomDates(filters));
@@ -663,12 +781,14 @@ function FilterOverlay({
   filters,
   onChange,
   onClose,
-  onClearAll
+  onClearAll,
+  locale
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
   onClose: () => void;
   onClearAll: () => void;
+  locale: SupportedLocale;
 }) {
   const today = getMontrealCalendarDate(new Date());
   const setDate = (date: DiscoveryFilters['date']) => {
@@ -693,15 +813,19 @@ function FilterOverlay({
   };
 
   return (
-    <aside id="map-filters" className="filter-overlay" aria-label="Map filters">
+    <aside
+      id="map-filters"
+      className="filter-overlay"
+      aria-label={translate(locale, 'filters.title')}
+    >
       <div className="filter-heading">
-        <h2>Filters</h2>
+        <h2>{translate(locale, 'filters.title')}</h2>
         <button type="button" onClick={onClose}>
-          Close filters
+          {translate(locale, 'filters.close')}
         </button>
       </div>
       <fieldset>
-        <legend>Date and time</legend>
+        <legend>{translate(locale, 'filters.dateTime')}</legend>
         {DATE_FILTER_OPTIONS.map((option) => (
           <label key={option.value}>
             <input
@@ -711,13 +835,13 @@ function FilterOverlay({
               checked={filters.date === option.value}
               onChange={() => setDate(option.value)}
             />
-            {option.label}
+            {getDateFilterLabel(locale, option.value)}
           </label>
         ))}
         {filters.date === 'custom' && (
           <div className="date-range">
             <label>
-              Start date
+              {translate(locale, 'filters.startDate')}
               <input
                 type="date"
                 value={filters.customStartDate ?? today}
@@ -727,7 +851,7 @@ function FilterOverlay({
               />
             </label>
             <label>
-              End date
+              {translate(locale, 'filters.endDate')}
               <input
                 type="date"
                 min={filters.customStartDate ?? today}
@@ -743,8 +867,10 @@ function FilterOverlay({
         )}
       </fieldset>
       <fieldset>
-        <legend>Categories</legend>
-        <p className="filter-help">Multiple categories match with OR.</p>
+        <legend>{translate(locale, 'filters.categories')}</legend>
+        <p className="filter-help">
+          {translate(locale, 'filters.categoriesHelp')}
+        </p>
         {CATEGORY_FILTER_OPTIONS.map((option) => (
           <label key={option.value}>
             <input
@@ -752,12 +878,12 @@ function FilterOverlay({
               checked={filters.categories.includes(option.value)}
               onChange={() => toggleCategory(option.value)}
             />
-            {option.label}
+            {getCategoryLabel(locale, option.value)}
           </label>
         ))}
       </fieldset>
       <fieldset>
-        <legend>Price</legend>
+        <legend>{translate(locale, 'filters.price')}</legend>
         {PRICE_FILTER_OPTIONS.map((option) => (
           <label key={option.value}>
             <input
@@ -767,26 +893,23 @@ function FilterOverlay({
               checked={filters.price === option.value}
               onChange={() => onChange({ ...filters, price: option.value })}
             />
-            {option.label}
+            {getPriceLabel(locale, option.value)}
           </label>
         ))}
-        <p className="filter-help">Unknown prices appear only under All.</p>
+        <p className="filter-help">{translate(locale, 'filters.priceHelp')}</p>
       </fieldset>
       <dl className="fixed-filter-rules">
         <div>
-          <dt>Geography</dt>
-          <dd>
-            Current visible map area. Distance is not applied because no
-            reference location was supplied; no routing or implicit location.
-          </dd>
+          <dt>{translate(locale, 'filters.geography')}</dt>
+          <dd>{translate(locale, 'filters.geographyHelp')}</dd>
         </div>
         <div>
-          <dt>Status</dt>
-          <dd>Upcoming and postponed events; cancelled events are excluded.</dd>
+          <dt>{translate(locale, 'filters.status')}</dt>
+          <dd>{translate(locale, 'filters.statusHelp')}</dd>
         </div>
       </dl>
       <button type="button" className="clear-all" onClick={onClearAll}>
-        Clear all filters
+        {translate(locale, 'filters.clearAll')}
       </button>
     </aside>
   );
@@ -829,51 +952,61 @@ function EventPreview({
   searchMatch,
   detailsButton,
   onClose,
-  onDetails
+  onDetails,
+  locale
 }: {
   event: PublicEvent;
   searchMatch: IntelligentSearchResponse['data'][number] | undefined;
   detailsButton: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onDetails: () => void;
+  locale: SupportedLocale;
 }) {
-  const fields = eventPreviewFields(event);
+  const fields = eventPreviewFields(event, locale);
   return (
     <article className="preview" aria-live="polite">
       <button type="button" className="close-button" onClick={onClose}>
-        Close preview
+        {translate(locale, 'preview.close')}
       </button>
       <p className="chip">{fields.category}</p>
       <h2>{fields.title}</h2>
       <dl className="preview-fields">
         <div>
-          <dt>When</dt>
+          <dt>{translate(locale, 'preview.when')}</dt>
           <dd>{fields.dateTime}</dd>
         </div>
         <div>
-          <dt>Venue</dt>
+          <dt>{translate(locale, 'preview.venue')}</dt>
           <dd>{fields.venue}</dd>
         </div>
         <div>
-          <dt>Price</dt>
+          <dt>{translate(locale, 'preview.price')}</dt>
           <dd>{fields.price}</dd>
         </div>
       </dl>
       {fields.warning && <p className="warning">{fields.warning}</p>}
       {searchMatch && (
-        <div className="match-explanation" aria-label="Why this event matches">
+        <div
+          className="match-explanation"
+          aria-label={translate(locale, 'search.whyExact')}
+        >
           <strong>
             {searchMatch.matchType === 'exact'
-              ? 'Why this matches'
-              : 'Why this is an alternative'}
+              ? translate(locale, 'search.whyExact')
+              : translate(locale, 'search.whyAlternative')}
           </strong>
           <ul>
-            {searchMatch.reasons.map((reason) => (
-              <li key={reason}>{reason}</li>
+            {searchMatch.reasons.map((reason, index) => (
+              <li key={`${reason.code}-${index}`}>
+                {localizeSearchMessage(locale, reason)}
+              </li>
             ))}
-            {searchMatch.differences.map((difference) => (
-              <li key={difference} className="alternative-difference">
-                {difference}
+            {searchMatch.differences.map((difference, index) => (
+              <li
+                key={`${difference.code}-${index}`}
+                className="alternative-difference"
+              >
+                {localizeSearchMessage(locale, difference)}
               </li>
             ))}
           </ul>
@@ -885,7 +1018,7 @@ function EventPreview({
         className="primary-action"
         onClick={onDetails}
       >
-        View event details
+        {translate(locale, 'preview.details')}
       </button>
     </article>
   );
@@ -894,20 +1027,25 @@ function EventPreview({
 function EventDetails({
   event,
   headingRef,
-  onBack
+  onBack,
+  locale
 }: {
   event: PublicEvent;
   headingRef: RefObject<HTMLHeadingElement | null>;
   onBack: () => void;
+  locale: SupportedLocale;
 }) {
-  const { presentation } = eventDetailsFields(event);
+  const { presentation } = eventDetailsFields(event, locale);
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
   return (
-    <section className="details-screen" aria-label="Event Details">
+    <section
+      className="details-screen"
+      aria-label={translate(locale, 'details.label')}
+    >
       <button type="button" className="back-button" onClick={onBack}>
-        ← Back to map
+        {translate(locale, 'details.back')}
       </button>
-      <p className="eyebrow">Event Details</p>
+      <p className="eyebrow">{translate(locale, 'details.label')}</p>
       <h2 ref={headingRef} tabIndex={-1}>
         {event.title}
       </h2>
@@ -921,51 +1059,52 @@ function EventDetails({
       )}
       <dl className="detail-grid">
         <div>
-          <dt>Date and time</dt>
+          <dt>{translate(locale, 'details.dateTime')}</dt>
           <dd>{presentation.dateTime}</dd>
         </div>
         <div>
-          <dt>Venue</dt>
+          <dt>{translate(locale, 'details.venue')}</dt>
           <dd>{event.venue.name}</dd>
         </div>
         <div>
-          <dt>Address</dt>
+          <dt>{translate(locale, 'details.address')}</dt>
           <dd>{event.venue.address}</dd>
         </div>
         <div>
-          <dt>Price</dt>
+          <dt>{translate(locale, 'details.price')}</dt>
           <dd>{presentation.price}</dd>
         </div>
         <div>
-          <dt>Description</dt>
+          <dt>{translate(locale, 'details.description')}</dt>
           <dd>{presentation.description}</dd>
         </div>
         <div>
-          <dt>Organizer</dt>
+          <dt>{translate(locale, 'details.organizer')}</dt>
           <dd>{presentation.organizer}</dd>
         </div>
         <div>
-          <dt>Known access information</dt>
+          <dt>{translate(locale, 'details.access')}</dt>
           <dd>{event.accessInformation}</dd>
         </div>
         <div>
-          <dt>Source</dt>
+          <dt>{translate(locale, 'details.source')}</dt>
           <dd>{event.source.name}</dd>
         </div>
         <div>
-          <dt>Trust</dt>
+          <dt>{translate(locale, 'details.trust')}</dt>
           <dd>
             {presentation.trust} · {presentation.location}
           </dd>
         </div>
         <div>
-          <dt>Verification</dt>
+          <dt>{translate(locale, 'details.verification')}</dt>
           <dd>{presentation.freshness}</dd>
         </div>
       </dl>
       {presentation.externalAction ? (
         <a className="primary-action" href={externalHref}>
-          {presentation.externalAction} — external destination
+          {presentation.externalAction} —{' '}
+          {translate(locale, 'details.externalSuffix')}
         </a>
       ) : (
         <p className="unavailable" role="status">
@@ -973,8 +1112,7 @@ function EventDetails({
         </p>
       )}
       <p className="external-note">
-        Pulso does not book, charge, store tickets, route, or create an
-        itinerary.
+        {translate(locale, 'details.externalNote')}
       </p>
     </section>
   );

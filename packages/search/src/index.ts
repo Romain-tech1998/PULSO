@@ -1,10 +1,8 @@
 import {
-  CATEGORY_FILTER_OPTIONS,
-  DATE_FILTER_OPTIONS,
-  PRICE_FILTER_OPTIONS,
   type PublicEvent,
   type SearchConstraintKey,
-  type SearchExplanation
+  type SearchExplanation,
+  type SearchMessage
 } from '@pulso/contracts';
 import type {
   DateFilterValue,
@@ -12,6 +10,7 @@ import type {
   EventCategory,
   PriceFilterValue
 } from '@pulso/domain';
+import type { SupportedLocale } from '@pulso/domain/localization';
 
 export type SearchResolution = 'ready' | 'clarification' | 'no_reliable_result';
 
@@ -23,28 +22,40 @@ export interface DeterministicInterpretation {
   excludedCategories: EventCategory[];
   constraints: SearchExplanation[];
   rankingSignals: SearchExplanation[];
-  clarification?: string;
-  message?: string;
+  language: SupportedLocale;
+  clarification?: SearchMessage;
+  message?: SearchMessage;
 }
 
 const CATEGORY_PATTERNS: ReadonlyArray<{
   category: EventCategory;
   pattern: RegExp;
 }> = [
-  { category: 'music', pattern: /\b(music|concerts?|live music)\b/ },
+  {
+    category: 'music',
+    pattern: /\b(music|musique|concerts?|live music|musique live)\b/
+  },
   {
     category: 'nightlife',
-    pattern: /\b(nightlife|djs?|clubs?|dance party|dance parties)\b/
+    pattern:
+      /\b(nightlife|vie nocturne|djs?|clubs?|dance party|dance parties|boites? de nuit|soirees? dansantes?)\b/
   },
-  { category: 'festival', pattern: /\b(festivals?|festive events?)\b/ },
-  { category: 'comedy', pattern: /\b(comedy|comedian|stand[ -]?up)\b/ },
+  {
+    category: 'festival',
+    pattern: /\b(festivals?|festive events?|evenements? festifs?)\b/
+  },
+  {
+    category: 'comedy',
+    pattern: /\b(comedy|comedian|stand[ -]?up|humour|humoristes?)\b/
+  },
   {
     category: 'show',
-    pattern: /\b(shows?|theatre|theater|performances?)\b/
+    pattern: /\b(shows?|theatre|theater|performances?|spectacles?)\b/
   },
   {
     category: 'other',
-    pattern: /\b(other events?|community events?|gatherings?)\b/
+    pattern:
+      /\b(other events?|community events?|gatherings?|autres? evenements?|evenements? communautaires?|rassemblements?)\b/
   }
 ];
 
@@ -52,53 +63,51 @@ const DATE_PATTERNS: ReadonlyArray<{
   date: DateFilterValue;
   pattern: RegExp;
 }> = [
-  { date: 'tonight', pattern: /\btonight\b/ },
-  { date: 'tomorrow', pattern: /\btomorrow\b/ },
-  { date: 'weekend', pattern: /\b(this )?weekend\b/ },
-  { date: 'next7', pattern: /\b(next|coming) (seven|7) days\b/ }
+  { date: 'tonight', pattern: /\b(tonight|ce soir)\b/ },
+  { date: 'tomorrow', pattern: /\b(tomorrow|demain)\b/ },
+  {
+    date: 'weekend',
+    pattern: /\b((this|ce) week[ -]?end|cette fin de semaine)\b/
+  },
+  {
+    date: 'next7',
+    pattern:
+      /\b((next|coming) (seven|7) days|(les )?(sept|7) prochains jours|prochains (sept|7) jours)\b/
+  }
 ];
 
 const PRICE_PATTERNS: ReadonlyArray<{
   price: Exclude<PriceFilterValue, 'all'>;
   pattern: RegExp;
 }> = [
-  { price: 'free', pattern: /\bfree\b/ },
-  { price: 'paid', pattern: /\bpaid\b/ }
+  { price: 'free', pattern: /\b(free|gratuite?s?)\b/ },
+  { price: 'paid', pattern: /\b(paid|payante?s?)\b/ }
 ];
 
 const rankingSignalDefinitions: ReadonlyArray<{
   id: 'soon' | 'lower_price' | 'higher_trust';
-  label: string;
+  message: SearchMessage;
   pattern: RegExp;
 }> = [
   {
     id: 'soon',
-    label: 'Prefer events starting sooner',
-    pattern: /\b(soon|starting soon|earliest)\b/
+    message: { code: 'search.ranking.soon' },
+    pattern:
+      /\b(soon|starting soon|earliest|bientot|commence bientot|plus tot)\b/
   },
   {
     id: 'lower_price',
-    label: 'Prefer lower-cost known options',
-    pattern: /\b(affordable|lower[ -]?cost|cheap)\b/
+    message: { code: 'search.ranking.lowerPrice' },
+    pattern:
+      /\b(affordable|lower[ -]?cost|cheap|abordable|pas (trop )?cheres?|moins cheres?|economique)\b/
   },
   {
     id: 'higher_trust',
-    label: 'Prefer more strongly confirmed information',
-    pattern: /\b(reliable|well confirmed|confirmed information)\b/
+    message: { code: 'search.ranking.higherTrust' },
+    pattern:
+      /\b(reliable|well confirmed|confirmed information|fiable|bien confirme|informations? confirmees?)\b/
   }
 ];
-
-function categoryLabel(category: EventCategory): string {
-  return CATEGORY_FILTER_OPTIONS.find(({ value }) => value === category)!.label;
-}
-
-function dateLabel(date: DateFilterValue): string {
-  return DATE_FILTER_OPTIONS.find(({ value }) => value === date)!.label;
-}
-
-function priceLabel(price: Exclude<PriceFilterValue, 'all'>): string {
-  return PRICE_FILTER_OPTIONS.find(({ value }) => value === price)!.label;
-}
 
 function normalizeQuery(query: string): string {
   return query
@@ -112,15 +121,17 @@ function normalizeQuery(query: string): string {
 
 export function interpretDeterministicSearch(
   query: string,
-  disabledKeys: readonly SearchConstraintKey[] = []
+  disabledKeys: readonly SearchConstraintKey[] = [],
+  preferredLocale: SupportedLocale = 'en'
 ): DeterministicInterpretation {
   const normalized = normalizeQuery(query);
+  const language = detectQueryLanguage(normalized, preferredLocale);
   const disabled = new Set(disabledKeys);
   const constraints: SearchExplanation[] = [];
   const derivedFilters: DeterministicInterpretation['derivedFilters'] = {};
 
   if (
-    /\b(near me|close to me|within\s+\d+\s*(km|kilomet(?:er|re)s?|miles?))\b/.test(
+    /\b(near me|close to me|pres de moi|proche de moi|within\s+\d+\s*(km|kilomet(?:er|re)s?|miles?)|a moins de\s+\d+\s*(km|kilometres?))\b/.test(
       normalized
     )
   ) {
@@ -130,8 +141,8 @@ export function interpretDeterministicSearch(
       excludedCategories: [],
       constraints,
       rankingSignals: [],
-      clarification:
-        'Which explicit location should Pulso use as the direct-distance reference? No location is assumed.'
+      language,
+      clarification: { code: 'search.clarification.location' }
     };
   }
 
@@ -142,20 +153,23 @@ export function interpretDeterministicSearch(
       excludedCategories: [],
       constraints,
       rankingSignals: [],
-      message:
-        'Pulso cannot interpret travel time because the MVP provides no routing or implicit location.'
+      language,
+      message: { code: 'search.message.routingUnsupported' }
     };
   }
 
   const maximumPrice =
-    /(?:under|below|less than|max(?:imum)?|up to)\s*\$?\s*(\d+(?:\.\d{1,2})?)/.exec(
+    /(?:under|below|less than|max(?:imum)?|up to|moins de|sous|jusqu'a)\s*\$?\s*(\d+(?:[.,]\d{1,2})?)/.exec(
       normalized
     );
   if (maximumPrice) {
     constraints.push({
       key: 'maximum_price',
       kind: 'hard',
-      label: `Maximum price CAD ${maximumPrice[1]}`
+      message: {
+        code: 'search.constraint.maximumPrice',
+        params: { amount: maximumPrice[1]!.replace(',', '.') }
+      }
     });
     return {
       resolution: 'no_reliable_result',
@@ -163,8 +177,8 @@ export function interpretDeterministicSearch(
       excludedCategories: [],
       constraints,
       rankingSignals: [],
-      message:
-        'Pulso recognized the maximum price, but the current fictional data has no verified numeric prices, so it cannot claim a reliable match.'
+      language,
+      message: { code: 'search.message.maximumPriceUnavailable' }
     };
   }
 
@@ -178,19 +192,24 @@ export function interpretDeterministicSearch(
       excludedCategories: [],
       constraints,
       rankingSignals: [],
-      clarification: 'Which one date range should Pulso use?'
+      language,
+      clarification: { code: 'search.clarification.date' }
     };
   }
   const date = dates[0];
   if (date && !disabled.has('date')) {
     derivedFilters.date = date;
-    constraints.push({ key: 'date', kind: 'hard', label: dateLabel(date) });
+    constraints.push({
+      key: 'date',
+      kind: 'hard',
+      message: { code: 'search.constraint.date', params: { date } }
+    });
   }
 
   const excludedCategories = CATEGORY_PATTERNS.filter(({ pattern }) => {
     const labelPattern = pattern.source;
     return new RegExp(
-      `\\b(?:not|no|exclude|without)\\s+(?:${labelPattern})`,
+      `\\b(?:not|no|exclude|without|pas de|sans|exclure)\\s+(?:${labelPattern})`,
       'i'
     ).test(normalized);
   }).map(({ category }) => category);
@@ -199,7 +218,10 @@ export function interpretDeterministicSearch(
     ({ category, pattern }) =>
       pattern.test(normalized) && !excludedCategories.includes(category)
   ).map(({ category }) => category);
-  if (categories.includes('comedy') && /\bcomedy show\b/.test(normalized)) {
+  if (
+    categories.includes('comedy') &&
+    /\b(comedy show|spectacle d'humour|spectacle humour)\b/.test(normalized)
+  ) {
     const showIndex = categories.indexOf('show');
     if (showIndex >= 0) categories.splice(showIndex, 1);
   }
@@ -209,7 +231,10 @@ export function interpretDeterministicSearch(
       constraints.push({
         key: 'categories',
         kind: 'hard',
-        label: categoryLabel(category)
+        message: {
+          code: 'search.constraint.category',
+          params: { category }
+        }
       });
     }
   }
@@ -220,7 +245,10 @@ export function interpretDeterministicSearch(
     constraints.push({
       key: 'excluded_categories',
       kind: 'hard',
-      label: `Exclude ${categoryLabel(category)}`
+      message: {
+        code: 'search.constraint.excludeCategory',
+        params: { category }
+      }
     });
   }
 
@@ -234,32 +262,37 @@ export function interpretDeterministicSearch(
       excludedCategories: activeExclusions,
       constraints,
       rankingSignals: [],
-      clarification: 'Should the price filter be Free or Paid?'
+      language,
+      clarification: { code: 'search.clarification.price' }
     };
   }
   const price = prices[0];
   if (price && !disabled.has('price')) {
     derivedFilters.price = price;
-    constraints.push({ key: 'price', kind: 'hard', label: priceLabel(price) });
+    constraints.push({
+      key: 'price',
+      kind: 'hard',
+      message: { code: 'search.constraint.price', params: { price } }
+    });
   }
 
   constraints.push({
     key: 'status',
     kind: 'hard',
-    label: 'Upcoming scheduled or postponed events; cancelled events excluded'
+    message: { code: 'search.constraint.status' }
   });
   constraints.push({
     key: 'bounds',
     kind: 'hard',
-    label: 'Current visible Montréal map area'
+    message: { code: 'search.constraint.bounds' }
   });
 
   const rankingSignals = rankingSignalDefinitions
     .filter(({ pattern }) => pattern.test(normalized))
-    .map<SearchExplanation>(({ id, label }) => ({
+    .map<SearchExplanation>(({ id, message }) => ({
       key: id,
       kind: 'ranking',
-      label
+      message
     }));
 
   const hasExpressedCriterion =
@@ -275,8 +308,8 @@ export function interpretDeterministicSearch(
         ({ key }) => key === 'status' || key === 'bounds'
       ),
       rankingSignals,
-      message:
-        'Pulso could not reliably map this request to the supported event, date, price, or ranking criteria. Manual filters remain available.'
+      language,
+      message: { code: 'search.message.unsupported' }
     };
   }
 
@@ -285,8 +318,26 @@ export function interpretDeterministicSearch(
     derivedFilters,
     excludedCategories: activeExclusions,
     constraints,
-    rankingSignals
+    rankingSignals,
+    language
   };
+}
+
+function detectQueryLanguage(
+  normalized: string,
+  preferredLocale: SupportedLocale
+): SupportedLocale {
+  const french = (
+    normalized.match(
+      /\b(ce soir|demain|cette fin de semaine|prochains jours|musique|vie nocturne|boite|soiree|evenement|spectacle|humour|gratuit|payant|bientot|abordable|fiable|sans|pres de moi|proche de moi|moins de|jusqu'a)\b/g
+    ) ?? []
+  ).length;
+  const english = (
+    normalized.match(
+      /\b(tonight|tomorrow|weekend|next seven days|music|nightlife|dance party|show|comedy|free|paid|soon|affordable|reliable|without|near me|close to me|under|up to)\b/g
+    ) ?? []
+  ).length;
+  return french > english ? 'fr' : english > french ? 'en' : preferredLocale;
 }
 
 const trustScore: Record<PublicEvent['trust']['label'], number> = {
@@ -306,59 +357,62 @@ export function rankAndExplainEvents(
   events: readonly PublicEvent[],
   interpretation: DeterministicInterpretation,
   matchType: 'exact' | 'alternative',
-  differences: readonly string[] = []
+  differences: readonly SearchMessage[] = []
 ): Array<{
   event: PublicEvent;
   matchType: 'exact' | 'alternative';
-  reasons: string[];
-  differences: string[];
+  reasons: SearchMessage[];
+  differences: SearchMessage[];
 }> {
   const signals = new Set(interpretation.rankingSignals.map(({ key }) => key));
   return events
     .map((event) => {
       let score = 0;
-      const reasons: string[] = [];
+      const reasons: SearchMessage[] = [];
       if (interpretation.derivedFilters.categories?.includes(event.category)) {
-        reasons.push(`Category matches: ${categoryLabel(event.category)}`);
+        reasons.push({
+          code: 'search.reason.category',
+          params: { category: event.category }
+        });
       }
       if (interpretation.derivedFilters.price === event.price.kind) {
-        reasons.push(
-          `Price matches: ${priceLabel(event.price.kind as 'free' | 'paid')}`
-        );
+        reasons.push({
+          code: 'search.reason.price',
+          params: { price: event.price.kind }
+        });
       }
       if (interpretation.derivedFilters.date) {
-        reasons.push(
-          `Date matches: ${dateLabel(interpretation.derivedFilters.date)}`
-        );
+        reasons.push({
+          code: 'search.reason.date',
+          params: { date: interpretation.derivedFilters.date }
+        });
       }
       if (signals.has('soon')) {
         score +=
           Math.max(0, 10_000_000_000_000 - new Date(event.startsAt).getTime()) /
           1_000_000_000;
-        reasons.push(
-          'Prioritized because it starts sooner among matching events'
-        );
+        reasons.push({ code: 'search.reason.soon' });
       }
       if (signals.has('lower_price')) {
         score += priceScore[event.price.kind] * 100;
-        reasons.push(
-          event.price.kind === 'free'
-            ? 'Prioritized because the known price is Free'
-            : event.price.kind === 'paid'
-              ? 'Known as Paid; exact price is not confirmed'
-              : 'Price is unknown and was not treated as lower cost'
-        );
+        reasons.push({
+          code:
+            event.price.kind === 'free'
+              ? 'search.reason.lowerPriceFree'
+              : event.price.kind === 'paid'
+                ? 'search.reason.lowerPricePaid'
+                : 'search.reason.lowerPriceUnknown'
+        });
       }
       if (signals.has('higher_trust')) {
         score += trustScore[event.trust.label] * 10;
-        reasons.push(
-          `Trust information: ${event.trust.label.replace('_', ' ')}`
-        );
+        reasons.push({
+          code: 'search.reason.trust',
+          params: { trust: event.trust.label }
+        });
       }
       if (reasons.length === 0) {
-        reasons.push(
-          'Eligible in the current map area and active event window'
-        );
+        reasons.push({ code: 'search.reason.eligible' });
       }
       return {
         event,

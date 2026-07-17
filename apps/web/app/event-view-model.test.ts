@@ -42,7 +42,7 @@ const event: PublicEvent = {
 
 describe('event presentation', () => {
   it('prioritizes the Accepted preview fields', () => {
-    expect(eventPreviewFields(event)).toMatchObject({
+    expect(eventPreviewFields(event, 'en')).toMatchObject({
       title: 'Synthetic Montréal Pulse',
       venue: 'Synthetic Montréal Venue',
       price: 'Free',
@@ -66,15 +66,28 @@ describe('event presentation', () => {
     void _description;
     void _organizer;
     void _externalDestination;
-    const details = eventDetailsFields({
-      ...eventWithoutOptionalDetails,
-      price: { kind: 'unknown', currency: 'CAD' }
-    });
+    const details = eventDetailsFields(
+      {
+        ...eventWithoutOptionalDetails,
+        price: { kind: 'unknown', currency: 'CAD' }
+      },
+      'en'
+    );
     expect(details.presentation).toMatchObject({
       price: 'Price unknown',
       description: 'Description unknown',
       organizer: 'Organizer unknown'
     });
     expect(details.presentation.externalAction).toBeUndefined();
+  });
+
+  it('uses French Pulso labels without translating event-source content', () => {
+    const preview = eventPreviewFields(event, 'fr');
+    expect(preview).toMatchObject({
+      title: 'Synthetic Montréal Pulse',
+      venue: 'Synthetic Montréal Venue',
+      price: 'Gratuit',
+      category: 'Musique / concerts'
+    });
   });
 });

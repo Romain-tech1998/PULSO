@@ -114,7 +114,7 @@ test('filters anonymously and preserves the filtered map context', async ({
     page.getByText('No events match the active filters')
   ).toBeVisible();
   await page
-    .getByLabel('Map filters')
+    .getByLabel('Filters')
     .getByRole('button', { name: 'Clear all filters' })
     .click();
   await expect(page.getByRole('button', { name: 'Filters (0)' })).toBeVisible();
@@ -217,4 +217,177 @@ test('completes transparent deterministic UJ-0002 and preserves search context',
       .getByText(/could not reliably map this request/)
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /Filters/ })).toBeVisible();
+});
+
+test('falls back to French for an unsupported browser locale', async ({
+  browser
+}) => {
+  const context = await browser.newContext({ locale: 'es-MX' });
+  const page = await context.newPage();
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
+  await expect(
+    page.getByRole('heading', { name: 'Explorer Montréal' })
+  ).toBeVisible();
+  await expect(
+    page.getByLabel('Carte des événements à Montréal')
+  ).toBeVisible();
+  await context.close();
+});
+
+test('switches, persists, and preserves bilingual map, filter, search, and details context', async ({
+  page
+}) => {
+  await page.goto('/');
+  await page.evaluate(() => window.localStorage.clear());
+  await page.context().addCookies([
+    {
+      name: 'pulso-locale',
+      value: 'fr',
+      url: 'http://127.0.0.1:3000'
+    }
+  ]);
+  await page.reload();
+
+  await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
+  await expect(
+    page.getByRole('heading', { name: 'Explorer Montréal' })
+  ).toBeVisible();
+  await expect(
+    page.getByLabel('Carte des événements à Montréal')
+  ).toBeVisible();
+  await expect(
+    page.getByText(/événements fictifs correspondants/)
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Filtres (0)' }).click();
+  await page.getByRole('checkbox', { name: 'Humour' }).check();
+  await expect(
+    page.getByRole('button', { name: 'Effacer le filtre Humour' })
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Fermer les filtres' }).click();
+
+  await page.getByRole('button', { name: 'Recherche intelligente' }).click();
+  const query = page.getByLabel('Que voulez-vous faire?');
+  await query.fill('humour gratuit, commence bientôt');
+  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Pulso a compris' })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Effacer la contrainte dérivée Humour' })
+  ).toBeVisible();
+  await expect(
+    page.getByText('Privilégier les événements qui commencent plus tôt')
+  ).toBeVisible();
+
+  await page
+    .getByRole('button', { name: 'Aperçu du résultat de recherche 1 : exact' })
+    .click();
+  await expect(
+    page.getByText('Pourquoi cet événement correspond')
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Imaginary Montréal Comedy Hour' })
+  ).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Voir les détails de l’événement' })
+    .click();
+  const frenchDetails = page.getByLabel('Détails de l’événement');
+  await expect(frenchDetails).toBeVisible();
+  await expect(
+    frenchDetails.getByText('Imaginary Montréal Comedy Hour')
+  ).toBeVisible();
+  await expect(
+    frenchDetails.getByText('Fictional Laughs Collective')
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: '← Retour à la carte' }).click();
+  await page
+    .getByRole('button', { name: 'Effacer la recherche' })
+    .first()
+    .click();
+  await query.fill('humour payant');
+  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await expect(
+    page.getByText(/Ces alternatives diffèrent uniquement/)
+  ).toBeVisible();
+  await page
+    .getByRole('button', {
+      name: 'Aperçu du résultat de recherche 1 : alternative'
+    })
+    .click();
+  await expect(page.getByText('Le prix diffère de Payant.')).toBeVisible();
+  const closeFrenchPreview = page.getByRole('button', {
+    name: 'Fermer l’aperçu'
+  });
+  await closeFrenchPreview.focus();
+  await page.keyboard.press('Enter');
+
+  await page
+    .getByRole('button', { name: 'Effacer la recherche' })
+    .first()
+    .click();
+  await query.fill('humour à moins de 5 km');
+  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await expect(page.getByText(/Quel lieu explicite Pulso/)).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Effacer la recherche' })
+    .first()
+    .click();
+  await query.fill('ambiance magique surprise');
+  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await expect(
+    page
+      .getByLabel('Recherche intelligente facultative')
+      .getByText(/n’a pas pu associer cette demande/)
+  ).toBeVisible();
+
+  await page
+    .getByRole('button', { name: 'Effacer la recherche' })
+    .first()
+    .click();
+  await query.fill('humour gratuit');
+  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await page
+    .getByRole('button', { name: 'Aperçu du résultat de recherche 1 : exact' })
+    .click();
+  await page
+    .getByRole('button', { name: 'Voir les détails de l’événement' })
+    .click();
+
+  await page.getByRole('radio', { name: 'English' }).check();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByLabel('Event Details')).toBeVisible();
+  await expect(
+    page.getByLabel('Event Details').getByText('Imaginary Montréal Comedy Hour')
+  ).toBeVisible();
+  await page.getByRole('button', { name: '← Back to map' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Pulso understood' })
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Filters (2)' })).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(
+    page.getByRole('heading', { name: 'Explore Montréal' })
+  ).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('pulso.locale')))
+    .toBe('en');
+
+  await page.getByRole('button', { name: 'Intelligent search' }).click();
+  const englishQuery = page.getByLabel('What do you want to do?');
+  await englishQuery.fill('comedy within 5 km');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.getByText(/Which explicit location/)).toBeVisible();
+  await page.getByRole('button', { name: 'Clear search' }).first().click();
+  await englishQuery.fill('surprise me with magic vibes');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(
+    page
+      .getByLabel('Optional intelligent search')
+      .getByText(/could not reliably map this request/)
+  ).toBeVisible();
 });

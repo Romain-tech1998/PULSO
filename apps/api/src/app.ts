@@ -6,7 +6,7 @@ import {
   intelligentSearchResponseSchema,
   mapBoundsQuerySchema
 } from '@pulso/contracts';
-import type { MapBoundsQuery } from '@pulso/contracts';
+import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
 import type { EventRepository } from '@pulso/database';
 import {
   createFilteredDiscoveryWindow,
@@ -74,7 +74,8 @@ export function buildApp(
     const search = intelligentSearchRequestSchema.parse(request.body);
     const interpreted = interpretDeterministicSearch(
       search.query,
-      search.disabledDerivedKeys
+      search.disabledDerivedKeys,
+      search.locale
     );
     const manualFilters = normalizeDiscoveryFilters(search.manualFilters);
     const effectiveFilters: DiscoveryFilters = {
@@ -104,7 +105,7 @@ export function buildApp(
     const responseBase = {
       interpretation: {
         engine: 'deterministic' as const,
-        language: 'en' as const,
+        language: interpreted.language,
         constraints: interpreted.constraints,
         rankingSignals: interpreted.rankingSignals,
         effectiveFilters
@@ -114,8 +115,7 @@ export function buildApp(
       return intelligentSearchResponseSchema.parse({
         ...responseBase,
         condition: 'clarification',
-        message:
-          'One explicit answer is required before Pulso can apply this constraint.',
+        message: { code: 'search.message.clarificationRequired' },
         clarification: interpreted.clarification,
         data: []
       });
@@ -139,7 +139,10 @@ export function buildApp(
       return intelligentSearchResponseSchema.parse({
         ...responseBase,
         condition: 'exact',
-        message: `${exactEvents.length} exact fictional match${exactEvents.length === 1 ? '' : 'es'} found.`,
+        message: {
+          code: 'search.message.exactCount',
+          params: { count: exactEvents.length }
+        },
         data: rankAndExplainEvents(exactEvents, interpreted, 'exact')
       });
     }
@@ -156,8 +159,7 @@ export function buildApp(
       return intelligentSearchResponseSchema.parse({
         ...responseBase,
         condition: 'alternative',
-        message:
-          'No event satisfies every hard constraint. These alternatives differ only as stated.',
+        message: { code: 'search.message.alternative' },
         data: rankAndExplainEvents(
           alternative.events,
           interpreted,
@@ -170,8 +172,7 @@ export function buildApp(
     return intelligentSearchResponseSchema.parse({
       ...responseBase,
       condition: 'no_reliable_result',
-      message:
-        'No reliable exact match or one-step explained alternative is available in this map area.',
+      message: { code: 'search.message.noReliableResult' },
       data: []
     });
   });
@@ -266,36 +267,39 @@ async function findExplainedAlternative(
 ): Promise<
   | {
       events: Awaited<ReturnType<EventRepository['findInBounds']>>;
-      differences: string[];
+      differences: SearchMessage[];
     }
   | undefined
 > {
   const plans: Array<{
     filters: DiscoveryFilters;
     excludedCategories: typeof interpreted.excludedCategories;
-    differences: string[];
+    differences: SearchMessage[];
   }> = [];
   if (interpreted.derivedFilters.price) {
     plans.push({
       filters: { ...effectiveFilters, price: manualFilters.price },
       excludedCategories: interpreted.excludedCategories,
-      differences: [`Price differs from ${interpreted.derivedFilters.price}.`]
+      differences: [
+        {
+          code: 'search.difference.price',
+          params: { price: interpreted.derivedFilters.price }
+        }
+      ]
     });
   }
   if (interpreted.derivedFilters.categories?.length) {
     plans.push({
       filters: { ...effectiveFilters, categories: manualFilters.categories },
       excludedCategories: interpreted.excludedCategories,
-      differences: [
-        'Event category differs from the requested category filter.'
-      ]
+      differences: [{ code: 'search.difference.category' }]
     });
   }
   if (interpreted.excludedCategories.length > 0) {
     plans.push({
       filters: effectiveFilters,
       excludedCategories: [],
-      differences: ['Event category was explicitly excluded in the request.']
+      differences: [{ code: 'search.difference.excludedCategory' }]
     });
   }
   for (const plan of plans) {

@@ -283,6 +283,7 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
         url: '/search',
         payload: {
           query: 'free music tonight starting soon',
+          locale: 'en',
           bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
           manualFilters: { date: 'next7', categories: [], price: 'all' },
           disabledDerivedKeys: []
@@ -302,14 +303,40 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
       ).toBe(true);
       expect(result.data[0]?.reasons).toEqual(
         expect.arrayContaining([
-          expect.stringContaining('Category matches'),
-          expect.stringContaining('Price matches'),
-          expect.stringContaining('Date matches')
+          expect.objectContaining({ code: 'search.reason.category' }),
+          expect.objectContaining({ code: 'search.reason.price' }),
+          expect.objectContaining({ code: 'search.reason.date' })
         ])
       );
       expect(JSON.stringify(result)).not.toContain(
         'free music tonight starting soon'
       );
+
+      const frenchQuery = 'musique gratuite ce soir, commence bientôt';
+      const frenchResponse = await app.inject({
+        method: 'POST',
+        url: '/search',
+        payload: {
+          query: frenchQuery,
+          locale: 'fr',
+          bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
+          manualFilters: { date: 'next7', categories: [], price: 'all' },
+          disabledDerivedKeys: []
+        }
+      });
+      const french = intelligentSearchResponseSchema.parse(
+        frenchResponse.json()
+      );
+      expect(french.condition).toBe('exact');
+      expect(french.interpretation).toMatchObject({
+        language: 'fr',
+        effectiveFilters: {
+          date: 'tonight',
+          categories: ['music'],
+          price: 'free'
+        }
+      });
+      expect(JSON.stringify(french)).not.toContain(frenchQuery);
     } finally {
       await app.close();
     }
@@ -323,6 +350,7 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
         url: '/search',
         payload: {
           query: 'not comedy',
+          locale: 'en',
           bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
           manualFilters: { date: 'next7', categories: [], price: 'all' },
           disabledDerivedKeys: []
@@ -341,6 +369,7 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
         url: '/search',
         payload: {
           query: 'paid comedy',
+          locale: 'en',
           bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
           manualFilters: { date: 'next7', categories: [], price: 'all' },
           disabledDerivedKeys: []
@@ -351,9 +380,10 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
       );
       expect(alternative.condition).toBe('alternative');
       expect(alternative.data[0]?.matchType).toBe('alternative');
-      expect(alternative.data[0]?.differences).toContain(
-        'Price differs from paid.'
-      );
+      expect(alternative.data[0]?.differences).toContainEqual({
+        code: 'search.difference.price',
+        params: { price: 'paid' }
+      });
     } finally {
       await app.close();
     }

@@ -6,7 +6,18 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
-    "plugins": ["@maplibre/maplibre-react-native"],
+    "plugins": [
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-localization",
+        {
+          "supportedLocales": {
+            "ios": ["fr", "en"],
+            "android": ["fr", "en"]
+          }
+        }
+      ]
+    ],
     "android": {
       "package": "com.pulso.mobile"
     }

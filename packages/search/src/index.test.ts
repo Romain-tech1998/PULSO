@@ -16,6 +16,17 @@ describe('deterministic intelligent-search interpretation', () => {
   });
 
   it.each([
+    ['ce soir', 'tonight'],
+    ['DEMAIN', 'tomorrow'],
+    ['cette fin de semaine', 'weekend'],
+    ['les sept prochains jours', 'next7']
+  ])('maps the equivalent French date phrase %s', (query, expected) => {
+    const result = interpretDeterministicSearch(query, [], 'fr');
+    expect(result.derivedFilters.date).toBe(expected);
+    expect(result.language).toBe('fr');
+  });
+
+  it.each([
     ['music', 'music'],
     ['DJ club', 'nightlife'],
     ['festival', 'festival'],
@@ -25,6 +36,19 @@ describe('deterministic intelligent-search interpretation', () => {
   ])('maps the supported category phrase %s', (query, expected) => {
     expect(
       interpretDeterministicSearch(query).derivedFilters.categories
+    ).toEqual([expected]);
+  });
+
+  it.each([
+    ['musique', 'music'],
+    ['soirée dansante DJ', 'nightlife'],
+    ['événement festif', 'festival'],
+    ['spectacle d’humour', 'comedy'],
+    ['spectacle', 'show'],
+    ['événement communautaire', 'other']
+  ])('maps accented French category phrase %s', (query, expected) => {
+    expect(
+      interpretDeterministicSearch(query, [], 'fr').derivedFilters.categories
     ).toEqual([expected]);
   });
 
@@ -41,6 +65,15 @@ describe('deterministic intelligent-search interpretation', () => {
     expect(interpretDeterministicSearch(query).derivedFilters.price).toBe(
       expected
     );
+  });
+
+  it.each([
+    ['musique gratuite', 'free'],
+    ['humour PAYANT', 'paid']
+  ])('maps the equivalent French price phrase %s', (query, expected) => {
+    expect(
+      interpretDeterministicSearch(query, [], 'fr').derivedFilters.price
+    ).toBe(expected);
   });
 
   it('separates hard constraints from ranking signals', () => {
@@ -68,26 +101,58 @@ describe('deterministic intelligent-search interpretation', () => {
     expect(result.constraints).toContainEqual({
       key: 'excluded_categories',
       kind: 'hard',
-      label: 'Exclude Comedy'
+      message: {
+        code: 'search.constraint.excludeCategory',
+        params: { category: 'comedy' }
+      }
     });
+  });
+
+  it('recognizes French exclusions and ranking with the same semantics', () => {
+    const result = interpretDeterministicSearch(
+      'musique gratuite ce soir sans humour, abordable et fiable',
+      [],
+      'fr'
+    );
+    expect(result.derivedFilters).toEqual({
+      date: 'tonight',
+      categories: ['music'],
+      price: 'free'
+    });
+    expect(result.excludedCategories).toEqual(['comedy']);
+    expect(result.rankingSignals.map(({ key }) => key)).toEqual(
+      expect.arrayContaining(['lower_price', 'higher_trust'])
+    );
   });
 
   it('asks one material clarification for missing distance reference', () => {
     const result = interpretDeterministicSearch('comedy within 5 km');
     expect(result.resolution).toBe('clarification');
-    expect(result.clarification).toContain('explicit location');
+    expect(result.clarification?.code).toBe('search.clarification.location');
+    expect(
+      interpretDeterministicSearch('humour à moins de 5 km', [], 'fr')
+        .clarification?.code
+    ).toBe('search.clarification.location');
   });
 
   it('rejects routing-time semantics rather than claiming a match', () => {
     const result = interpretDeterministicSearch('music within 20 minutes');
     expect(result.resolution).toBe('no_reliable_result');
-    expect(result.message).toContain('no routing');
+    expect(result.message?.code).toBe('search.message.routingUnsupported');
+    expect(
+      interpretDeterministicSearch('musique à 20 minutes', [], 'fr').message
+        ?.code
+    ).toBe('search.message.routingUnsupported');
   });
 
   it('does not claim reliable interpretation for unsupported input', () => {
     const result = interpretDeterministicSearch('surprise me with magic vibes');
     expect(result.resolution).toBe('no_reliable_result');
     expect(result.derivedFilters).toEqual({});
+    expect(
+      interpretDeterministicSearch('ambiance magique surprise', [], 'fr')
+        .message?.code
+    ).toBe('search.message.unsupported');
   });
 
   it('allows a derived criterion to be disabled for manual editing', () => {
@@ -147,9 +212,9 @@ describe('deterministic ranking and explanations', () => {
     expect(ranked[0]!.event.price.kind).toBe('free');
     expect(ranked[0]!.reasons).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('Category matches'),
-        expect.stringContaining('starts sooner'),
-        expect.stringContaining('known price is Free')
+        expect.objectContaining({ code: 'search.reason.category' }),
+        expect.objectContaining({ code: 'search.reason.soon' }),
+        expect.objectContaining({ code: 'search.reason.lowerPriceFree' })
       ])
     );
     expect(
