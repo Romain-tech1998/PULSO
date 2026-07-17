@@ -120,3 +120,101 @@ test('filters anonymously and preserves the filtered map context', async ({
   await expect(page.getByRole('button', { name: 'Filters (0)' })).toBeVisible();
   await expect(page.getByText(/matching fictional events/)).toBeVisible();
 });
+
+test('completes transparent deterministic UJ-0002 and preserves search context', async ({
+  page
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Intelligent search' }).click();
+  const query = page.getByLabel('What do you want to do?');
+  await expect(query).toBeVisible();
+  await query.fill('free music tonight starting soon');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+
+  await expect(
+    page.getByRole('heading', { name: 'Pulso understood' })
+  ).toBeVisible();
+  await expect(page.getByText('Optional deterministic matching')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Clear derived constraint Tonight' })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: 'Clear derived constraint Music / concerts'
+    })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Clear derived constraint Free' })
+  ).toBeVisible();
+  await expect(page.getByText('Prefer events starting sooner')).toBeVisible();
+  await expect(page.getByText(/exact fictional match/)).toBeVisible();
+  await expect(page.getByText(/sign in|create account/i)).toHaveCount(0);
+  await expect(page.locator('button.marker')).toHaveCount(1);
+
+  await page
+    .getByRole('button', { name: 'Preview search result 1: exact' })
+    .click();
+  await expect(page.getByText('Why this matches')).toBeVisible();
+  await expect(page.getByText('Price matches: Free')).toBeVisible();
+  await page.getByRole('button', { name: 'View event details' }).click();
+  await expect(page.getByLabel('Event Details')).toBeVisible();
+  await page.getByRole('button', { name: /Back to map/ }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Pulso understood' })
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Filters (3)' })).toBeVisible();
+
+  await page
+    .getByRole('button', { name: 'Preview search result 1: exact' })
+    .click();
+  await page
+    .getByRole('button', { name: 'Clear derived constraint Music / concerts' })
+    .click();
+  await expect(
+    page.getByText(
+      'The open event preview was closed because the search interpretation changed.'
+    )
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Synthetic Montréal Pulse' })
+  ).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Filters (2)' }).click();
+  await page.getByRole('radio', { name: 'Paid' }).check();
+  await page.getByRole('checkbox', { name: 'Comedy' }).check();
+  await expect(
+    page
+      .getByLabel('Optional intelligent search')
+      .getByText(/No reliable exact match/)
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Filters (3)' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close filters' }).click();
+  await page.getByRole('button', { name: 'Clear search' }).first().click();
+  await expect(page.getByRole('button', { name: 'Filters (2)' })).toBeVisible();
+  await expect(
+    page.getByText(/No events match the active filters/)
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Clear Paid filter' }).click();
+  await page.getByRole('button', { name: 'Clear Comedy filter' }).click();
+  await expect(page.getByText(/matching fictional events/)).toBeVisible();
+
+  await query.fill('paid comedy');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(
+    page.getByText(/These alternatives differ only as stated/)
+  ).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Preview search result 1: alternative' })
+    .click();
+  await expect(page.getByText('Price differs from paid.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Clear search' }).first().click();
+  await query.fill('surprise me with magic vibes');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(
+    page
+      .getByLabel('Optional intelligent search')
+      .getByText(/could not reliably map this request/)
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: /Filters/ })).toBeVisible();
+});

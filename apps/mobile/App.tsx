@@ -10,9 +10,12 @@ import {
   DATE_FILTER_OPTIONS,
   eventDetailsResponseSchema,
   eventListResponseSchema,
+  intelligentSearchResponseSchema,
   PRICE_FILTER_OPTIONS,
   presentEvent,
   summarizeActiveFilters,
+  type IntelligentSearchResponse,
+  type SearchConstraintKey,
   type PublicEvent
 } from '@pulso/contracts';
 import {
@@ -21,6 +24,7 @@ import {
   type DiscoveryFilters,
   type EventCategory
 } from '@pulso/domain';
+import { MOBILE_SEARCH_PANEL_LAYOUT } from './search-layout';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -58,6 +62,12 @@ type DetailsState =
   | { kind: 'success'; event: PublicEvent }
   | { kind: 'error'; eventId: string };
 
+interface ActiveSearch {
+  query: string;
+  manualFilters: DiscoveryFilters;
+  disabledDerivedKeys: SearchConstraintKey[];
+}
+
 function eventUrl(
   bounds: readonly [number, number, number, number],
   filters: DiscoveryFilters
@@ -76,6 +86,7 @@ export default function App() {
   const [bounds, setBounds] =
     useState<readonly [number, number, number, number]>(initialBounds);
   const [details, setDetails] = useState<DetailsState>({ kind: 'closed' });
+  const activeSearch = useRef<ActiveSearch | undefined>(undefined);
   const filtersRef = useRef<DiscoveryFilters>({
     ...DEFAULT_DISCOVERY_FILTERS,
     categories: []
@@ -83,6 +94,10 @@ export default function App() {
   const [filters, setFilters] = useState(filtersRef.current);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterNotice, setFilterNotice] = useState<string>();
+  const [queryInput, setQueryInput] = useState('');
+  const [searchResult, setSearchResult] = useState<IntelligentSearchResponse>();
+  const [searchProcessing, setSearchProcessing] = useState(false);
+  const [searchError, setSearchError] = useState(false);
 
   const loadEvents = useCallback(
     async (
@@ -91,7 +106,42 @@ export default function App() {
     ) => {
       setBounds(nextBounds);
       setState('loading');
+      setSearchError(false);
       try {
+        if (activeSearch.current) {
+          setSearchProcessing(true);
+          const [west, south, east, north] = nextBounds;
+          const response = await fetch(`${API_BASE_URL}/search`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              query: activeSearch.current.query,
+              bounds: { west, south, east, north },
+              manualFilters: activeSearch.current.manualFilters,
+              disabledDerivedKeys: activeSearch.current.disabledDerivedKeys
+            })
+          });
+          if (!response.ok) throw new Error('Search API unavailable');
+          const result = intelligentSearchResponseSchema.parse(
+            await response.json()
+          );
+          setSearchResult(result);
+          const effectiveFilters = toDiscoveryFilters(
+            result.interpretation.effectiveFilters
+          );
+          filtersRef.current = effectiveFilters;
+          setFilters(effectiveFilters);
+          const foundEvents = result.data.map(({ event }) => event);
+          setEvents(foundEvents);
+          setSelected((current) =>
+            current && foundEvents.some(({ id }) => id === current.id)
+              ? current
+              : undefined
+          );
+          setState(foundEvents.length === 0 ? 'empty' : 'success');
+          setSearchProcessing(false);
+          return;
+        }
         const response = await fetch(eventUrl(nextBounds, activeFilters));
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
@@ -104,6 +154,8 @@ export default function App() {
         setState(result.data.length === 0 ? 'empty' : 'success');
       } catch {
         setState('error');
+        if (activeSearch.current) setSearchError(true);
+        setSearchProcessing(false);
       }
     },
     []
@@ -114,6 +166,13 @@ export default function App() {
   }, [loadEvents]);
 
   function applyFilters(nextFilters: DiscoveryFilters) {
+    if (activeSearch.current) {
+      activeSearch.current = applySearchFilterEdits(
+        activeSearch.current,
+        filtersRef.current,
+        nextFilters
+      );
+    }
     filtersRef.current = nextFilters;
     setFilters(nextFilters);
     if (selected) {
@@ -125,6 +184,61 @@ export default function App() {
       setFilterNotice(undefined);
     }
     void loadEvents(bounds, nextFilters);
+  }
+
+  function submitSearch() {
+    const query = queryInput.trim();
+    if (!query) return;
+    const manualFilters = activeSearch.current?.manualFilters ?? {
+      ...filtersRef.current,
+      categories: [...filtersRef.current.categories]
+    };
+    activeSearch.current = {
+      query,
+      manualFilters,
+      disabledDerivedKeys: []
+    };
+    setSearchResult(undefined);
+    setSearchProcessing(true);
+    void loadEvents(bounds, manualFilters);
+  }
+
+  function clearSearch() {
+    const restored = activeSearch.current?.manualFilters ?? filtersRef.current;
+    activeSearch.current = undefined;
+    setQueryInput('');
+    setSearchResult(undefined);
+    setSearchError(false);
+    filtersRef.current = restored;
+    setFilters(restored);
+    void loadEvents(bounds, restored);
+  }
+
+  function clearAll() {
+    const defaults = { ...DEFAULT_DISCOVERY_FILTERS, categories: [] };
+    activeSearch.current = undefined;
+    setQueryInput('');
+    setSearchResult(undefined);
+    setSearchError(false);
+    filtersRef.current = defaults;
+    setFilters(defaults);
+    setSelected(undefined);
+    void loadEvents(bounds, defaults);
+  }
+
+  function clearDerivedConstraint(key: SearchConstraintKey) {
+    if (!activeSearch.current) return;
+    activeSearch.current = {
+      ...activeSearch.current,
+      disabledDerivedKeys: [
+        ...new Set([...activeSearch.current.disabledDerivedKeys, key])
+      ]
+    };
+    setSelected(undefined);
+    setFilterNotice(
+      'The open event preview was closed because the search interpretation changed.'
+    );
+    void loadEvents(bounds);
   }
 
   async function openDetails(eventId: string) {
@@ -172,6 +286,17 @@ export default function App() {
             </Marker>
           ))}
         </Map>
+        <MobileSearchPanel
+          query={queryInput}
+          result={searchResult}
+          processing={searchProcessing}
+          error={searchError}
+          onQueryChange={setQueryInput}
+          onSubmit={submitSearch}
+          onClear={clearSearch}
+          onClearConstraint={clearDerivedConstraint}
+          onPreview={setSelected}
+        />
         <View style={styles.filterControls}>
           <Pressable
             style={styles.filterButton}
@@ -193,7 +318,8 @@ export default function App() {
             {state === 'success' &&
               `${events.length} matching fictional event${events.length === 1 ? '' : 's'} in this map area.`}
             {state === 'empty' &&
-              'No events match the active filters in this map area.'}
+              (searchResult?.message ??
+                'No events match the active filters in this map area.')}
             {state === 'error' &&
               'Events could not be loaded. Your map context is preserved.'}
           </Text>
@@ -201,19 +327,26 @@ export default function App() {
             <Pressable
               onPress={() =>
                 state === 'empty'
-                  ? applyFilters({
-                      ...DEFAULT_DISCOVERY_FILTERS,
-                      categories: []
-                    })
+                  ? searchResult
+                    ? clearSearch()
+                    : clearAll()
                   : void loadEvents(bounds)
               }
               accessibilityRole="button"
               accessibilityLabel={
-                state === 'empty' ? 'Clear all filters' : 'Retry loading events'
+                state === 'empty'
+                  ? searchResult
+                    ? 'Clear search'
+                    : 'Clear all filters'
+                  : 'Retry loading events'
               }
             >
               <Text style={styles.link}>
-                {state === 'empty' ? 'Clear all filters' : 'Retry'}
+                {state === 'empty'
+                  ? searchResult
+                    ? 'Clear search'
+                    : 'Clear all filters'
+                  : 'Retry'}
               </Text>
             </Pressable>
           )}
@@ -245,11 +378,15 @@ export default function App() {
             filters={filters}
             onChange={applyFilters}
             onClose={() => setFiltersOpen(false)}
+            onClearAll={clearAll}
           />
         )}
         {selected && details.kind === 'closed' && (
           <EventPreview
             event={selected}
+            searchMatch={searchResult?.data.find(
+              ({ event }) => event.id === selected.id
+            )}
             onClose={() => setSelected(undefined)}
             onDetails={() => void openDetails(selected.id)}
           />
@@ -264,6 +401,229 @@ export default function App() {
       </View>
     </SafeAreaView>
   );
+}
+
+function MobileSearchPanel({
+  query,
+  result,
+  processing,
+  error,
+  onQueryChange,
+  onSubmit,
+  onClear,
+  onClearConstraint,
+  onPreview
+}: {
+  query: string;
+  result: IntelligentSearchResponse | undefined;
+  processing: boolean;
+  error: boolean;
+  onQueryChange: (value: string) => void;
+  onSubmit: () => void;
+  onClear: () => void;
+  onClearConstraint: (key: SearchConstraintKey) => void;
+  onPreview: (event: PublicEvent) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View
+      style={[styles.searchPanel, !open && styles.searchPanelCollapsed]}
+      accessibilityLabel="Optional intelligent search"
+      pointerEvents={open ? 'auto' : 'box-none'}
+    >
+      <Pressable
+        style={styles.searchToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((current) => !current)}
+      >
+        <Text style={styles.filterButtonText}>
+          {open ? 'Collapse search' : 'Intelligent search'}
+        </Text>
+      </Pressable>
+      {open && (
+        <ScrollView
+          style={styles.searchPanelContent}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.searchLabel}>What do you want to do?</Text>
+          <View style={styles.searchRow}>
+            <TextInput
+              style={styles.searchInput}
+              value={query}
+              maxLength={240}
+              placeholder="Free music tonight"
+              placeholderTextColor="#7f9da0"
+              accessibilityLabel="What do you want to do?"
+              returnKeyType="search"
+              onChangeText={onQueryChange}
+              onSubmitEditing={onSubmit}
+            />
+            <Pressable
+              style={styles.searchButton}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: processing || !query.trim() }}
+              disabled={processing || !query.trim()}
+              onPress={onSubmit}
+            >
+              <Text style={styles.filterButtonText}>Search</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.searchHelp}>
+            Optional deterministic matching; manual filters remain available. No
+            external AI provider is used.
+          </Text>
+          {processing && (
+            <View
+              style={styles.searchProgress}
+              accessibilityLiveRegion="polite"
+            >
+              <ActivityIndicator color="#76f0a8" />
+              <Text style={styles.body}>Interpreting request…</Text>
+            </View>
+          )}
+          {error && (
+            <Text style={styles.warning} accessibilityLiveRegion="assertive">
+              Search could not be completed. The map and filters remain
+              available.
+            </Text>
+          )}
+          {result && !processing && (
+            <View style={styles.searchInterpretation}>
+              <View style={styles.searchHeading}>
+                <Text
+                  style={styles.searchResultTitle}
+                  accessibilityRole="header"
+                >
+                  Pulso understood
+                </Text>
+                <Pressable accessibilityRole="button" onPress={onClear}>
+                  <Text style={styles.link}>Clear search</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.body}>{result.message}</Text>
+              {result.clarification && (
+                <Text style={styles.warningText}>
+                  One clarification: {result.clarification}
+                </Text>
+              )}
+              <Text style={styles.filterLegend}>Hard constraints</Text>
+              {result.interpretation.constraints.map((constraint) => (
+                <View
+                  style={styles.searchConstraint}
+                  key={`${constraint.key}-${constraint.label}`}
+                >
+                  <Text style={styles.body}>{constraint.label}</Text>
+                  {isSearchConstraintKey(constraint.key) && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Clear derived constraint ${constraint.label}`}
+                      onPress={() =>
+                        onClearConstraint(constraint.key as SearchConstraintKey)
+                      }
+                    >
+                      <Text style={styles.link}>Clear</Text>
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+              {result.interpretation.rankingSignals.length > 0 && (
+                <>
+                  <Text style={styles.filterLegend}>Ranking signals</Text>
+                  {result.interpretation.rankingSignals.map((signal) => (
+                    <Text
+                      style={styles.body}
+                      key={`${signal.key}-${signal.label}`}
+                    >
+                      • {signal.label}
+                    </Text>
+                  ))}
+                </>
+              )}
+            </View>
+          )}
+          {result && result.data.length > 0 && (
+            <View style={styles.searchResults}>
+              <Text style={styles.filterLegend}>Results on this map</Text>
+              {result.data.map(({ event, matchType }, index) => (
+                <Pressable
+                  key={event.id}
+                  style={styles.markerAction}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Preview search result ${index + 1}: ${matchType}`}
+                  onPress={() => onPreview(event)}
+                >
+                  <Text style={styles.markerActionText}>
+                    Preview {event.title} ({matchType})
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+function isSearchConstraintKey(value: string): value is SearchConstraintKey {
+  return ['date', 'categories', 'price', 'excluded_categories'].includes(value);
+}
+
+function toDiscoveryFilters(
+  filters: IntelligentSearchResponse['interpretation']['effectiveFilters']
+): DiscoveryFilters {
+  return {
+    date: filters.date,
+    categories: [...filters.categories],
+    price: filters.price,
+    ...(filters.customStartDate
+      ? { customStartDate: filters.customStartDate }
+      : {}),
+    ...(filters.customEndDate ? { customEndDate: filters.customEndDate } : {})
+  };
+}
+
+function applySearchFilterEdits(
+  search: ActiveSearch,
+  current: DiscoveryFilters,
+  next: DiscoveryFilters
+): ActiveSearch {
+  const manualFilters = {
+    ...search.manualFilters,
+    categories: [...search.manualFilters.categories]
+  };
+  const disabled = new Set(search.disabledDerivedKeys);
+  if (
+    current.date !== next.date ||
+    current.customStartDate !== next.customStartDate ||
+    current.customEndDate !== next.customEndDate
+  ) {
+    manualFilters.date = next.date;
+    if (next.customStartDate)
+      manualFilters.customStartDate = next.customStartDate;
+    else delete manualFilters.customStartDate;
+    if (next.customEndDate) manualFilters.customEndDate = next.customEndDate;
+    else delete manualFilters.customEndDate;
+    disabled.add('date');
+  }
+  if (
+    current.categories.length !== next.categories.length ||
+    current.categories.some((category) => !next.categories.includes(category))
+  ) {
+    manualFilters.categories = [...next.categories];
+    disabled.add('categories');
+  }
+  if (current.price !== next.price) {
+    manualFilters.price = next.price;
+    disabled.add('price');
+  }
+  return {
+    ...search,
+    manualFilters,
+    disabledDerivedKeys: [...disabled]
+  };
 }
 
 function withoutCustomDates(
@@ -318,11 +678,13 @@ function MobileActiveFilters({
 function MobileFilterOverlay({
   filters,
   onChange,
-  onClose
+  onClose,
+  onClearAll
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
   onClose: () => void;
+  onClearAll: () => void;
 }) {
   const today = getMontrealCalendarDate(new Date());
   const setDate = (date: DiscoveryFilters['date']) => {
@@ -443,9 +805,7 @@ function MobileFilterOverlay({
         <Pressable
           style={styles.clearAll}
           accessibilityRole="button"
-          onPress={() =>
-            onChange({ ...DEFAULT_DISCOVERY_FILTERS, categories: [] })
-          }
+          onPress={onClearAll}
         >
           <Text style={styles.filterButtonText}>Clear all filters</Text>
         </Pressable>
@@ -480,10 +840,12 @@ function FilterChoice({
 
 function EventPreview({
   event,
+  searchMatch,
   onClose,
   onDetails
 }: {
   event: PublicEvent;
+  searchMatch: IntelligentSearchResponse['data'][number] | undefined;
   onClose: () => void;
   onDetails: () => void;
 }) {
@@ -502,6 +864,28 @@ function EventPreview({
       <Text style={styles.body}>{presentation.price}</Text>
       {presentation.materialWarning && (
         <Text style={styles.warning}>{presentation.materialWarning}</Text>
+      )}
+      {searchMatch && (
+        <View
+          style={styles.matchExplanation}
+          accessibilityLabel="Why this event matches"
+        >
+          <Text style={styles.filterLegend}>
+            {searchMatch.matchType === 'exact'
+              ? 'Why this matches'
+              : 'Why this is an alternative'}
+          </Text>
+          {searchMatch.reasons.map((reason) => (
+            <Text key={reason} style={styles.body}>
+              • {reason}
+            </Text>
+          ))}
+          {searchMatch.differences.map((difference) => (
+            <Text key={difference} style={styles.warningText}>
+              • {difference}
+            </Text>
+          ))}
+        </View>
       )}
       <Pressable
         style={styles.primaryAction}
@@ -640,7 +1024,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 64,
-    top: 82,
+    top: 344,
     gap: 8,
     padding: 10,
     borderRadius: 10,
@@ -654,6 +1038,85 @@ const styles = StyleSheet.create({
     top: 12,
     gap: 6
   },
+  searchPanel: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: MOBILE_SEARCH_PANEL_LAYOUT.top,
+    maxHeight: MOBILE_SEARCH_PANEL_LAYOUT.expandedMaxHeight,
+    borderColor: '#527579',
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: MOBILE_SEARCH_PANEL_LAYOUT.backgroundColor,
+    padding: 10,
+    zIndex: MOBILE_SEARCH_PANEL_LAYOUT.layer,
+    elevation: MOBILE_SEARCH_PANEL_LAYOUT.layer
+  },
+  searchPanelCollapsed: {
+    maxHeight: MOBILE_SEARCH_PANEL_LAYOUT.collapsedMaxHeight,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    padding: 0
+  },
+  searchToggle: {
+    alignSelf: 'flex-end',
+    minHeight: 44,
+    justifyContent: 'center',
+    borderColor: '#76f0a8',
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: '#07191bf5',
+    paddingHorizontal: 12,
+    marginBottom: 6
+  },
+  searchLabel: { color: '#76f0a8', fontWeight: '700' },
+  searchRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 44,
+    borderColor: '#527579',
+    borderRadius: 8,
+    borderWidth: 1,
+    color: '#f5fcf8',
+    paddingHorizontal: 10
+  },
+  searchButton: {
+    minHeight: 44,
+    justifyContent: 'center',
+    borderColor: '#76f0a8',
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12
+  },
+  searchHelp: { color: '#a8c5c8', fontSize: 11, marginTop: 5 },
+  searchPanelContent: {
+    maxHeight: MOBILE_SEARCH_PANEL_LAYOUT.contentMaxHeight
+  },
+  searchProgress: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6
+  },
+  searchInterpretation: { marginTop: 4 },
+  searchHeading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  searchResultTitle: { color: '#f5fcf8', fontSize: 18, fontWeight: '700' },
+  searchConstraint: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8
+  },
+  searchResults: { gap: 6, paddingBottom: 6 },
   filterButton: {
     alignSelf: 'flex-start',
     minHeight: 44,
@@ -700,7 +1163,8 @@ const styles = StyleSheet.create({
     right: 10,
     top: 66,
     bottom: 10,
-    zIndex: 10,
+    zIndex: 20,
+    elevation: 20,
     borderColor: '#527579',
     borderRadius: 12,
     borderWidth: 1,
@@ -765,7 +1229,9 @@ const styles = StyleSheet.create({
     bottom: 12,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#07191bf5'
+    backgroundColor: '#07191bf5',
+    zIndex: 30,
+    elevation: 30
   },
   close: { color: '#76f0a8', textAlign: 'right' },
   chip: {
@@ -785,6 +1251,13 @@ const styles = StyleSheet.create({
     marginTop: 10,
     padding: 10
   },
+  warningText: { color: '#ffbd69', marginTop: 4 },
+  matchExplanation: {
+    borderTopColor: '#315256',
+    borderTopWidth: 1,
+    marginTop: 10,
+    paddingTop: 4
+  },
   primaryAction: {
     alignSelf: 'flex-start',
     backgroundColor: '#76f0a8',
@@ -801,7 +1274,9 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     backgroundColor: '#0d2528',
-    padding: 18
+    padding: 18,
+    zIndex: 40,
+    elevation: 40
   },
   back: { color: '#76f0a8', fontSize: 16, fontWeight: '700', marginBottom: 10 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },

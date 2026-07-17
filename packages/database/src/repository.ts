@@ -4,6 +4,7 @@ import type {
   PublicEvent
 } from '@pulso/contracts';
 import type { DiscoveryWindow } from '@pulso/domain';
+import type { EventCategory } from '@pulso/domain';
 import type { Pool } from 'pg';
 
 export interface ExternalDestinationRecord {
@@ -16,7 +17,8 @@ export interface ExternalDestinationRecord {
 export interface EventRepository {
   findInBounds(
     bounds: MapBoundsQuery,
-    window: DiscoveryWindow
+    window: DiscoveryWindow,
+    options?: { excludedCategories?: EventCategory[] }
   ): Promise<PublicEvent[]>;
   findWithinDirectDistance(query: DirectDistanceQuery): Promise<PublicEvent[]>;
   findById(id: string): Promise<PublicEvent | undefined>;
@@ -133,7 +135,8 @@ export class PostgresEventRepository implements EventRepository {
 
   async findInBounds(
     bounds: MapBoundsQuery,
-    window: DiscoveryWindow
+    window: DiscoveryWindow,
+    options: { excludedCategories?: EventCategory[] } = {}
   ): Promise<PublicEvent[]> {
     const result = await this.pool.query<EventRow>(
       `${publicEventSelect}
@@ -145,6 +148,7 @@ export class PostgresEventRepository implements EventRepository {
          AND e.status IN ('scheduled', 'postponed')
          AND ($7::event_category[] IS NULL OR e.category = ANY($7))
          AND ($8::text = 'all' OR e.price_kind = $8)
+         AND ($9::event_category[] IS NULL OR NOT (e.category = ANY($9)))
        ORDER BY e.starts_at, e.id`,
       [
         bounds.west,
@@ -154,7 +158,10 @@ export class PostgresEventRepository implements EventRepository {
         window.startsAt,
         window.endsAt,
         bounds.categories.length > 0 ? bounds.categories : null,
-        bounds.price
+        bounds.price,
+        options.excludedCategories && options.excludedCategories.length > 0
+          ? options.excludedCategories
+          : null
       ]
     );
     return result.rows.map(toPublicEvent);

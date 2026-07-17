@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../apps/api/src/app.js';
 import {
   eventDetailsResponseSchema,
-  eventListResponseSchema
+  eventListResponseSchema,
+  intelligentSearchResponseSchema
 } from '@pulso/contracts';
 import { createPool, PostgresEventRepository } from '@pulso/database';
 import { createMontrealDiscoveryWindow } from '@pulso/domain';
@@ -268,6 +269,90 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
       expect(events.some(({ status }) => status === 'cancelled')).toBe(false);
       expect(events.map(({ id }) => id)).not.toContain(
         '00000000-0000-4000-8000-000000000008'
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('applies deterministic search constraints in Postgres and returns explanations', async () => {
+    const app = buildApp(repository);
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/search',
+        payload: {
+          query: 'free music tonight starting soon',
+          bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
+          manualFilters: { date: 'next7', categories: [], price: 'all' },
+          disabledDerivedKeys: []
+        }
+      });
+      expect(response.statusCode).toBe(200);
+      const result = intelligentSearchResponseSchema.parse(response.json());
+      expect(result.condition).toBe('exact');
+      expect(result.data.map(({ event }) => event.id)).toContain(
+        '00000000-0000-4000-8000-000000000001'
+      );
+      expect(
+        result.data.every(
+          ({ event }) =>
+            event.category === 'music' && event.price.kind === 'free'
+        )
+      ).toBe(true);
+      expect(result.data[0]?.reasons).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('Category matches'),
+          expect.stringContaining('Price matches'),
+          expect.stringContaining('Date matches')
+        ])
+      );
+      expect(JSON.stringify(result)).not.toContain(
+        'free music tonight starting soon'
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('applies explicit category exclusions in SQL and labels one-step alternatives', async () => {
+    const app = buildApp(repository);
+    try {
+      const excludedResponse = await app.inject({
+        method: 'POST',
+        url: '/search',
+        payload: {
+          query: 'not comedy',
+          bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
+          manualFilters: { date: 'next7', categories: [], price: 'all' },
+          disabledDerivedKeys: []
+        }
+      });
+      const excluded = intelligentSearchResponseSchema.parse(
+        excludedResponse.json()
+      );
+      expect(excluded.condition).toBe('exact');
+      expect(
+        excluded.data.some(({ event }) => event.category === 'comedy')
+      ).toBe(false);
+
+      const alternativeResponse = await app.inject({
+        method: 'POST',
+        url: '/search',
+        payload: {
+          query: 'paid comedy',
+          bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
+          manualFilters: { date: 'next7', categories: [], price: 'all' },
+          disabledDerivedKeys: []
+        }
+      });
+      const alternative = intelligentSearchResponseSchema.parse(
+        alternativeResponse.json()
+      );
+      expect(alternative.condition).toBe('alternative');
+      expect(alternative.data[0]?.matchType).toBe('alternative');
+      expect(alternative.data[0]?.differences).toContain(
+        'Price differs from paid.'
       );
     } finally {
       await app.close();

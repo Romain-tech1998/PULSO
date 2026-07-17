@@ -47,6 +47,9 @@ importers:
       '@pulso/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@pulso/search':
+        specifier: workspace:*
+        version: link:../../packages/search
       fastify:
         specifier: 5.10.0
         version: 5.10.0
@@ -177,6 +180,19 @@ importers:
         version: 6.0.3
 
   packages/domain:
+    devDependencies:
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/search:
+    dependencies:
+      '@pulso/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@pulso/domain':
+        specifier: workspace:*
+        version: link:../domain
     devDependencies:
       typescript:
         specifier: 6.0.3

@@ -187,6 +187,111 @@ a:focus-visible {
   background: #07191bee;
   padding: 0.7rem;
 }
+.search-panel {
+  position: absolute;
+  z-index: 3;
+  top: 5.25rem;
+  right: 1rem;
+  width: min(28rem, calc(100% - 2rem));
+  max-height: calc(100% - 6.25rem);
+  overflow-y: auto;
+  border: 1px solid #527579;
+  border-radius: 0.75rem;
+  background: #07191bf5;
+  padding: 0.85rem;
+}
+.search-panel-collapsed {
+  width: auto;
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  padding: 0;
+}
+.search-toggle {
+  width: 100%;
+  margin-bottom: 0.65rem;
+}
+.search-panel-collapsed .search-toggle {
+  width: auto;
+  margin: 0;
+}
+.search-form label,
+.search-interpretation h3 {
+  color: #76f0a8;
+  font-weight: 700;
+}
+.search-form > div {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+.search-form input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid #527579;
+  border-radius: 0.5rem;
+  background: #0d2528;
+  color: #f5fcf8;
+  padding: 0.65rem;
+}
+.search-form button,
+.search-panel button {
+  min-height: 2.5rem;
+  border: 1px solid #76f0a8;
+  border-radius: 0.5rem;
+  background: #07191b;
+  color: #76f0a8;
+  cursor: pointer;
+  padding: 0.45rem 0.7rem;
+}
+.search-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.search-help {
+  margin: 0.5rem 0 0;
+  color: #a8c5c8;
+  font-size: 0.8rem;
+}
+.search-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.search-heading h2 {
+  margin: 0.8rem 0 0;
+  font-size: 1.2rem;
+}
+.search-interpretation h3 {
+  margin-bottom: 0.25rem;
+  font-size: 0.9rem;
+}
+.search-interpretation ul,
+.match-explanation ul {
+  margin: 0.35rem 0;
+  padding-left: 1.2rem;
+}
+.search-interpretation li,
+.match-explanation li {
+  margin: 0.25rem 0;
+}
+.search-results {
+  display: grid;
+  gap: 0.4rem;
+}
+.search-results h3 {
+  margin-bottom: 0;
+}
+.clarification,
+.alternative-difference {
+  color: #ffbd69;
+}
+.match-explanation {
+  border-top: 1px solid #315256;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+}
 .status button {
   margin-left: 0.75rem;
 }
@@ -303,5 +408,9 @@ dd {
   }
   .status {
     top: 7.5rem;
+  }
+  .search-panel {
+    top: 11rem;
+    max-height: 44%;
   }
 }

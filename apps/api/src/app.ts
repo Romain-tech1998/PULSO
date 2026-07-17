@@ -2,10 +2,20 @@ import {
   directDistanceQuerySchema,
   eventDetailsResponseSchema,
   eventListResponseSchema,
+  intelligentSearchRequestSchema,
+  intelligentSearchResponseSchema,
   mapBoundsQuerySchema
 } from '@pulso/contracts';
+import type { MapBoundsQuery } from '@pulso/contracts';
 import type { EventRepository } from '@pulso/database';
-import { createFilteredDiscoveryWindow } from '@pulso/domain';
+import {
+  createFilteredDiscoveryWindow,
+  type DiscoveryFilters
+} from '@pulso/domain';
+import {
+  interpretDeterministicSearch,
+  rankAndExplainEvents
+} from '@pulso/search';
 import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 
@@ -39,8 +49,12 @@ export function buildApp(
 
   app.addHook('onSend', async (_request, reply, payload) => {
     reply.header('access-control-allow-origin', '*');
+    reply.header('access-control-allow-methods', 'GET, POST, OPTIONS');
+    reply.header('access-control-allow-headers', 'content-type');
     return payload;
   });
+
+  app.options('/search', async (_request, reply) => reply.status(204).send());
 
   app.get('/events', async (request) => {
     const query = mapBoundsQuerySchema.parse(request.query);
@@ -53,6 +67,112 @@ export function buildApp(
           ...(query.dateEnd ? { customEndDate: query.dateEnd } : {})
         })
       )
+    });
+  });
+
+  app.post('/search', async (request) => {
+    const search = intelligentSearchRequestSchema.parse(request.body);
+    const interpreted = interpretDeterministicSearch(
+      search.query,
+      search.disabledDerivedKeys
+    );
+    const manualFilters = normalizeDiscoveryFilters(search.manualFilters);
+    const effectiveFilters: DiscoveryFilters = {
+      ...manualFilters,
+      ...(interpreted.derivedFilters.date
+        ? { date: interpreted.derivedFilters.date }
+        : {}),
+      ...(interpreted.derivedFilters.categories
+        ? {
+            categories: [
+              ...new Set([
+                ...manualFilters.categories,
+                ...interpreted.derivedFilters.categories
+              ])
+            ]
+          }
+        : {}),
+      ...(interpreted.derivedFilters.price
+        ? { price: interpreted.derivedFilters.price }
+        : {})
+    };
+    if (effectiveFilters.date !== 'custom') {
+      delete effectiveFilters.customStartDate;
+      delete effectiveFilters.customEndDate;
+    }
+
+    const responseBase = {
+      interpretation: {
+        engine: 'deterministic' as const,
+        language: 'en' as const,
+        constraints: interpreted.constraints,
+        rankingSignals: interpreted.rankingSignals,
+        effectiveFilters
+      }
+    };
+    if (interpreted.resolution === 'clarification') {
+      return intelligentSearchResponseSchema.parse({
+        ...responseBase,
+        condition: 'clarification',
+        message:
+          'One explicit answer is required before Pulso can apply this constraint.',
+        clarification: interpreted.clarification,
+        data: []
+      });
+    }
+    if (interpreted.resolution === 'no_reliable_result') {
+      return intelligentSearchResponseSchema.parse({
+        ...responseBase,
+        condition: 'no_reliable_result',
+        message: interpreted.message,
+        data: []
+      });
+    }
+
+    const boundsQuery = toMapBoundsQuery(search.bounds, effectiveFilters);
+    const now = options.now?.() ?? new Date();
+    const window = createFilteredDiscoveryWindow(now, effectiveFilters);
+    const exactEvents = await repository.findInBounds(boundsQuery, window, {
+      excludedCategories: interpreted.excludedCategories
+    });
+    if (exactEvents.length > 0) {
+      return intelligentSearchResponseSchema.parse({
+        ...responseBase,
+        condition: 'exact',
+        message: `${exactEvents.length} exact fictional match${exactEvents.length === 1 ? '' : 'es'} found.`,
+        data: rankAndExplainEvents(exactEvents, interpreted, 'exact')
+      });
+    }
+
+    const alternative = await findExplainedAlternative(
+      repository,
+      search.bounds,
+      manualFilters,
+      effectiveFilters,
+      interpreted,
+      now
+    );
+    if (alternative) {
+      return intelligentSearchResponseSchema.parse({
+        ...responseBase,
+        condition: 'alternative',
+        message:
+          'No event satisfies every hard constraint. These alternatives differ only as stated.',
+        data: rankAndExplainEvents(
+          alternative.events,
+          interpreted,
+          'alternative',
+          alternative.differences
+        )
+      });
+    }
+
+    return intelligentSearchResponseSchema.parse({
+      ...responseBase,
+      condition: 'no_reliable_result',
+      message:
+        'No reliable exact match or one-step explained alternative is available in this map area.',
+      data: []
     });
   });
 
@@ -102,4 +222,89 @@ export function buildApp(
   });
 
   return app;
+}
+
+function normalizeDiscoveryFilters(filters: {
+  date: DiscoveryFilters['date'];
+  categories: DiscoveryFilters['categories'];
+  price: DiscoveryFilters['price'];
+  customStartDate?: string | undefined;
+  customEndDate?: string | undefined;
+}): DiscoveryFilters {
+  return {
+    date: filters.date,
+    categories: [...filters.categories],
+    price: filters.price,
+    ...(filters.customStartDate
+      ? { customStartDate: filters.customStartDate }
+      : {}),
+    ...(filters.customEndDate ? { customEndDate: filters.customEndDate } : {})
+  };
+}
+
+function toMapBoundsQuery(
+  bounds: { west: number; south: number; east: number; north: number },
+  filters: DiscoveryFilters
+): MapBoundsQuery {
+  return {
+    ...bounds,
+    date: filters.date,
+    categories: filters.categories,
+    price: filters.price,
+    ...(filters.customStartDate ? { dateStart: filters.customStartDate } : {}),
+    ...(filters.customEndDate ? { dateEnd: filters.customEndDate } : {})
+  };
+}
+
+async function findExplainedAlternative(
+  repository: EventRepository,
+  bounds: { west: number; south: number; east: number; north: number },
+  manualFilters: DiscoveryFilters,
+  effectiveFilters: DiscoveryFilters,
+  interpreted: ReturnType<typeof interpretDeterministicSearch>,
+  now: Date
+): Promise<
+  | {
+      events: Awaited<ReturnType<EventRepository['findInBounds']>>;
+      differences: string[];
+    }
+  | undefined
+> {
+  const plans: Array<{
+    filters: DiscoveryFilters;
+    excludedCategories: typeof interpreted.excludedCategories;
+    differences: string[];
+  }> = [];
+  if (interpreted.derivedFilters.price) {
+    plans.push({
+      filters: { ...effectiveFilters, price: manualFilters.price },
+      excludedCategories: interpreted.excludedCategories,
+      differences: [`Price differs from ${interpreted.derivedFilters.price}.`]
+    });
+  }
+  if (interpreted.derivedFilters.categories?.length) {
+    plans.push({
+      filters: { ...effectiveFilters, categories: manualFilters.categories },
+      excludedCategories: interpreted.excludedCategories,
+      differences: [
+        'Event category differs from the requested category filter.'
+      ]
+    });
+  }
+  if (interpreted.excludedCategories.length > 0) {
+    plans.push({
+      filters: effectiveFilters,
+      excludedCategories: [],
+      differences: ['Event category was explicitly excluded in the request.']
+    });
+  }
+  for (const plan of plans) {
+    const events = await repository.findInBounds(
+      toMapBoundsQuery(bounds, plan.filters),
+      createFilteredDiscoveryWindow(now, plan.filters),
+      { excludedCategories: plan.excludedCategories }
+    );
+    if (events.length > 0) return { events, differences: plan.differences };
+  }
+  return undefined;
 }

@@ -6,8 +6,11 @@ import {
   DATE_FILTER_OPTIONS,
   eventDetailsResponseSchema,
   eventListResponseSchema,
+  intelligentSearchResponseSchema,
   PRICE_FILTER_OPTIONS,
   summarizeActiveFilters,
+  type IntelligentSearchResponse,
+  type SearchConstraintKey,
   type PublicEvent
 } from '@pulso/contracts';
 import {
@@ -45,6 +48,12 @@ type DetailsState =
   | { kind: 'success'; event: PublicEvent }
   | { kind: 'error'; eventId: string };
 
+interface ActiveSearch {
+  query: string;
+  manualFilters: DiscoveryFilters;
+  disabledDerivedKeys: SearchConstraintKey[];
+}
+
 function boundsUrl(bounds: MapBounds, filters: DiscoveryFilters): string {
   return `${API_BASE_URL}/events?${buildMapEventsQuery(bounds, filters)}`;
 }
@@ -54,6 +63,7 @@ export function ExploreMap() {
   const map = useRef<maplibregl.Map | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
   const currentBounds = useRef(INITIAL_BOUNDS);
+  const activeSearch = useRef<ActiveSearch | undefined>(undefined);
   const filtersRef = useRef<DiscoveryFilters>({
     ...DEFAULT_DISCOVERY_FILTERS,
     categories: []
@@ -67,6 +77,10 @@ export function ExploreMap() {
   const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterNotice, setFilterNotice] = useState<string>();
+  const [queryInput, setQueryInput] = useState('');
+  const [searchResult, setSearchResult] = useState<IntelligentSearchResponse>();
+  const [searchProcessing, setSearchProcessing] = useState(false);
+  const [searchError, setSearchError] = useState(false);
 
   const loadEvents = useCallback(
     async (
@@ -75,7 +89,41 @@ export function ExploreMap() {
     ) => {
       currentBounds.current = bounds;
       setState('loading');
+      setSearchError(false);
       try {
+        if (activeSearch.current) {
+          setSearchProcessing(true);
+          const response = await fetch(`${API_BASE_URL}/search`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              query: activeSearch.current.query,
+              bounds,
+              manualFilters: activeSearch.current.manualFilters,
+              disabledDerivedKeys: activeSearch.current.disabledDerivedKeys
+            })
+          });
+          if (!response.ok) throw new Error('Search API unavailable');
+          const result = intelligentSearchResponseSchema.parse(
+            await response.json()
+          );
+          setSearchResult(result);
+          const effectiveFilters = toDiscoveryFilters(
+            result.interpretation.effectiveFilters
+          );
+          filtersRef.current = effectiveFilters;
+          setFilters(effectiveFilters);
+          const foundEvents = result.data.map(({ event }) => event);
+          setEvents(foundEvents);
+          setSelected((current) =>
+            current && foundEvents.some(({ id }) => id === current.id)
+              ? current
+              : undefined
+          );
+          setState(foundEvents.length === 0 ? 'empty' : 'success');
+          setSearchProcessing(false);
+          return;
+        }
         const response = await fetch(boundsUrl(bounds, activeFilters));
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
@@ -88,12 +136,21 @@ export function ExploreMap() {
         setState(result.data.length === 0 ? 'empty' : 'success');
       } catch {
         setState('error');
+        if (activeSearch.current) setSearchError(true);
+        setSearchProcessing(false);
       }
     },
     []
   );
 
   function applyFilters(nextFilters: DiscoveryFilters) {
+    if (activeSearch.current) {
+      activeSearch.current = applySearchFilterEdits(
+        activeSearch.current,
+        filtersRef.current,
+        nextFilters
+      );
+    }
     filtersRef.current = nextFilters;
     setFilters(nextFilters);
     if (selected) {
@@ -105,6 +162,61 @@ export function ExploreMap() {
       setFilterNotice(undefined);
     }
     void loadEvents(currentBounds.current, nextFilters);
+  }
+
+  function submitSearch() {
+    const query = queryInput.trim();
+    if (!query) return;
+    const manualFilters = activeSearch.current?.manualFilters ?? {
+      ...filtersRef.current,
+      categories: [...filtersRef.current.categories]
+    };
+    activeSearch.current = {
+      query,
+      manualFilters,
+      disabledDerivedKeys: []
+    };
+    setSearchResult(undefined);
+    setSearchProcessing(true);
+    void loadEvents(currentBounds.current, manualFilters);
+  }
+
+  function clearSearch() {
+    const restored = activeSearch.current?.manualFilters ?? filtersRef.current;
+    activeSearch.current = undefined;
+    setQueryInput('');
+    setSearchResult(undefined);
+    setSearchError(false);
+    filtersRef.current = restored;
+    setFilters(restored);
+    void loadEvents(currentBounds.current, restored);
+  }
+
+  function clearAll() {
+    const defaults = { ...DEFAULT_DISCOVERY_FILTERS, categories: [] };
+    activeSearch.current = undefined;
+    setQueryInput('');
+    setSearchResult(undefined);
+    setSearchError(false);
+    filtersRef.current = defaults;
+    setFilters(defaults);
+    setSelected(undefined);
+    void loadEvents(currentBounds.current, defaults);
+  }
+
+  function clearDerivedConstraint(key: SearchConstraintKey) {
+    if (!activeSearch.current) return;
+    activeSearch.current = {
+      ...activeSearch.current,
+      disabledDerivedKeys: [
+        ...new Set([...activeSearch.current.disabledDerivedKeys, key])
+      ]
+    };
+    setSelected(undefined);
+    setFilterNotice(
+      'The open event preview was closed because the search interpretation changed.'
+    );
+    void loadEvents(currentBounds.current);
   }
 
   useEffect(() => {
@@ -192,6 +304,17 @@ export function ExploreMap() {
         data-map-context="preserved"
       >
         <div ref={container} className="map" />
+        <SearchPanel
+          query={queryInput}
+          result={searchResult}
+          processing={searchProcessing}
+          error={searchError}
+          onQueryChange={setQueryInput}
+          onSubmit={submitSearch}
+          onClear={clearSearch}
+          onClearConstraint={clearDerivedConstraint}
+          onPreview={setSelected}
+        />
         <div className="filter-controls">
           <button
             type="button"
@@ -209,23 +332,21 @@ export function ExploreMap() {
             filters={filters}
             onChange={applyFilters}
             onClose={() => setFiltersOpen(false)}
+            onClearAll={clearAll}
           />
         )}
         <div className={`status status-${state}`} role="status">
           {state === 'loading' && 'Loading events…'}
           {state === 'empty' && (
             <>
-              No events match the active filters in this map area.
+              {searchResult
+                ? searchResult.message
+                : 'No events match the active filters in this map area.'}
               <button
                 type="button"
-                onClick={() =>
-                  applyFilters({
-                    ...DEFAULT_DISCOVERY_FILTERS,
-                    categories: []
-                  })
-                }
+                onClick={searchResult ? clearSearch : clearAll}
               >
-                Clear all filters
+                {searchResult ? 'Clear search' : 'Clear all filters'}
               </button>
             </>
           )}
@@ -248,6 +369,9 @@ export function ExploreMap() {
         {selected && (
           <EventPreview
             event={selected}
+            searchMatch={searchResult?.data.find(
+              ({ event }) => event.id === selected.id
+            )}
             detailsButton={detailsButton}
             onClose={() => setSelected(undefined)}
             onDetails={() => void openDetails(selected.id)}
@@ -290,6 +414,207 @@ export function ExploreMap() {
       )}
     </>
   );
+}
+
+function SearchPanel({
+  query,
+  result,
+  processing,
+  error,
+  onQueryChange,
+  onSubmit,
+  onClear,
+  onClearConstraint,
+  onPreview
+}: {
+  query: string;
+  result: IntelligentSearchResponse | undefined;
+  processing: boolean;
+  error: boolean;
+  onQueryChange: (value: string) => void;
+  onSubmit: () => void;
+  onClear: () => void;
+  onClearConstraint: (key: SearchConstraintKey) => void;
+  onPreview: (event: PublicEvent) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <aside
+      className={`search-panel${open ? '' : ' search-panel-collapsed'}`}
+      aria-label="Optional intelligent search"
+    >
+      <button
+        type="button"
+        className="search-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {open ? 'Collapse search' : 'Intelligent search'}
+      </button>
+      {open && (
+        <>
+          <form
+            className="search-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSubmit();
+            }}
+          >
+            <label htmlFor="intelligent-search">What do you want to do?</label>
+            <div>
+              <input
+                id="intelligent-search"
+                value={query}
+                maxLength={240}
+                placeholder="Example: free music tonight"
+                onChange={(event) => onQueryChange(event.target.value)}
+              />
+              <button type="submit" disabled={processing || !query.trim()}>
+                Search
+              </button>
+            </div>
+          </form>
+          <p className="search-help">
+            Optional deterministic matching. Manual filters always remain
+            available; no external AI provider is used.
+          </p>
+          {processing && <p role="status">Interpreting request…</p>}
+          {error && (
+            <p role="alert">
+              Search could not be completed. The map and manual filters remain
+              available.
+            </p>
+          )}
+          {result && !processing && (
+            <div className="search-interpretation" aria-live="polite">
+              <div className="search-heading">
+                <h2>Pulso understood</h2>
+                <button type="button" onClick={onClear}>
+                  Clear search
+                </button>
+              </div>
+              <p>{result.message}</p>
+              {result.clarification && (
+                <p className="clarification">
+                  One clarification: {result.clarification}
+                </p>
+              )}
+              <h3>Hard constraints</h3>
+              <ul>
+                {result.interpretation.constraints.map((constraint) => (
+                  <li key={`${constraint.key}-${constraint.label}`}>
+                    {constraint.label}{' '}
+                    {isSearchConstraintKey(constraint.key) && (
+                      <button
+                        type="button"
+                        aria-label={`Clear derived constraint ${constraint.label}`}
+                        onClick={() =>
+                          onClearConstraint(
+                            constraint.key as SearchConstraintKey
+                          )
+                        }
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {result.interpretation.rankingSignals.length > 0 && (
+                <>
+                  <h3>Ranking signals</h3>
+                  <ul>
+                    {result.interpretation.rankingSignals.map((signal) => (
+                      <li key={`${signal.key}-${signal.label}`}>
+                        {signal.label}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+          {result && result.data.length > 0 && (
+            <div
+              className="search-results"
+              aria-label="Search result map actions"
+            >
+              <h3>Results on this map</h3>
+              {result.data.map(({ event, matchType }, index) => (
+                <button
+                  type="button"
+                  key={event.id}
+                  aria-label={`Preview search result ${index + 1}: ${matchType}`}
+                  onClick={() => onPreview(event)}
+                >
+                  Preview {event.title} ({matchType})
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </aside>
+  );
+}
+
+function isSearchConstraintKey(value: string): value is SearchConstraintKey {
+  return ['date', 'categories', 'price', 'excluded_categories'].includes(value);
+}
+
+function toDiscoveryFilters(
+  filters: IntelligentSearchResponse['interpretation']['effectiveFilters']
+): DiscoveryFilters {
+  return {
+    date: filters.date,
+    categories: [...filters.categories],
+    price: filters.price,
+    ...(filters.customStartDate
+      ? { customStartDate: filters.customStartDate }
+      : {}),
+    ...(filters.customEndDate ? { customEndDate: filters.customEndDate } : {})
+  };
+}
+
+function applySearchFilterEdits(
+  search: ActiveSearch,
+  current: DiscoveryFilters,
+  next: DiscoveryFilters
+): ActiveSearch {
+  const manualFilters = {
+    ...search.manualFilters,
+    categories: [...search.manualFilters.categories]
+  };
+  const disabled = new Set(search.disabledDerivedKeys);
+  if (
+    current.date !== next.date ||
+    current.customStartDate !== next.customStartDate ||
+    current.customEndDate !== next.customEndDate
+  ) {
+    manualFilters.date = next.date;
+    if (next.customStartDate)
+      manualFilters.customStartDate = next.customStartDate;
+    else delete manualFilters.customStartDate;
+    if (next.customEndDate) manualFilters.customEndDate = next.customEndDate;
+    else delete manualFilters.customEndDate;
+    disabled.add('date');
+  }
+  if (
+    current.categories.length !== next.categories.length ||
+    current.categories.some((category) => !next.categories.includes(category))
+  ) {
+    manualFilters.categories = [...next.categories];
+    disabled.add('categories');
+  }
+  if (current.price !== next.price) {
+    manualFilters.price = next.price;
+    disabled.add('price');
+  }
+  return {
+    ...search,
+    manualFilters,
+    disabledDerivedKeys: [...disabled]
+  };
 }
 
 function ActiveFilters({
@@ -337,11 +662,13 @@ function ActiveFilters({
 function FilterOverlay({
   filters,
   onChange,
-  onClose
+  onClose,
+  onClearAll
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
   onClose: () => void;
+  onClearAll: () => void;
 }) {
   const today = getMontrealCalendarDate(new Date());
   const setDate = (date: DiscoveryFilters['date']) => {
@@ -458,13 +785,7 @@ function FilterOverlay({
           <dd>Upcoming and postponed events; cancelled events are excluded.</dd>
         </div>
       </dl>
-      <button
-        type="button"
-        className="clear-all"
-        onClick={() =>
-          onChange({ ...DEFAULT_DISCOVERY_FILTERS, categories: [] })
-        }
-      >
+      <button type="button" className="clear-all" onClick={onClearAll}>
         Clear all filters
       </button>
     </aside>
@@ -505,11 +826,13 @@ function applyCustomDate(
 
 function EventPreview({
   event,
+  searchMatch,
   detailsButton,
   onClose,
   onDetails
 }: {
   event: PublicEvent;
+  searchMatch: IntelligentSearchResponse['data'][number] | undefined;
   detailsButton: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onDetails: () => void;
@@ -537,6 +860,25 @@ function EventPreview({
         </div>
       </dl>
       {fields.warning && <p className="warning">{fields.warning}</p>}
+      {searchMatch && (
+        <div className="match-explanation" aria-label="Why this event matches">
+          <strong>
+            {searchMatch.matchType === 'exact'
+              ? 'Why this matches'
+              : 'Why this is an alternative'}
+          </strong>
+          <ul>
+            {searchMatch.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+            {searchMatch.differences.map((difference) => (
+              <li key={difference} className="alternative-difference">
+                {difference}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <button
         ref={detailsButton}
         type="button"

@@ -13,6 +13,9 @@ export default defineConfig({
       ),
       '@pulso/domain': fileURLToPath(
         new URL('./packages/domain/src/index.ts', import.meta.url)
+      ),
+      '@pulso/search': fileURLToPath(
+        new URL('./packages/search/src/index.ts', import.meta.url)
       )
     }
   },

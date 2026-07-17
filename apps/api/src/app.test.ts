@@ -200,3 +200,145 @@ describe('event discovery API', () => {
     await app.close();
   });
 });
+
+describe('deterministic intelligent-search API', () => {
+  const body = {
+    query: 'free music tonight starting soon',
+    bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
+    manualFilters: { date: 'next7', categories: [], price: 'all' },
+    disabledDerivedKeys: []
+  };
+
+  it('permits the public browser preflight without exposing query content', async () => {
+    const app = buildApp(repository);
+    const response = await app.inject({ method: 'OPTIONS', url: '/search' });
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-methods']).toContain('POST');
+    expect(response.headers['access-control-allow-headers']).toContain(
+      'content-type'
+    );
+    await app.close();
+  });
+
+  it('applies cross-family hard constraints in the repository and explains exact results', async () => {
+    let received:
+      { date: string; categories: string[]; price: string } | undefined;
+    const searchRepository: EventRepository = {
+      ...repository,
+      findInBounds: async (query) => {
+        received = {
+          date: query.date,
+          categories: query.categories,
+          price: query.price
+        };
+        return [event];
+      }
+    };
+    const app = buildApp(searchRepository, {
+      now: () => new Date('2026-07-15T23:00:00.000Z')
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/search',
+      payload: body
+    });
+    expect(response.statusCode).toBe(200);
+    expect(received).toEqual({
+      date: 'tonight',
+      categories: ['music'],
+      price: 'free'
+    });
+    expect(response.json()).toMatchObject({
+      condition: 'exact',
+      interpretation: {
+        engine: 'deterministic',
+        language: 'en',
+        effectiveFilters: {
+          date: 'tonight',
+          categories: ['music'],
+          price: 'free'
+        }
+      },
+      data: [
+        {
+          matchType: 'exact',
+          event: { id: event.id },
+          reasons: expect.arrayContaining([
+            expect.stringContaining('Category matches'),
+            expect.stringContaining('Price matches'),
+            expect.stringContaining('Date matches')
+          ])
+        }
+      ]
+    });
+    expect(JSON.stringify(response.json())).not.toContain(body.query);
+    await app.close();
+  });
+
+  it('returns a one-step alternative with the material difference exposed', async () => {
+    let calls = 0;
+    const searchRepository: EventRepository = {
+      ...repository,
+      findInBounds: async () => {
+        calls += 1;
+        return calls === 1 ? [] : [event];
+      }
+    };
+    const app = buildApp(searchRepository, {
+      now: () => new Date('2026-07-15T23:00:00.000Z')
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/search',
+      payload: { ...body, query: 'paid music tonight' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      condition: 'alternative',
+      data: [
+        {
+          matchType: 'alternative',
+          differences: ['Price differs from paid.']
+        }
+      ]
+    });
+    await app.close();
+  });
+
+  it('uses the accepted one-question path for an ambiguous price', async () => {
+    const app = buildApp(repository);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/search',
+      payload: { ...body, query: 'free or paid comedy' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      condition: 'clarification',
+      clarification: 'Should the price filter be Free or Paid?',
+      data: []
+    });
+    await app.close();
+  });
+
+  it('rejects unknown request fields and returns no result for unsupported input', async () => {
+    const app = buildApp(repository);
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/search',
+      payload: { ...body, rawQueryRetention: true }
+    });
+    expect(invalid.statusCode).toBe(400);
+    const unsupported = await app.inject({
+      method: 'POST',
+      url: '/search',
+      payload: { ...body, query: 'surprise me with magic vibes' }
+    });
+    expect(unsupported.statusCode).toBe(200);
+    expect(unsupported.json()).toMatchObject({
+      condition: 'no_reliable_result',
+      data: []
+    });
+    await app.close();
+  });
+});

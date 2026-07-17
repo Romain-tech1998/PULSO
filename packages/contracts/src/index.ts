@@ -16,6 +16,19 @@ export const geographicPointSchema = z.object({
   latitude: z.number().min(-90).max(90)
 });
 
+export const mapBoundsSchema = z
+  .object({
+    west: z.number().min(-180).max(180),
+    south: z.number().min(-90).max(90),
+    east: z.number().min(-180).max(180),
+    north: z.number().min(-90).max(90)
+  })
+  .strict()
+  .refine(
+    (bounds) => bounds.west < bounds.east && bounds.south < bounds.north,
+    'Bounds must have increasing west/east and south/north values.'
+  );
+
 const dateStringSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -145,6 +158,124 @@ export type EventListResponse = z.infer<typeof eventListResponseSchema>;
 export type EventDetailsResponse = z.infer<typeof eventDetailsResponseSchema>;
 export type MapBoundsQuery = z.infer<typeof mapBoundsQuerySchema>;
 export type DirectDistanceQuery = z.infer<typeof directDistanceQuerySchema>;
+
+export const searchConstraintKeySchema = z.enum([
+  'date',
+  'categories',
+  'price',
+  'excluded_categories'
+]);
+
+export const searchFiltersSchema = z
+  .object({
+    date: z.enum(DATE_FILTER_VALUES),
+    categories: z.array(z.enum(EVENT_CATEGORIES)).max(EVENT_CATEGORIES.length),
+    price: z.enum(PRICE_FILTER_VALUES),
+    customStartDate: dateStringSchema.optional(),
+    customEndDate: dateStringSchema.optional()
+  })
+  .strict()
+  .superRefine((filters, context) => {
+    if (new Set(filters.categories).size !== filters.categories.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['categories'],
+        message: 'Categories must not contain duplicates.'
+      });
+    }
+    if (filters.date === 'custom' && !filters.customStartDate) {
+      context.addIssue({
+        code: 'custom',
+        path: ['customStartDate'],
+        message: 'A selected date is required for a custom date filter.'
+      });
+    }
+    if (
+      filters.date !== 'custom' &&
+      (filters.customStartDate || filters.customEndDate)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['customStartDate'],
+        message: 'Selected dates are valid only with the custom date filter.'
+      });
+    }
+    if (
+      filters.customStartDate &&
+      filters.customEndDate &&
+      filters.customEndDate < filters.customStartDate
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['customEndDate'],
+        message: 'The selected date range must end on or after it starts.'
+      });
+    }
+  });
+
+export const intelligentSearchRequestSchema = z
+  .object({
+    query: z.string().trim().min(1).max(240),
+    bounds: mapBoundsSchema,
+    manualFilters: searchFiltersSchema,
+    disabledDerivedKeys: z
+      .array(searchConstraintKeySchema)
+      .max(4)
+      .refine((values) => new Set(values).size === values.length, {
+        message: 'Disabled criteria must not contain duplicates.'
+      })
+      .default([])
+  })
+  .strict();
+
+export const searchExplanationSchema = z
+  .object({
+    key: z.string().min(1),
+    kind: z.enum(['hard', 'ranking']),
+    label: z.string().min(1)
+  })
+  .strict();
+
+export const intelligentSearchResponseSchema = z
+  .object({
+    interpretation: z
+      .object({
+        engine: z.literal('deterministic'),
+        language: z.literal('en'),
+        constraints: z.array(searchExplanationSchema),
+        rankingSignals: z.array(searchExplanationSchema),
+        effectiveFilters: searchFiltersSchema
+      })
+      .strict(),
+    condition: z.enum([
+      'exact',
+      'alternative',
+      'no_reliable_result',
+      'clarification'
+    ]),
+    message: z.string().min(1),
+    clarification: z.string().min(1).optional(),
+    data: z.array(
+      z
+        .object({
+          event: publicEventSchema,
+          matchType: z.enum(['exact', 'alternative']),
+          reasons: z.array(z.string().min(1)).min(1),
+          differences: z.array(z.string().min(1))
+        })
+        .strict()
+    )
+  })
+  .strict();
+
+export type SearchConstraintKey = z.infer<typeof searchConstraintKeySchema>;
+export type SearchExplanation = z.infer<typeof searchExplanationSchema>;
+export type IntelligentSearchRequest = z.infer<
+  typeof intelligentSearchRequestSchema
+>;
+export type IntelligentSearchResponse = z.infer<
+  typeof intelligentSearchResponseSchema
+>;
 
 export const DATE_FILTER_OPTIONS = [
   { value: 'next7', label: 'Next 7 days' },

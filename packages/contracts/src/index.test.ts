@@ -5,11 +5,54 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildMapEventsQuery,
+  intelligentSearchRequestSchema,
+  intelligentSearchResponseSchema,
   mapBoundsQuerySchema,
   presentEvent,
   publicEventSchema,
   summarizeActiveFilters
 } from './index.js';
+
+describe('intelligent-search contracts', () => {
+  const request = {
+    query: 'free comedy tonight',
+    bounds: { west: -73.7, south: 45.4, east: -73.4, north: 45.7 },
+    manualFilters: { date: 'next7', categories: [], price: 'all' },
+    disabledDerivedKeys: []
+  };
+
+  it('strictly validates transient search input', () => {
+    expect(intelligentSearchRequestSchema.parse(request)).toEqual(request);
+    expect(() =>
+      intelligentSearchRequestSchema.parse({ ...request, unknown: true })
+    ).toThrow();
+    expect(() =>
+      intelligentSearchRequestSchema.parse({ ...request, query: ' '.repeat(4) })
+    ).toThrow();
+    expect(() =>
+      intelligentSearchRequestSchema.parse({
+        ...request,
+        disabledDerivedKeys: ['price', 'price']
+      })
+    ).toThrow();
+  });
+
+  it('returns structured interpretation without echoing the raw query', () => {
+    const response = intelligentSearchResponseSchema.parse({
+      interpretation: {
+        engine: 'deterministic',
+        language: 'en',
+        constraints: [{ key: 'price', kind: 'hard', label: 'Free' }],
+        rankingSignals: [],
+        effectiveFilters: { date: 'next7', categories: [], price: 'free' }
+      },
+      condition: 'no_reliable_result',
+      message: 'No reliable result.',
+      data: []
+    });
+    expect(JSON.stringify(response)).not.toContain(request.query);
+  });
+});
 
 describe('manual map filter contract', () => {
   const bounds = { west: -73.7, south: 45.4, east: -73.4, north: 45.7 };

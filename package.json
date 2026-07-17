@@ -8,7 +8,7 @@
     "pnpm": ">=11 <12"
   },
   "scripts": {
-    "build": "pnpm --filter @pulso/domain build && pnpm --filter @pulso/contracts build && pnpm --filter @pulso/database build && pnpm --filter @pulso/api build && pnpm --filter @pulso/web build",
+    "build": "pnpm --filter @pulso/domain build && pnpm --filter @pulso/contracts build && pnpm --filter @pulso/search build && pnpm --filter @pulso/database build && pnpm --filter @pulso/api build && pnpm --filter @pulso/web build",
     "db:migrate": "pnpm --filter @pulso/database db:migrate",
     "db:seed": "pnpm --filter @pulso/database db:seed",
     "format": "prettier --write .",
