@@ -1,7 +1,8 @@
 # DATA-0001 — Event Data and Trust
 
-**Version :** 0.2  
-**Status :** Draft  
+**Identifier :** DATA-0001
+**Version :** 0.3
+**Status :** Draft
 **Dépend de :** PDR-0001, MVP-0001
 
 ## Objectif
@@ -23,6 +24,14 @@ Pulso doit pouvoir agréger des informations issues notamment de :
 - autres sources publiques pertinentes.
 
 La méthode d'accès à chaque source devra respecter ses conditions d'utilisation, ses possibilités techniques et les droits applicables. La présence d'une source dans cette liste ne valide pas automatiquement une méthode de collecte.
+
+## Registre de sources et découverte supervisée
+
+Le registre Montréal DATA-0002 conserve la provenance d'une source, son niveau d'autorité, son état de vérification et les incertitudes de normalisation. Les sources officielles de lieux ou d'organisateurs ont préséance pour confirmer un événement ; une source média, curateur ou découverte Instagram ne crée qu'un candidat à confirmer.
+
+Instagram peut fournir des candidats issus d'un watchlist ciblé. Ces candidats conservent une provenance, un horodatage, un niveau de confiance et passent par une revue humaine. Un curateur seul ne peut jamais confirmer automatiquement un événement publiable.
+
+La conservation des médias de source doit être limitée au minimum nécessaire à l'extraction et à la revue des faits événementiels. Les faits extraits et leur provenance, plutôt que du contenu personnel ou sans rapport, constituent les données produit.
 
 ## Données minimales d'un événement
 

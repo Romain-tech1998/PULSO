@@ -53,7 +53,8 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 | PDR-0002 | Product Interaction Model | 1.0 | Accepted | PDR-0001 | PRD et écrans |
 | MVP-0001 | Montréal Nightlife Scope | 1.0 | Accepted | PDR-0001, PDR-0002 | PRD |
 | DEC-0001 | Access, Booking and Product Surfaces | 1.0 | Accepted | PDR-0001, MVP-0001 | Architecture |
-| DATA-0001 | Event Data and Trust | 0.2 | Draft | PDR-0001, MVP-0001 | PRD initial, puis recherche préalable à l'ingestion et RFC |
+| DATA-0001 | Event Data and Trust | 0.3 | Draft | PDR-0001, MVP-0001 | Recherche préalable à l'ingestion et RFC |
+| DATA-0002 | Montréal Source Registry | 0.1 | Draft | PDR-0001, MVP-0001, PRD-0001, RFC-0001, DATA-0001 | Normalisation, vérification et pilote de sources |
 | UJ-0001 | Free Exploration in Montréal | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001 | Écrans, flux UX et validation sur prototype |
 | UJ-0002 | Intelligent Search in Montréal | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001 | Écrans, flux UX et validation sur prototype |
 | UX-0001 | MVP Screens and Flows | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, UJ-0001, UJ-0002, DATA-0001 | PRD-0001 |
@@ -64,13 +65,20 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 | UI-0001 | Visual Identity and Branding | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001, PRD-0001, RFC-0001, DEC-0003 | Integrate canonical identity into existing web and mobile surfaces |
 | DEC-0004 | Map Basemap Provider | 0.2 | Draft | PRD-0001, RFC-0001, DEC-0002, UI-0001 | Dark-style visual spike and accessibility review |
 | DEC-0005 | Explore Search Placement | 1.0 | Accepted | PDR-0001, PDR-0002, UJ-0002, UX-0001, PRD-0001, UI-0001 | Future presentation correction |
+| DEC-0006 | Pulso Scout Operating Model | 0.1 | Draft | PDR-0001, MVP-0001, PRD-0001, RFC-0001, DATA-0001, DATA-0002 | Pilote Instagram supervisé |
+
+## Artefacts de recherche
+
+- DATA-0002 raw input: [montreal-source-watchlist-raw.md](data/research/montreal-source-watchlist-raw.md)
+- DATA-0002 normalized registry: [montreal-source-registry.csv](data/research/montreal-source-registry.csv)
+- DATA-0002 pilot baseline: [montreal-source-pilot-v1.md](data/research/montreal-source-pilot-v1.md)
 
 ## Ordre de construction validé
 
 1. Product Principles — Accepted.
 2. Modèle d'interaction et périmètre MVP — Accepted.
 3. User Journeys — Accepted comme parcours cibles du MVP ; les tests d'utilisabilité restent à réaliser sur prototype.
-4. Modèle de données et de confiance — Draft 0.2, suffisant pour le PRD initial mais insuffisant pour implémenter l'ingestion.
+4. Modèle de données et de confiance — Draft 0.3, suffisant pour le PRD initial mais insuffisant pour implémenter l'ingestion.
 5. Écrans et flux UX — UX-0001 1.0, terminé et Accepted.
 6. PRD-0001 — exigences produit 1.0 terminées et Accepted.
 7. RFC-0001 — architecture cœur 1.0 terminée et Accepted.
@@ -85,6 +93,7 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 16. Visual Sprint 5 — l'identité canonique Approved est intégrée sans changement de comportement : le web référence le logo horizontal et les favicons depuis des copies runtime de `Brand/production/approved/v1`; Android référence l'icône opaque, le foreground adaptatif, le splash et le logo horizontal canoniques. La palette sombre Accepted et la typographie locale sont appliquées aux surfaces web et Android. Les validations PostGIS, Playwright desktop et Pixel 7, compilation, installation et rendu Android x86_64 confirment les interactions existantes; la correction limitée des événements pointeur de l'état de statut laisse les marqueurs accessibles tout en conservant le contrôle de reprise interactif. Les preuves visuelles et les logs restent hors du dépôt.
 17. Development basemap checkpoint — le spike de géographie réelle est terminé sur le web : la validation visuelle de Montréal et de six marqueurs fictifs, Playwright desktop 5/5, Playwright Pixel 7 responsive 5/5, les intégrations PostGIS/API 12/12 et la vérification complète du dépôt sont réussis. OpenFreeMap Liberty reste un fallback de développement configurable par environnement; aucun fournisseur de production n'est retenu, le style sombre Pulso final reste en attente, et la compilation/export MapLibre natif reste réussi. La validation visible du basemap Android est différée : `com.android.systemui` a produit des ANR sur deux AVD, sans exception Pulso ni échec applicatif MapLibre observé. Cette preuve reste requise avant l'acceptation de DEC-0004.
 18. DEC-0005 — Explore Search Placement version 1.0 est Accepted en documentation uniquement. Le champ de recherche intelligente persistant en haut d'Explorer reste une correction future de présentation non implémentée; il ne modifie ni les comportements de recherche et de filtres, ni les écrans, ni les fournisseurs.
+19. Data Sprint 1 — la watchlist produit de Montréal est capturée dans les artefacts de recherche DATA-0002, puis normalisée pour vérification et pilote (267 entrées brutes littérales, 264 sources normalisées, avec trois consolidations de comptes partagés). Pulso Scout (DEC-0006) est un workstream Instagram expérimental requis : aucun connecteur d'ingestion ni automatisation authentifiée n'existe. Instagram, billetteries et calendriers officiels seront évalués ensemble; les candidats ne sont jamais publiés sans preuve et revue.
 
 ## Prochaine tâche
 
@@ -92,7 +101,7 @@ La prochaine tâche doit être définie séparément conformément aux décision
 
 Les validations PostgreSQL/PostGIS et Android sont terminées et leurs preuves de compilation, d'installation, de lancement et de rendu visible du même point synthétique avec MapLibre sont acceptées. Cette décision n'ajoute aucune fonctionnalité produit et ne met en œuvre ni ingestion réelle, ni authentification, ni fournisseur d'IA ou autre fournisseur de production.
 
-La recherche préalable à l'ingestion demeure la prochaine tâche de données. Le Montréal sample d'ingestion documenté, la baseline de prototype d'utilisabilité, les choix de fournisseurs de production, la validation du déploiement et l'approbation des seuils numériques de lancement restent des obligations aux étapes définies par RFC-0001. Elles ne bloquent pas le scaffold initial lorsqu'elles ne concernent pas directement sa compatibilité technique.
+La recherche préalable à l'ingestion demeure la prochaine tâche de données : le pilote validé doit établir les preuves de sources, calendriers, billetteries et contraintes Instagram avant toute implémentation. Le Montréal sample d'ingestion documenté, la baseline de prototype d'utilisabilité, les choix de fournisseurs de production, la validation du déploiement et l'approbation des seuils numériques de lancement restent des obligations aux étapes définies par RFC-0001. Elles ne bloquent pas le scaffold initial lorsqu'elles ne concernent pas directement sa compatibilité technique.
 
 ## Classification des évolutions
 
