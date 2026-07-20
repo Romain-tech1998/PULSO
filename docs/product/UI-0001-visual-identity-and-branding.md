@@ -1,15 +1,15 @@
 # UI-0001 — Visual Identity and Branding
 
 **Identifier:** UI-0001
-**Version:** 0.2
-**Status:** Draft
+**Version:** 1.0
+**Status:** Accepted
 **Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001, PRD-0001, RFC-0001, DEC-0003
 
 ## Purpose
 
 Record the approved visual foundation for Pulso without changing the Accepted MVP structure, interaction model, event-data rules, external-link boundary, or bilingual language policy. This document governs presentation and production-asset preparation only.
 
-UI-0001 remains Draft until clean production logo exports are created and reviewed. It does not authorize visual implementation, a new product feature, screen, destination, or provider.
+UI-0001 is the Accepted visual-identity baseline. It does not itself authorize visual implementation, a new product feature, screen, destination, or provider. Visual integration into the existing web and mobile surfaces remains a separate implementation task.
 
 ## Approved MVP presentation decisions
 
@@ -27,9 +27,11 @@ UI-0001 remains Draft until clean production logo exports are created and review
 
 ### Mark and copy
 
-- Preserve the approved gradient Pulso pin and rounded `pulso` wordmark.
+- The official Pulso identity is approved V5. Its canonical production assets live in `Brand/production/approved/v1`.
+- The official mark is the fixed external symbol geometry with its centred point and custom directly traced vector `pulso` wordmark. Do not alter symbol proportions, recenter the point, replace the wordmark, or modify the lockup without a new documented decision.
+- The official brand-asset gradient is `#7336C1` → `#EA3E81` → `#FE7C5C`. It is distinct from, and does not replace, the Accepted semantic UI palette above.
 - Do not display a tagline inside product UI. Any future marketing tagline must be available in French and English.
-- Use Satoshi only when the required official Fontshare files and their license text are bundled with the application. No unofficial mirror or external runtime font provider is authorized.
+- The logo wordmark is not Satoshi. Satoshi may be used for application interface typography only when the required official Fontshare files and license text are bundled with the application. No unofficial mirror or external runtime font provider is authorized.
 
 ### Provenance, imagery, and external actions
 
@@ -66,25 +68,24 @@ Tokens must support the dark MVP, bilingual French/English labels, map-first ove
 
 ## Reference material and exclusions
 
-All files under `Brand/`, the current icon/logo crops, `Brand/Appli.png`, `Brand/Landing page.png`, `Brand/logo.png`, `Brand/moodboard.png`, and the large transparent source sheets are non-binding inspiration and references, not production assets.
+`Brand/production/approved/v1` is the only approved runtime-asset baseline. The original reference sheets, reference boards, supplied crops, mockups, and candidates V1–V4 remain non-binding and must not be used in the application. Candidate V5 remains preserved as approval evidence; its canonical copies are the production source.
 
 The reference boards depict elements that are not authorized for the MVP: general venue or restaurant listings, alternate list and calendar surfaces, profiles, social or community features, sharing, notifications, stored preferences, personalized recommendations, distance or travel controls, itinerary/routing actions, and external event imagery. Their appearance in a reference board does not authorize implementation.
 
-## Production-asset preparation
+## Approved production assets
 
-Current supplied crops and mockups are not production sources. Production assets require clean reviewed exports for the approved mark, including the gradient symbol, dark/light/white/black horizontal wordmarks, square app icon, adaptive-icon foreground, splash mark, and favicon sizes.
+The canonical directory contains clean, validated exports of the gradient symbol; dark, light, white, and black horizontal marks; square app icon; adaptive-icon foreground; splash mark; and favicon sizes. The approved logo contains no tagline, live SVG text, embedded raster master, or external font dependency.
 
-The original vector or a clean high-resolution transparent master export is required before exact production reconstruction. Do not approximate, redraw, generatively recreate, crop from a mockup, or integrate an asset that cannot preserve the approved mark faithfully.
+Use the canonical files without cropping, recoloring, replacing the custom lettering, or changing the point placement. The existing viewBox and export padding are the approved clear-space boundary. Use the supplied favicon assets for their named sizes; do not create a smaller reconstructed mark without a new decision.
 
-When clean sources are available, asset preparation must document intended use, dimensions, alpha requirements, approved colors, clear space, minimum size, prohibited modifications, source provenance, generation method, and Satoshi/Fontshare license requirements.
+The approved assets retain dark-only MVP presentation. Textual source provenance, DATA-0001 event-imagery rights constraints, accessibility requirements, and all excluded product functionality remain binding.
 
-## Open items before acceptance
+## Follow-on work
 
-- Obtain and review the original vector or clean transparent master exports.
-- Bundle only the required official Fontshare Satoshi weights and the applicable license text after a license-file review.
+- Integrate the canonical identity into the existing web and mobile surfaces as a separate implementation task.
+- Bundle only the required official Fontshare Satoshi interface weights and the applicable license text after a license-file review, if Satoshi remains the selected interface font.
 - Define the Draft semantic token values through visual implementation review and accessibility validation.
 - Resolve event-image rights and usage policy through DATA-0001 before any event imagery is used.
-- Review the prepared production assets against the approved mark and dark MVP palette.
 
 ## Non-goals
 
