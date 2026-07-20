@@ -1,9 +1,4 @@
-import {
-  Camera,
-  Map,
-  Marker,
-  type StyleSpecification
-} from '@maplibre/maplibre-react-native';
+import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
 import {
   buildMapEventsQuery,
   CATEGORY_FILTER_OPTIONS,
@@ -59,17 +54,9 @@ const center: [number, number] = [-73.5673, 45.5017];
 const initialBounds = [-73.75, 45.4, -73.4, 45.7] as const;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mobileBrandLogo = require('./assets/brand/pulso-logo-horizontal-dark.png');
-const localStyle: StyleSpecification = {
-  version: 8,
-  sources: {},
-  layers: [
-    {
-      id: 'background',
-      type: 'background',
-      paint: { 'background-color': theme.background }
-    }
-  ]
-};
+const MAP_STYLE_URL =
+  process.env.EXPO_PUBLIC_MAP_STYLE_URL ??
+  'https://tiles.openfreemap.org/styles/liberty';
 
 type LoadState = 'loading' | 'success' | 'empty' | 'error';
 type DetailsState =
@@ -328,7 +315,7 @@ export default function App() {
       >
         <Map
           style={styles.map}
-          mapStyle={localStyle}
+          mapStyle={MAP_STYLE_URL}
           onRegionDidChange={({ nativeEvent }) => {
             if (!nativeEvent.userInteraction) return;
             void loadEvents(nativeEvent.bounds);

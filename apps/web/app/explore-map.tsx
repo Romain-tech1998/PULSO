@@ -50,8 +50,12 @@ const INITIAL_BOUNDS = {
 };
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
+const MAP_STYLE_URL =
+  process.env.NEXT_PUBLIC_MAP_STYLE_URL ??
+  'https://tiles.openfreemap.org/styles/liberty';
 
 type LoadState = 'loading' | 'success' | 'empty' | 'error';
+type BasemapState = 'loading' | 'loaded' | 'error';
 type DetailsState =
   | { kind: 'closed' }
   | { kind: 'loading'; eventId: string }
@@ -88,6 +92,7 @@ export function ExploreMap({
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [selected, setSelected] = useState<PublicEvent>();
   const [state, setState] = useState<LoadState>('loading');
+  const [basemapState, setBasemapState] = useState<BasemapState>('loading');
   const [details, setDetails] = useState<DetailsState>({ kind: 'closed' });
   const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -253,18 +258,10 @@ export function ExploreMap({
       container: container.current,
       center: MONTREAL_CENTER,
       zoom: 11,
-      style: {
-        version: 8,
-        sources: {},
-        layers: [
-          {
-            id: 'background',
-            type: 'background',
-            paint: { 'background-color': '#0c0a12' }
-          }
-        ]
-      }
+      style: MAP_STYLE_URL
     });
+    instance.on('load', () => setBasemapState('loaded'));
+    instance.on('error', () => setBasemapState('error'));
     instance.addControl(new maplibregl.NavigationControl(), 'top-right');
     const onMoveEnd = () => {
       const bounds = instance.getBounds();
@@ -350,6 +347,17 @@ export function ExploreMap({
         data-map-context="preserved"
       >
         <div ref={container} className="map" />
+        {basemapState !== 'loaded' && (
+          <p className="map-basemap-status" role="status">
+            {basemapState === 'loading'
+              ? locale === 'fr'
+                ? 'Chargement de la carte géographique…'
+                : 'Loading geographic map…'
+              : locale === 'fr'
+                ? 'La carte géographique est indisponible; les événements restent accessibles.'
+                : 'The geographic map is unavailable; events remain available.'}
+          </p>
+        )}
         <SearchPanel
           query={queryInput}
           result={searchResult}
