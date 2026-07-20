@@ -37,9 +37,12 @@ import { MOBILE_SEARCH_PANEL_LAYOUT } from './search-layout';
 import { loadMobileLocale, persistMobileLocale } from './locale';
 import { getLocales } from 'expo-localization';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
+import { theme } from './theme';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Linking,
   Pressable,
   SafeAreaView,
@@ -54,6 +57,8 @@ const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://10.0.2.2:3001';
 const center: [number, number] = [-73.5673, 45.5017];
 const initialBounds = [-73.75, 45.4, -73.4, 45.7] as const;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const mobileBrandLogo = require('./assets/brand/pulso-logo-horizontal-dark.png');
 const localStyle: StyleSpecification = {
   version: 8,
   sources: {},
@@ -61,7 +66,7 @@ const localStyle: StyleSpecification = {
     {
       id: 'background',
       type: 'background',
-      paint: { 'background-color': '#102a2d' }
+      paint: { 'background-color': theme.background }
     }
   ]
 };
@@ -91,6 +96,14 @@ function eventUrl(
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    'Satoshi-Regular': require('./assets/fonts/satoshi/Satoshi-Regular.otf'),
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    'Satoshi-Medium': require('./assets/fonts/satoshi/Satoshi-Medium.otf'),
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    'Satoshi-Bold': require('./assets/fonts/satoshi/Satoshi-Bold.otf')
+  });
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [selected, setSelected] = useState<PublicEvent>();
   const [state, setState] = useState<LoadState>('loading');
@@ -279,11 +292,11 @@ export default function App() {
     }
   }
 
-  if (!locale) {
+  if (!fontsLoaded || !locale) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.centered} accessibilityLiveRegion="polite">
-          <ActivityIndicator color="#76f0a8" />
+          <ActivityIndicator color={theme.pink} />
           <Text style={styles.body}>{translate('fr', 'map.loading')}</Text>
         </View>
       </SafeAreaView>
@@ -296,11 +309,14 @@ export default function App() {
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View style={styles.headerCopy}>
+            <Image
+              source={mobileBrandLogo}
+              style={styles.brandLogo}
+              resizeMode="contain"
+              accessibilityLabel={translate(locale, 'app.title')}
+            />
             <Text style={styles.eyebrow}>
               {translate(locale, 'app.eyebrow')}
-            </Text>
-            <Text style={styles.title} accessibilityRole="header">
-              {translate(locale, 'app.title')}
             </Text>
           </View>
           <MobileLanguageSelector locale={locale} onChange={selectLocale} />
@@ -370,7 +386,7 @@ export default function App() {
           />
         </View>
         <View style={styles.status} accessibilityLiveRegion="polite">
-          {state === 'loading' && <ActivityIndicator color="#76f0a8" />}
+          {state === 'loading' && <ActivityIndicator color={theme.pink} />}
           <Text style={styles.statusText}>
             {state === 'loading' && translate(locale, 'map.loading')}
             {state === 'success' &&
@@ -560,7 +576,7 @@ function MobileSearchPanel({
               value={query}
               maxLength={240}
               placeholder={translate(locale, 'search.placeholder')}
-              placeholderTextColor="#7f9da0"
+              placeholderTextColor={theme.textMuted}
               accessibilityLabel={translate(locale, 'search.question')}
               returnKeyType="search"
               onChangeText={onQueryChange}
@@ -586,7 +602,7 @@ function MobileSearchPanel({
               style={styles.searchProgress}
               accessibilityLiveRegion="polite"
             >
-              <ActivityIndicator color="#76f0a8" />
+              <ActivityIndicator color={theme.pink} />
               <Text style={styles.body}>
                 {translate(locale, 'search.processing')}
               </Text>
@@ -1092,7 +1108,7 @@ function DetailsOverlay({
       </Pressable>
       {state.kind === 'loading' && (
         <View style={styles.centered} accessibilityLiveRegion="polite">
-          <ActivityIndicator color="#76f0a8" />
+          <ActivityIndicator color={theme.pink} />
           <Text style={styles.body}>
             {translate(locale, 'details.loading')}
           </Text>
@@ -1215,7 +1231,7 @@ function Detail({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#07191b' },
+  safeArea: { flex: 1, backgroundColor: theme.background },
   header: { paddingHorizontal: 20, paddingVertical: 16 },
   headerRow: {
     alignItems: 'flex-start',
@@ -1225,7 +1241,7 @@ const styles = StyleSheet.create({
   },
   headerCopy: { flex: 1 },
   languageSelector: {
-    borderColor: '#527579',
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: 'row',
@@ -1238,15 +1254,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 8
   },
-  languageChoiceActive: { backgroundColor: '#315256' },
-  languageChoiceText: { color: '#f5fcf8', fontWeight: '700' },
+  languageChoiceActive: { backgroundColor: theme.elevated },
+  languageChoiceText: { color: theme.text, fontWeight: '700' },
   eyebrow: {
-    color: '#76f0a8',
+    color: theme.pink,
     fontSize: 12,
     letterSpacing: 2,
     textTransform: 'uppercase'
   },
-  title: { color: '#f5fcf8', fontSize: 32, fontWeight: '700' },
+  brandLogo: { height: 34, width: 152, marginBottom: 8 },
   mapShell: { flex: 1, margin: 12, borderRadius: 16, overflow: 'hidden' },
   map: { flex: 1 },
   marker: {
@@ -1255,7 +1271,7 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     borderWidth: 3,
     borderColor: 'white',
-    backgroundColor: '#ff4f71'
+    backgroundColor: theme.purple
   },
   status: {
     position: 'absolute',
@@ -1265,9 +1281,9 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 10,
     borderRadius: 10,
-    backgroundColor: '#07191bee'
+    backgroundColor: theme.surfaceOverlay
   },
-  statusText: { color: '#f5fcf8', flexShrink: 1 },
+  statusText: { color: theme.text, flexShrink: 1 },
   filterControls: {
     position: 'absolute',
     left: 12,
@@ -1281,7 +1297,7 @@ const styles = StyleSheet.create({
     right: 12,
     top: MOBILE_SEARCH_PANEL_LAYOUT.top,
     maxHeight: MOBILE_SEARCH_PANEL_LAYOUT.expandedMaxHeight,
-    borderColor: '#527579',
+    borderColor: theme.border,
     borderRadius: 10,
     borderWidth: 1,
     backgroundColor: MOBILE_SEARCH_PANEL_LAYOUT.backgroundColor,
@@ -1299,14 +1315,14 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     minHeight: 44,
     justifyContent: 'center',
-    borderColor: '#76f0a8',
+    borderColor: theme.pink,
     borderRadius: 8,
     borderWidth: 1,
-    backgroundColor: '#07191bf5',
+    backgroundColor: theme.surfaceOverlayStrong,
     paddingHorizontal: 12,
     marginBottom: 6
   },
-  searchLabel: { color: '#76f0a8', fontWeight: '700' },
+  searchLabel: { color: theme.pink, fontWeight: '700' },
   searchRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1316,21 +1332,21 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     minHeight: 44,
-    borderColor: '#527579',
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
-    color: '#f5fcf8',
+    color: theme.text,
     paddingHorizontal: 10
   },
   searchButton: {
     minHeight: 44,
     justifyContent: 'center',
-    borderColor: '#76f0a8',
+    borderColor: theme.pink,
     borderRadius: 8,
     borderWidth: 1,
     paddingHorizontal: 12
   },
-  searchHelp: { color: '#a8c5c8', fontSize: 11, marginTop: 5 },
+  searchHelp: { color: theme.textMuted, fontSize: 11, marginTop: 5 },
   searchPanelContent: {
     maxHeight: MOBILE_SEARCH_PANEL_LAYOUT.contentMaxHeight
   },
@@ -1346,7 +1362,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between'
   },
-  searchResultTitle: { color: '#f5fcf8', fontSize: 18, fontWeight: '700' },
+  searchResultTitle: { color: theme.text, fontSize: 18, fontWeight: '700' },
   searchConstraint: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1358,17 +1374,17 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     minHeight: 44,
     justifyContent: 'center',
-    borderColor: '#76f0a8',
+    borderColor: theme.pink,
     borderRadius: 10,
     borderWidth: 1,
-    backgroundColor: '#07191bf5',
+    backgroundColor: theme.surfaceOverlayStrong,
     paddingHorizontal: 12
   },
-  filterButtonText: { color: '#f5fcf8', fontWeight: '700' },
+  filterButtonText: { color: theme.text, fontWeight: '700' },
   defaultFilter: {
     alignSelf: 'flex-start',
-    color: '#c6d9da',
-    backgroundColor: '#07191bee',
+    color: theme.textMuted,
+    backgroundColor: theme.surfaceOverlay,
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 5
@@ -1377,20 +1393,20 @@ const styles = StyleSheet.create({
   filterChip: {
     minHeight: 36,
     justifyContent: 'center',
-    borderColor: '#76f0a8',
+    borderColor: theme.pink,
     borderRadius: 10,
     borderWidth: 1,
-    backgroundColor: '#07191bf5',
+    backgroundColor: theme.surfaceOverlayStrong,
     paddingHorizontal: 9
   },
-  filterChipText: { color: '#76f0a8', fontSize: 12, fontWeight: '700' },
+  filterChipText: { color: theme.pink, fontSize: 12, fontWeight: '700' },
   filterNotice: {
     position: 'absolute',
     left: 12,
     right: 12,
     bottom: 12,
-    color: '#f5fcf8',
-    backgroundColor: '#07191bee',
+    color: theme.text,
+    backgroundColor: theme.surfaceOverlay,
     borderRadius: 10,
     padding: 10
   },
@@ -1402,10 +1418,10 @@ const styles = StyleSheet.create({
     bottom: 10,
     zIndex: 20,
     elevation: 20,
-    borderColor: '#527579',
+    borderColor: theme.border,
     borderRadius: 12,
     borderWidth: 1,
-    backgroundColor: '#07191bfa',
+    backgroundColor: theme.surfaceOverlayOpaque,
     padding: 14
   },
   filterHeading: {
@@ -1413,36 +1429,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between'
   },
-  filterTitle: { color: '#f5fcf8', fontSize: 24, fontWeight: '700' },
+  filterTitle: { color: theme.text, fontSize: 24, fontWeight: '700' },
   filterContent: { gap: 8, paddingBottom: 28 },
   filterLegend: {
-    color: '#76f0a8',
+    color: theme.pink,
     fontSize: 16,
     fontWeight: '700',
     marginTop: 14
   },
-  filterHelp: { color: '#a8c5c8' },
+  filterHelp: { color: theme.textMuted },
   filterChoice: {
     alignItems: 'center',
     flexDirection: 'row',
     minHeight: 44,
     gap: 10
   },
-  filterChoiceIndicator: { color: '#76f0a8', fontSize: 20 },
+  filterChoiceIndicator: { color: theme.pink, fontSize: 20 },
   customDates: { gap: 6 },
   dateInput: {
     minHeight: 44,
-    borderColor: '#527579',
+    borderColor: theme.border,
     borderRadius: 8,
     borderWidth: 1,
-    color: '#f5fcf8',
+    color: theme.text,
     paddingHorizontal: 10
   },
   clearAll: {
     alignItems: 'center',
     minHeight: 48,
     justifyContent: 'center',
-    borderColor: '#76f0a8',
+    borderColor: theme.pink,
     borderRadius: 10,
     borderWidth: 1,
     marginTop: 16
@@ -1450,15 +1466,15 @@ const styles = StyleSheet.create({
   markerActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   markerAction: {
     alignSelf: 'flex-start',
-    borderColor: '#76f0a8',
+    borderColor: theme.pink,
     borderRadius: 8,
     borderWidth: 1,
     maxWidth: '100%',
     paddingHorizontal: 8,
     paddingVertical: 6
   },
-  markerActionText: { color: '#76f0a8', fontWeight: '700' },
-  link: { color: '#76f0a8', fontWeight: '700' },
+  markerActionText: { color: theme.pink, fontWeight: '700' },
+  link: { color: theme.pink, fontWeight: '700' },
   preview: {
     position: 'absolute',
     left: 12,
@@ -1466,62 +1482,67 @@ const styles = StyleSheet.create({
     bottom: 12,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#07191bf5',
+    backgroundColor: theme.surfaceOverlayStrong,
     zIndex: 30,
     elevation: 30
   },
-  close: { color: '#76f0a8', textAlign: 'right' },
+  close: { color: theme.pink, textAlign: 'right' },
   chip: {
-    color: '#76f0a8',
+    color: theme.pink,
     fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase'
   },
-  previewTitle: { color: '#f5fcf8', fontSize: 20, fontWeight: '700' },
-  body: { color: '#f5fcf8', marginTop: 3 },
-  meta: { color: '#a8c5c8', marginTop: 8 },
+  previewTitle: { color: theme.text, fontSize: 20, fontWeight: '700' },
+  body: { color: theme.text, marginTop: 3 },
+  meta: { color: theme.textMuted, marginTop: 8 },
   warning: {
-    color: '#fff1dc',
-    backgroundColor: '#332616',
-    borderLeftColor: '#ffbd69',
+    color: theme.text,
+    backgroundColor: theme.surface,
+    borderLeftColor: theme.coral,
     borderLeftWidth: 4,
     marginTop: 10,
     padding: 10
   },
-  warningText: { color: '#ffbd69', marginTop: 4 },
+  warningText: { color: theme.coral, marginTop: 4 },
   matchExplanation: {
-    borderTopColor: '#315256',
+    borderTopColor: theme.elevated,
     borderTopWidth: 1,
     marginTop: 10,
     paddingTop: 4
   },
   primaryAction: {
     alignSelf: 'flex-start',
-    backgroundColor: '#76f0a8',
+    backgroundColor: theme.pink,
     borderRadius: 10,
     marginTop: 14,
     paddingHorizontal: 16,
     paddingVertical: 12
   },
-  primaryActionText: { color: '#07191b', fontWeight: '700' },
+  primaryActionText: { color: theme.background, fontWeight: '700' },
   detailsOverlay: {
     bottom: 0,
     left: 0,
     position: 'absolute',
     right: 0,
     top: 0,
-    backgroundColor: '#0d2528',
+    backgroundColor: theme.surface,
     padding: 18,
     zIndex: 40,
     elevation: 40
   },
-  back: { color: '#76f0a8', fontSize: 16, fontWeight: '700', marginBottom: 10 },
+  back: {
+    color: theme.pink,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 10
+  },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   detailsContent: { paddingBottom: 36 },
-  detailsTitle: { color: '#f5fcf8', fontSize: 30, fontWeight: '700' },
+  detailsTitle: { color: theme.text, fontSize: 30, fontWeight: '700' },
   detailRow: { marginTop: 14 },
   detailLabel: {
-    color: '#a8c5c8',
+    color: theme.textMuted,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1,

@@ -15,19 +15,19 @@ This directory is the canonical Pulso production-brand baseline. It is copied by
 
 ## Canonical files and intended use
 
-| File | Intended use |
-| --- | --- |
-| `pulso-symbol-gradient.svg` | Primary scalable standalone symbol |
-| `pulso-symbol-white.svg` / `pulso-symbol-black.svg` | Monochrome standalone symbol |
-| `pulso-logo-horizontal-dark.svg` | Horizontal mark on dark surfaces |
-| `pulso-logo-horizontal-light.svg` | Horizontal mark on light documentation or non-MVP contexts |
-| `pulso-logo-horizontal-white.svg` / `pulso-logo-horizontal-black.svg` | Monochrome horizontal mark |
-| `pulso-symbol-gradient.png` | 1024 px raster standalone symbol |
-| `pulso-logo-horizontal-dark.png` / `pulso-logo-horizontal-light.png` | 2048 px horizontal raster exports |
-| `pulso-app-icon-dark.png` | Opaque `#0C0A12` 1024 px app-icon candidate |
-| `pulso-adaptive-foreground.png` | Transparent 432 px Android adaptive foreground |
-| `pulso-splash-mark.png` | Transparent 1024 px splash mark |
-| `pulso-favicon-32.png` / `pulso-favicon-192.png` / `pulso-favicon-512.png` | Named favicon sizes |
+| File                                                                       | Intended use                                               |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `pulso-symbol-gradient.svg`                                                | Primary scalable standalone symbol                         |
+| `pulso-symbol-white.svg` / `pulso-symbol-black.svg`                        | Monochrome standalone symbol                               |
+| `pulso-logo-horizontal-dark.svg`                                           | Horizontal mark on dark surfaces                           |
+| `pulso-logo-horizontal-light.svg`                                          | Horizontal mark on light documentation or non-MVP contexts |
+| `pulso-logo-horizontal-white.svg` / `pulso-logo-horizontal-black.svg`      | Monochrome horizontal mark                                 |
+| `pulso-symbol-gradient.png`                                                | 1024 px raster standalone symbol                           |
+| `pulso-logo-horizontal-dark.png` / `pulso-logo-horizontal-light.png`       | 2048 px horizontal raster exports                          |
+| `pulso-app-icon-dark.png`                                                  | Opaque `#0C0A12` 1024 px app-icon candidate                |
+| `pulso-adaptive-foreground.png`                                            | Transparent 432 px Android adaptive foreground             |
+| `pulso-splash-mark.png`                                                    | Transparent 1024 px splash mark                            |
+| `pulso-favicon-32.png` / `pulso-favicon-192.png` / `pulso-favicon-512.png` | Named favicon sizes                                        |
 
 ## Usage safeguards
 

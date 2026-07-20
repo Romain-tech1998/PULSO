@@ -6,6 +6,13 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "icon": "./assets/brand/pulso-app-icon-dark.png",
+    "backgroundColor": "#0c0a12",
+    "splash": {
+      "image": "./assets/brand/pulso-splash-mark.png",
+      "backgroundColor": "#0c0a12",
+      "resizeMode": "contain"
+    },
     "plugins": [
       "@maplibre/maplibre-react-native",
       [
@@ -19,7 +26,11 @@
       ]
     ],
     "android": {
-      "package": "com.pulso.mobile"
+      "package": "com.pulso.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/brand/pulso-adaptive-foreground.png",
+        "backgroundColor": "#0c0a12"
+      }
     }
   }
 }

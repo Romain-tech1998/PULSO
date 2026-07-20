@@ -260,7 +260,7 @@ export function ExploreMap({
           {
             id: 'background',
             type: 'background',
-            paint: { 'background-color': '#102a2d' }
+            paint: { 'background-color': '#0c0a12' }
           }
         ]
       }
@@ -331,9 +331,8 @@ export function ExploreMap({
       <header>
         <div className="header-row">
           <div className="brand-row">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/logo-horizontal.png"
+              src="/brand/pulso-logo-horizontal-dark.svg"
               alt={translate(locale, 'app.title')}
               className="brand-logo"
             />

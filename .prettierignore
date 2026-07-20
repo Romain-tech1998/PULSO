@@ -1,4 +1,5 @@
 .next
+Brand/production/candidates/
 coverage
 dist
 docs/**/*.md
