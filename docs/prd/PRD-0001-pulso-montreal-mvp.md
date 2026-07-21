@@ -1,7 +1,7 @@
 # PRD-0001 — Pulso Montréal MVP
 
 **Identifier:** PRD-0001
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Accepted
 **Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001
 
@@ -26,7 +26,7 @@ Information about Montréal events is fragmented across organizers, venues, tick
 | Trustworthy data | Visible events expose source, freshness, and uncertainty information; geolocation errors, duplicates, cancellations, and postponements are measured and reviewable. |
 | Useful external access | Valid outbound actions reach the clearly identified external event or ticketing destination; failures are measured and explained. |
 | Anonymous utility | Map exploration, filters, intelligent search, previews, Event Details, and external redirects complete without an account. |
-| Optional favorites | A user who chooses an account can save, view, reopen, and remove favorites. |
+| Optional favorites | A user can save, view, reopen, and remove local favorites without an account; a voluntarily connected account merges them for cross-device synchronization. |
 
 Coverage, freshness, data quality, redirect success, and usability remain binding launch-measurement dimensions. Numeric launch gates must be established from a documented Montréal ingestion sample and usability-prototype baseline and approved before production launch. They do not block PRD acceptance, RFC-0001 drafting, or initial implementation.
 
@@ -49,8 +49,8 @@ The Accepted MVP has four primary screens:
 
 1. **Explore / Map** — default entry and primary experience.
 2. **Event Details** — complete view of a selected event.
-3. **Favorites** — saved events for an authenticated user.
-4. **Authentication** — contextual entry when the user chooses a favorite-dependent action.
+3. **Favorites** — saved events on the current device, with optional authenticated synchronization.
+4. **Authentication** — contextual entry when the user voluntarily chooses account connection or cross-device synchronization.
 
 Filters, intelligent search, event previews, match explanations, trust notices, and system feedback are overlays or states, not additional primary screens.
 
@@ -159,20 +159,20 @@ This PRD makes no claim that any named source permits a collection method or off
 | ID | Requirement and user-visible behavior | Priority | Acceptance criteria | Source |
 | --- | --- | --- | --- | --- |
 | AUTH-001 | Permit complete anonymous discovery and external redirects. | P0 | All account-free flows pass in a signed-out session. | DEC-0001, UX-0001 |
-| AUTH-002 | Trigger authentication only when a signed-out user saves a favorite or opens Favorites. | P0 | No other MVP action presents a required auth gate. | DEC-0001, UX-0001 |
-| AUTH-003 | Retain the interrupted favorite context and return after successful authentication. | P0 | A signed-out save completes or is explicitly confirmed on return to the same event. | UX-0001 |
-| AUTH-004 | Allow cancellation and recoverable failure without losing browsing context or saving the favorite. | P0 | Cancel/failure returns to the prior event unsaved and displays actionable feedback. | UX-0001 |
+| AUTH-002 | Trigger authentication only when a user voluntarily chooses account creation or connection for cross-device favorite synchronization. | P0 | No favorite add, removal, or consultation presents a required auth gate. | DEC-0007 |
+| AUTH-003 | Preserve local favorites and current context through a voluntary account connection, then merge local and account collections by stable event ID. | P0 | Successful connection produces the union without duplicate or silent deletion and returns to the preserved context. | DEC-0007 |
+| AUTH-004 | Allow cancellation and recoverable failure without losing browsing context or local favorites. | P0 | Cancel/failure returns to the prior context with local favorites unchanged and displays actionable feedback. | DEC-0007 |
 | AUTH-005 | Use email as the MVP account identifier; verification, sessions, recovery, retention, and deletion remain RFC-0001 decisions. | P0 | A user can create or access one account using an email identifier; no profile or additional account capability is introduced. | Product-owner decision; DEC-0001 simplicity |
 
 ### Favorites
 
 | ID | Requirement and user-visible behavior | Priority | Acceptance criteria | Source |
 | --- | --- | --- | --- | --- |
-| FAV-001 | Save an event from Event Details for an authenticated user. | P0 | Save changes the event state and adds it once to Favorites. | MVP-0001, UX-0001 |
-| FAV-002 | Display saved events with identity, date/time, venue, and current event/trust warnings. | P0 | Favorites entries expose required known fields and current warnings. | UX-0001 |
+| FAV-001 | Save an event from Event Details locally without authentication. | P0 | Save changes the event state and adds its stable event ID once to local Favorites. | DEC-0007 |
+| FAV-002 | Display local saved events, and the merged collection after authentication, with identity, date/time, venue, and current event/trust warnings. | P0 | Favorites entries expose required known fields and current warnings without requiring an account. | DEC-0007, UX-0001 |
 | FAV-003 | Order active favorites by soonest upcoming event; place inactive retained favorites afterward with status clearly displayed. | P1 | Ordering fixtures follow this rule and never conceal status. | Product-owner decision; PDR-0001 simplicity/trust |
-| FAV-004 | Open Event Details from Favorites and remove a favorite. | P0 | Open uses the same Event Details; remove deletes the saved association without deleting the event. | UX-0001 |
-| FAV-005 | Show a useful empty state with a return to Explore / Map. | P0 | An account with no favorites sees no error and can return to exploration. | UX-0001 |
+| FAV-004 | Open Event Details from Favorites and remove a favorite. | P0 | Open uses the same Event Details; remove deletes the local or account saved association without deleting the event. | DEC-0007, UX-0001 |
+| FAV-005 | Show a useful empty state with a return to Explore / Map. | P0 | A local or authenticated collection with no favorites shows no error and can return to exploration. | DEC-0007, UX-0001 |
 
 No profile, social graph, preference store, personalized history, or ticket store is included.
 
@@ -212,7 +212,7 @@ No framework, design system, breakpoint library, or application architecture is 
 | Postponed | Visible with warning | Show status and known revised information | Preserve status | Never present old schedule as current |
 | Search processing | Preserve map and filters | Not applicable | Not applicable | Show progress without separate catalogue |
 | No exact search result | Show labelled alternatives or no reliable result | Normal if alternative selected | Not applicable | Do not fabricate exact matches |
-| Auth required | Browsing remains available | Retain interrupted event | Contextual auth | Return on success; unsaved return on cancel/failure |
+| Optional account connection | Browsing and local favorites remain available | Retain event and local-favorite context | Contextual auth only when chosen | Merge on success; keep local favorites on cancel/failure |
 | Favorite empty | Not applicable | Not applicable | Empty collection | Provide return to Explore |
 | External destination unavailable | Event remains discoverable | Explain failure | Preserve favorite | Remain in Pulso; no native fallback |
 
@@ -235,11 +235,11 @@ No framework, design system, breakpoint library, or application architecture is 
 
 ### Save while signed out
 
-**Given** a signed-out user is on Event Details, **when** they choose Favorite and complete authentication, **then** Pulso returns to that event and completes or confirms one saved favorite.
+**Given** a signed-out user is on Event Details, **when** they choose Favorite, **then** Pulso saves one local favorite without authentication and retains the current context. If the user later voluntarily connects an account, the local and account collections are merged by stable event ID without duplicate or silent deletion.
 
 ### Remove favorite
 
-**Given** an authenticated user has a saved event, **when** they remove it, **then** the association disappears from Favorites while the underlying event remains available.
+**Given** a user has a local or authenticated saved event, **when** they remove it, **then** the association disappears from Favorites while the underlying event remains available.
 
 ### External destination
 
@@ -265,7 +265,7 @@ No framework, design system, breakpoint library, or application architecture is 
 
 ### Product events
 
-Measure, without selecting a vendor: Explore opened; initial map resolved; map area changed; filter applied/cleared; query submitted/interpreted/completed; result condition; preview opened; Event Details opened; trust warning displayed; favorite requested/auth required/saved/removed; outbound destination attempted/succeeded/failed; and relevant loading/empty/error states. Raw intelligent-search queries are not retained by default.
+Measure, without selecting a vendor: Explore opened; initial map resolved; map area changed; filter applied/cleared; query submitted/interpreted/completed; result condition; preview opened; Event Details opened; trust warning displayed; local favorite requested/saved/removed; voluntary account connection and merge outcome; outbound destination attempted/succeeded/failed; and relevant loading/empty/error states. Raw intelligent-search queries are not retained by default.
 
 Collection must use the minimum data necessary, avoid query or account-history profiling beyond operational need, and exclude payment, ticket, identity-document, and age-credential data.
 
@@ -284,7 +284,7 @@ Collection must use the minimum data necessary, avoid query or account-history p
 - Proportion of events with usable geolocation, visible source, last verification, and trust status.
 - Duplicate, stale, uncertain, cancellation, postponement, and correction observations.
 - External destination attempt, success, and failure rate.
-- Favorite authentication, save, reopen, and removal completion.
+- Local favorite save, reopen, and removal completion; voluntary account-connection and merge completion without raw query or account-history profiling.
 
 ### Later optimization measurements
 

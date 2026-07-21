@@ -1,7 +1,7 @@
 # DEC-0004 — Map Basemap Provider
 
 **Identifier:** DEC-0004
-**Version:** 0.2
+**Version:** 0.3
 **Status:** Draft
 **Dependencies:** PRD-0001, RFC-0001, DEC-0002, UI-0001
 
@@ -12,6 +12,8 @@ MapLibre is a renderer. The previous local style contained only a dark backgroun
 ## Development candidate and visual direction
 
 OpenFreeMap Liberty at `https://tiles.openfreemap.org/styles/liberty` successfully proves that real Montréal geography can render through MapLibre. It is a development basemap candidate only. Its light visual appearance is not accepted as Pulso's final map design.
+
+Carto dark is an intentional visual candidate for the future Pulso dark map. It is not an approved production provider. Public environment overrides remain required so that either development candidate can be replaced without committing a provider choice.
 
 The production map must use a genuine MapLibre-compatible dark style aligned with UI-0001. It must not be implemented by applying a CSS filter to the map canvas. The future style must preserve:
 
@@ -47,4 +49,4 @@ This environmental exception does not block the reversible development checkpoin
 
 ## Acceptance gate
 
-A dark-style visual spike, accessibility review, and deferred visible Android basemap validation are required before DEC-0004 can become Accepted. They must verify real geographic context, readable labels and controls, visible event markers, and required attribution without introducing a provider, routing, geocoding, or tracking decision.
+A dark-style visual spike, accessibility review, and deferred visible Android basemap validation are required before DEC-0004 can become Accepted. They must verify real geographic context, readable labels and controls, visible event markers, and required attribution without introducing a provider, routing, geocoding, or tracking decision. Provider selection, attribution terms, legal and privacy review, reliability, caching, native behavior, and exact dark-style layers remain Draft questions.

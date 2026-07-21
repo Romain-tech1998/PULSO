@@ -1,7 +1,7 @@
 # UX-0001 — MVP Screens and Flows
 
 **Identifier:** UX-0001
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Accepted
 **Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, UJ-0001, UJ-0002, DATA-0001
 
@@ -23,7 +23,7 @@ Pulso has four primary screens:
 
 1. **Explore / Map** — default entry and center of the product.
 2. **Event Details** — complete view of one event selected from the map.
-3. **Favorites** — saved events for an authenticated user.
+3. **Favorites** — saved events on the current device, with optional authenticated synchronization.
 4. **Authentication** — contextual account creation or sign-in when an account-dependent action is chosen.
 
 The Explore / Map screen owns these supporting overlays, components, and states:
@@ -42,8 +42,8 @@ Filters and intelligent search are not separate catalogues or mandatory steps. T
 - Explore / Map marker → Event Preview → Event Details.
 - Explore / Map intelligent-search entry → query state → results on Explore / Map.
 - Explore / Map filter control → filter overlay → filtered Explore / Map.
-- Favorite action while signed in → saved state.
-- Favorite action while signed out → Authentication → return to interrupted favorite action.
+- Favorite action → saved local state without authentication.
+- Voluntary account creation or connection → merge local and account favorites, then return to the preserved context.
 - Favorites → Event Details → return to Favorites or Explore / Map.
 - External ticketing or event-source action → clearly identified external destination.
 
@@ -54,9 +54,9 @@ No account gate may precede Explore / Map, filters, intelligent search, event pr
 | Screen | Purpose | Required elements | Account requirement |
 | --- | --- | --- | --- |
 | Explore / Map | Discover Montréal events through the primary map experience | Montréal map, event markers, previews, filters, optional intelligent search, data and system states | None |
-| Event Details | Support an informed event choice | Event information, source, freshness or confidence, status, external action, favorite action | None for viewing; account only to save |
-| Favorites | Reopen and remove saved events | Saved-event collection, event status and essential information, removal action, empty state | Required |
-| Authentication | Enable an explicitly chosen account-dependent action | Account creation or sign-in, clear return context, cancellation back to prior screen | Required only after the user requests Favorites or chooses to save |
+| Event Details | Support an informed event choice | Event information, source, freshness or confidence, status, external action, favorite action | None |
+| Favorites | Reopen and remove saved events | Local or authenticated saved-event collection, event status and essential information, removal action, empty state | None for local favorites |
+| Authentication | Enable a voluntarily chosen account connection | Account creation or sign-in, local-favorite merge context, cancellation back to prior screen | Required only after the user chooses account connection or cross-device synchronization |
 
 Filters, intelligent search, event previews, trust notices, and system feedback are overlays or states of these screens. They do not create additional MVP destinations.
 
@@ -109,7 +109,7 @@ The preview does not replace Event Details and must not hide material trust or e
 
 ### Behavior without an account
 
-A signed-out user can open Explore / Map, move and zoom the map, use filters, use intelligent search, inspect previews, open Event Details, and follow an external link. Authentication appears only if the user chooses to save a favorite or access Favorites.
+A signed-out user can open Explore / Map, move and zoom the map, use filters, use intelligent search, inspect previews, open Event Details, follow an external link, and add, remove, or consult local favorites. Authentication appears only if the user voluntarily chooses to create or connect an account for cross-device synchronization, in accordance with DEC-0007.
 
 ## 4. Filters
 
@@ -205,22 +205,22 @@ An image may be shown only when it can be used. Missing optional information rem
 
 ### Browsing and authentication boundary
 
-- Browsing, filtering, intelligent search, previews, Event Details, and external redirects require no account.
-- Authentication begins only when a signed-out user chooses the favorite action or attempts to access Favorites.
-- The authentication experience states why an account is required and allows cancellation back to the prior context.
+- Browsing, filtering, intelligent search, previews, Event Details, external redirects, and local favorite actions require no account.
+- Authentication begins only when a user voluntarily chooses account creation or connection for cross-device synchronization.
+- The authentication experience states that local favorites will be merged by stable event ID, allows cancellation back to the prior context, and must not delete local favorites.
 
-### Interrupted favorite action
+### Account connection and favorite continuity
 
-1. A signed-out user chooses the favorite action on Event Details.
-2. Pulso presents Authentication with the event and intended save action retained as context.
-3. After successful account creation or sign-in, Pulso returns to the interrupted context and completes or confirms the requested favorite action.
-4. If authentication is cancelled or fails, the event remains unsaved and the user returns to the prior screen without losing browsing context.
+1. A signed-out user adds, removes, or consults favorites locally without interruption.
+2. If the user voluntarily chooses account creation or connection, Pulso retains the local favorite collection and the current screen context.
+3. After successful connection, Pulso merges local and account favorites as a union by stable event ID, without duplicates or silent deletions, then returns to the preserved context.
+4. If authentication is cancelled or fails, local favorites and the prior browsing context remain available.
 
-The exact account creation, sign-in, session, failure, and recovery rules require PRD-0001 definition.
+The exact account creation, sign-in, session, failure, recovery, provider, and merge presentation rules require a future authentication implementation task. DEC-0007 supersedes the prior account-only favorite rule.
 
 ### Favorites screen
 
-- Displays the authenticated user's saved events.
+- Displays the current device's local saved events and, after authentication, the merged account collection.
 - Provides enough event identity, date, venue, and current status to distinguish saved events.
 - Opens the same Event Details screen used from Explore / Map.
 - Allows removal of a favorite.
@@ -229,7 +229,7 @@ The exact account creation, sign-in, session, failure, and recovery rules requir
 
 ### Signed-out behavior
 
-A signed-out attempt to access Favorites leads to Authentication with a clear Favorites return context. It does not block any account-free product function.
+A signed-out user can access and manage local Favorites without authentication. Authentication remains optional for a later account connection and cross-device synchronization; it does not block any account-free product function.
 
 Profiles, social features, account-derived recommendations, stored preferences, and ticket storage are outside the MVP.
 
@@ -274,9 +274,9 @@ Exact layouts, breakpoints, gestures, and platform-native presentation conventio
 ### Save a favorite while signed out
 
 1. Event Details → user chooses favorite.
-2. Authentication required state → account creation or sign-in.
-3. Successful authentication → return to interrupted event and complete or confirm save.
-4. Event shows saved state and appears in Favorites.
+2. Pulso saves the stable event ID locally and shows the saved state without authentication.
+3. The event appears in Favorites on the current browser or device.
+4. If the user later chooses account connection, Pulso merges local and account favorites without duplicate or silent deletion.
 
 ### Open an external ticketing link
 
@@ -307,7 +307,7 @@ Exact layouts, breakpoints, gestures, and platform-native presentation conventio
 | Cancelled | Clearly distinguish affected event | Prominent cancelled status | Preserve cancelled status | Do not present as an ordinary active event |
 | Postponed | Clearly distinguish affected event | Prominent postponed status and known updated information | Preserve postponed status | Do not present old schedule as current |
 | External destination unavailable | Event remains explorable | Explain that the identified external destination cannot be opened | Not applicable | Remain in Pulso; no native booking fallback |
-| Authentication required for favorite | Map and event remain viewable | Retain interrupted event context | Present contextual Authentication | Return after success; return unsaved after cancel or failure |
+| Optional account connection for synchronization | Map and event remain viewable | Retain event and local-favorite context | Present contextual Authentication only when chosen | Merge by stable event ID after success; keep local favorites after cancel or failure |
 
 The precise visual treatment, copy, thresholds, and whether affected events remain in active map results require PRD-0001 validation.
 
@@ -342,7 +342,7 @@ Roadmap and Vision items must not influence the MVP screen structure or create a
 - Filters are always available and are not replaced by intelligent search.
 - Intelligent search is optional, uses the same map and event catalogue, and explains matches.
 - Event browsing, filters, search, previews, and Event Details work without an account.
-- Accounts are optional and initially support Favorites.
+- Accounts are optional; Favorites work locally without an account, while a later account connection imports and merges them for cross-device synchronization under DEC-0007.
 - Responsive web and mobile application expose the same product, rules, and data.
 - Event Details exposes essential event, source, trust, and external destination information.
 - Booking is an external redirect only, with affiliate links when available.

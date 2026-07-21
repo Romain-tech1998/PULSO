@@ -1,6 +1,6 @@
 # DEC-0001 — Access, Booking and Product Surfaces
 
-**Version :** 1.0  
+**Version :** 1.1
 **Status :** Accepted  
 **Dépend de :** PDR-0001, MVP-0001
 
@@ -10,7 +10,7 @@
 
 Pulso est entièrement consultable sans compte dans le MVP.
 
-La création d'un compte est facultative et sert initialement à enregistrer des favoris.
+La création d'un compte est facultative. Les favoris peuvent être enregistrés et consultés localement sans compte ; un compte pourra ultérieurement importer et synchroniser ces favoris entre appareils. DEC-0007 remplace la limitation antérieure qui réservait les favoris à un compte.
 
 ### Réservation
 
@@ -33,7 +33,7 @@ Les deux surfaces représentent le même produit. Elles partagent les données, 
 
 ### MVP
 
-- favoris.
+- importation et synchronisation facultatives de favoris locaux après création ou connexion d'un compte.
 
 ### Roadmap
 

@@ -1,7 +1,7 @@
 # RFC-0001 — Pulso Core Architecture
 
 **Identifier:** RFC-0001
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Accepted
 **Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001, PRD-0001
 
@@ -13,7 +13,7 @@ Define the smallest production-capable technical architecture for the Accepted P
 
 Use a **strict TypeScript pnpm monorepo** on **Node.js 24 LTS** and **pnpm 11**, with a **Next.js 16 App Router responsive web app**, **Expo SDK 57 / React Native 0.86 mobile app**, and one **Fastify 5 modular-monolith backend**. Align **React 19.2** initially with Expo's supported patch. Store canonical data in **PostgreSQL with PostGIS**. Use **Drizzle ORM for ordinary relational schema, typed access, and migrations**, reviewed parameterized SQL for spatial behavior, and **Zod 4** runtime contracts. PostgreSQL-backed jobs are the preferred ingestion-stage default, not an initial-scaffold requirement.
 
-Public read APIs support anonymous discovery. A managed email-auth provider supports optional accounts/favorites. Source adapters implement ingestion only after source-specific research approves access. Intelligent search is optional and provider-neutral; deterministic retrieval remains authoritative. External ticketing remains outside Pulso. Measurement is privacy-minimized and vendor-neutral.
+Public read APIs support anonymous discovery and client-local favorites without an anonymous server profile, fingerprinting, or hidden account. A managed email-auth provider supports optional account connection and cross-device synchronization of favorites. Source adapters implement ingestion only after source-specific research approves access. Intelligent search is optional and provider-neutral; deterministic retrieval remains authoritative. External ticketing remains outside Pulso. Measurement is privacy-minimized and vendor-neutral.
 
 The MVP does not use microservices, Kubernetes, event streaming, multi-region systems, or Roadmap/Vision infrastructure.
 
@@ -26,7 +26,7 @@ The MVP does not use microservices, Kubernetes, event streaming, multi-region sy
 | Coverage and trust | Adapter pipeline, provenance, conservative deduplication, correction audit | PDR-0001, DATA-0001, PRD EVENT/TRUST |
 | Web and mobile same product | Shared domain/contracts; platform-specific UI | DEC-0001, UX-0001, PRD RESPONSIVE |
 | Optional AI | Replaceable extraction boundary and deterministic fallback | PDR-0001/2, PRD SEARCH |
-| Anonymous discovery | Public reads; auth only for favorites | DEC-0001, PRD AUTH/FAV |
+| Anonymous discovery and favorites | Public reads and client-local favorites; auth only for voluntary account connection and cross-device synchronization | DEC-0007, PRD AUTH/FAV |
 | External redirects | Validated destination records; no transaction data | DEC-0001, PRD REDIRECT |
 | Minimal personal data | Managed auth, minimized measurement, retention controls | PRD PRIVSEC/MEASURE |
 
@@ -142,7 +142,7 @@ Both clients consume the same versioned API and share domain enums, contracts, v
 
 ## 8. Backend architecture
 
-One backend codebase contains modules for Discovery, Events, Search, Identity, Favorites, Redirects, Ingestion, Corrections, and Operations. Public endpoints cover event discovery/details/search and authenticated favorites. Redirects accept only internal destination identifiers. Ingestion/correction execute through workers or tightly authorized operator commands. Health/readiness expose no sensitive data. Modules own behavior and repositories; HTTP handlers remain thin.
+One backend codebase contains modules for Discovery, Events, Search, Identity, Favorites, Redirects, Ingestion, Corrections, and Operations. Public endpoints cover event discovery/details/search; anonymous favorites remain client-local, while authenticated endpoints cover account favorites after voluntary connection. Redirects accept only internal destination identifiers. Ingestion/correction execute through workers or tightly authorized operator commands. Health/readiness expose no sensitive data. Modules own behavior and repositories; HTTP handlers remain thin.
 
 ## 9. Canonical event model
 
@@ -241,7 +241,7 @@ The provider returns candidate criteria, never canonical events. Backend validat
 
 Recommend managed authentication over self-managed credentials. Provider verifies email and manages credential/session security; Pulso maps its immutable subject to internal User UUID. Provider must support email verification, token validation, recovery, logout/revocation, deletion hooks, and documented retention.
 
-Clients present short-lived tokens; API validates issuer, audience, signature, expiry, and claims. Authorization scopes favorites to internal user ID. Pending favorite state retains only event ID and resumes after auth. Account deletion removes/anonymizes Pulso data/favorites under approved retention and requests provider deletion. No profile, social graph, preferences, tickets, identity documents, or age credentials. Self-managed auth is rejected because it adds credential, recovery, abuse, and security operations without MVP advantage.
+Clients present short-lived tokens; API validates issuer, audience, signature, expiry, and claims. Anonymous favorites remain client-local and contain stable event IDs only; they create no server record before authentication. Authorization scopes account favorites to internal user ID. After a user voluntarily creates or connects an account, the implementation merges local and account favorite IDs as a union without duplicates or silent deletions; cross-device synchronization begins only after that authentication. Account deletion removes/anonymizes Pulso data/favorites under approved retention and requests provider deletion. No profile, social graph, preferences, tickets, identity documents, or age credentials. Self-managed auth is rejected because it adds credential, recovery, abuse, and security operations without MVP advantage.
 
 ## 16. External redirects and affiliation
 
@@ -255,7 +255,7 @@ Fields: event name, time, surface, rotating pseudonymous session or distinct aut
 
 ## 18. Security model
 
-- Separate public reads/search/redirects, authenticated favorites, and internal operations.
+- Separate public reads/search/redirects, client-local anonymous favorites, authenticated account favorites, and internal operations.
 - Verify auth tokens server-side and authorize every user-owned record.
 - Runtime-validate all client, adapter, provider, and operator input.
 - Rate-limit search, auth-adjacent, and redirect paths proportionally.

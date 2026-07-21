@@ -1,6 +1,6 @@
 # MVP-0001 — Montréal Nightlife Scope
 
-**Version :** 1.0  
+**Version :** 1.1
 **Status :** Accepted  
 **Dépend de :** PDR-0001, PDR-0002
 
@@ -56,7 +56,7 @@ La valeur repose sur :
 - liens affiliés lorsqu'ils sont disponibles ;
 - consultation complète sans compte ;
 - création facultative d'un compte ;
-- favoris pour les utilisateurs connectés.
+- favoris locaux sans compte ; synchronisation entre appareils seulement après création ou connexion facultative d'un compte, conformément à DEC-0007.
 
 ## Réservation dans le MVP
 
@@ -97,4 +97,4 @@ Ces éléments de Vision ne doivent introduire aucune complexité dans le MVP.
 - Chaque événement est correctement positionné sur la carte.
 - Les informations essentielles sont fraîches, sourcées et compréhensibles.
 - Un utilisateur peut atteindre la billetterie externe depuis la fiche événement.
-- Les favoris fonctionnent pour un utilisateur qui choisit de créer un compte.
+- Un utilisateur peut ajouter, retirer et consulter ses favoris localement sans créer de compte ; une connexion facultative préserve et fusionne ensuite ces favoris pour la synchronisation entre appareils, conformément à DEC-0007.
