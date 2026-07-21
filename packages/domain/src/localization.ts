@@ -235,7 +235,14 @@ const en = {
   'search.difference.category':
     'Event category differs from the requested category filter.',
   'search.difference.excludedCategory':
-    'Event category was explicitly excluded in the request.'
+    'Event category was explicitly excluded in the request.',
+  'favorites.showAll': 'Favorites',
+  'favorites.showFavoritesOnly': 'My favorites',
+  'favorites.add': 'Add to favorites',
+  'favorites.remove': 'Remove from favorites',
+  'details.share': 'Share',
+  'details.shareText': 'Check out this event on Pulso: {title}',
+  'details.linkCopied': 'Link copied to clipboard'
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -437,7 +444,14 @@ const fr = {
   'search.difference.category':
     'La catégorie de l’événement diffère du filtre de catégorie demandé.',
   'search.difference.excludedCategory':
-    'La catégorie de l’événement a été explicitement exclue dans la demande.'
+    'La catégorie de l’événement a été explicitement exclue dans la demande.',
+  'favorites.showAll': 'Favoris',
+  'favorites.showFavoritesOnly': 'Mes favoris',
+  'favorites.add': 'Ajouter aux favoris',
+  'favorites.remove': 'Retirer des favoris',
+  'details.share': 'Partager',
+  'details.shareText': 'Découvre cet événement sur Pulso : {title}',
+  'details.linkCopied': 'Lien copié dans le presse-papier'
 } satisfies Record<MessageKey, string>;
 
 export const MESSAGE_CATALOGS = { en, fr } as const;

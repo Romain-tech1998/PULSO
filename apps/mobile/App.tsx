@@ -16,6 +16,7 @@ import {
 import {
   DEFAULT_DISCOVERY_FILTERS,
   getMontrealCalendarDate,
+  CATEGORY_COLORS,
   type DiscoveryFilters,
   type EventCategory
 } from '@pulso/domain';
@@ -45,7 +46,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
+  Share
 } from 'react-native';
 
 const API_BASE_URL =
@@ -56,7 +58,7 @@ const initialBounds = [-73.75, 45.4, -73.4, 45.7] as const;
 const mobileBrandLogo = require('./assets/brand/pulso-logo-horizontal-dark.png');
 const MAP_STYLE_URL =
   process.env.EXPO_PUBLIC_MAP_STYLE_URL ??
-  'https://tiles.openfreemap.org/styles/liberty';
+  'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
 type LoadState = 'loading' | 'success' | 'empty' | 'error';
 type DetailsState =
@@ -69,6 +71,29 @@ interface ActiveSearch {
   query: string;
   manualFilters: DiscoveryFilters;
   disabledDerivedKeys: SearchConstraintKey[];
+}
+
+function useFavorites() {
+  const [favorites, setFavorites] = useState<string[]>([]);
+  useEffect(() => {
+    AsyncStorage.getItem('pulso-favorites').then((stored) => {
+      if (stored) {
+        try {
+          setFavorites(JSON.parse(stored));
+        } catch (err) {
+          console.warn('Failed to parse favorites', err);
+        }
+      }
+    });
+  }, []);
+  const toggleFavorite = (id: string) => {
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      void AsyncStorage.setItem('pulso-favorites', JSON.stringify(next));
+      return next;
+    });
+  };
+  return { favorites, toggleFavorite };
 }
 
 function eventUrl(
@@ -111,6 +136,8 @@ export default function App() {
   const [searchError, setSearchError] = useState(false);
   const localeRef = useRef<SupportedLocale>('fr');
   const [locale, setLocale] = useState<SupportedLocale>();
+  const { favorites, toggleFavorite } = useFavorites();
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
   useEffect(() => {
     void loadMobileLocale(
@@ -136,6 +163,21 @@ export default function App() {
       setBounds(nextBounds);
       setState('loading');
       setSearchError(false);
+
+      // Stale-While-Revalidate : Charger le cache instantanément
+      try {
+        const cached = await AsyncStorage.getItem('pulso-offline-events');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed.length > 0) {
+            setEvents(parsed);
+            setState('success');
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to read offline cache', err);
+      }
+
       try {
         if (activeSearch.current) {
           setSearchProcessing(true);
@@ -163,6 +205,7 @@ export default function App() {
           setFilters(effectiveFilters);
           const foundEvents = result.data.map(({ event }) => event);
           setEvents(foundEvents);
+          void AsyncStorage.setItem('pulso-offline-events', JSON.stringify(foundEvents));
           setSelected((current) =>
             current && foundEvents.some(({ id }) => id === current.id)
               ? current
@@ -176,6 +219,7 @@ export default function App() {
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
         setEvents(result.data);
+        void AsyncStorage.setItem('pulso-offline-events', JSON.stringify(result.data));
         setSelected((current) =>
           current && result.data.some(({ id }) => id === current.id)
             ? current
@@ -194,6 +238,20 @@ export default function App() {
   useEffect(() => {
     void loadEvents(initialBounds);
   }, [loadEvents]);
+
+  // Deep linking listener
+  useEffect(() => {
+    const handleUrl = (url: string | null) => {
+      if (!url) return;
+      const match = url.match(/eventId=([^&]+)/) || url.match(/\/events\/([^/?]+)/);
+      if (match && match[1]) {
+        void openDetails(match[1]);
+      }
+    };
+    Linking.getInitialURL().then(handleUrl).catch(() => {});
+    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => subscription.remove();
+  }, []);
 
   function applyFilters(nextFilters: DiscoveryFilters) {
     if (activeSearch.current) {
@@ -322,21 +380,36 @@ export default function App() {
           }}
         >
           <Camera initialViewState={{ center, zoom: 11 }} />
-          {events.map((event) => (
-            <Marker
-              id={event.id}
-              key={event.id}
-              lngLat={[event.venue.point.longitude, event.venue.point.latitude]}
-              onPress={() => setSelected(event)}
-              accessible
-              accessibilityRole="button"
-              accessibilityLabel={translate(locale, 'map.previewAria', {
-                title: event.title
-              })}
-            >
-              <View style={styles.marker} />
-            </Marker>
-          ))}
+          {events
+            .filter((event) =>
+              showFavoritesOnly ? favorites.includes(event.id) : true
+            )
+            .map((event) => (
+              <Marker
+                id={event.id}
+                key={event.id}
+                lngLat={[event.venue.point.longitude, event.venue.point.latitude]}
+                onPress={() => setSelected(event)}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={translate(locale, 'map.previewAria', {
+                  title: event.title
+                })}
+              >
+                <View
+                  style={[
+                    styles.marker,
+                    {
+                      backgroundColor:
+                        CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.other,
+                      transform: [
+                        { scale: selected?.id === event.id ? 1.3 : 1 }
+                      ]
+                    }
+                  ]}
+                />
+              </Marker>
+            ))}
         </Map>
         <MobileSearchPanel
           query={queryInput}
@@ -364,6 +437,29 @@ export default function App() {
               {translate(locale, 'filters.trigger', {
                 count: summarizeActiveFilters(filters, locale).length
               })}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.favoriteTrigger,
+              showFavoritesOnly && styles.favoriteTriggerActive
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: showFavoritesOnly }}
+            onPress={() => setShowFavoritesOnly(!showFavoritesOnly)}
+          >
+            <Text
+              style={[
+                styles.filterButtonText,
+                showFavoritesOnly && styles.favoriteTriggerTextActive
+              ]}
+            >
+              {translate(
+                locale,
+                showFavoritesOnly
+                  ? 'favorites.showFavoritesOnly'
+                  : 'favorites.showAll'
+              )}
             </Text>
           </Pressable>
           <MobileActiveFilters
@@ -459,6 +555,8 @@ export default function App() {
             )}
             onClose={() => setSelected(undefined)}
             onDetails={() => void openDetails(selected.id)}
+            isFavorite={favorites.includes(selected.id)}
+            onToggleFavorite={() => toggleFavorite(selected.id)}
             locale={locale}
           />
         )}
@@ -466,7 +564,17 @@ export default function App() {
           <DetailsOverlay
             state={details}
             onBack={() => setDetails({ kind: 'closed' })}
-            onRetry={(eventId) => void openDetails(eventId)}
+            onRetry={openDetails}
+            isFavorite={
+              details.kind === 'success'
+                ? favorites.includes(details.event.id)
+                : false
+            }
+            onToggleFavorite={
+              details.kind === 'success'
+                ? () => toggleFavorite(details.event.id)
+                : () => {}
+            }
             locale={locale}
           />
         )}
@@ -531,59 +639,44 @@ function MobileSearchPanel({
   onPreview: (event: PublicEvent) => void;
   locale: SupportedLocale;
 }) {
-  const [open, setOpen] = useState(false);
   return (
     <View
-      style={[styles.searchPanel, !open && styles.searchPanelCollapsed]}
+      style={styles.searchPanel}
       accessibilityLabel={translate(locale, 'search.panelAria')}
-      pointerEvents={open ? 'auto' : 'box-none'}
+      pointerEvents="box-none"
     >
-      <Pressable
-        style={styles.searchToggle}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        onPress={() => setOpen((current) => !current)}
-      >
-        <Text style={styles.filterButtonText}>
-          {translate(locale, open ? 'search.collapse' : 'search.expand')}
-        </Text>
-      </Pressable>
-      {open && (
+      <View style={styles.searchPanelContent}>
+        <View style={styles.searchRow}>
+          <TextInput
+            style={styles.searchInput}
+            value={query}
+            maxLength={240}
+            placeholder={translate(locale, 'search.placeholder')}
+            placeholderTextColor={theme.textMuted}
+            accessibilityLabel={translate(locale, 'search.question')}
+            returnKeyType="search"
+            onChangeText={onQueryChange}
+            onSubmitEditing={onSubmit}
+          />
+          <Pressable
+            style={styles.searchButton}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: processing || !query.trim() }}
+            disabled={processing || !query.trim()}
+            onPress={onSubmit}
+          >
+            <Text style={styles.filterButtonText}>
+              {translate(locale, 'search.submit')}
+            </Text>
+          </Pressable>
+        </View>
+
+        {(processing || error || result) && (
         <ScrollView
-          style={styles.searchPanelContent}
+          style={styles.searchDropdown}
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.searchLabel}>
-            {translate(locale, 'search.question')}
-          </Text>
-          <View style={styles.searchRow}>
-            <TextInput
-              style={styles.searchInput}
-              value={query}
-              maxLength={240}
-              placeholder={translate(locale, 'search.placeholder')}
-              placeholderTextColor={theme.textMuted}
-              accessibilityLabel={translate(locale, 'search.question')}
-              returnKeyType="search"
-              onChangeText={onQueryChange}
-              onSubmitEditing={onSubmit}
-            />
-            <Pressable
-              style={styles.searchButton}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: processing || !query.trim() }}
-              disabled={processing || !query.trim()}
-              onPress={onSubmit}
-            >
-              <Text style={styles.filterButtonText}>
-                {translate(locale, 'search.submit')}
-              </Text>
-            </Pressable>
-          </View>
-          <Text style={styles.searchHelp}>
-            {translate(locale, 'search.help')}
-          </Text>
           {processing && (
             <View
               style={styles.searchProgress}
@@ -706,7 +799,8 @@ function MobileSearchPanel({
             </View>
           )}
         </ScrollView>
-      )}
+        )}
+      </View>
     </View>
   );
 }
@@ -1015,20 +1109,37 @@ function EventPreview({
   searchMatch,
   onClose,
   onDetails,
+  isFavorite,
+  onToggleFavorite,
   locale
 }: {
   event: PublicEvent;
   searchMatch: IntelligentSearchResponse['data'][number] | undefined;
   onClose: () => void;
   onDetails: () => void;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
   locale: SupportedLocale;
 }) {
   const presentation = presentEvent(event, locale);
   return (
     <View style={styles.preview} accessibilityLiveRegion="polite">
-      <Pressable onPress={onClose} accessibilityRole="button">
-        <Text style={styles.close}>{translate(locale, 'preview.close')}</Text>
-      </Pressable>
+      <View style={styles.previewHeaderActions}>
+        <Pressable
+          onPress={onToggleFavorite}
+          accessibilityRole="button"
+          accessibilityState={{ selected: isFavorite }}
+          accessibilityLabel={translate(
+            locale,
+            isFavorite ? 'favorites.remove' : 'favorites.add'
+          )}
+        >
+          <Text style={styles.favoriteButton}>{isFavorite ? '❤️' : '🤍'}</Text>
+        </Pressable>
+        <Pressable onPress={onClose} accessibilityRole="button">
+          <Text style={styles.close}>{translate(locale, 'preview.close')}</Text>
+        </Pressable>
+      </View>
       <Text style={styles.chip}>{presentation.category}</Text>
       <Text style={styles.previewTitle} accessibilityRole="header">
         {event.title}
@@ -1081,18 +1192,53 @@ function DetailsOverlay({
   state,
   onBack,
   onRetry,
+  isFavorite,
+  onToggleFavorite,
   locale
 }: {
   state: Exclude<DetailsState, { kind: 'closed' }>;
   onBack: () => void;
   onRetry: (eventId: string) => void;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
   locale: SupportedLocale;
 }) {
   return (
     <View style={styles.detailsOverlay} accessibilityViewIsModal>
-      <Pressable onPress={onBack} accessibilityRole="button">
-        <Text style={styles.back}>{translate(locale, 'details.back')}</Text>
-      </Pressable>
+      <View style={styles.previewHeaderActions}>
+        <Pressable onPress={onBack} accessibilityRole="button">
+          <Text style={styles.back}>{translate(locale, 'details.back')}</Text>
+        </Pressable>
+        {state.kind === 'success' && (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable
+              onPress={() => {
+                Share.share({
+                  message: `${translate(locale, 'details.shareText', { title: state.event.title })}\nhttps://pulso.app/events/${state.event.id}`,
+                  url: `https://pulso.app/events/${state.event.id}`,
+                  title: state.event.title
+                }).catch(console.warn);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={translate(locale, 'details.share')}
+              style={{ marginRight: 16 }}
+            >
+              <Text style={styles.favoriteButton}>↗️ {translate(locale, 'details.share')}</Text>
+            </Pressable>
+            <Pressable
+              onPress={onToggleFavorite}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isFavorite }}
+              accessibilityLabel={translate(
+                locale,
+                isFavorite ? 'favorites.remove' : 'favorites.add'
+              )}
+            >
+              <Text style={styles.favoriteButton}>{isFavorite ? '❤️' : '🤍'}</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
       {state.kind === 'loading' && (
         <View style={styles.centered} accessibilityLiveRegion="polite">
           <ActivityIndicator color={theme.pink} />
@@ -1256,9 +1402,14 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    borderWidth: 3,
-    borderColor: 'white',
-    backgroundColor: theme.purple
+    borderWidth: 2,
+    borderColor: '#fff',
+    backgroundColor: theme.pink,
+    shadowColor: theme.pink,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 5
   },
   status: {
     position: 'absolute',
@@ -1283,58 +1434,43 @@ const styles = StyleSheet.create({
     left: 12,
     right: 12,
     top: MOBILE_SEARCH_PANEL_LAYOUT.top,
-    maxHeight: MOBILE_SEARCH_PANEL_LAYOUT.expandedMaxHeight,
-    borderColor: theme.border,
-    borderRadius: 10,
-    borderWidth: 1,
-    backgroundColor: MOBILE_SEARCH_PANEL_LAYOUT.backgroundColor,
-    padding: 10,
     zIndex: MOBILE_SEARCH_PANEL_LAYOUT.layer,
     elevation: MOBILE_SEARCH_PANEL_LAYOUT.layer
   },
-  searchPanelCollapsed: {
-    maxHeight: MOBILE_SEARCH_PANEL_LAYOUT.collapsedMaxHeight,
-    borderWidth: 0,
-    backgroundColor: 'transparent',
-    padding: 0
+  searchPanelContent: {
+    maxHeight: MOBILE_SEARCH_PANEL_LAYOUT.expandedMaxHeight
   },
-  searchToggle: {
-    alignSelf: 'flex-end',
-    minHeight: 44,
-    justifyContent: 'center',
-    borderColor: theme.pink,
-    borderRadius: 8,
-    borderWidth: 1,
-    backgroundColor: theme.surfaceOverlayStrong,
-    paddingHorizontal: 12,
-    marginBottom: 6
-  },
-  searchLabel: { color: theme.pink, fontWeight: '700' },
   searchRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
-    marginTop: 6
+    marginBottom: 8
   },
   searchInput: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 48,
+    backgroundColor: '#1A1A24',
     borderColor: theme.border,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 1,
     color: theme.text,
-    paddingHorizontal: 10
+    paddingHorizontal: 16
   },
   searchButton: {
-    minHeight: 44,
+    minHeight: 48,
     justifyContent: 'center',
     borderColor: theme.pink,
-    borderRadius: 8,
+    backgroundColor: theme.surfaceOverlayStrong,
+    borderRadius: 24,
     borderWidth: 1,
-    paddingHorizontal: 12
+    paddingHorizontal: 16
   },
-  searchHelp: { color: theme.textMuted, fontSize: 11, marginTop: 5 },
-  searchPanelContent: {
+  searchDropdown: {
+    borderColor: theme.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    backgroundColor: MOBILE_SEARCH_PANEL_LAYOUT.backgroundColor,
+    padding: 12,
     maxHeight: MOBILE_SEARCH_PANEL_LAYOUT.contentMaxHeight
   },
   searchProgress: {
@@ -1368,6 +1504,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12
   },
   filterButtonText: { color: theme.text, fontWeight: '700' },
+  favoriteTrigger: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    justifyContent: 'center',
+    borderColor: theme.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: theme.surfaceOverlay,
+    paddingHorizontal: 12,
+    marginLeft: 8
+  },
+  favoriteTriggerActive: {
+    borderColor: theme.pink,
+    backgroundColor: 'rgba(212, 83, 126, 0.1)'
+  },
+  favoriteTriggerTextActive: {
+    color: theme.pink
+  },
   defaultFilter: {
     alignSelf: 'flex-start',
     color: theme.textMuted,
@@ -1469,11 +1623,22 @@ const styles = StyleSheet.create({
     bottom: 12,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: theme.surfaceOverlayStrong,
+    backgroundColor: 'rgba(30, 30, 38, 0.85)',
     zIndex: 30,
-    elevation: 30
+    elevation: 30,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)'
   },
-  close: { color: theme.pink, textAlign: 'right' },
+  previewHeaderActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  favoriteButton: {
+    fontSize: 24
+  },
+  close: { color: theme.pink, textAlign: 'right', fontWeight: 'bold' },
   chip: {
     color: theme.pink,
     fontSize: 12,
@@ -1501,12 +1666,19 @@ const styles = StyleSheet.create({
   primaryAction: {
     alignSelf: 'flex-start',
     backgroundColor: theme.pink,
-    borderRadius: 10,
+    borderRadius: 999,
     marginTop: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    shadowColor: theme.pink,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)'
   },
-  primaryActionText: { color: theme.background, fontWeight: '700' },
+  primaryActionText: { color: theme.background, fontWeight: '800', textAlign: 'center' },
   detailsOverlay: {
     bottom: 0,
     left: 0,

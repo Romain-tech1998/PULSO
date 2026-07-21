@@ -16,6 +16,7 @@ import {
 import {
   DEFAULT_DISCOVERY_FILTERS,
   getMontrealCalendarDate,
+  CATEGORY_COLORS,
   type DiscoveryFilters,
   type EventCategory,
   type MapBounds
@@ -50,9 +51,33 @@ const INITIAL_BOUNDS = {
 };
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
-const MAP_STYLE_URL =
-  process.env.NEXT_PUBLIC_MAP_STYLE_URL ??
-  'https://tiles.openfreemap.org/styles/liberty';
+// Style dark garanti sans clé - MapLibre démo dark
+const MAP_STYLE_DARK: maplibregl.StyleSpecification = {
+  version: 8,
+  name: 'Pulso Dark',
+  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+  sources: {
+    carto: {
+      type: 'raster',
+      tiles: [
+        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
+      ],
+      tileSize: 256,
+      attribution: '&copy; OpenStreetMap &copy; CartoDB'
+    }
+  },
+  layers: [
+    {
+      id: 'carto-dark',
+      type: 'raster',
+      source: 'carto'
+    }
+  ]
+};
+const MAP_STYLE_URL: string | maplibregl.StyleSpecification =
+  process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? MAP_STYLE_DARK;
 
 type LoadState = 'loading' | 'success' | 'empty' | 'error';
 type BasemapState = 'loading' | 'loaded' | 'error';
@@ -72,6 +97,24 @@ function boundsUrl(bounds: MapBounds, filters: DiscoveryFilters): string {
   return `${API_BASE_URL}/events?${buildMapEventsQuery(bounds, filters)}`;
 }
 
+function useFavorites() {
+  const [favorites, setFavorites] = useState<string[]>([]);
+  useEffect(() => {
+    const stored = localStorage.getItem('pulso-favorites');
+    if (stored) {
+      try { setFavorites(JSON.parse(stored)); } catch (err) { console.warn('Failed to parse favorites', err); }
+    }
+  }, []);
+  const toggleFavorite = (id: string) => {
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      localStorage.setItem('pulso-favorites', JSON.stringify(next));
+      return next;
+    });
+  };
+  return { favorites, toggleFavorite };
+}
+
 export function ExploreMap({
   initialLocale
 }: {
@@ -79,7 +122,6 @@ export function ExploreMap({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
-  const markers = useRef<maplibregl.Marker[]>([]);
   const currentBounds = useRef(INITIAL_BOUNDS);
   const activeSearch = useRef<ActiveSearch | undefined>(undefined);
   const localeRef = useRef(initialLocale);
@@ -102,6 +144,8 @@ export function ExploreMap({
   const [searchProcessing, setSearchProcessing] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [locale, setLocale] = useState(initialLocale);
+  const { favorites, toggleFavorite } = useFavorites();
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
   useEffect(() => {
     const resolved = resolveBrowserLocale([initialLocale], localStorage);
@@ -109,6 +153,15 @@ export function ExploreMap({
     setLocale(resolved);
     document.documentElement.lang = resolved;
   }, [initialLocale]);
+
+  // Deep linking initial
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const eventId = params.get('eventId');
+    if (eventId) {
+      void openDetails(eventId);
+    }
+  }, []);
 
   function selectLocale(nextLocale: SupportedLocale) {
     localeRef.current = nextLocale;
@@ -118,7 +171,7 @@ export function ExploreMap({
     document.documentElement.lang = nextLocale;
   }
 
-  const loadEvents = useCallback(
+    const loadEvents = useCallback(
     async (
       bounds = currentBounds.current,
       activeFilters = filtersRef.current
@@ -126,6 +179,21 @@ export function ExploreMap({
       currentBounds.current = bounds;
       setState('loading');
       setSearchError(false);
+
+      // Stale-While-Revalidate : Charger le cache instantanément
+      try {
+        const cached = localStorage.getItem('pulso-offline-events');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed.length > 0) {
+            setEvents(parsed);
+            setState('success');
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to read offline cache', err);
+      }
+
       try {
         if (activeSearch.current) {
           setSearchProcessing(true);
@@ -152,6 +220,7 @@ export function ExploreMap({
           setFilters(effectiveFilters);
           const foundEvents = result.data.map(({ event }) => event);
           setEvents(foundEvents);
+          localStorage.setItem('pulso-offline-events', JSON.stringify(foundEvents));
           setSelected((current) =>
             current && foundEvents.some(({ id }) => id === current.id)
               ? current
@@ -165,6 +234,7 @@ export function ExploreMap({
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
         setEvents(result.data);
+        localStorage.setItem('pulso-offline-events', JSON.stringify(result.data));
         setSelected((current) =>
           current && result.data.some(({ id }) => id === current.id)
             ? current
@@ -260,7 +330,63 @@ export function ExploreMap({
       zoom: 11,
       style: MAP_STYLE_URL
     });
-    instance.on('load', () => setBasemapState('loaded'));
+
+    instance.on('load', () => {
+      setBasemapState('loaded');
+
+      // Source pour les événements
+      instance.addSource('events-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+      });
+
+      // Layer pour les événements non-sélectionnés (cercles colorés)
+      instance.addLayer({
+        id: 'events-circles',
+        type: 'circle',
+        source: 'events-source',
+        paint: {
+          'circle-radius': 8,
+          'circle-color': ['get', 'color'],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#FFFFFF'
+        },
+        filter: ['!=', ['get', 'id'], selected?.id ?? '']
+      });
+
+      // Layer pour l'événement sélectionné (grand pin lumineux)
+      instance.addLayer({
+        id: 'events-selected',
+        type: 'circle',
+        source: 'events-source',
+        paint: {
+          'circle-radius': 12,
+          'circle-color': ['get', 'color'],
+          'circle-stroke-width': 3,
+          'circle-stroke-color': '#FFFFFF',
+          'circle-pitch-alignment': 'map'
+        },
+        filter: ['==', ['get', 'id'], selected?.id ?? '']
+      });
+
+      // Interactions
+      instance.on('click', 'events-circles', (e) => {
+        if (!e.features?.[0]) return;
+        const featureId = e.features[0].properties.id;
+        const event = eventsRef.current.find(ev => ev.id === featureId);
+        if (event) setSelected(event);
+      });
+      instance.on('mouseenter', 'events-circles', () => {
+        instance.getCanvas().style.cursor = 'pointer';
+      });
+      instance.on('mouseleave', 'events-circles', () => {
+        instance.getCanvas().style.cursor = '';
+      });
+
+      // Drainer les données qui sont arrivées AVANT que la source n'existait
+      pushEventsToMap(instance);
+    });
+
     instance.on('error', () => setBasemapState('error'));
     instance.addControl(new maplibregl.NavigationControl(), 'top-right');
     const onMoveEnd = () => {
@@ -277,28 +403,61 @@ export function ExploreMap({
     void loadEvents(INITIAL_BOUNDS);
     return () => {
       instance.off('moveend', onMoveEnd);
-      markers.current.forEach((marker) => marker.remove());
       instance.remove();
     };
   }, [loadEvents]);
 
+  // Ref toujours à jour des events pour les handlers internes à la carte
+  const eventsRef = useRef(events);
+  // Ref utilisée pour pousser les données AVANT que la source n'existe encore
+  const pendingDataRef = useRef(events);
+
   useEffect(() => {
-    if (!map.current) return;
-    markers.current.forEach((marker) => marker.remove());
-    markers.current = events.map((event) => {
-      const button = document.createElement('button');
-      button.className = 'marker';
-      button.type = 'button';
-      button.setAttribute(
-        'aria-label',
-        translate(locale, 'map.previewAria', { title: event.title })
-      );
-      button.addEventListener('click', () => setSelected(event));
-      return new maplibregl.Marker({ element: button })
-        .setLngLat([event.venue.point.longitude, event.venue.point.latitude])
-        .addTo(map.current!);
+    eventsRef.current = events;
+    pendingDataRef.current = events;
+  }, [events]);
+
+  // Fonction utilitaire réutilisable pour remplir la source
+  const pushEventsToMap = useCallback((instance: maplibregl.Map) => {
+    const source = instance.getSource('events-source') as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+    const evs = pendingDataRef.current;
+    const favs = favoritesRef.current;
+    const showFavs = showFavoritesOnlyRef.current;
+    const sel = selectedRef.current;
+    const visibleEvents = showFavs ? evs.filter(e => favs.includes(e.id)) : evs;
+    source.setData({
+      type: 'FeatureCollection',
+      features: visibleEvents.map(event => ({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [event.venue.point.longitude, event.venue.point.latitude]
+        },
+        properties: {
+          id: event.id,
+          color: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']
+        }
+      }))
     });
-  }, [events, locale]);
+    if (instance.getLayer('events-circles')) {
+      instance.setFilter('events-circles', ['!=', ['get', 'id'], sel?.id ?? '']);
+      instance.setFilter('events-selected', ['==', ['get', 'id'], sel?.id ?? '']);
+    }
+  }, []);
+
+  // Refs pour éviter les closures périmées dans pushEventsToMap
+  const favoritesRef = useRef(favorites);
+  const showFavoritesOnlyRef = useRef(showFavoritesOnly);
+  const selectedRef = useRef(selected);
+  useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
+  useEffect(() => { showFavoritesOnlyRef.current = showFavoritesOnly; }, [showFavoritesOnly]);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+
+  // Synchronisation des données vers la carte (se déclenche aussi quand on revient à la carte)
+  useEffect(() => {
+    if (map.current) pushEventsToMap(map.current);
+  }, [events, favorites, showFavoritesOnly, selected, pushEventsToMap]);
 
   async function openDetails(eventId: string) {
     setDetails({ kind: 'loading', eventId });
@@ -336,6 +495,18 @@ export function ExploreMap({
             <h1 className="sr-only">{translate(locale, 'app.title')}</h1>
             <p className="eyebrow">{translate(locale, 'app.eyebrow')}</p>
           </div>
+          <SearchPanel
+            query={queryInput}
+            result={searchResult}
+            processing={searchProcessing}
+            error={searchError}
+            onQueryChange={setQueryInput}
+            onSubmit={submitSearch}
+            onClear={clearSearch}
+            onClearConstraint={clearDerivedConstraint}
+            onPreview={setSelected}
+            locale={locale}
+          />
           <LanguageSelector locale={locale} onChange={selectLocale} />
         </div>
         <p>{translate(locale, 'app.description')}</p>
@@ -358,18 +529,7 @@ export function ExploreMap({
                 : 'The geographic map is unavailable; events remain available.'}
           </p>
         )}
-        <SearchPanel
-          query={queryInput}
-          result={searchResult}
-          processing={searchProcessing}
-          error={searchError}
-          onQueryChange={setQueryInput}
-          onSubmit={submitSearch}
-          onClear={clearSearch}
-          onClearConstraint={clearDerivedConstraint}
-          onPreview={setSelected}
-          locale={locale}
-        />
+
         <div className="filter-controls">
           <button
             type="button"
@@ -381,6 +541,16 @@ export function ExploreMap({
             {translate(locale, 'filters.trigger', {
               count: summarizeActiveFilters(filters, locale).length
             })}
+          </button>
+          <button
+            type="button"
+            className={`favorite-trigger ${showFavoritesOnly ? 'active' : ''}`}
+            aria-pressed={showFavoritesOnly}
+            onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+          >
+            {showFavoritesOnly
+              ? translate(locale, 'favorites.showFavoritesOnly')
+              : translate(locale, 'favorites.showAll')}
           </button>
           <ActiveFilters
             filters={filters}
@@ -443,17 +613,40 @@ export function ExploreMap({
             detailsButton={detailsButton}
             onClose={() => setSelected(undefined)}
             onDetails={() => void openDetails(selected.id)}
+            isFavorite={favorites.includes(selected.id)}
+            onToggleFavorite={() => toggleFavorite(selected.id)}
             locale={locale}
           />
         )}
       </section>
+
+      {details.kind !== 'closed' && (
+        <EventDetails
+          event={
+            details.kind === 'success'
+              ? details.event
+              : events.find(({ id }) => id === details.eventId)!
+          }
+          headingRef={detailsHeading}
+          onBack={() => setDetails({ kind: 'closed' })}
+          isFavorite={favorites.includes(
+            details.kind === 'success' ? details.event.id : details.eventId
+          )}
+          onToggleFavorite={() =>
+            toggleFavorite(
+              details.kind === 'success' ? details.event.id : details.eventId
+            )
+          }
+          locale={locale}
+        />
+      )}
 
       {details.kind === 'loading' && (
         <section
           className="details-screen"
           aria-label={translate(locale, 'details.label')}
         >
-          <button type="button" className="back-button" onClick={returnToMap}>
+          <button type="button" className="back-button" onClick={() => setDetails({ kind: 'closed' })}>
             {translate(locale, 'details.back')}
           </button>
           <p role="status">{translate(locale, 'details.loading')}</p>
@@ -465,7 +658,7 @@ export function ExploreMap({
           className="details-screen"
           aria-label={translate(locale, 'details.label')}
         >
-          <button type="button" className="back-button" onClick={returnToMap}>
+          <button type="button" className="back-button" onClick={() => setDetails({ kind: 'closed' })}>
             {translate(locale, 'details.back')}
           </button>
           <p role="alert">{translate(locale, 'details.error')}</p>
@@ -483,6 +676,8 @@ export function ExploreMap({
           event={details.event}
           headingRef={detailsHeading}
           onBack={returnToMap}
+          isFavorite={favorites.includes(details.event.id)}
+          onToggleFavorite={() => toggleFavorite(details.event.id)}
           locale={locale}
         />
       )}
@@ -539,136 +734,134 @@ function SearchPanel({
   onPreview: (event: PublicEvent) => void;
   locale: SupportedLocale;
 }) {
-  const [open, setOpen] = useState(false);
   return (
     <aside
-      className={`search-panel${open ? '' : ' search-panel-collapsed'}`}
+      className="search-panel"
       aria-label={translate(locale, 'search.panelAria')}
     >
-      <button
-        type="button"
-        className="search-toggle"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+      <form
+        className="search-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
       >
-        {translate(locale, open ? 'search.collapse' : 'search.expand')}
-      </button>
-      {open && (
-        <>
-          <form
-            className="search-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onSubmit();
-            }}
-          >
-            <label htmlFor="intelligent-search">
-              {translate(locale, 'search.question')}
-            </label>
-            <div>
-              <input
-                id="intelligent-search"
-                value={query}
-                maxLength={240}
-                placeholder={translate(locale, 'search.placeholder')}
-                onChange={(event) => onQueryChange(event.target.value)}
-              />
-              <button type="submit" disabled={processing || !query.trim()}>
-                {translate(locale, 'search.submit')}
-              </button>
-            </div>
-          </form>
-          <p className="search-help">{translate(locale, 'search.help')}</p>
-          {processing && (
-            <p role="status">{translate(locale, 'search.processing')}</p>
-          )}
-          {error && <p role="alert">{translate(locale, 'search.error')}</p>}
-          {result && !processing && (
-            <div className="search-interpretation" aria-live="polite">
-              <div className="search-heading">
-                <h2>{translate(locale, 'search.understood')}</h2>
-                <button type="button" onClick={onClear}>
-                  {translate(locale, 'search.clearSearch')}
-                </button>
-              </div>
-              <p>{localizeSearchMessage(locale, result.message)}</p>
-              {result.clarification && (
-                <p className="clarification">
-                  {translate(locale, 'search.clarificationPrefix', {
-                    message: localizeSearchMessage(locale, result.clarification)
-                  })}
-                </p>
-              )}
-              <h3>{translate(locale, 'search.hardConstraints')}</h3>
-              <ul>
-                {result.interpretation.constraints.map((constraint) => {
-                  const label = localizeSearchMessage(
-                    locale,
-                    constraint.message
-                  );
-                  return (
-                    <li key={`${constraint.key}-${constraint.message.code}`}>
-                      {label}{' '}
-                      {isSearchConstraintKey(constraint.key) && (
-                        <button
-                          type="button"
-                          aria-label={translate(
-                            locale,
-                            'search.clearConstraint',
-                            { label }
-                          )}
-                          onClick={() =>
-                            onClearConstraint(
-                              constraint.key as SearchConstraintKey
-                            )
-                          }
-                        >
-                          {translate(locale, 'search.clear')}
-                        </button>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-              {result.interpretation.rankingSignals.length > 0 && (
-                <>
-                  <h3>{translate(locale, 'search.rankingSignals')}</h3>
-                  <ul>
-                    {result.interpretation.rankingSignals.map((signal) => (
-                      <li key={`${signal.key}-${signal.message.code}`}>
-                        {localizeSearchMessage(locale, signal.message)}
+        <label htmlFor="intelligent-search" className="sr-only">
+          {translate(locale, 'search.question')}
+        </label>
+        <div className="search-input-wrapper">
+          <span className="search-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </span>
+          <input
+            id="intelligent-search"
+            value={query}
+            maxLength={240}
+            placeholder={translate(locale, 'search.placeholder')}
+            onChange={(event) => onQueryChange(event.target.value)}
+          />
+        </div>
+      </form>
+
+      {(processing || error || result) && (
+        <div className="search-dropdown">
+          <div className="search-dropdown-content">
+            {processing && (
+              <p role="status">{translate(locale, 'search.processing')}</p>
+            )}
+            {error && <p role="alert">{translate(locale, 'search.error')}</p>}
+            {result && !processing && (
+              <div className="search-interpretation" aria-live="polite">
+                <div className="search-heading">
+                  <h2>{translate(locale, 'search.understood')}</h2>
+                  <button type="button" onClick={onClear}>
+                    {translate(locale, 'search.clearSearch')}
+                  </button>
+                </div>
+                <p>{localizeSearchMessage(locale, result.message)}</p>
+                {result.clarification && (
+                  <p className="clarification">
+                    {translate(locale, 'search.clarificationPrefix', {
+                      message: localizeSearchMessage(locale, result.clarification)
+                    })}
+                  </p>
+                )}
+                <h3>{translate(locale, 'search.hardConstraints')}</h3>
+                <ul>
+                  {result.interpretation.constraints.map((constraint) => {
+                    const label = localizeSearchMessage(
+                      locale,
+                      constraint.message
+                    );
+                    return (
+                      <li key={`${constraint.key}-${constraint.message.code}`}>
+                        {label}{' '}
+                        {isSearchConstraintKey(constraint.key) && (
+                          <button
+                            type="button"
+                            aria-label={translate(
+                              locale,
+                              'search.clearConstraint',
+                              { label }
+                            )}
+                            onClick={() =>
+                              onClearConstraint(
+                                constraint.key as SearchConstraintKey
+                              )
+                            }
+                          >
+                            {translate(locale, 'search.clear')}
+                          </button>
+                        )}
                       </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          )}
-          {result && result.data.length > 0 && (
-            <div
-              className="search-results"
-              aria-label={translate(locale, 'search.resultsAria')}
-            >
-              <h3>{translate(locale, 'search.results')}</h3>
-              {result.data.map(({ event, matchType }, index) => (
-                <button
-                  type="button"
-                  key={event.id}
-                  aria-label={translate(locale, 'search.previewResultAria', {
-                    index: index + 1,
-                    matchType: translate(locale, `search.match.${matchType}`)
+                    );
                   })}
-                  onClick={() => onPreview(event)}
-                >
-                  {translate(locale, 'search.previewResult', {
-                    title: event.title,
-                    matchType: translate(locale, `search.match.${matchType}`)
-                  })}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
+                </ul>
+                {result.interpretation.rankingSignals.length > 0 && (
+                  <>
+                    <h3>{translate(locale, 'search.rankingSignals')}</h3>
+                    <ul>
+                      {result.interpretation.rankingSignals.map((signal) => (
+                        <li key={`${signal.key}-${signal.message.code}`}>
+                          {localizeSearchMessage(locale, signal.message)}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+            {result && result.data.length > 0 && (
+              <div
+                className="search-results"
+                aria-label={translate(locale, 'search.resultsAria')}
+              >
+                <h3>{translate(locale, 'search.results')}</h3>
+                {result.data.map(({ event, matchType }, index) => (
+                  <button
+                    type="button"
+                    key={event.id}
+                    aria-label={translate(locale, 'search.previewResultAria', {
+                      index: index + 1,
+                      matchType: translate(locale, `search.match.${matchType}`)
+                    })}
+                    onClick={() => {
+                      onPreview(event);
+                    }}
+                  >
+                    {translate(locale, 'search.previewResult', {
+                      title: event.title,
+                      matchType: translate(locale, `search.match.${matchType}`)
+                    })}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </aside>
   );
@@ -960,6 +1153,8 @@ function EventPreview({
   detailsButton,
   onClose,
   onDetails,
+  isFavorite,
+  onToggleFavorite,
   locale
 }: {
   event: PublicEvent;
@@ -967,14 +1162,30 @@ function EventPreview({
   detailsButton: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onDetails: () => void;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
   locale: SupportedLocale;
 }) {
   const fields = eventPreviewFields(event, locale);
   return (
-    <article className="preview" aria-live="polite">
-      <button type="button" className="close-button" onClick={onClose}>
-        {translate(locale, 'preview.close')}
-      </button>
+    <article className="preview fade-in slide-up glass-panel" aria-live="polite">
+      <div className="preview-header-actions">
+        <button
+          type="button"
+          className="favorite-button"
+          aria-pressed={isFavorite}
+          aria-label={translate(
+            locale,
+            isFavorite ? 'favorites.remove' : 'favorites.add'
+          )}
+          onClick={onToggleFavorite}
+        >
+          <span aria-hidden="true">{isFavorite ? '❤️' : '🤍'}</span>
+        </button>
+        <button type="button" className="close-button" onClick={onClose}>
+          {translate(locale, 'preview.close')}
+        </button>
+      </div>
       <p className="chip">{fields.category}</p>
       <h2>{fields.title}</h2>
       <dl className="preview-fields">
@@ -1035,23 +1246,70 @@ function EventDetails({
   event,
   headingRef,
   onBack,
+  isFavorite,
+  onToggleFavorite,
   locale
 }: {
   event: PublicEvent;
   headingRef: RefObject<HTMLHeadingElement | null>;
   onBack: () => void;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
   locale: SupportedLocale;
 }) {
   const { presentation } = eventDetailsFields(event, locale);
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
+
+  const onShare = async () => {
+    const url = `${window.location.origin}/events/${event.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: event.title,
+          text: translate(locale, 'details.shareText', { title: event.title }),
+          url
+        });
+      } catch (err) {
+        console.warn('Share failed', err);
+      }
+    } else {
+      await navigator.clipboard.writeText(url);
+      alert(translate(locale, 'details.linkCopied'));
+    }
+  };
+
   return (
     <section
-      className="details-screen"
+      className="details-screen glass-panel slide-up"
       aria-label={translate(locale, 'details.label')}
     >
-      <button type="button" className="back-button" onClick={onBack}>
-        {translate(locale, 'details.back')}
-      </button>
+      <div className="details-header-actions">
+        <button type="button" className="back-button" onClick={onBack}>
+          {translate(locale, 'details.back')}
+        </button>
+        <div>
+          <button
+            type="button"
+            className="share-button"
+            onClick={onShare}
+            style={{ marginRight: '12px' }}
+          >
+            <span aria-hidden="true">↗️</span> {translate(locale, 'details.share')}
+          </button>
+          <button
+            type="button"
+            className="favorite-button"
+            aria-pressed={isFavorite}
+            aria-label={translate(
+              locale,
+              isFavorite ? 'favorites.remove' : 'favorites.add'
+            )}
+            onClick={onToggleFavorite}
+          >
+            <span aria-hidden="true">{isFavorite ? '❤️' : '🤍'}</span>
+          </button>
+        </div>
+      </div>
       <p className="eyebrow">{translate(locale, 'details.label')}</p>
       <h2 ref={headingRef} tabIndex={-1}>
         {event.title}
@@ -1109,7 +1367,7 @@ function EventDetails({
         </div>
       </dl>
       {presentation.externalAction ? (
-        <a className="primary-action" href={externalHref}>
+        <a className="primary-action glow-button" href={externalHref} target="_blank" rel="noopener noreferrer">
           {presentation.externalAction} —{' '}
           {translate(locale, 'details.externalSuffix')}
         </a>

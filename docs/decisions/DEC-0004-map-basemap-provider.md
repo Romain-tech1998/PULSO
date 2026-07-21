@@ -47,6 +47,10 @@ Visible Android basemap validation is deferred. `com.android.systemui` produced 
 
 This environmental exception does not block the reversible development checkpoint. It remains required evidence before DEC-0004 can become Accepted and before any production-provider approval.
 
+## Coded default update
+
+Carto dark is now the coded fallback style on web and mobile when `NEXT_PUBLIC_MAP_STYLE_URL` / `EXPO_PUBLIC_MAP_STYLE_URL` are unset, replacing the earlier OpenFreeMap Liberty coded fallback. This reflects the intentional dark-style visual direction already described above; it does not itself satisfy the acceptance gate below. Carto dark remains a development/visual candidate, not an Accepted production provider, until the accessibility review and Android visible-validation evidence required below are complete.
+
 ## Acceptance gate
 
 A dark-style visual spike, accessibility review, and deferred visible Android basemap validation are required before DEC-0004 can become Accepted. They must verify real geographic context, readable labels and controls, visible event markers, and required attribution without introducing a provider, routing, geocoding, or tracking decision. Provider selection, attribution terms, legal and privacy review, reliability, caching, native behavior, and exact dark-style layers remain Draft questions.

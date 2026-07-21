@@ -125,11 +125,10 @@ test('completes transparent deterministic UJ-0002 and preserves search context',
   page
 }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Intelligent search' }).click();
   const query = page.getByLabel('What do you want to do?');
   await expect(query).toBeVisible();
   await query.fill('free music tonight starting soon');
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await query.press('Enter');
 
   await expect(
     page.getByRole('heading', { name: 'Pulso understood' })
@@ -154,6 +153,7 @@ test('completes transparent deterministic UJ-0002 and preserves search context',
   await page
     .getByRole('button', { name: 'Preview search result 1: exact' })
     .click();
+  await expect(query).toHaveValue('free music tonight starting soon');
   await expect(page.getByText('Why this matches')).toBeVisible();
   await expect(page.getByText('Price matches: Free')).toBeVisible();
   await page.getByRole('button', { name: 'View event details' }).click();
@@ -199,7 +199,7 @@ test('completes transparent deterministic UJ-0002 and preserves search context',
   await expect(page.getByText(/matching fictional events/)).toBeVisible();
 
   await query.fill('paid comedy');
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await query.press('Enter');
   await expect(
     page.getByText(/These alternatives differ only as stated/)
   ).toBeVisible();
@@ -210,7 +210,7 @@ test('completes transparent deterministic UJ-0002 and preserves search context',
 
   await page.getByRole('button', { name: 'Clear search' }).first().click();
   await query.fill('surprise me with magic vibes');
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await query.press('Enter');
   await expect(
     page
       .getByLabel('Optional intelligent search')
@@ -267,10 +267,9 @@ test('switches, persists, and preserves bilingual map, filter, search, and detai
   ).toBeVisible();
   await page.getByRole('button', { name: 'Fermer les filtres' }).click();
 
-  await page.getByRole('button', { name: 'Recherche intelligente' }).click();
   const query = page.getByLabel('Que voulez-vous faire?');
   await query.fill('humour gratuit, commence bientôt');
-  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await query.press('Enter');
   await expect(
     page.getByRole('heading', { name: 'Pulso a compris' })
   ).toBeVisible();
@@ -308,7 +307,7 @@ test('switches, persists, and preserves bilingual map, filter, search, and detai
     .first()
     .click();
   await query.fill('humour payant');
-  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await query.press('Enter');
   await expect(
     page.getByText(/Ces alternatives diffèrent uniquement/)
   ).toBeVisible();
@@ -329,14 +328,14 @@ test('switches, persists, and preserves bilingual map, filter, search, and detai
     .first()
     .click();
   await query.fill('humour à moins de 5 km');
-  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await query.press('Enter');
   await expect(page.getByText(/Quel lieu explicite Pulso/)).toBeVisible();
   await page
     .getByRole('button', { name: 'Effacer la recherche' })
     .first()
     .click();
   await query.fill('ambiance magique surprise');
-  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await query.press('Enter');
   await expect(
     page
       .getByLabel('Recherche intelligente facultative')
@@ -348,7 +347,7 @@ test('switches, persists, and preserves bilingual map, filter, search, and detai
     .first()
     .click();
   await query.fill('humour gratuit');
-  await page.getByRole('button', { name: 'Rechercher' }).click();
+  await query.press('Enter');
   await page
     .getByRole('button', { name: 'Aperçu du résultat de recherche 1 : exact' })
     .click();
@@ -377,14 +376,13 @@ test('switches, persists, and preserves bilingual map, filter, search, and detai
     .poll(() => page.evaluate(() => localStorage.getItem('pulso.locale')))
     .toBe('en');
 
-  await page.getByRole('button', { name: 'Intelligent search' }).click();
   const englishQuery = page.getByLabel('What do you want to do?');
   await englishQuery.fill('comedy within 5 km');
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await englishQuery.press('Enter');
   await expect(page.getByText(/Which explicit location/)).toBeVisible();
   await page.getByRole('button', { name: 'Clear search' }).first().click();
   await englishQuery.fill('surprise me with magic vibes');
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await englishQuery.press('Enter');
   await expect(
     page
       .getByLabel('Optional intelligent search')

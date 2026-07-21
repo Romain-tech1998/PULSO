@@ -34,6 +34,15 @@ export type TrustLabel = (typeof TRUST_LABELS)[number];
 export type DateFilterValue = (typeof DATE_FILTER_VALUES)[number];
 export type PriceFilterValue = (typeof PRICE_FILTER_VALUES)[number];
 
+export const CATEGORY_COLORS: Record<EventCategory, string> = {
+  music: '#EA3E81',
+  nightlife: '#7336C1',
+  festival: '#FE7C5C',
+  comedy: '#FFD700',
+  show: '#00CED1',
+  other: '#FFFFFF'
+};
+
 export interface DiscoveryFilters {
   date: DateFilterValue;
   categories: EventCategory[];
