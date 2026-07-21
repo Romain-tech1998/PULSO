@@ -35,8 +35,8 @@ interface ParsedVEvent {
   summary?: string;
   description?: string;
   location?: string;
-  dtstart?: string;
-  dtend?: string;
+  dtstart?: string | undefined;
+  dtend?: string | undefined;
   url?: string;
 }
 

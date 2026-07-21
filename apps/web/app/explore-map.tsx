@@ -483,18 +483,15 @@ export function ExploreMap({
   const showingDetails = details.kind !== 'closed';
 
   return (
-    <main>
-      <header>
-        <div className="header-row">
-          <div className="brand-row">
-            <img
-              src="/brand/pulso-logo-horizontal-dark.svg"
-              alt={translate(locale, 'app.title')}
-              className="brand-logo"
-            />
-            <h1 className="sr-only">{translate(locale, 'app.title')}</h1>
-            <p className="eyebrow">{translate(locale, 'app.eyebrow')}</p>
-          </div>
+    <div className="app-container">
+      <header className="top-navbar">
+        <div className="nav-logo">
+          <img
+            src="/brand/pulso-logo-horizontal-dark.svg"
+            alt={translate(locale, 'app.title')}
+          />
+        </div>
+        <div className="nav-search">
           <SearchPanel
             query={queryInput}
             result={searchResult}
@@ -507,109 +504,138 @@ export function ExploreMap({
             onPreview={setSelected}
             locale={locale}
           />
+        </div>
+        <div className="nav-actions">
+          <div className="location-selector">
+            <span>Montréal</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
           <LanguageSelector locale={locale} onChange={selectLocale} />
         </div>
-        <p>{translate(locale, 'app.description')}</p>
       </header>
-      <section
-        className="map-shell"
-        aria-label={translate(locale, 'map.label')}
-        hidden={showingDetails}
-        data-map-context="preserved"
-      >
-        <div ref={container} className="map" />
-        {basemapState !== 'loaded' && (
-          <p className="map-basemap-status" role="status">
-            {basemapState === 'loading'
-              ? locale === 'fr'
-                ? 'Chargement de la carte géographique…'
-                : 'Loading geographic map…'
-              : locale === 'fr'
-                ? 'La carte géographique est indisponible; les événements restent accessibles.'
-                : 'The geographic map is unavailable; events remain available.'}
-          </p>
-        )}
 
-        <div className="filter-controls">
-          <button
-            type="button"
-            className="filter-trigger"
-            aria-expanded={filtersOpen}
-            aria-controls="map-filters"
-            onClick={() => setFiltersOpen((open) => !open)}
-          >
-            {translate(locale, 'filters.trigger', {
-              count: summarizeActiveFilters(filters, locale).length
-            })}
-          </button>
-          <button
-            type="button"
-            className={`favorite-trigger ${showFavoritesOnly ? 'active' : ''}`}
-            aria-pressed={showFavoritesOnly}
-            onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-          >
-            {showFavoritesOnly
-              ? translate(locale, 'favorites.showFavoritesOnly')
-              : translate(locale, 'favorites.showAll')}
-          </button>
-          <ActiveFilters
-            filters={filters}
-            onChange={applyFilters}
-            locale={locale}
-          />
-        </div>
-        {filtersOpen && (
-          <FilterOverlay
-            filters={filters}
-            onChange={applyFilters}
-            onClose={() => setFiltersOpen(false)}
-            onClearAll={clearAll}
-            locale={locale}
-          />
+      <div className="dashboard-main">
+        {/* Left Sidebar */}
+        <aside className="sidebar-left">
+          <h2 className="sidebar-section-title">Découvrir</h2>
+          
+          <div className="view-toggles">
+            <button className="view-toggle-btn active">Carte</button>
+            <button className="view-toggle-btn">Liste</button>
+            <button className="view-toggle-btn">Calendrier</button>
+          </div>
+
+          <div className="filter-group">
+            <div className="filter-group-header">
+              <span>Filtres</span>
+              <button className="filter-reset" onClick={clearAll}>Réinitialiser</button>
+            </div>
+            <div className="pill-list">
+              <button className="filter-pill active">Aujourd'hui</button>
+              <button className="filter-pill">Ce week-end</button>
+              <button className="filter-pill">Cette semaine</button>
+            </div>
+          </div>
+
+          <div className="filter-group">
+            <div className="filter-group-header">
+              <span>Catégories</span>
+              <button className="filter-reset">Voir tout</button>
+            </div>
+            <div className="category-grid">
+              <div className="category-item active">
+                <div className="category-icon">🎟️</div>
+                <span>Tous</span>
+              </div>
+              <div className="category-item">
+                <div className="category-icon">🎸</div>
+                <span>Concerts</span>
+              </div>
+              <div className="category-item">
+                <div className="category-icon">🪩</div>
+                <span>Soirées</span>
+              </div>
+              <div className="category-item">
+                <div className="category-icon">⚡</div>
+                <span>Techno</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="promo-card">
+             <div className="promo-content">
+               <h4>Téléchargez Pulso</h4>
+               <p>Emportez la ville dans votre poche.</p>
+             </div>
+          </div>
+        </aside>
+
+        {/* Map Area */}
+        <section className="map-container-wrapper" aria-label={translate(locale, 'map.label')}>
+          <div className="map-shell" data-map-context="preserved">
+             <div ref={container} className="map" />
+             <button className="map-floating-search" onClick={() => loadEvents(currentBounds.current, filters)}>
+               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight: 8}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+               Rechercher dans cette zone
+             </button>
+
+             <div className="map-floating-filters">
+                <button className="map-filter-btn" onClick={() => setFiltersOpen(true)}>
+                  Plus de filtres
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginLeft: 8}}><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+             </div>
+             
+             {basemapState !== 'loaded' && (
+              <p className="map-basemap-status" role="status">
+                {basemapState === 'loading' ? 'Loading map...' : 'Map unavailable'}
+              </p>
+             )}
+          </div>
+        </section>
+
+        {/* Right Sidebar (Details) */}
+        {details.kind !== 'closed' && (
+           <div className="sidebar-right">
+             {details.kind === 'success' && (
+               <EventDetails
+                 event={details.event}
+                 headingRef={detailsHeading}
+                 onBack={returnToMap}
+                 isFavorite={favorites.includes(details.event.id)}
+                 onToggleFavorite={() => toggleFavorite(details.event.id)}
+                 locale={locale}
+               />
+             )}
+             {details.kind === 'loading' && (
+               <div style={{padding: '2rem'}}>Chargement...</div>
+             )}
+             {details.kind === 'error' && (
+               <div style={{padding: '2rem'}}>
+                 Erreur de chargement.
+                 <button className="btn-secondary" onClick={() => void openDetails(details.eventId)} style={{marginTop: '1rem'}}>Réessayer</button>
+               </div>
+             )}
+           </div>
         )}
-        <div className={`status status-${state}`} role="status">
-          {state === 'loading' && translate(locale, 'map.loading')}
-          {state === 'empty' && (
-            <>
-              {searchResult
-                ? localizeSearchMessage(locale, searchResult.message)
-                : translate(locale, 'map.empty')}
-              <button
-                type="button"
-                onClick={searchResult ? clearSearch : clearAll}
-              >
-                {searchResult
-                  ? translate(locale, 'search.clearSearch')
-                  : translate(locale, 'filters.clearAll')}
-              </button>
-            </>
-          )}
-          {state === 'error' && (
-            <>
-              {translate(locale, 'map.error')}
-              <button type="button" onClick={() => void loadEvents()}>
-                {translate(locale, 'common.retry')}
-              </button>
-            </>
-          )}
-          {state === 'success' &&
-            translate(
-              locale,
-              events.length === 1 ? 'map.count.one' : 'map.count.many',
-              { count: events.length }
-            )}
-        </div>
-        {filterNotice && (
-          <p className="filter-notice" role="status">
-            {filterNotice}
-          </p>
-        )}
-        {selected && (
+      </div>
+
+      {filtersOpen && (
+        <FilterOverlay
+          filters={filters}
+          onChange={applyFilters}
+          onClose={() => setFiltersOpen(false)}
+          onClearAll={clearAll}
+          locale={locale}
+        />
+      )}
+
+      {/* Selected marker preview fallback logic */}
+      {selected && details.kind === 'closed' && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 50, maxWidth: 400, width: '100%' }}>
           <EventPreview
             event={selected}
-            searchMatch={searchResult?.data.find(
-              ({ event }) => event.id === selected.id
-            )}
+            searchMatch={searchResult?.data.find(({ event }) => event.id === selected.id)}
             detailsButton={detailsButton}
             onClose={() => setSelected(undefined)}
             onDetails={() => void openDetails(selected.id)}
@@ -617,71 +643,66 @@ export function ExploreMap({
             onToggleFavorite={() => toggleFavorite(selected.id)}
             locale={locale}
           />
-        )}
-      </section>
-
-      {details.kind !== 'closed' && (
-        <EventDetails
-          event={
-            details.kind === 'success'
-              ? details.event
-              : events.find(({ id }) => id === details.eventId)!
-          }
-          headingRef={detailsHeading}
-          onBack={() => setDetails({ kind: 'closed' })}
-          isFavorite={favorites.includes(
-            details.kind === 'success' ? details.event.id : details.eventId
-          )}
-          onToggleFavorite={() =>
-            toggleFavorite(
-              details.kind === 'success' ? details.event.id : details.eventId
-            )
-          }
-          locale={locale}
-        />
+        </div>
       )}
 
-      {details.kind === 'loading' && (
-        <section
-          className="details-screen"
-          aria-label={translate(locale, 'details.label')}
-        >
-          <button type="button" className="back-button" onClick={() => setDetails({ kind: 'closed' })}>
-            {translate(locale, 'details.back')}
-          </button>
-          <p role="status">{translate(locale, 'details.loading')}</p>
-        </section>
-      )}
+      <div className="bottom-section">
+         <div className="section-header">
+           <h2>Événements autour de vous</h2>
+           <a href="#" className="view-all">Voir tous les événements <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{verticalAlign: 'middle', marginLeft: 4}}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg></a>
+         </div>
+         
+         <div className="event-carousel">
+           {events.slice(0, 10).map(evt => (
+              <div className="event-card" key={evt.id} onClick={() => openDetails(evt.id)} style={{cursor: 'pointer'}}>
+                <div className="event-card-img">
+                   <div className="card-badge">{evt.category || 'EVENT'}</div>
+                   <button className="card-fav" onClick={(e) => { e.stopPropagation(); toggleFavorite(evt.id); }}>
+                     {favorites.includes(evt.id) ? '❤️' : '🤍'}
+                   </button>
+                </div>
+                <div className="event-card-content">
+                   <h3>{evt.title}</h3>
+                   <p>{evt.venue?.name}</p>
+                   <p className="card-price">{evt.startsAt ? new Date(evt.startsAt).toLocaleDateString() : ''}</p>
+                </div>
+              </div>
+           ))}
+           {events.length === 0 && <p>Aucun événement trouvé.</p>}
+         </div>
 
-      {details.kind === 'error' && (
-        <section
-          className="details-screen"
-          aria-label={translate(locale, 'details.label')}
-        >
-          <button type="button" className="back-button" onClick={() => setDetails({ kind: 'closed' })}>
-            {translate(locale, 'details.back')}
-          </button>
-          <p role="alert">{translate(locale, 'details.error')}</p>
-          <button
-            type="button"
-            onClick={() => void openDetails(details.eventId)}
-          >
-            {translate(locale, 'details.retry')}
-          </button>
-        </section>
-      )}
-
-      {details.kind === 'success' && (
-        <EventDetails
-          event={details.event}
-          headingRef={detailsHeading}
-          onBack={returnToMap}
-          isFavorite={favorites.includes(details.event.id)}
-          onToggleFavorite={() => toggleFavorite(details.event.id)}
-          locale={locale}
-        />
-      )}
-    </main>
+         <div className="feature-footer">
+            <div className="feature-item">
+              <div className="feature-icon">⚡</div>
+              <div className="feature-text">
+                <h4>Carte intelligente</h4>
+                <p>Explorez votre ville et découvrez des événements autour de vous en temps réel.</p>
+              </div>
+            </div>
+            <div className="feature-item">
+              <div className="feature-icon">🔍</div>
+              <div className="feature-text">
+                <h4>Recherche puissante</h4>
+                <p>Trouvez exactement ce que vous cherchez grâce à la recherche et à nos suggestions.</p>
+              </div>
+            </div>
+            <div className="feature-item">
+              <div className="feature-icon">❤️</div>
+              <div className="feature-text">
+                <h4>Vos favoris</h4>
+                <p>Sauvegardez vos événements préférés et ne manquez jamais une sortie.</p>
+              </div>
+            </div>
+            <div className="feature-item">
+              <div className="feature-icon">👥</div>
+              <div className="feature-text">
+                <h4>Communauté</h4>
+                <p>Rejoignez des milliers de passionnés et partagez vos meilleures découvertes.</p>
+              </div>
+            </div>
+         </div>
+      </div>
+    </div>
   );
 }
 

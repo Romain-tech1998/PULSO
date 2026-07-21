@@ -69,7 +69,14 @@ export function mapTicketmasterEvent(
   const venue = event._embedded?.venues?.[0];
   const longitude = Number(venue?.location?.longitude);
   const latitude = Number(venue?.location?.latitude);
-  const hasPoint = Number.isFinite(longitude) && Number.isFinite(latitude);
+  // Ticketmaster sometimes returns "0"/"0" for a venue's coordinates instead
+  // of omitting them (observed on ~26% of a 200-event Montréal sample,
+  // including known venues like the Bell Centre). (0, 0) is the Gulf of
+  // Guinea, never a real Montréal venue, so treat it as "no coordinates"
+  // rather than a valid point - see DATA-0003.
+  const isNullIsland = longitude === 0 && latitude === 0;
+  const hasPoint =
+    !isNullIsland && Number.isFinite(longitude) && Number.isFinite(latitude);
   const priceRange = event.priceRanges?.[0];
 
   return {
@@ -85,6 +92,7 @@ export function mapTicketmasterEvent(
     venueName: venue?.name,
     address: venue?.address?.line1,
     point: hasPoint ? { longitude, latitude } : undefined,
+    pointResolution: hasPoint ? 'source' : undefined,
     price: priceRange
       ? { kind: 'paid', minimumAmount: priceRange.min }
       : { kind: 'unknown' },

@@ -49,6 +49,7 @@ export function parseCsv(text: string): Record<string, string>[] {
 
   if (rows.length === 0) return [];
   const [header, ...body] = rows;
+  if (!header) return [];
   return body
     .filter((line) => line.length === header.length)
     .map((line) =>

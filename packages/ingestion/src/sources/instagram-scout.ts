@@ -34,10 +34,10 @@ export interface InstagramScoutSignal {
   sourceId: string;
   handle: string;
   mediaId: string;
-  caption?: string;
-  mediaType?: string;
-  permalink?: string;
-  timestamp?: string;
+  caption?: string | undefined;
+  mediaType?: string | undefined;
+  permalink?: string | undefined;
+  timestamp?: string | undefined;
   observedAt: string;
 }
 

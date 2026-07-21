@@ -194,6 +194,22 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
+  packages/ingestion:
+    dependencies:
+      '@pulso/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@pulso/domain':
+        specifier: workspace:*
+        version: link:../domain
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
   packages/search:
     dependencies:
       '@pulso/contracts':

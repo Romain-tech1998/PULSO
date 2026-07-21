@@ -1,7 +1,7 @@
 # DATA-0003 — Ingestion API Landscape
 
 **Identifier:** DATA-0003
-**Version:** 0.1
+**Version:** 0.4
 **Status:** Draft
 **Dependencies:** PDR-0001, MVP-0001, DATA-0001, DATA-0002, DEC-0006
 
@@ -21,9 +21,18 @@ This is the lowest-risk, zero-cost source available, but its coverage skews towa
 
 ### Ticketmaster Discovery API v2
 
-Public, well-documented API at `developer.ticketmaster.com`. Free registration issues a Consumer Key used as the `apikey` query parameter. Covers concerts, comedy, and other ticketed events, including many Montréal venues. Free-tier rate limits apply (verify current limits in the developer portal before relying on this for production volume; they change over time).
+Public, well-documented API at `developer.ticketmaster.com`. Free registration issues a Consumer Key used as the `apikey` query parameter (confirmed directly against the live docs: `https://app.ticketmaster.com/discovery/v2/events.json?apikey={apikey}`, matching this package's implementation). Covers concerts, comedy, and other ticketed events, including many Montréal venues. Confirmed default free-tier quota: 5000 API calls per day, rate-limited to 5 requests per second — re-check the portal if production volume approaches this.
 
-**Status:** connector implemented (`createTicketmasterConnector`), requires `TICKETMASTER_API_KEY` to run — no key was available in this session.
+**Status:** connector implemented (`createTicketmasterConnector`) and verified live against a real API key: 200 Montréal events were fetched successfully.
+
+**Data quality finding:** 26% of that 200-event sample (52 events), including known venues such as the Bell Centre, had `"longitude":"0","latitude":"0"` in Ticketmaster's own response instead of an omitted field. (0, 0) is a real coordinate (Gulf of Guinea) that is never a genuine Montréal venue location; a naive consumer would silently mislocate over a quarter of Ticketmaster events. `mapTicketmasterEvent` now treats `(0, 0)` as "no coordinates" rather than a valid point, consistent with UX-0001's rule that an event without exploitable coordinates must not be presented as correctly positioned.
+
+**Coordinate recovery rule:** a shared `enrichMissingCoordinates` helper (`packages/ingestion/src/lib/geocode-fallback.ts`), usable by any connector, applies a two-tier rule whenever a `RawIngestedEvent` has no point:
+
+1. If the event already has a known address or venue name (Ticketmaster's Bell Centre case: coordinates were `(0, 0)`, but the venue name and street address were present), geocode that address via OpenStreetMap Nominatim - free, no key, but rate-limited to 1 request/second with a required identifying User-Agent per Nominatim's usage policy, so this must run sequentially, not in parallel, and must not be pointed at heavy production volume without self-hosting or a commercial arrangement. Resulting events are marked `pointResolution: 'geocoded'`, distinct from `'source'` (coordinates the provider gave directly), so a future trust/confidence mapping can treat geocoded points as less certain than source-provided ones.
+2. If there is no address or venue name at all to geocode, this connector layer does **not** perform an open-ended web search to invent one. Automatically guessing a venue's location from an uncontrolled search result risks silently mislocating an event with no way to verify it - the same "no candidate without evidence and review" boundary DEC-0006 already sets for Instagram Scout. These events are marked `pointResolution: 'needs_research'` instead, so they can be queued for a human (or a separately reviewed, source-specific lookup) rather than trusted outright.
+
+`pointResolution` (`'source' | 'geocoded' | 'unresolved' | 'needs_research'`) is now part of `RawIngestedEvent` precisely so this distinction survives into the future PublicEvent-mapping stage: it must inform `locationConfidence` rather than being discarded.
 
 ### Shotgun
 
@@ -63,12 +72,29 @@ A new workspace package normalizes source data into a `RawIngestedEvent` shape t
 
 ## Verification
 
-Unit tests (`src/index.test.ts`) cover the pure mapping/parsing functions (CSV parsing, Montréal open-data row mapping, Ticketmaster event mapping, ICS parsing, watchlist extraction) with representative fixtures. These were not executed in this session: the sandbox used for this research has no general outbound network access from its shell (only specific fetch/search tools), so the Montréal CSV endpoint and Ticketmaster API could not be hit live, and `pnpm`/`vitest` could not be run end-to-end here. Running `pnpm --filter @pulso/ingestion test` in a real development environment is required before treating this package as verified, per AGENTS.md.
+Unit tests (`src/index.test.ts`, including a regression test for the `(0, 0)` coordinate case below) cover the pure mapping/parsing functions with representative fixtures, run via the root `pnpm test` — 106 tests pass repository-wide, 7 of them for this package. `packages/ingestion` does not define its own `test` script; it relies on the root Vitest config like every other package, for consistency.
+
+The Ticketmaster connector has additionally been run live against the real API with a valid key, confirming 200 Montréal events fetched successfully (see the data quality finding above). The Montréal open-data connector and the Instagram Scout connector have not yet been run live.
+
+## RawIngestedEvent → PublicEvent mapping
+
+`packages/ingestion/src/mapping/` implements the pipeline stage previously flagged as not designed: turning normalized `RawIngestedEvent` records into real `PublicEvent` objects (`mapRawEventToPublicEvent`, `mapAndDeduplicateRawEvents`). It is deliberately conservative because DATA-0001's trust model is still Draft, and it is a proposal for review, not an Accepted production pipeline:
+
+- **Id assignment**: a deterministic id is derived by hashing a stable dedupe key (normalized title, venue, minute-precision start time, organizer - the DATA-0001 minimum dedup signal set), formatted as a syntactically valid UUID. The same real event produces the same id across separate runs without a database round-trip. This is a placeholder identity strategy; the authoritative id and dedupe strategy belong to the eventual events table once one exists.
+- **Category scope guard**: events whose category could not be confidently mapped (`'unmapped'`) are excluded rather than guessed into `'other'`. This matters concretely for the Montréal open-data connector: accepting every unmapped civic category (workshops, markets) would silently pull events outside MVP-0001's festive/musical/nightlife scope.
+- **Missing-point guard**: events with no resolved point (`pointResolution` of `'unresolved'` or `'needs_research'`, or simply no point) are excluded rather than given a fabricated coordinate. This surfaces a real contract gap: `PublicEvent.venue.point` is a required field with no "location unknown, don't show on map" representation today, so Pulso currently can only hide such events, not display them with an honest uncertainty warning as UX-0001's state matrix otherwise expects for uncertain data. Deciding how (or whether) to surface excluded events is a separate product decision, not something this mapper should invent.
+- **Trust label**: `'confirmed'` for known official sources (currently just the Montréal open-data connector), `'probable'` for reputable single third-party platforms (currently Ticketmaster), `'to_verify'` for anything else. This is a first proposal, not a validated threshold set - DATA-0001 explicitly leaves exact trust criteria to the future PRD.
+- **Freshness**: a placeholder 24-hour threshold (`observedAt` vs. now) distinguishes `'fresh'` from `'stale'`. Explicitly a placeholder pending PRD-0001's freshness policy, not a decision.
+- **Location confidence**: `'confirmed'` when the point came from the source directly or was successfully geocoded from a known address; `'uncertain'` otherwise.
+- **Deduplication**: events sharing a dedupe key are merged; the highest-authority source becomes the contract's single `source` field, and other sources are preserved as `additionalSources` on the wrapper result rather than discarded. This exposes a real contract limitation: `PublicEvent.source` only supports one source object, while DATA-0001 explicitly allows an event to carry multiple sources. Full multi-source traceability requires a `@pulso/contracts` schema change - tracked as an open item below, not solved by this mapper.
 
 ## Open items
 
-- Confirm current Ticketmaster free-tier rate limits before scheduling any production polling frequency.
+- Ticketmaster free-tier rate limits are confirmed (5000/day, 5 req/s); re-verify before scheduling production polling frequency if approaching that volume.
 - Decide Shotgun's path: partner outreach, or an explicit scraping-risk decision after ToS review.
 - Obtain a Meta developer app, linked Instagram professional account, and access token to actually exercise the Instagram Scout connector; run it first against a small subset of the registry in Development mode before considering App Review.
 - Confirm per-venue ICS URLs beyond the ones already observed in the DATA-0002 pilot notes.
-- The mapping from `RawIngestedEvent` to `PublicEvent` (id assignment, trust/freshness computation, deduplication across sources) is not designed yet and depends on DATA-0001 reaching Accepted.
+- A first `RawIngestedEvent` → `PublicEvent` mapping proposal now exists (above); it needs product review against DATA-0001 once that document is closer to Accepted, not just engineering review.
+- `PublicEvent.venue.point` has no representation for "no usable location" - events failing the missing-point guard are currently just excluded. Decide whether/how Pulso should surface an uncertain-location event at all.
+- `PublicEvent.source` supports only one source; extending the contract (or a separate multi-source table) is required for genuine multi-source traceability instead of the current "best source wins, rest kept out-of-contract" compromise.
+- Trust-label and freshness-threshold values in the mapper are first-draft placeholders and must be revisited once PRD-0001 defines actual thresholds.

@@ -8,13 +8,14 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts src/"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@pulso/contracts": "workspace:*",
     "@pulso/domain": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "24.13.3",
     "typescript": "6.0.3"
   }
 }

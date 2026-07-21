@@ -17,23 +17,32 @@ export interface RawIngestedEvent {
   /** ISO timestamp of when this connector observed/fetched the data. */
   observedAt: string;
   title: string;
-  description?: string;
+  description?: string | undefined;
   /**
    * Best-effort mapping to Pulso's category taxonomy. Connectors that cannot
    * confidently map a source category must use 'unmapped' rather than guessing.
    */
   category: EventCategory | 'unmapped';
   startsAt: string;
-  endsAt?: string;
-  venueName?: string;
-  address?: string;
-  point?: { longitude: number; latitude: number };
+  endsAt?: string | undefined;
+  venueName?: string | undefined;
+  address?: string | undefined;
+  point?: { longitude: number; latitude: number } | undefined;
+  /**
+   * How `point` was obtained, or why it is still missing. Absent entirely
+   * means the connector never even attempted resolution (older/simple
+   * connectors). Downstream PublicEvent mapping should treat 'geocoded' as
+   * lower location confidence than 'source', and 'unresolved'/'needs_research'
+   * as no usable point at all - see DATA-0003.
+   */
+  pointResolution?: 'source' | 'geocoded' | 'unresolved' | 'needs_research' | undefined;
   price?:
     | { kind: 'free' }
-    | { kind: 'paid'; minimumAmount?: number }
-    | { kind: 'unknown' };
-  ticketingUrl?: string;
-  organizer?: string;
+    | { kind: 'paid'; minimumAmount?: number | undefined }
+    | { kind: 'unknown' }
+    | undefined;
+  ticketingUrl?: string | undefined;
+  organizer?: string | undefined;
   /** Original payload fragment, kept for audit/debugging only. */
   raw?: unknown;
 }

@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { parseCsv } from './lib/csv.js';
+import { enrichMissingCoordinates } from './lib/geocode-fallback.js';
 import { parseIcs } from './sources/ics-calendar.js';
 import { mapMontrealOpenDataRow } from './sources/montreal-open-data.js';
 import { mapTicketmasterEvent } from './sources/ticketmaster.js';
 import { extractInstagramWatchlist } from './registry.js';
+import type { RawIngestedEvent } from './types.js';
 
 describe('parseCsv', () => {
   it('parses simple rows into header-keyed records', () => {
@@ -83,6 +85,28 @@ describe('mapTicketmasterEvent', () => {
     expect(event.point).toEqual({ longitude: -73.5605, latitude: 45.5106 });
     expect(event.price).toEqual({ kind: 'paid', minimumAmount: 45 });
   });
+
+  it('drops (0, 0) venue coordinates instead of treating them as valid', () => {
+    const event = mapTicketmasterEvent(
+      {
+        id: 'tm-2',
+        name: 'Bell Centre Show',
+        url: 'https://ticketmaster.ca/event/tm-2',
+        dates: { start: { dateTime: '2026-08-01T23:00:00Z' } },
+        _embedded: {
+          venues: [
+            {
+              name: 'Bell Centre',
+              location: { longitude: '0', latitude: '0' }
+            }
+          ]
+        }
+      },
+      '2026-07-21T00:00:00.000Z'
+    );
+
+    expect(event.point).toBeUndefined();
+  });
 });
 
 describe('parseIcs', () => {
@@ -103,6 +127,73 @@ describe('parseIcs', () => {
     expect(events).toHaveLength(1);
     expect(events[0]?.summary).toBe('Concert du soir');
     expect(events[0]?.dtstart).toBe('2026-08-15T23:00:00.000Z');
+  });
+});
+
+describe('enrichMissingCoordinates', () => {
+  const baseEvent: RawIngestedEvent = {
+    sourceId: 'ticketmaster',
+    sourceName: 'Ticketmaster',
+    sourceUrl: 'https://ticketmaster.ca/event/tm-2',
+    observedAt: '2026-07-21T00:00:00.000Z',
+    title: 'Bell Centre Show',
+    category: 'unmapped',
+    startsAt: '2026-08-01T23:00:00Z',
+    venueName: 'Bell Centre',
+    address: '1909 Avenue des Canadiens-de-Montréal'
+  };
+
+  it('leaves events with a point untouched, labelled as source', async () => {
+    const withPoint: RawIngestedEvent = {
+      ...baseEvent,
+      point: { longitude: -73.5605, latitude: 45.4961 }
+    };
+    const [result] = await enrichMissingCoordinates([withPoint]);
+    expect(result?.pointResolution).toBe('source');
+    expect(result?.point).toEqual(withPoint.point);
+  });
+
+  it('geocodes events with a known address/venue name and no point', async () => {
+    const geocodeImpl = vi.fn().mockResolvedValue({
+      longitude: -73.5605,
+      latitude: 45.4961
+    });
+    const [result] = await enrichMissingCoordinates([baseEvent], {
+      delayMs: 0,
+      geocodeImpl
+    });
+    expect(geocodeImpl).toHaveBeenCalledWith(
+      expect.stringContaining('Bell Centre'),
+      expect.anything()
+    );
+    expect(result?.pointResolution).toBe('geocoded');
+    expect(result?.point).toEqual({ longitude: -73.5605, latitude: 45.4961 });
+  });
+
+  it('flags events with no address or venue name for human research instead of guessing', async () => {
+    const geocodeImpl = vi.fn();
+    const noAddress: RawIngestedEvent = {
+      ...baseEvent,
+      venueName: undefined,
+      address: undefined
+    };
+    const [result] = await enrichMissingCoordinates([noAddress], {
+      delayMs: 0,
+      geocodeImpl
+    });
+    expect(geocodeImpl).not.toHaveBeenCalled();
+    expect(result?.pointResolution).toBe('needs_research');
+    expect(result?.point).toBeUndefined();
+  });
+
+  it('marks unresolved when geocoding a known address fails', async () => {
+    const geocodeImpl = vi.fn().mockResolvedValue(undefined);
+    const [result] = await enrichMissingCoordinates([baseEvent], {
+      delayMs: 0,
+      geocodeImpl
+    });
+    expect(result?.pointResolution).toBe('unresolved');
+    expect(result?.point).toBeUndefined();
   });
 });
 

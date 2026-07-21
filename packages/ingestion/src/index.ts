@@ -28,3 +28,17 @@ export {
 
 export { extractInstagramWatchlist } from './registry.js';
 export { parseCsv } from './lib/csv.js';
+export {
+  geocodeAddress,
+  enrichMissingCoordinates
+} from './lib/geocode-fallback.js';
+
+export { computeDedupeKey, normalizeForKey } from './mapping/dedupe-key.js';
+export { deriveDeterministicEventId } from './mapping/event-id.js';
+export {
+  mapRawEventToPublicEvent,
+  mapAndDeduplicateRawEvents,
+  type MappingSkip,
+  type MergedPublicEvent,
+  type MappingResult
+} from './mapping/to-public-event.js';
