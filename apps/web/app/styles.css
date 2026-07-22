@@ -115,6 +115,7 @@ h6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 2rem;
   padding: 1rem 2rem;
   height: 80px;
   border-bottom: 1px solid var(--brand-border);
@@ -122,6 +123,14 @@ h6 {
   position: sticky;
   top: 0;
   z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  flex-shrink: 0;
 }
 
 .nav-logo {
@@ -163,7 +172,7 @@ h6 {
 
 .nav-search {
   flex: 1;
-  max-width: 400px;
+  max-width: 640px;
   position: relative;
 }
 
@@ -172,19 +181,22 @@ h6 {
   background: var(--surface-base);
   border: 1px solid var(--brand-border);
   border-radius: 999px;
-  padding: 0.75rem 1rem 0.75rem 2.5rem;
+  padding: 0.85rem 1.25rem 0.85rem 2.75rem;
+  font-size: 0.95rem;
   color: var(--text-primary);
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
 }
 
 .nav-search input:focus {
   border-color: var(--brand-purple);
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 4px rgba(115, 54, 193, 0.25);
 }
 
 .nav-search svg {
   position: absolute;
-  left: 1rem;
+  left: 1.1rem;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-muted);
@@ -194,11 +206,12 @@ h6 {
   display: flex;
   align-items: center;
   gap: 1.5rem;
+  flex-shrink: 0;
 }
 
 .nav-actions-links {
   display: flex;
-  gap: 1rem;
+  gap: 1.5rem;
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -208,10 +221,25 @@ h6 {
   display: flex;
   align-items: center;
   gap: 0.25rem;
+  position: relative;
 }
 
 .nav-actions-links a:hover {
   color: var(--text-primary);
+}
+
+.nav-actions-links a.active {
+  color: var(--text-primary);
+}
+
+.nav-actions-links a.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1.3rem;
+  height: 2px;
+  background: linear-gradient(90deg, var(--brand-purple), var(--brand-pink));
 }
 
 .location-selector {
@@ -222,26 +250,53 @@ h6 {
   font-weight: 500;
 }
 
-.lang-selector-flags {
+.lang-selector {
+  position: relative;
+}
+
+.lang-selector-current {
   display: flex;
-  gap: 0.5rem;
   align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--brand-border);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: border-color 0.2s, color 0.2s;
 }
 
-.lang-selector-flags button {
-  opacity: 0.5;
-  transition: opacity 0.2s, transform 0.2s;
-  font-size: 1.25rem;
-  /* Flag size */
+.lang-selector-current:hover {
+  border-color: var(--brand-purple);
+  color: var(--text-primary);
 }
 
-.lang-selector-flags button:hover {
-  opacity: 0.8;
+.lang-selector-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  z-index: 20;
 }
 
-.lang-selector-flags button.active {
-  opacity: 1;
-  transform: scale(1.1);
+.lang-selector-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.lang-selector-menu button:hover {
+  background: var(--surface-base);
+  color: var(--text-primary);
 }
 
 /* Main Dashboard Area */

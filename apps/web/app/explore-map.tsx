@@ -542,11 +542,18 @@ export function ExploreMap({
   return (
     <div className="app-container">
       <header className="top-navbar">
-        <div className="nav-logo">
-          <img
-            src="/brand/pulso-logo-horizontal-dark.svg"
-            alt={translate(locale, 'app.title')}
-          />
+        <div className="nav-left">
+          <div className="nav-logo">
+            <img
+              src="/brand/pulso-logo-horizontal-dark.svg"
+              alt={translate(locale, 'app.title')}
+            />
+          </div>
+          <div className="nav-actions-links">
+             <a href="#" className="active">Explorer</a>
+             <a href="#">À propos</a>
+             <a href="#">Favoris</a>
+          </div>
         </div>
         <div className="nav-search">
           <SearchPanel
@@ -563,11 +570,6 @@ export function ExploreMap({
           />
         </div>
         <div className="nav-actions">
-          <div className="nav-actions-links">
-             <a href="#" className="active">Explorer</a>
-             <a href="#">À propos</a>
-             <a href="#">Favoris</a>
-          </div>
           <div className="location-selector">
             <span>Montréal</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
@@ -899,6 +901,11 @@ function CollapsibleFilterGroup({
   );
 }
 
+const LOCALE_META: Record<SupportedLocale, { flag: string; code: string; title: string }> = {
+  fr: { flag: '🇫🇷', code: 'FR', title: 'Français' },
+  en: { flag: '🇬🇧', code: 'EN', title: 'English' }
+};
+
 function LanguageSelector({
   locale,
   onChange
@@ -906,24 +913,34 @@ function LanguageSelector({
   locale: SupportedLocale;
   onChange: (locale: SupportedLocale) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const other: SupportedLocale = locale === 'fr' ? 'en' : 'fr';
   return (
-    <div className="lang-selector-flags" aria-label={translate(locale, 'language.label')}>
-      <button 
-        type="button" 
-        className={locale === 'fr' ? 'active' : ''} 
-        onClick={() => onChange('fr')}
-        title="Français"
+    <div className="lang-selector" aria-label={translate(locale, 'language.label')}>
+      <button
+        type="button"
+        className="lang-selector-current"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
       >
-        🇫🇷
+        <span aria-hidden="true" className="lang-flag">{LOCALE_META[locale].flag}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
       </button>
-      <button 
-        type="button" 
-        className={locale === 'en' ? 'active' : ''} 
-        onClick={() => onChange('en')}
-        title="English"
-      >
-        🇬🇧
-      </button>
+      {open && (
+        <div className="lang-selector-menu">
+          <button
+            type="button"
+            onClick={() => {
+              onChange(other);
+              setOpen(false);
+            }}
+            title={LOCALE_META[other].title}
+          >
+            <span aria-hidden="true">{LOCALE_META[other].flag}</span>
+            {LOCALE_META[other].title}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
