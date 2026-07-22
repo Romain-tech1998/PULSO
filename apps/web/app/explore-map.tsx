@@ -334,24 +334,60 @@ export function ExploreMap({
     instance.on('load', () => {
       setBasemapState('loaded');
 
-      // Source pour les événements
+      // Source pour les événements avec clustering
       instance.addSource('events-source', {
         type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] }
+        data: { type: 'FeatureCollection', features: [] },
+        cluster: true,
+        clusterMaxZoom: 14,
+        clusterRadius: 50
       });
 
-      // Layer pour les événements non-sélectionnés (cercles colorés)
+      instance.addLayer({
+        id: 'clusters',
+        type: 'circle',
+        source: 'events-source',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': '#7058ff',
+          'circle-radius': ['step', ['get', 'point_count'], 20, 10, 30, 50, 40],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#FFFFFF',
+          'circle-opacity': 0.9
+        }
+      });
+
+      instance.addLayer({
+        id: 'cluster-count',
+        type: 'symbol',
+        source: 'events-source',
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': '{point_count_abbreviated}',
+          // demotiles.maplibre.org (the glyphs source above) only serves the
+          // Noto Sans family - "Open Sans Bold" 404s there, which silently
+          // dropped the cluster count text.
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 12
+        },
+        paint: {
+          'text-color': '#ffffff'
+        }
+      });
+
+      // Layer pour les événements non-sélectionnés (gouttes)
       instance.addLayer({
         id: 'events-circles',
         type: 'circle',
         source: 'events-source',
         paint: {
-          'circle-radius': 8,
+          'circle-radius': 12,
           'circle-color': ['get', 'color'],
           'circle-stroke-width': 2,
-          'circle-stroke-color': '#FFFFFF'
+          'circle-stroke-color': '#000000',
+          'circle-opacity': 0.9
         },
-        filter: ['!=', ['get', 'id'], selected?.id ?? '']
+        filter: ['!', ['has', 'point_count']]
       });
 
       // Layer pour l'événement sélectionné (grand pin lumineux)
@@ -360,10 +396,11 @@ export function ExploreMap({
         type: 'circle',
         source: 'events-source',
         paint: {
-          'circle-radius': 12,
+          'circle-radius': 20,
           'circle-color': ['get', 'color'],
-          'circle-stroke-width': 3,
+          'circle-stroke-width': 4,
           'circle-stroke-color': '#FFFFFF',
+          'circle-opacity': 1,
           'circle-pitch-alignment': 'map'
         },
         filter: ['==', ['get', 'id'], selected?.id ?? '']
@@ -441,7 +478,15 @@ export function ExploreMap({
       }))
     });
     if (instance.getLayer('events-circles')) {
-      instance.setFilter('events-circles', ['!=', ['get', 'id'], sel?.id ?? '']);
+      // Must keep excluding cluster points here (they have no 'id'/'color'
+      // properties) - a previous version of this filter dropped that
+      // condition on every update, letting cluster features render through
+      // this layer with a null color and hide the cluster-count text.
+      instance.setFilter('events-circles', [
+        'all',
+        ['!', ['has', 'point_count']],
+        ['!=', ['get', 'id'], sel?.id ?? '']
+      ]);
       instance.setFilter('events-selected', ['==', ['get', 'id'], sel?.id ?? '']);
     }
   }, []);
@@ -506,6 +551,11 @@ export function ExploreMap({
           />
         </div>
         <div className="nav-actions">
+          <div className="nav-actions-links">
+             <a href="#" className="active">Explorer</a>
+             <a href="#">À propos</a>
+             <a href="#">Favoris</a>
+          </div>
           <div className="location-selector">
             <span>Montréal</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
@@ -527,6 +577,21 @@ export function ExploreMap({
 
           <div className="filter-group">
             <div className="filter-group-header">
+              <span>Distance</span>
+            </div>
+            <div className="distance-slider-container">
+              <input type="range" min="1" max="50" defaultValue="15" className="distance-slider" />
+              <div className="distance-labels">
+                <span>1km</span>
+                <span>10km</span>
+                <span>25km</span>
+                <span>50km</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="filter-group">
+            <div className="filter-group-header">
               <span>Filtres</span>
               <button className="filter-reset" onClick={clearAll}>Réinitialiser</button>
             </div>
@@ -534,6 +599,20 @@ export function ExploreMap({
               <button className="filter-pill active">Aujourd'hui</button>
               <button className="filter-pill">Ce week-end</button>
               <button className="filter-pill">Cette semaine</button>
+              <button className="filter-pill">❤️ Mes Favoris</button>
+            </div>
+          </div>
+
+          <div className="filter-group">
+            <div className="filter-group-header">
+              <span>Ambiance</span>
+              <button className="filter-reset">Voir tout</button>
+            </div>
+            <div className="pill-list">
+              <button className="filter-pill active">🔥 Énergique</button>
+              <button className="filter-pill">☕ Chill</button>
+              <button className="filter-pill">🥂 Romantique</button>
+              <button className="filter-pill">🎉 Festif</button>
             </div>
           </div>
 
@@ -543,22 +622,24 @@ export function ExploreMap({
               <button className="filter-reset">Voir tout</button>
             </div>
             <div className="category-grid">
-              <div className="category-item active">
-                <div className="category-icon">🎟️</div>
-                <span>Tous</span>
-              </div>
-              <div className="category-item">
-                <div className="category-icon">🎸</div>
-                <span>Concerts</span>
-              </div>
-              <div className="category-item">
-                <div className="category-icon">🪩</div>
-                <span>Soirées</span>
-              </div>
-              <div className="category-item">
-                <div className="category-icon">⚡</div>
-                <span>Techno</span>
-              </div>
+              {CATEGORY_FILTER_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  key={option.value}
+                  className={`category-item ${filters.categories.includes(option.value) ? 'active' : ''}`}
+                  onClick={() => {
+                    const nextCategories = filters.categories.includes(option.value)
+                      ? filters.categories.filter((c) => c !== option.value)
+                      : [...filters.categories, option.value];
+                    applyFilters({ ...filters, categories: nextCategories });
+                  }}
+                >
+                  <div className="category-icon">
+                    {option.value === 'music' ? '🎸' : option.value === 'nightlife' ? '🪩' : option.value === 'festival' ? '🎪' : '🎟️'}
+                  </div>
+                  <span>{getCategoryLabel(locale, option.value)}</span>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -580,6 +661,7 @@ export function ExploreMap({
              </button>
 
              <div className="map-floating-filters">
+                <ActiveFilters filters={filters} onChange={applyFilters} locale={locale} />
                 <button className="map-filter-btn" onClick={() => setFiltersOpen(true)}>
                   Plus de filtres
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginLeft: 8}}><path d="M6 9l6 6 6-6"/></svg>
@@ -655,8 +737,18 @@ export function ExploreMap({
          <div className="event-carousel">
            {events.slice(0, 10).map(evt => (
               <div className="event-card" key={evt.id} onClick={() => openDetails(evt.id)} style={{cursor: 'pointer'}}>
-                <div className="event-card-img">
-                   <div className="card-badge">{evt.category || 'EVENT'}</div>
+                <div
+                  className="event-card-img"
+                  style={{
+                    background: `linear-gradient(160deg, ${CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']}55, ${CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']}11)`
+                  }}
+                >
+                   <div
+                     className="card-badge"
+                     style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
+                   >
+                     {getCategoryLabel(locale, evt.category)}
+                   </div>
                    <button className="card-fav" onClick={(e) => { e.stopPropagation(); toggleFavorite(evt.id); }}>
                      {favorites.includes(evt.id) ? '❤️' : '🤍'}
                    </button>
@@ -714,21 +806,24 @@ function LanguageSelector({
   onChange: (locale: SupportedLocale) => void;
 }) {
   return (
-    <fieldset className="language-selector">
-      <legend>{translate(locale, 'language.label')}</legend>
-      {(['fr', 'en'] as const).map((value) => (
-        <label key={value}>
-          <input
-            type="radio"
-            name="language"
-            value={value}
-            checked={locale === value}
-            onChange={() => onChange(value)}
-          />
-          {translate(locale, `language.${value}`)}
-        </label>
-      ))}
-    </fieldset>
+    <div className="lang-selector-flags" aria-label={translate(locale, 'language.label')}>
+      <button 
+        type="button" 
+        className={locale === 'fr' ? 'active' : ''} 
+        onClick={() => onChange('fr')}
+        title="Français"
+      >
+        🇫🇷
+      </button>
+      <button 
+        type="button" 
+        className={locale === 'en' ? 'active' : ''} 
+        onClick={() => onChange('en')}
+        title="English"
+      >
+        🇬🇧
+      </button>
+    </div>
   );
 }
 
@@ -966,12 +1061,13 @@ function ActiveFilters({
   }
   return (
     <div
-      className="active-filters"
+      className="active-filters-row"
       aria-label={translate(locale, 'filters.activeAria')}
     >
       {summary.map((item) => (
         <button
           type="button"
+          className="filter-pill active"
           key={`${item.key}-${item.value}`}
           aria-label={translate(locale, 'filters.clearAria', {
             label: item.label
@@ -991,7 +1087,7 @@ function ActiveFilters({
             }
           }}
         >
-          {item.label} ×
+          {item.label} <span className="close-icon">×</span>
         </button>
       ))}
     </div>
@@ -1036,7 +1132,7 @@ function FilterOverlay({
   return (
     <aside
       id="map-filters"
-      className="filter-overlay"
+      className="filter-overlay glass-panel slide-up"
       aria-label={translate(locale, 'filters.title')}
     >
       <div className="filter-heading">
@@ -1189,26 +1285,29 @@ function EventPreview({
 }) {
   const fields = eventPreviewFields(event, locale);
   return (
-    <article className="preview fade-in slide-up glass-panel" aria-live="polite">
+    <div className="event-preview-card" aria-live="polite">
       <div className="preview-header-actions">
-        <button
-          type="button"
-          className="favorite-button"
-          aria-pressed={isFavorite}
-          aria-label={translate(
-            locale,
-            isFavorite ? 'favorites.remove' : 'favorites.add'
-          )}
-          onClick={onToggleFavorite}
-        >
-          <span aria-hidden="true">{isFavorite ? '❤️' : '🤍'}</span>
-        </button>
-        <button type="button" className="close-button" onClick={onClose}>
-          {translate(locale, 'preview.close')}
-        </button>
+        <div className="card-badge" style={{position: 'relative', top: 0, left: 0}}>{fields.category}</div>
+        <div style={{display: 'flex', gap: '0.5rem'}}>
+          <button
+            type="button"
+            className="card-fav"
+            style={{position: 'relative', top: 0, right: 0}}
+            aria-pressed={isFavorite}
+            aria-label={translate(
+              locale,
+              isFavorite ? 'favorites.remove' : 'favorites.add'
+            )}
+            onClick={onToggleFavorite}
+          >
+            <span aria-hidden="true">{isFavorite ? '❤️' : '🤍'}</span>
+          </button>
+          <button type="button" className="close-button" onClick={onClose} style={{background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: 28, height: 28, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
       </div>
-      <p className="chip">{fields.category}</p>
-      <h2>{fields.title}</h2>
+      <h3 style={{margin: '0.5rem 0 0 0', fontSize: '1.25rem'}}>{fields.title}</h3>
       <dl className="preview-fields">
         <div>
           <dt>{translate(locale, 'preview.when')}</dt>
@@ -1259,7 +1358,7 @@ function EventPreview({
       >
         {translate(locale, 'preview.details')}
       </button>
-    </article>
+    </div>
   );
 }
 
@@ -1300,13 +1399,14 @@ function EventDetails({
   };
 
   return (
-    <section
-      className="details-screen glass-panel slide-up"
+    <div
+      className="event-details-content"
       aria-label={translate(locale, 'details.label')}
     >
       <div className="details-header-actions">
         <button type="button" className="back-button" onClick={onBack}>
-          {translate(locale, 'details.back')}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+          Retour
         </button>
         <div>
           <button
@@ -1331,75 +1431,81 @@ function EventDetails({
           </button>
         </div>
       </div>
-      <p className="eyebrow">{translate(locale, 'details.label')}</p>
-      <h2 ref={headingRef} tabIndex={-1}>
-        {event.title}
-      </h2>
-      <p className="detail-lead">
-        {presentation.status} · {presentation.category}
-      </p>
-      {presentation.materialWarning && (
-        <p className="warning" role="alert">
-          {presentation.materialWarning}
-        </p>
-      )}
-      <dl className="detail-grid">
-        <div>
-          <dt>{translate(locale, 'details.dateTime')}</dt>
-          <dd>{presentation.dateTime}</dd>
+      <div
+        className="details-hero"
+        style={{
+          background: `linear-gradient(160deg, ${CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']}55, ${CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']}11)`
+        }}
+      >
+        <div className="details-badge">{presentation.category}</div>
+        <h2 ref={headingRef} tabIndex={-1} className="details-title">
+          {event.title}
+        </h2>
+        {presentation.organizer && (
+          <p className="details-subtitle">{presentation.organizer}</p>
+        )}
+      </div>
+
+      <div className="details-info-list">
+        <div className="info-item">
+          <span className="info-icon">📅</span>
+          <div>
+            <strong>Date et heure</strong>
+            <p>{presentation.dateTime}</p>
+          </div>
         </div>
-        <div>
-          <dt>{translate(locale, 'details.venue')}</dt>
-          <dd>{event.venue.name}</dd>
+        <div className="info-item">
+          <span className="info-icon">📍</span>
+          <div>
+            <strong>Lieu</strong>
+            <p>{event.venue.name}</p>
+            <p className="info-sub">{event.venue.address}</p>
+          </div>
         </div>
-        <div>
-          <dt>{translate(locale, 'details.address')}</dt>
-          <dd>{event.venue.address}</dd>
+        <div className="info-item">
+          <span className="info-icon">🎟️</span>
+          <div>
+            <strong>Prix</strong>
+            <p>{presentation.price}</p>
+          </div>
         </div>
-        <div>
-          <dt>{translate(locale, 'details.price')}</dt>
-          <dd>{presentation.price}</dd>
+      </div>
+
+      <div className="details-actions-main">
+        {presentation.externalAction ? (
+          <a className="primary-action-btn glow-purple" href={externalHref} target="_blank" rel="noopener noreferrer">
+            {presentation.externalAction}
+          </a>
+        ) : (
+          <button className="primary-action-btn disabled" disabled>
+            {presentation.externalUnavailable}
+          </button>
+        )}
+        <button className="secondary-action-btn" onClick={onToggleFavorite}>
+          {isFavorite ? '❤️ Retirer des favoris' : '🤍 Ajouter aux favoris'}
+        </button>
+      </div>
+
+      <div className="details-section">
+        <h3>À propos</h3>
+        <p className="details-description">{presentation.description}</p>
+        <button className="text-btn">Voir plus</button>
+      </div>
+
+      <div className="details-section">
+        <h3>Sources</h3>
+        <div className="source-item">
+          <span className="source-logo">ℹ️</span>
+          <span>{event.source.name}</span>
+          <span className="source-trust">{presentation.trust}</span>
         </div>
-        <div>
-          <dt>{translate(locale, 'details.description')}</dt>
-          <dd>{presentation.description}</dd>
-        </div>
-        <div>
-          <dt>{translate(locale, 'details.organizer')}</dt>
-          <dd>{presentation.organizer}</dd>
-        </div>
-        <div>
-          <dt>{translate(locale, 'details.access')}</dt>
-          <dd>{event.accessInformation}</dd>
-        </div>
-        <div>
-          <dt>{translate(locale, 'details.source')}</dt>
-          <dd>{event.source.name}</dd>
-        </div>
-        <div>
-          <dt>{translate(locale, 'details.trust')}</dt>
-          <dd>
-            {presentation.trust} · {presentation.location}
-          </dd>
-        </div>
-        <div>
-          <dt>{translate(locale, 'details.verification')}</dt>
-          <dd>{presentation.freshness}</dd>
-        </div>
-      </dl>
-      {presentation.externalAction ? (
-        <a className="primary-action glow-button" href={externalHref} target="_blank" rel="noopener noreferrer">
-          {presentation.externalAction} —{' '}
-          {translate(locale, 'details.externalSuffix')}
-        </a>
-      ) : (
-        <p className="unavailable" role="status">
-          {presentation.externalUnavailable}
-        </p>
-      )}
-      <p className="external-note">
-        {translate(locale, 'details.externalNote')}
-      </p>
-    </section>
+        {event.additionalSources?.map((source) => (
+          <div className="source-item" key={source.url}>
+            <span className="source-logo">ℹ️</span>
+            <span>{source.name}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
