@@ -772,7 +772,7 @@ export function ExploreMap({
 
       {/* Selected marker preview fallback logic */}
       {selected && details.kind === 'closed' && (
-        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 50, maxWidth: 400, width: '100%' }}>
+        <div className="event-preview-wrapper">
           <EventPreview
             event={selected}
             searchMatch={searchResult?.data.find(({ event }) => event.id === selected.id)}
