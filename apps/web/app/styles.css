@@ -514,6 +514,23 @@ h6 {
   gap: 0.5rem;
 }
 
+.active-filters-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.default-filter {
+  background: var(--surface-overlay);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--brand-border);
+  padding: 0.75rem 1.25rem;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
 .map-filter-btn {
   background: var(--surface-overlay);
   backdrop-filter: blur(12px);

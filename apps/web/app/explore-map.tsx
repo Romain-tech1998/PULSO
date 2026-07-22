@@ -196,11 +196,12 @@ export function ExploreMap({
       return next;
     });
   // Distance starts inactive (max range, not applied) rather than silently
-  // restricting results to 15km the moment geolocation resolves - per user
-  // feedback, moving markers out from under someone who hasn't touched the
-  // slider yet is disorienting. It only takes effect once the user releases
-  // the slider themselves.
-  const [distanceKm, setDistanceKm] = useState(25);
+  // restricting results the moment geolocation resolves - per user feedback,
+  // moving markers out from under someone who hasn't touched the slider yet
+  // is disorienting. It only takes effect once the user releases the slider
+  // themselves. Max is 10km per user feedback - people don't search farther
+  // than that for nightlife/events.
+  const [distanceKm, setDistanceKm] = useState(10);
   const distanceKmRef = useRef(distanceKm);
   const [distanceFilterActive, setDistanceFilterActive] = useState(false);
   const distanceFilterActiveRef = useRef(distanceFilterActive);
@@ -716,7 +717,7 @@ export function ExploreMap({
               <input
                 type="range"
                 min="1"
-                max="25"
+                max="10"
                 value={distanceKm}
                 onChange={(event) => setDistanceKm(Number(event.target.value))}
                 onMouseUp={applyDistanceFilter}
@@ -726,16 +727,16 @@ export function ExploreMap({
               />
               <div className="distance-labels">
                 <span>1km</span>
-                <span>5km</span>
+                <span>3km</span>
+                <span>6km</span>
                 <span>10km</span>
-                <span>25km</span>
               </div>
               <p className="distance-value">
                 {distanceFilterActive
                   ? `Rayon actif : ${distanceKm} km`
                   : `Rayon max (${distanceKm} km) — non appliqué`}
                 {geoStatus === 'pending' && ' · localisation…'}
-                {geoStatus === 'denied' && ' · position non partagée, non appliqué'}
+                {geoStatus === 'denied' && ' · position non partagée'}
                 {geoStatus === 'unsupported' && ' · non disponible sur cet appareil'}
               </p>
             </div>
@@ -821,7 +822,7 @@ export function ExploreMap({
                   }}
                 >
                   <div className="category-icon">
-                    {option.value === 'music' ? '🎸' : option.value === 'nightlife' ? '🪩' : option.value === 'festival' ? '🎪' : '🎟️'}
+                    <CategoryIcon category={option.value} />
                   </div>
                   <span>{getCategoryLabel(locale, option.value)}</span>
                 </button>
@@ -981,6 +982,55 @@ export function ExploreMap({
          </div>
       </div>
     </div>
+  );
+}
+
+const CATEGORY_ICON_PATHS: Record<EventCategory, ReactNode> = {
+  music: (
+    <>
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </>
+  ),
+  nightlife: <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />,
+  festival: (
+    <>
+      <path d="M4 20L12 4l8 16z" />
+      <path d="M9 20l3-6 3 6" />
+    </>
+  ),
+  show: (
+    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.86L12 17.77 5.82 21 7 14.14 2 9.27l6.91-1.01L12 2z" />
+  ),
+  comedy: (
+    <>
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="23" />
+      <line x1="8" y1="23" x2="16" y2="23" />
+    </>
+  ),
+  other: (
+    <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V7z" />
+  )
+};
+
+function CategoryIcon({ category }: { category: EventCategory }) {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {CATEGORY_ICON_PATHS[category]}
+    </svg>
   );
 }
 

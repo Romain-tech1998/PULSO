@@ -140,6 +140,20 @@ describe('mapTicketmasterEvent', () => {
 
     expect(event.point).toBeUndefined();
   });
+
+  it('treats a missing priceRanges as paid with an undetermined amount, not unknown', () => {
+    const event = mapTicketmasterEvent(
+      {
+        id: 'tm-3',
+        name: 'Canadiens vs. Bruins',
+        url: 'https://ticketmaster.ca/event/tm-3',
+        dates: { start: { dateTime: '2026-08-01T23:00:00Z' } }
+      },
+      '2026-07-21T00:00:00.000Z'
+    );
+
+    expect(event.price).toEqual({ kind: 'paid' });
+  });
 });
 
 describe('parseIcs', () => {

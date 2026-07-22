@@ -93,9 +93,16 @@ export function mapTicketmasterEvent(
     address: venue?.address?.line1,
     point: hasPoint ? { longitude, latitude } : undefined,
     pointResolution: hasPoint ? 'source' : undefined,
+    // Ticketmaster often omits priceRanges entirely for dynamically-priced or
+    // resale-controlled listings (observed on e.g. every Canadiens game in a
+    // real sample - never an empty array, the field is just absent). Per
+    // product decision: Ticketmaster is inherently a paid ticketing
+    // platform, so treat a missing price range as "paid, amount
+    // undetermined" rather than lumping it in with genuinely uncertain
+    // sources under "unknown".
     price: priceRange
       ? { kind: 'paid', minimumAmount: priceRange.min }
-      : { kind: 'unknown' },
+      : { kind: 'paid' },
     ticketingUrl: event.url,
     organizer: event._embedded?.attractions?.[0]?.name,
     raw: event
