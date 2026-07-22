@@ -34,6 +34,9 @@ playwright-report/
 .DS_Store
 *.pem
 
+# Ingestion pilot output (local review artifacts, not source)
+/packages/database/ingestion-output/
+
 # Debug logs
 npm-debug.log*
 yarn-debug.log*

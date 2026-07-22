@@ -8,11 +8,13 @@
     "build": "tsc -p tsconfig.build.json",
     "db:migrate": "tsx src/migrate.ts",
     "db:seed": "tsx src/seed.ts",
+    "db:ingest": "tsx src/ingest.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@pulso/contracts": "workspace:*",
     "@pulso/domain": "workspace:*",
+    "@pulso/ingestion": "workspace:*",
     "drizzle-orm": "0.45.2",
     "pg": "8.22.0"
   },

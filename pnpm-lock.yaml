@@ -168,6 +168,9 @@ importers:
       '@pulso/domain':
         specifier: workspace:*
         version: link:../domain
+      '@pulso/ingestion':
+        specifier: workspace:*
+        version: link:../ingestion
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2(@types/pg@8.20.0)(pg@8.22.0)
