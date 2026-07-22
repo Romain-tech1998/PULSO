@@ -355,6 +355,21 @@ export function ExploreMap({
         clusterRadius: 50
       });
 
+      // Soft glow halo beneath each cluster, for depth (rendered first so
+      // the solid cluster circle draws on top of it).
+      instance.addLayer({
+        id: 'clusters-glow',
+        type: 'circle',
+        source: 'events-source',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': '#7058ff',
+          'circle-radius': ['step', ['get', 'point_count'], 30, 10, 42, 50, 54],
+          'circle-blur': 1,
+          'circle-opacity': 0.45
+        }
+      });
+
       instance.addLayer({
         id: 'clusters',
         type: 'circle',
@@ -380,11 +395,25 @@ export function ExploreMap({
           // Noto Sans family - "Open Sans Bold" 404s there, which silently
           // dropped the cluster count text.
           'text-font': ['Noto Sans Bold'],
-          'text-size': 12
+          'text-size': 13
         },
         paint: {
           'text-color': '#ffffff'
         }
+      });
+
+      // Soft glow halo beneath individual (non-clustered) event pins.
+      instance.addLayer({
+        id: 'events-glow',
+        type: 'circle',
+        source: 'events-source',
+        paint: {
+          'circle-radius': 18,
+          'circle-color': ['get', 'color'],
+          'circle-blur': 1,
+          'circle-opacity': 0.5
+        },
+        filter: ['!', ['has', 'point_count']]
       });
 
       // Layer pour les événements non-sélectionnés (gouttes)
