@@ -195,8 +195,15 @@ export function ExploreMap({
       else next.add(key);
       return next;
     });
-  const [distanceKm, setDistanceKm] = useState(15);
+  // Distance starts inactive (max range, not applied) rather than silently
+  // restricting results to 15km the moment geolocation resolves - per user
+  // feedback, moving markers out from under someone who hasn't touched the
+  // slider yet is disorienting. It only takes effect once the user releases
+  // the slider themselves.
+  const [distanceKm, setDistanceKm] = useState(25);
   const distanceKmRef = useRef(distanceKm);
+  const [distanceFilterActive, setDistanceFilterActive] = useState(false);
+  const distanceFilterActiveRef = useRef(distanceFilterActive);
   const { status: geoStatus, location: userLocation } = useUserLocation();
   const userLocationRef = useRef(userLocation);
   useEffect(() => {
@@ -287,13 +294,14 @@ export function ExploreMap({
           return;
         }
         const userLoc = userLocationRef.current;
-        const near = userLoc
-          ? {
-              longitude: userLoc.longitude,
-              latitude: userLoc.latitude,
-              radiusMeters: distanceKmRef.current * 1000
-            }
-          : undefined;
+        const near =
+          userLoc && distanceFilterActiveRef.current
+            ? {
+                longitude: userLoc.longitude,
+                latitude: userLoc.latitude,
+                radiusMeters: distanceKmRef.current * 1000
+              }
+            : undefined;
         const response = await fetch(boundsUrl(bounds, activeFilters, near));
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
@@ -331,6 +339,12 @@ export function ExploreMap({
       setFilterNotice(undefined);
     }
     void loadEvents(currentBounds.current, nextFilters);
+  }
+
+  function applyDistanceFilter() {
+    distanceFilterActiveRef.current = true;
+    setDistanceFilterActive(true);
+    void loadEvents(currentBounds.current, filtersRef.current);
   }
 
   function submitSearch() {
@@ -537,6 +551,25 @@ export function ExploreMap({
     };
   }, [loadEvents]);
 
+  // "You are here" marker - purely visual, never triggers a re-fetch on its
+  // own (see applyDistanceFilter for why the Distance slider stays inactive
+  // until the user explicitly touches it).
+  const userMarker = useRef<maplibregl.Marker | null>(null);
+  useEffect(() => {
+    if (!map.current || !userLocation) return;
+    const el = document.createElement('div');
+    el.className = 'user-location-marker';
+    el.innerHTML = '<span class="user-location-marker-pulse"></span>';
+    userMarker.current?.remove();
+    userMarker.current = new maplibregl.Marker({ element: el })
+      .setLngLat([userLocation.longitude, userLocation.latitude])
+      .addTo(map.current);
+    return () => {
+      userMarker.current?.remove();
+      userMarker.current = null;
+    };
+  }, [userLocation]);
+
   // Ref toujours à jour des events pour les handlers internes à la carte
   const eventsRef = useRef(events);
   // Ref utilisée pour pousser les données AVANT que la source n'existe encore
@@ -592,11 +625,9 @@ export function ExploreMap({
   useEffect(() => { showFavoritesOnlyRef.current = showFavoritesOnly; }, [showFavoritesOnly]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { distanceKmRef.current = distanceKm; }, [distanceKm]);
-  // Re-fetch once the user's real position resolves, so the distance
-  // constraint applies without waiting for an unrelated map interaction.
   useEffect(() => {
-    if (userLocation) void loadEvents(currentBounds.current, filtersRef.current);
-  }, [userLocation, loadEvents]);
+    distanceFilterActiveRef.current = distanceFilterActive;
+  }, [distanceFilterActive]);
 
   // Synchronisation des données vers la carte (se déclenche aussi quand on revient à la carte)
   useEffect(() => {
@@ -688,9 +719,9 @@ export function ExploreMap({
                 max="25"
                 value={distanceKm}
                 onChange={(event) => setDistanceKm(Number(event.target.value))}
-                onMouseUp={() => loadEvents(currentBounds.current, filters)}
-                onTouchEnd={() => loadEvents(currentBounds.current, filters)}
-                onKeyUp={() => loadEvents(currentBounds.current, filters)}
+                onMouseUp={applyDistanceFilter}
+                onTouchEnd={applyDistanceFilter}
+                onKeyUp={applyDistanceFilter}
                 className="distance-slider"
               />
               <div className="distance-labels">
@@ -700,7 +731,9 @@ export function ExploreMap({
                 <span>25km</span>
               </div>
               <p className="distance-value">
-                Rayon : {distanceKm} km
+                {distanceFilterActive
+                  ? `Rayon actif : ${distanceKm} km`
+                  : `Rayon max (${distanceKm} km) — non appliqué`}
                 {geoStatus === 'pending' && ' · localisation…'}
                 {geoStatus === 'denied' && ' · position non partagée, non appliqué'}
                 {geoStatus === 'unsupported' && ' · non disponible sur cet appareil'}

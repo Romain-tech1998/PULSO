@@ -818,6 +818,34 @@ h6 {
   margin: 0;
 }
 
+/* "You are here" marker */
+.user-location-marker {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #4285f4;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.4), 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.user-location-marker-pulse {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: rgba(66, 133, 244, 0.35);
+  animation: user-location-pulse 2s ease-out infinite;
+}
+@keyframes user-location-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
 /* Map Markers */
 .marker {
   width: 2.5rem;
