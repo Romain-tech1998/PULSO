@@ -55,6 +55,20 @@ describe('mapMontrealOpenDataRow', () => {
     const event = mapMontrealOpenDataRow({ titre: '', date_debut: '' }, 'now');
     expect(event).toBeUndefined();
   });
+
+  it.each([
+    ['Musique', 'music'],
+    ['Humour', 'comedy'],
+    ['Théâtre', 'show'],
+    ['Cirque', 'show'],
+    ['Cinéma', 'show']
+  ])('maps type_evenement %s to category %s', (type_evenement, expected) => {
+    const event = mapMontrealOpenDataRow(
+      { titre: 'Test', date_debut: '2026-12-01T10:00:00', type_evenement },
+      'now'
+    );
+    expect(event?.category).toBe(expected);
+  });
 });
 
 describe('mapTicketmasterEvent', () => {

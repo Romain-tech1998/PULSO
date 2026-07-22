@@ -20,7 +20,17 @@ const TYPE_TO_CATEGORY: Record<string, RawIngestedEvent['category']> = {
   exposition: 'other',
   atelier: 'other',
   marché: 'other',
-  'séance publique': 'other'
+  'séance publique': 'other',
+  // Added after auditing real dataset values (DATA-0003): these are exact or
+  // MVP-0001-equivalent ("spectacles") matches to existing Pulso categories,
+  // not a scope expansion - musique/humour name the categories directly,
+  // and théâtre/cirque/cinéma mirror the show mapping Ticketmaster's own
+  // arts&theatre/film segments already get.
+  musique: 'music',
+  humour: 'comedy',
+  théâtre: 'show',
+  cirque: 'show',
+  cinéma: 'show'
 };
 
 function toIsoOrUndefined(value: string): string | undefined {
