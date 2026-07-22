@@ -1,15 +1,17 @@
 # DATA-0001 — Event Data and Trust
 
 **Identifier :** DATA-0001
-**Version :** 0.4
-**Status :** Draft
+**Version :** 1.0
+**Status :** Accepted
 **Dépend de :** PDR-0001, MVP-0001
 
 ## Objectif
 
 Définir le socle minimal permettant à Pulso de collecter, normaliser, géolocaliser, dédupliquer et présenter un grand nombre d'événements montréalais sans sacrifier la confiance utilisateur.
 
-Cette version fournit suffisamment d'éléments produit pour rédiger la première version de PRD-0001. Elle intègre désormais les preuves réelles issues du pilote d'ingestion (`packages/database/src/ingest.ts`, voir PROJECT_INDEX.md entrées 23–31) : schéma exercé sur des données montréalaises réelles, règles de déduplication testées, contraintes par source documentées. Il reste deux critères de passage en 1.0 non résolus, documentés en fin de fichier.
+Cette version intègre les preuves réelles issues du pilote d'ingestion (`packages/database/src/ingest.ts`, voir PROJECT_INDEX.md entrées 23–31) : schéma exercé sur des données montréalaises réelles, règles de déduplication testées, contraintes par source documentées.
+
+**Portée de l'acceptation.** Accepted couvre le socle de données et de confiance pour le stade actuel du projet (pas de déploiement, pas d'utilisateurs réels). Deux critères listés en fin de document (politique de fraîcheur, procédure de correction post-lancement) restent explicitement non résolus et documentés comme tels plutôt que silencieusement clos — ils sont bloqués sur une future décision de déploiement, pas sur une lacune de recherche actuelle. Une révision de ce document sera nécessaire avant que ces deux points ne redeviennent bloquants, c'est-à-dire avant tout déploiement de production.
 
 ## Sources visées
 
@@ -145,4 +147,4 @@ Les éléments suivants doivent être étudiés et résolus avant toute impléme
 - **procédure de correction — satisfait pour le stade actuel, distinct d'un besoin futur.** La procédure exercée à répétition cette session est : identifier une anomalie de données réelle → corriger le connecteur ou le mapping avec tests dédiés → vider la base de pilote locale → rejouer migrations + seed + ingestion → vérifier par sondage et tests d'intégration. Documentée en détail dans PROJECT_INDEX entrées 28–29. Cette procédure convient à l'absence actuelle d'utilisateurs réels et de déploiement. Une procédure de correction pour données déjà servies à de vrais utilisateurs (ex. file de modération, table de dérogation) reste un besoin futur distinct, non requis avant le lancement.
 - ~~contraintes propres à chaque source documentées~~ — **satisfait pour les sources actives.** Voir tableau ci-dessus.
 
-**Bilan : 3 des 5 critères sont satisfaits pour le stade actuel du projet (pas de déploiement, pas d'utilisateurs réels). Les 2 restants (fraîcheur, procédure de correction post-lancement) sont explicitement bloqués sur une décision de déploiement future, pas sur un travail de recherche manquant — DATA-0001 peut donc progresser vers Accepted dès que cette dépendance est reconnue plutôt que traitée comme un blocage silencieux.**
+**Bilan : 3 des 5 critères sont satisfaits pour le stade actuel du projet (pas de déploiement, pas d'utilisateurs réels). Les 2 restants (fraîcheur, procédure de correction post-lancement) sont explicitement bloqués sur une décision de déploiement future, pas sur un travail de recherche manquant. Accepted le 2026-07-22 sur cette base — voir « Portée de l'acceptation » en tête de document.**
