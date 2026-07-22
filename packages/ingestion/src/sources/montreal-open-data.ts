@@ -39,6 +39,22 @@ function toIsoOrUndefined(value: string): string | undefined {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 }
 
+/**
+ * This CSV export represents missing values as the literal string "nan"
+ * (a pandas artifact) rather than an empty cell. Left unfiltered, `|| undefined`
+ * treats "nan" as a real value: address/venue-name fields all collapse to the
+ * same non-empty string, which (a) hashes every such event onto one fake
+ * shared venue in deriveDeterministicEventId, and (b) gets geocoded as a
+ * literal "nan, Montréal, QC, Canada" query, producing a real-looking but
+ * meaningless coordinate. ~95% of rows in this dataset hit this.
+ */
+function cleanField(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed.toLowerCase() === 'nan') return undefined;
+  return trimmed;
+}
+
 function parsePrice(cout: string): RawIngestedEvent['price'] {
   const normalized = cout.trim().toLowerCase();
   if (!normalized) return { kind: 'unknown' };
@@ -64,15 +80,15 @@ export function mapMontrealOpenDataRow(
     sourceUrl: row.url_fiche || 'https://montreal.ca/calendrier',
     observedAt,
     title: row.titre,
-    description: row.description || undefined,
+    description: cleanField(row.description),
     category: TYPE_TO_CATEGORY[row.type_evenement?.toLowerCase() ?? ''] ?? 'unmapped',
     startsAt,
     endsAt: toIsoOrUndefined(row.date_fin ?? ''),
-    venueName: row.titre_adresse || undefined,
-    address: row.adresse_principale || undefined,
+    venueName: cleanField(row.titre_adresse),
+    address: cleanField(row.adresse_principale),
     point: hasPoint ? { longitude, latitude } : undefined,
     price: parsePrice(row.cout ?? ''),
-    organizer: row.arrondissement || undefined,
+    organizer: cleanField(row.arrondissement),
     raw: row
   };
 }

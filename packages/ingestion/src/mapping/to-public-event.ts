@@ -118,7 +118,16 @@ export function mapRawEventToPublicEvent(
   const now = options.now ?? new Date();
   const dedupeKey = computeDedupeKey(event);
   const id = deriveDeterministicEventId(dedupeKey);
-  const venueId = deriveDeterministicEventId(`venue|${event.venueName ?? event.address ?? ''}`);
+  // Falling back to a constant string when name/address are both missing would
+  // collapse every such event onto one fake shared venue, each upsert overwriting
+  // the last one's (correct, per-event) coordinates - observed in practice
+  // grouping 600+ distinct real venues onto a single point. event.point is
+  // guaranteed defined here (checked above), so prefer it over a constant.
+  const venueKey =
+    event.venueName ??
+    event.address ??
+    `${event.point.latitude.toFixed(5)},${event.point.longitude.toFixed(5)}`;
+  const venueId = deriveDeterministicEventId(`venue|${venueKey}`);
 
   const price: PublicEvent['price'] =
     event.price?.kind === 'free'

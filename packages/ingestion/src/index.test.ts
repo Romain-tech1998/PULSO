@@ -69,6 +69,25 @@ describe('mapMontrealOpenDataRow', () => {
     );
     expect(event?.category).toBe(expected);
   });
+
+  it('treats the CSV export\'s literal "nan" placeholder as a missing value', () => {
+    const event = mapMontrealOpenDataRow(
+      {
+        titre: 'Cinéma en plein air',
+        date_debut: '2026-07-13T00:00:00',
+        titre_adresse: 'nan',
+        adresse_principale: 'NaN',
+        description: 'nan',
+        arrondissement: 'nan'
+      },
+      'now'
+    );
+
+    expect(event?.venueName).toBeUndefined();
+    expect(event?.address).toBeUndefined();
+    expect(event?.description).toBeUndefined();
+    expect(event?.organizer).toBeUndefined();
+  });
 });
 
 describe('mapTicketmasterEvent', () => {

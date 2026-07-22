@@ -120,6 +120,28 @@ describe('mapRawEventToPublicEvent', () => {
     expect(result.skip.reason).toBe('no_resolved_point');
   });
 
+  it('derives distinct venue ids from the point when name and address are both missing', () => {
+    const eventA = mapRawEventToPublicEvent(
+      ticketmasterEvent({
+        venueName: undefined,
+        address: undefined,
+        point: { longitude: -73.6, latitude: 45.5 }
+      }),
+      { now }
+    );
+    const eventB = mapRawEventToPublicEvent(
+      ticketmasterEvent({
+        venueName: undefined,
+        address: undefined,
+        point: { longitude: -73.7, latitude: 45.6 }
+      }),
+      { now }
+    );
+    if (!('event' in eventA) || !('event' in eventB)) throw new Error('expected events');
+
+    expect(eventA.event.venue.id).not.toBe(eventB.event.venue.id);
+  });
+
   it('skips events with an invalid start date', () => {
     const result = mapRawEventToPublicEvent(
       ticketmasterEvent({ startsAt: 'not-a-date' }),
