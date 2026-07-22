@@ -1,7 +1,7 @@
 # DATA-0001 — Event Data and Trust
 
 **Identifier :** DATA-0001
-**Version :** 0.3
+**Version :** 0.4
 **Status :** Draft
 **Dépend de :** PDR-0001, MVP-0001
 
@@ -9,7 +9,7 @@
 
 Définir le socle minimal permettant à Pulso de collecter, normaliser, géolocaliser, dédupliquer et présenter un grand nombre d'événements montréalais sans sacrifier la confiance utilisateur.
 
-Cette version fournit suffisamment d'éléments produit pour rédiger la première version de PRD-0001. Elle ne fournit pas encore les recherches et décisions nécessaires à l'implémentation d'une ingestion de production.
+Cette version fournit suffisamment d'éléments produit pour rédiger la première version de PRD-0001. Elle intègre désormais les preuves réelles issues du pilote d'ingestion (`packages/database/src/ingest.ts`, voir PROJECT_INDEX.md entrées 23–31) : schéma exercé sur des données montréalaises réelles, règles de déduplication testées, contraintes par source documentées. Il reste deux critères de passage en 1.0 non résolus, documentés en fin de fichier.
 
 ## Sources visées
 
@@ -57,24 +57,22 @@ La conservation des médias de source doit être limitée au minimum nécessaire
 - statut de confiance ;
 - statut de l'événement.
 
-## Statuts de confiance proposés
+## Statuts de confiance
 
-- **Confirmé** : information vérifiée auprès d'une source officielle ou cohérente entre plusieurs sources fiables.
-- **Probable** : information crédible mais incomplètement confirmée.
-- **À vérifier** : information détectée mais insuffisante pour être présentée sans avertissement.
-- **Contesté** : sources contradictoires.
+- **Confirmé** (`confirmed`) : information vérifiée auprès d'une source officielle ou cohérente entre plusieurs sources fiables.
+- **Probable** (`probable`) : information crédible mais incomplètement confirmée.
+- **À vérifier** (`to_verify`) : information détectée mais insuffisante pour être présentée sans avertissement.
+- **Contesté** (`conflicting`) : sources contradictoires.
 
-Les libellés définitifs et leur affichage doivent être validés dans le PRD.
+Implémenté tel quel dans `@pulso/domain` (`TRUST_LABELS`) et exercé sur les 1674 événements réels du pilote d'ingestion : `official` (Ville de Montréal) → `confirmed`, `ticketing_platform` (Ticketmaster) → `probable`, toute autre source → `to_verify`. `conflicting` reste défini mais non encore produit par le mapper actuel (aucun conflit de sources rencontré en conditions réelles à ce jour — voir Déduplication).
 
-## Statuts d'événement proposés
+## Statuts d'événement
 
-- brouillon ;
-- publié ;
-- complet ;
-- reporté ;
-- annulé ;
-- terminé ;
-- archivé.
+- programmé (`scheduled`) ;
+- annulé (`cancelled`) ;
+- reporté (`postponed`).
+
+Implémenté tel quel dans `@pulso/domain` (`EVENT_STATUSES`) et déjà exercé par UX-0001/RFC-0001 (filtrage des annulés, affichage des reportés). L'ensemble plus large initialement envisagé ici (brouillon, publié, complet, terminé, archivé) a été simplifié à l'implémentation sans document de suite formel ; cette version corrige DATA-0001 pour refléter la décision réellement en vigueur plutôt que de laisser les deux diverger. Un futur besoin de statuts de cycle de vie éditorial (brouillon/publié) devra être réintroduit explicitement s'il devient nécessaire, plutôt que supposé couvert ici.
 
 ## Règles de qualité
 
@@ -96,6 +94,8 @@ La détection d'un doublon doit considérer au minimum :
 - les URL et identifiants externes.
 
 Un même événement peut conserver plusieurs sources et plusieurs liens externes.
+
+**Implémenté et testé sur un échantillon montréalais réel.** `packages/ingestion/src/mapping/dedupe-key.ts` calcule une clé normalisée (nom, lieu, date/heure à la minute près, organisateur — délibérément sans URL ni identifiant externe, pour reconnaître le même événement même si chaque source expose une URL différente). `mapAndDeduplicateRawEvents` fusionne les correspondances en gardant la source la plus autoritaire comme source principale du contrat (`PublicEvent.source`) et conserve les autres dans `additionalSources` (ajouté en v0.4 du contrat, voir PROJECT_INDEX entrée 30) plutôt que de les perdre. Un run réel sur 6469 événements bruts (Ville de Montréal + Ticketmaster) n'a trouvé **aucun doublon croisé entre les deux sources actuelles** — leurs univers ne se recoupent pas en pratique (civique/culturel vs billetterie commerciale). Cette absence de recoupement observée signifie que le statut `conflicting` et la fusion multi-sources restent non exercés par de vraies données ; à réévaluer dès qu'une deuxième source commerciale (ex. Bandsintown si un accès partenaire aboutit) sera ingérée.
 
 ## Exigences produit à reprendre dans le futur PRD
 
@@ -122,10 +122,27 @@ Les éléments suivants doivent être étudiés et résolus avant toute impléme
 - droits d'utilisation des images et des descriptions ;
 - mécanismes d'importation propres à chaque source.
 
+**État réel par source (voir PROJECT_INDEX.md entrées 23–31 et DATA-0003 pour le détail complet) :**
+
+| Source | Statut | Contrainte principale |
+| --- | --- | --- |
+| Ville de Montréal (données ouvertes) | Connecteur implémenté, validé en conditions réelles | Gratuit, sans clé, mais valeurs manquantes encodées en `"nan"` littéral (corrigé) ; couverture à dominante civique/culturelle, complémentaire au nightlife |
+| Ticketmaster Discovery API | Connecteur implémenté, validé en conditions réelles | Clé gratuite, quota 5000/jour et 5 req/s ; coordonnées `(0,0)` en lieu d'absence (corrigé) ; ~29 % des événements bruts non classables faute de segment Ticketmaster exploitable |
+| Instagram Scout | Connecteur implémenté, jamais publié sans revue humaine (DEC-0006) | Nécessite une app Meta + compte Instagram professionnel lié ; non validé en conditions réelles |
+| Calendriers ICS génériques | Connecteur générique implémenté, aucune source réelle branchée | Aucun lieu montréalais individuel identifié publiant un flux ICS après recherche (voir entrée 31) |
+| Eventbrite | Écarté | Recherche publique par ville supprimée depuis février 2020 ; API restante limitée aux événements de sa propre organisation |
+| Shotgun | Écarté | Aucune API de découverte publique trouvée, accès organisateur seulement |
+| Bandsintown | En attente de réponse partenaire | API publique documentée limitée à un artiste connu par clé ; découverte par ville non documentée officiellement |
+| Songkick | Écarté pour l'instant | Nouvelles clés gratuites fermées ; accès désormais payant (accord de licence) |
+| Resident Advisor | Écarté sauf accord écrit | ToS (ra.co/terms §4.4) interdit explicitement tout accès automatisé sans accord écrit préalable |
+| Facebook Graph API | Non exploré en profondeur | Accès aux données de Page nécessite App Review Meta |
+
 ## Critères de passage en version 1.0
 
-- schéma de données validé ;
-- règles de déduplication testées sur un échantillon montréalais ;
-- politique de fraîcheur définie ;
-- procédure de correction définie ;
-- contraintes propres à chaque source documentées.
+- ~~schéma de données validé~~ — **satisfait pour le stade actuel.** Le contrat `PublicEvent` (avec `additionalSources` depuis v0.4) a été exercé sur 1674 événements réels répartis sur 283 lieux réels distincts ; les deux limites de contrat connues (position inconnue, multi-source) ont reçu une décision produit explicite plutôt que de rester en suspens (voir PROJECT_INDEX entrée 30).
+- ~~règles de déduplication testées sur un échantillon montréalais~~ — **satisfait.** Voir section Déduplication ci-dessus ; testé unitairement et sur 6469 événements bruts réels. Reste à ré-exercer dès qu'une deuxième source commerciale sera ingérée, pour valider la fusion multi-sources sur un vrai recoupement plutôt que seulement en test unitaire.
+- **politique de fraîcheur définie — non satisfait, bloqué en amont.** Le seuil actuel (24h, `packages/ingestion/src/mapping/to-public-event.ts`) est un placeholder explicite dans le code. Une politique réelle par type de source (ex. une billetterie change rarement une fois publiée, une source civique se met à jour quotidiennement) ne peut être définie de façon significative tant que l'ingestion reste un script manuel dev-local (`pnpm run db:ingest`, entrée 27) plutôt qu'une cadence planifiée — ce qui est une question de préparation au déploiement, explicitement hors scope tant que le produit n'est pas fonctionnellement complet.
+- **procédure de correction — satisfait pour le stade actuel, distinct d'un besoin futur.** La procédure exercée à répétition cette session est : identifier une anomalie de données réelle → corriger le connecteur ou le mapping avec tests dédiés → vider la base de pilote locale → rejouer migrations + seed + ingestion → vérifier par sondage et tests d'intégration. Documentée en détail dans PROJECT_INDEX entrées 28–29. Cette procédure convient à l'absence actuelle d'utilisateurs réels et de déploiement. Une procédure de correction pour données déjà servies à de vrais utilisateurs (ex. file de modération, table de dérogation) reste un besoin futur distinct, non requis avant le lancement.
+- ~~contraintes propres à chaque source documentées~~ — **satisfait pour les sources actives.** Voir tableau ci-dessus.
+
+**Bilan : 3 des 5 critères sont satisfaits pour le stade actuel du projet (pas de déploiement, pas d'utilisateurs réels). Les 2 restants (fraîcheur, procédure de correction post-lancement) sont explicitement bloqués sur une décision de déploiement future, pas sur un travail de recherche manquant — DATA-0001 peut donc progresser vers Accepted dès que cette dépendance est reconnue plutôt que traitée comme un blocage silencieux.**
