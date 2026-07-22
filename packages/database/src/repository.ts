@@ -153,6 +153,14 @@ export class PostgresEventRepository implements EventRepository {
          AND ($7::event_category[] IS NULL OR e.category = ANY($7))
          AND ($8::text = 'all' OR e.price_kind = $8)
          AND ($9::event_category[] IS NULL OR NOT (e.category = ANY($9)))
+         AND (
+           $10::float8 IS NULL
+           OR ST_DWithin(
+             v.location::geography,
+             ST_SetSRID(ST_MakePoint($10, $11), 4326)::geography,
+             $12
+           )
+         )
        ORDER BY e.starts_at, e.id`,
       [
         bounds.west,
@@ -165,7 +173,10 @@ export class PostgresEventRepository implements EventRepository {
         bounds.price,
         options.excludedCategories && options.excludedCategories.length > 0
           ? options.excludedCategories
-          : null
+          : null,
+        bounds.nearLongitude ?? null,
+        bounds.nearLatitude ?? null,
+        bounds.nearRadiusMeters ?? null
       ]
     );
     return result.rows.map(toPublicEvent);

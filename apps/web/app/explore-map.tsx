@@ -94,8 +94,46 @@ interface ActiveSearch {
   disabledDerivedKeys: SearchConstraintKey[];
 }
 
-function boundsUrl(bounds: MapBounds, filters: DiscoveryFilters): string {
-  return `${API_BASE_URL}/events?${buildMapEventsQuery(bounds, filters)}`;
+function boundsUrl(
+  bounds: MapBounds,
+  filters: DiscoveryFilters,
+  near?: { longitude: number; latitude: number; radiusMeters: number }
+): string {
+  return `${API_BASE_URL}/events?${buildMapEventsQuery(bounds, filters, near)}`;
+}
+
+type GeoStatus = 'pending' | 'granted' | 'denied' | 'unsupported';
+
+/**
+ * Distance filtering needs the user's real position, not the map's viewport
+ * center - per user feedback, "the distance slider should be based on the
+ * user's actual location," not an arbitrary point. Falls back to Montréal
+ * center (no radius constraint applied) if permission is denied or the API
+ * is unavailable, matching the pre-geolocation behaviour.
+ */
+function useUserLocation() {
+  const [status, setStatus] = useState<GeoStatus>('pending');
+  const [location, setLocation] = useState<{ longitude: number; latitude: number }>();
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setStatus('unsupported');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          longitude: position.coords.longitude,
+          latitude: position.coords.latitude
+        });
+        setStatus('granted');
+      },
+      () => setStatus('denied'),
+      { timeout: 10_000 }
+    );
+  }, []);
+
+  return { status, location };
 }
 
 function useFavorites() {
@@ -158,6 +196,12 @@ export function ExploreMap({
       return next;
     });
   const [distanceKm, setDistanceKm] = useState(15);
+  const distanceKmRef = useRef(distanceKm);
+  const { status: geoStatus, location: userLocation } = useUserLocation();
+  const userLocationRef = useRef(userLocation);
+  useEffect(() => {
+    userLocationRef.current = userLocation;
+  }, [userLocation]);
 
   useEffect(() => {
     const resolved = resolveBrowserLocale([initialLocale], localStorage);
@@ -242,7 +286,15 @@ export function ExploreMap({
           setSearchProcessing(false);
           return;
         }
-        const response = await fetch(boundsUrl(bounds, activeFilters));
+        const userLoc = userLocationRef.current;
+        const near = userLoc
+          ? {
+              longitude: userLoc.longitude,
+              latitude: userLoc.latitude,
+              radiusMeters: distanceKmRef.current * 1000
+            }
+          : undefined;
+        const response = await fetch(boundsUrl(bounds, activeFilters, near));
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
         setEvents(result.data);
@@ -539,6 +591,12 @@ export function ExploreMap({
   useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
   useEffect(() => { showFavoritesOnlyRef.current = showFavoritesOnly; }, [showFavoritesOnly]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
+  useEffect(() => { distanceKmRef.current = distanceKm; }, [distanceKm]);
+  // Re-fetch once the user's real position resolves, so the distance
+  // constraint applies without waiting for an unrelated map interaction.
+  useEffect(() => {
+    if (userLocation) void loadEvents(currentBounds.current, filtersRef.current);
+  }, [userLocation, loadEvents]);
 
   // Synchronisation des données vers la carte (se déclenche aussi quand on revient à la carte)
   useEffect(() => {
@@ -630,6 +688,9 @@ export function ExploreMap({
                 max="25"
                 value={distanceKm}
                 onChange={(event) => setDistanceKm(Number(event.target.value))}
+                onMouseUp={() => loadEvents(currentBounds.current, filters)}
+                onTouchEnd={() => loadEvents(currentBounds.current, filters)}
+                onKeyUp={() => loadEvents(currentBounds.current, filters)}
                 className="distance-slider"
               />
               <div className="distance-labels">
@@ -638,7 +699,12 @@ export function ExploreMap({
                 <span>10km</span>
                 <span>25km</span>
               </div>
-              <p className="distance-value">Rayon : {distanceKm} km</p>
+              <p className="distance-value">
+                Rayon : {distanceKm} km
+                {geoStatus === 'pending' && ' · localisation…'}
+                {geoStatus === 'denied' && ' · position non partagée, non appliqué'}
+                {geoStatus === 'unsupported' && ' · non disponible sur cet appareil'}
+              </p>
             </div>
           </CollapsibleFilterGroup>
 

@@ -73,7 +73,13 @@ export const mapBoundsQuerySchema = z
     categories: categoryListQuerySchema.optional().default([]),
     price: z.enum(PRICE_FILTER_VALUES).default('all'),
     dateStart: dateStringSchema.optional(),
-    dateEnd: dateStringSchema.optional()
+    dateEnd: dateStringSchema.optional(),
+    // Optional radius-from-point constraint, combined with the bounds above
+    // (not a replacement for them) - see Distance slider in the Explore
+    // sidebar. All three fields are required together or not at all.
+    nearLongitude: z.coerce.number().min(-180).max(180).optional(),
+    nearLatitude: z.coerce.number().min(-90).max(90).optional(),
+    nearRadiusMeters: z.coerce.number().positive().max(50_000).optional()
   })
   .strict()
   .refine(
@@ -102,6 +108,19 @@ export const mapBoundsQuerySchema = z
         code: 'custom',
         path: ['dateEnd'],
         message: 'The selected date range must end on or after it starts.'
+      });
+    }
+    const nearFieldCount = [
+      query.nearLongitude,
+      query.nearLatitude,
+      query.nearRadiusMeters
+    ].filter((value) => value !== undefined).length;
+    if (nearFieldCount !== 0 && nearFieldCount !== 3) {
+      context.addIssue({
+        code: 'custom',
+        path: ['nearRadiusMeters'],
+        message:
+          'nearLongitude, nearLatitude, and nearRadiusMeters must be provided together.'
       });
     }
   });
@@ -339,7 +358,8 @@ export const PRICE_FILTER_OPTIONS = [
 
 export function buildMapEventsQuery(
   bounds: MapBounds,
-  filters: DiscoveryFilters
+  filters: DiscoveryFilters,
+  near?: { longitude: number; latitude: number; radiusMeters: number }
 ): string {
   const parameters = new URLSearchParams({
     west: String(bounds.west),
@@ -357,6 +377,11 @@ export function buildMapEventsQuery(
     if (filters.customEndDate) {
       parameters.set('dateEnd', filters.customEndDate);
     }
+  }
+  if (near) {
+    parameters.set('nearLongitude', String(near.longitude));
+    parameters.set('nearLatitude', String(near.latitude));
+    parameters.set('nearRadiusMeters', String(near.radiusMeters));
   }
   return parameters.toString();
 }

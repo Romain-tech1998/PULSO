@@ -200,6 +200,35 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
     }
   });
 
+  it('combines map bounds with an optional radius-from-point constraint (Distance filter)', async () => {
+    const app = buildApp(repository);
+    try {
+      const nearby = await app.inject({
+        method: 'GET',
+        url: '/events?west=-73.7&south=45.4&east=-73.4&north=45.7&nearLongitude=-73.5673&nearLatitude=45.5019&nearRadiusMeters=1000'
+      });
+      expect(nearby.statusCode).toBe(200);
+      expect(eventListResponseSchema.parse(nearby.json()).data[0]?.id).toBe(
+        '00000000-0000-4000-8000-000000000001'
+      );
+
+      const tooFar = await app.inject({
+        method: 'GET',
+        url: '/events?west=-73.7&south=45.4&east=-73.4&north=45.7&nearLongitude=-73.5673&nearLatitude=45.5019&nearRadiusMeters=5'
+      });
+      expect(tooFar.statusCode).toBe(200);
+      expect(eventListResponseSchema.parse(tooFar.json()).data).toHaveLength(0);
+
+      const partialNear = await app.inject({
+        method: 'GET',
+        url: '/events?west=-73.7&south=45.4&east=-73.4&north=45.7&nearLongitude=-73.5673'
+      });
+      expect(partialNear.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('applies OR within categories and AND between category and price in Postgres', async () => {
     const app = buildApp(repository);
     try {

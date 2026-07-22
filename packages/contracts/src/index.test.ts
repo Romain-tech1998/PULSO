@@ -98,9 +98,25 @@ describe('manual map filter contract', () => {
       date: 'custom',
       dateStart: '2026-07-20',
       dateEnd: '2026-07-18'
-    }
+    },
+    { ...bounds, nearLongitude: -73.5 },
+    { ...bounds, nearLongitude: -73.5, nearLatitude: 45.5 }
   ])('rejects invalid filter query %#', (query) => {
     expect(mapBoundsQuerySchema.safeParse(query).success).toBe(false);
+  });
+
+  it('accepts a complete near-point radius constraint', () => {
+    const parsed = mapBoundsQuerySchema.parse({
+      ...bounds,
+      nearLongitude: -73.5673,
+      nearLatitude: 45.5017,
+      nearRadiusMeters: 5000
+    });
+    expect(parsed).toMatchObject({
+      nearLongitude: -73.5673,
+      nearLatitude: 45.5017,
+      nearRadiusMeters: 5000
+    });
   });
 
   it('serializes and summarizes shared client filter state', () => {
@@ -116,6 +132,16 @@ describe('manual map filter contract', () => {
     expect(query).toContain('date=tomorrow');
     expect(query).toContain('categories=music%2Ccomedy');
     expect(query).toContain('price=free');
+
+    const nearQuery = buildMapEventsQuery(
+      bounds,
+      { ...filters, categories: [...filters.categories] },
+      { longitude: -73.5673, latitude: 45.5017, radiusMeters: 5000 }
+    );
+    expect(nearQuery).toContain('nearLongitude=-73.5673');
+    expect(nearQuery).toContain('nearLatitude=45.5017');
+    expect(nearQuery).toContain('nearRadiusMeters=5000');
+
     expect(
       summarizeActiveFilters(
         {
