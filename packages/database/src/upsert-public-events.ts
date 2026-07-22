@@ -1,6 +1,11 @@
 import type { PublicEvent } from '@pulso/contracts';
 import type { Pool } from 'pg';
 
+export interface UpsertableEvent {
+  event: PublicEvent;
+  additionalSources?: Array<{ name: string; url: string; observedAt: string }>;
+}
+
 /**
  * Inverse of repository.ts's `toPublicEvent` row-mapper: persists ingestion
  * output (already shaped as PublicEvent, see @pulso/ingestion's
@@ -10,9 +15,9 @@ import type { Pool } from 'pg';
  */
 export async function upsertPublicEvents(
   pool: Pool,
-  events: PublicEvent[]
+  events: UpsertableEvent[]
 ): Promise<void> {
-  for (const event of events) {
+  for (const { event, additionalSources = [] } of events) {
     await pool.query(
       `INSERT INTO venues (id, name, address, location)
        VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326))
@@ -40,11 +45,11 @@ export async function upsertPublicEvents(
          id, venue_id, title, category, status, starts_at, ends_at, timezone,
          source_name, source_url, observed_at, freshness, location_confidence, price_kind,
          description, organizer_name, access_information, external_destination_label,
-         external_destination_url, external_destination_status, trust_label
+         external_destination_url, external_destination_status, trust_label, additional_sources
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8,
          $9, $10, $11, $12, $13, $14,
-         $15, $16, $17, $18, $19, $20, $21
+         $15, $16, $17, $18, $19, $20, $21, $22
        )
        ON CONFLICT (id) DO UPDATE SET
          venue_id = EXCLUDED.venue_id,
@@ -65,7 +70,8 @@ export async function upsertPublicEvents(
          external_destination_label = EXCLUDED.external_destination_label,
          external_destination_url = EXCLUDED.external_destination_url,
          external_destination_status = EXCLUDED.external_destination_status,
-         trust_label = EXCLUDED.trust_label`,
+         trust_label = EXCLUDED.trust_label,
+         additional_sources = EXCLUDED.additional_sources`,
       [
         event.id,
         event.venue.id,
@@ -87,7 +93,8 @@ export async function upsertPublicEvents(
         event.externalDestination?.label ?? null,
         externalDestinationUrl,
         event.externalDestination?.status ?? null,
-        event.trust.label
+        event.trust.label,
+        JSON.stringify(additionalSources)
       ]
     );
   }

@@ -1,5 +1,6 @@
 import {
   index,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -53,7 +54,8 @@ export const events = pgTable(
     trustLabel: text('trust_label').notNull(),
     freshness: text().notNull(),
     locationConfidence: text('location_confidence').notNull(),
-    priceKind: text('price_kind').notNull()
+    priceKind: text('price_kind').notNull(),
+    additionalSources: jsonb('additional_sources').notNull().default([])
   },
   (table) => [index('events_starts_at_idx').on(table.startsAt)]
 );

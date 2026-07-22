@@ -143,6 +143,19 @@ export const publicEventSchema = z.object({
     url: z.url(),
     observedAt: z.iso.datetime()
   }),
+  // Present only when ingestion recognized the same event on more than one
+  // source (see DATA-0003's mapping proposal); `source` above stays the
+  // single most-authoritative one. Never a second occurrence of the event
+  // itself - callers must not render this as a duplicate marker.
+  additionalSources: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        url: z.url(),
+        observedAt: z.iso.datetime()
+      })
+    )
+    .optional(),
   trust: z.object({
     label: z.enum(TRUST_LABELS),
     freshness: z.enum(FRESHNESS_STATES),

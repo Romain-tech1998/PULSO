@@ -105,10 +105,7 @@ async function main(): Promise<void> {
     const enriched = await enrichMissingCoordinates(rawEvents);
     const { events, skipped } = mapAndDeduplicateRawEvents(enriched);
 
-    await upsertPublicEvents(
-      pool,
-      events.map((merged) => merged.event)
-    );
+    await upsertPublicEvents(pool, events);
 
     const skipCounts = skipped.reduce<Record<string, number>>((acc, skip) => {
       acc[skip.reason] = (acc[skip.reason] ?? 0) + 1;

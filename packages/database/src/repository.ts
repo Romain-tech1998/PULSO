@@ -49,6 +49,7 @@ const publicEventSelect = `
     e.trust_label,
     e.freshness,
     e.location_confidence,
+    e.additional_sources,
     v.id AS venue_id,
     v.name AS venue_name,
     v.address,
@@ -77,6 +78,7 @@ interface EventRow {
   trust_label: PublicEvent['trust']['label'];
   freshness: PublicEvent['trust']['freshness'];
   location_confidence: PublicEvent['trust']['locationConfidence'];
+  additional_sources: NonNullable<PublicEvent['additionalSources']>;
   venue_id: string;
   venue_name: string;
   address: string;
@@ -115,6 +117,8 @@ function toPublicEvent(row: EventRow): PublicEvent {
       locationConfidence: row.location_confidence
     }
   };
+  if (row.additional_sources.length > 0)
+    event.additionalSources = row.additional_sources;
   if (row.ends_at) event.endsAt = row.ends_at.toISOString();
   if (row.description) event.description = row.description;
   if (row.organizer_name) event.organizer = row.organizer_name;
