@@ -36,6 +36,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ReactNode,
   type RefObject
 } from 'react';
 
@@ -146,6 +147,17 @@ export function ExploreMap({
   const [locale, setLocale] = useState(initialLocale);
   const { favorites, toggleFavorite } = useFavorites();
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
+    new Set()
+  );
+  const toggleSection = (key: string) =>
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const [distanceKm, setDistanceKm] = useState(15);
 
   useEffect(() => {
     const resolved = resolveBrowserLocale([initialLocale], localStorage);
@@ -575,52 +587,96 @@ export function ExploreMap({
             <button className="view-toggle-btn">Calendrier</button>
           </div>
 
-          <div className="filter-group">
-            <div className="filter-group-header">
-              <span>Distance</span>
-            </div>
+          <CollapsibleFilterGroup
+            title="Distance"
+            collapsed={collapsedSections.has('distance')}
+            onToggle={() => toggleSection('distance')}
+          >
             <div className="distance-slider-container">
-              <input type="range" min="1" max="50" defaultValue="15" className="distance-slider" />
+              <input
+                type="range"
+                min="1"
+                max="25"
+                value={distanceKm}
+                onChange={(event) => setDistanceKm(Number(event.target.value))}
+                className="distance-slider"
+              />
               <div className="distance-labels">
                 <span>1km</span>
+                <span>5km</span>
                 <span>10km</span>
                 <span>25km</span>
-                <span>50km</span>
               </div>
+              <p className="distance-value">Rayon : {distanceKm} km</p>
             </div>
-          </div>
+          </CollapsibleFilterGroup>
 
-          <div className="filter-group">
-            <div className="filter-group-header">
-              <span>Filtres</span>
+          <CollapsibleFilterGroup
+            title="Filtres"
+            collapsed={collapsedSections.has('filtres')}
+            onToggle={() => toggleSection('filtres')}
+            action={
               <button className="filter-reset" onClick={clearAll}>Réinitialiser</button>
-            </div>
+            }
+          >
             <div className="pill-list">
-              <button className="filter-pill active">Aujourd'hui</button>
-              <button className="filter-pill">Ce week-end</button>
-              <button className="filter-pill">Cette semaine</button>
-              <button className="filter-pill">❤️ Mes Favoris</button>
+              {(['tonight', 'weekend', 'next7'] as const).map((value) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={`filter-pill ${filters.date === value ? 'active' : ''}`}
+                  onClick={() => applyFilters(withoutCustomDates(filters, value))}
+                >
+                  {getDateFilterLabel(locale, value)}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`filter-pill ${showFavoritesOnly ? 'active' : ''}`}
+                onClick={() => setShowFavoritesOnly((prev) => !prev)}
+              >
+                ❤️ Mes Favoris
+              </button>
             </div>
-          </div>
+          </CollapsibleFilterGroup>
 
-          <div className="filter-group">
-            <div className="filter-group-header">
-              <span>Ambiance</span>
-              <button className="filter-reset">Voir tout</button>
+          <CollapsibleFilterGroup
+            title="Prix"
+            collapsed={collapsedSections.has('prix')}
+            onToggle={() => toggleSection('prix')}
+          >
+            <div className="pill-list">
+              {PRICE_FILTER_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  key={option.value}
+                  className={`filter-pill ${filters.price === option.value ? 'active' : ''}`}
+                  onClick={() => applyFilters({ ...filters, price: option.value })}
+                >
+                  {getPriceLabel(locale, option.value)}
+                </button>
+              ))}
             </div>
+          </CollapsibleFilterGroup>
+
+          <CollapsibleFilterGroup
+            title="Ambiance"
+            collapsed={collapsedSections.has('ambiance')}
+            onToggle={() => toggleSection('ambiance')}
+          >
             <div className="pill-list">
               <button className="filter-pill active">🔥 Énergique</button>
               <button className="filter-pill">☕ Chill</button>
               <button className="filter-pill">🥂 Romantique</button>
               <button className="filter-pill">🎉 Festif</button>
             </div>
-          </div>
+          </CollapsibleFilterGroup>
 
-          <div className="filter-group">
-            <div className="filter-group-header">
-              <span>Catégories</span>
-              <button className="filter-reset">Voir tout</button>
-            </div>
+          <CollapsibleFilterGroup
+            title="Catégories"
+            collapsed={collapsedSections.has('categories')}
+            onToggle={() => toggleSection('categories')}
+          >
             <div className="category-grid">
               {CATEGORY_FILTER_OPTIONS.map((option) => (
                 <button
@@ -641,7 +697,7 @@ export function ExploreMap({
                 </button>
               ))}
             </div>
-          </div>
+          </CollapsibleFilterGroup>
 
           <div className="promo-card">
              <div className="promo-content">
@@ -794,6 +850,51 @@ export function ExploreMap({
             </div>
          </div>
       </div>
+    </div>
+  );
+}
+
+function CollapsibleFilterGroup({
+  title,
+  collapsed,
+  onToggle,
+  action,
+  children
+}: {
+  title: string;
+  collapsed: boolean;
+  onToggle: () => void;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="filter-group">
+      <div className="filter-group-header">
+        <button
+          type="button"
+          className="filter-group-toggle"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            style={{
+              transform: collapsed ? 'rotate(-90deg)' : 'none',
+              transition: 'transform 0.15s'
+            }}
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+          <span>{title}</span>
+        </button>
+        {action}
+      </div>
+      {!collapsed && children}
     </div>
   );
 }
