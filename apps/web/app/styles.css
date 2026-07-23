@@ -216,7 +216,8 @@ h6 {
   color: var(--text-secondary);
 }
 
-.nav-actions-links a {
+.nav-actions-links a,
+.nav-actions-links button {
   transition: color 0.2s;
   display: flex;
   align-items: center;
@@ -224,15 +225,18 @@ h6 {
   position: relative;
 }
 
-.nav-actions-links a:hover {
+.nav-actions-links a:hover,
+.nav-actions-links button:hover {
   color: var(--text-primary);
 }
 
-.nav-actions-links a.active {
+.nav-actions-links a.active,
+.nav-actions-links button.active {
   color: var(--text-primary);
 }
 
-.nav-actions-links a.active::after {
+.nav-actions-links a.active::after,
+.nav-actions-links button.active::after {
   content: '';
   position: absolute;
   left: 0;
@@ -481,6 +485,29 @@ h6 {
 }
 
 /* List view */
+.picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  height: 100%;
+  overflow-y: auto;
+}
+.picker-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.picker-list-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.picker-list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .list-view {
   height: 100%;
   overflow-y: auto;
@@ -1420,6 +1447,25 @@ h6 {
   padding: 0.5rem 1rem;
   border-radius: 999px;
   border: 1px solid var(--brand-border);
+}
+
+.about-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.about-content p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+}
+.about-content h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.about-content .primary-action-btn {
+  align-self: flex-start;
+  padding: 0.75rem 1.5rem;
 }
 .filter-overlay fieldset {
   border: none;

@@ -175,7 +175,16 @@ export function ExploreMap({
   const [state, setState] = useState<LoadState>('loading');
   const [basemapState, setBasemapState] = useState<BasemapState>('loading');
   const [details, setDetails] = useState<DetailsState>({ kind: 'closed' });
+  const [pickerList, setPickerList] = useState<
+    { title: string; events: PublicEvent[] } | undefined
+  >();
   const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
+  // The 7-day rolling window (MAP-003/PRD FILTER-001) is always the backend
+  // baseline - it's never actually "off". This only controls whether a date
+  // pill visually shows as selected: per user feedback, showing "7 prochains
+  // jours" highlighted by default implied a deliberate choice nobody made.
+  // Any pill click (including re-picking next7) turns this on.
+  const [dateFilterTouched, setDateFilterTouched] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterNotice, setFilterNotice] = useState<string>();
   const [queryInput, setQueryInput] = useState('');
@@ -212,6 +221,7 @@ export function ExploreMap({
   }, [userLocation]);
 
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -561,9 +571,53 @@ export function ExploreMap({
       // Interactions
       instance.on('click', 'events-circles', (e) => {
         if (!e.features?.[0]) return;
-        const featureId = e.features[0].properties.id;
-        const event = eventsRef.current.find(ev => ev.id === featureId);
-        if (event) setSelected(event);
+        // Multiple individual pins can share the exact same coordinate (same
+        // venue, different dates/events) and render stacked on top of each
+        // other - queryRenderedFeatures under the click returns all of them,
+        // topmost first. With nothing to distinguish them, always show a
+        // picker rather than silently opening whichever one happened to be
+        // on top - matches the picker used for clusters below.
+        const ids = [...new Set(e.features.map((f) => f.properties?.id as string))];
+        const matched = ids
+          .map((id) => eventsRef.current.find((ev) => ev.id === id))
+          .filter((ev): ev is PublicEvent => Boolean(ev));
+        if (matched.length === 0) return;
+        if (matched.length === 1) {
+          if (detailsRef.current.kind !== 'closed') {
+            void openDetails(matched[0]!.id);
+          } else {
+            setSelected(matched[0]);
+          }
+          return;
+        }
+        setPickerList({
+          title: `${matched.length} événements à cet endroit`,
+          events: matched
+        });
+      });
+      instance.on('click', 'clusters', (e) => {
+        const feature = e.features?.[0];
+        const clusterId = feature?.properties?.cluster_id;
+        const source = instance.getSource('events-source') as
+          | maplibregl.GeoJSONSource
+          | undefined;
+        if (clusterId === undefined || !source) return;
+        source.getClusterLeaves(clusterId, Infinity, 0).then((leaves) => {
+          const ids = leaves.map((leaf) => leaf.properties?.id as string);
+          const matched = ids
+            .map((id) => eventsRef.current.find((ev) => ev.id === id))
+            .filter((ev): ev is PublicEvent => Boolean(ev));
+          setPickerList({
+            title: `${matched.length} événements dans cette zone`,
+            events: matched
+          });
+        });
+      });
+      instance.on('mouseenter', 'clusters', () => {
+        instance.getCanvas().style.cursor = 'pointer';
+      });
+      instance.on('mouseleave', 'clusters', () => {
+        instance.getCanvas().style.cursor = '';
       });
       instance.on('mouseenter', 'events-circles', () => {
         instance.getCanvas().style.cursor = 'pointer';
@@ -666,9 +720,11 @@ export function ExploreMap({
   const favoritesRef = useRef(favorites);
   const showFavoritesOnlyRef = useRef(showFavoritesOnly);
   const selectedRef = useRef(selected);
+  const detailsRef = useRef(details);
   useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
   useEffect(() => { showFavoritesOnlyRef.current = showFavoritesOnly; }, [showFavoritesOnly]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
+  useEffect(() => { detailsRef.current = details; }, [details]);
   useEffect(() => { distanceKmRef.current = distanceKm; }, [distanceKm]);
   useEffect(() => {
     distanceFilterActiveRef.current = distanceFilterActive;
@@ -680,6 +736,7 @@ export function ExploreMap({
   }, [events, favorites, showFavoritesOnly, selected, pushEventsToMap]);
 
   async function openDetails(eventId: string) {
+    setPickerList(undefined);
     setDetails({ kind: 'loading', eventId });
     try {
       const response = await fetch(`${API_BASE_URL}/events/${eventId}`);
@@ -713,9 +770,31 @@ export function ExploreMap({
             />
           </div>
           <div className="nav-actions-links">
-             <a href="#" className="active">Explorer</a>
-             <a href="#">À propos</a>
-             <a href="#">Favoris</a>
+             <button
+               type="button"
+               className={!aboutOpen ? 'active' : ''}
+               onClick={() => setAboutOpen(false)}
+             >
+               Explorer
+             </button>
+             <button
+               type="button"
+               className={!aboutOpen && viewMode === 'list' && showFavoritesOnly ? 'active' : ''}
+               onClick={() => {
+                 setAboutOpen(false);
+                 setShowFavoritesOnly(true);
+                 setViewMode('list');
+               }}
+             >
+               Favoris
+             </button>
+             <button
+               type="button"
+               className={aboutOpen ? 'active' : ''}
+               onClick={() => setAboutOpen(true)}
+             >
+               À propos
+             </button>
           </div>
         </div>
         <div className="nav-search">
@@ -809,7 +888,15 @@ export function ExploreMap({
             collapsed={collapsedSections.has('filtres')}
             onToggle={() => toggleSection('filtres')}
             action={
-              <button className="filter-reset" onClick={clearAll}>Réinitialiser</button>
+              <button
+                className="filter-reset"
+                onClick={() => {
+                  clearAll();
+                  setDateFilterTouched(false);
+                }}
+              >
+                Réinitialiser
+              </button>
             }
           >
             <div className="pill-list">
@@ -817,8 +904,11 @@ export function ExploreMap({
                 <button
                   type="button"
                   key={value}
-                  className={`filter-pill ${filters.date === value ? 'active' : ''}`}
-                  onClick={() => applyFilters(withoutCustomDates(filters, value))}
+                  className={`filter-pill ${dateFilterTouched && filters.date === value ? 'active' : ''}`}
+                  onClick={() => {
+                    setDateFilterTouched(true);
+                    applyFilters(withoutCustomDates(filters, value));
+                  }}
                 >
                   {getDateFilterLabel(locale, value)}
                 </button>
@@ -915,7 +1005,7 @@ export function ExploreMap({
 
              <div className="map-floating-filters">
                 <ActiveFilters filters={filters} onChange={applyFilters} locale={locale} />
-                <button className="map-filter-btn" onClick={() => setFiltersOpen(true)}>
+                <button className="map-filter-btn" onClick={() => setFiltersOpen((prev) => !prev)}>
                   Plus de filtres
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginLeft: 8}}><path d="M6 9l6 6 6-6"/></svg>
                 </button>
@@ -948,8 +1038,20 @@ export function ExploreMap({
               favorites={favorites}
               showFavoritesOnly={showFavoritesOnly}
               selectedDay={selectedDay}
-              onSelectDay={setSelectedDay}
-              onOpenDetails={openDetails}
+              onSelectDay={(day, dayEvents) => {
+                setSelectedDay(day);
+                if (day) {
+                  setPickerList({
+                    title: new Date(`${day}T00:00:00`).toLocaleDateString(
+                      locale === 'fr' ? 'fr-CA' : 'en-CA',
+                      { weekday: 'long', day: 'numeric', month: 'long' }
+                    ),
+                    events: dayEvents
+                  });
+                } else {
+                  setPickerList(undefined);
+                }
+              }}
               locale={locale}
             />
           )}
@@ -979,6 +1081,19 @@ export function ExploreMap({
              )}
            </div>
         )}
+
+        {details.kind === 'closed' && pickerList && (
+          <div className="sidebar-right">
+            <PickerList
+              title={pickerList.title}
+              events={pickerList.events}
+              favorites={favorites}
+              locale={locale}
+              onClose={() => setPickerList(undefined)}
+              onSelect={(id) => void openDetails(id)}
+            />
+          </div>
+        )}
       </div>
 
       {filtersOpen && (
@@ -990,6 +1105,8 @@ export function ExploreMap({
           locale={locale}
         />
       )}
+
+      {aboutOpen && <AboutPanel onClose={() => setAboutOpen(false)} />}
 
       {/* Selected marker preview fallback logic */}
       {selected && details.kind === 'closed' && (
@@ -1126,6 +1243,57 @@ function CategoryIcon({ category }: { category: EventCategory }) {
   );
 }
 
+function PickerList({
+  title,
+  events,
+  favorites,
+  locale,
+  onClose,
+  onSelect
+}: {
+  title: string;
+  events: PublicEvent[];
+  favorites: string[];
+  locale: SupportedLocale;
+  onClose: () => void;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="picker-list">
+      <div className="picker-list-header">
+        <h3>{title}</h3>
+        <button type="button" className="close-button" onClick={onClose} aria-label="Fermer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div className="picker-list-rows">
+        {events.map((event) => {
+          const fields = eventPreviewFields(event, locale);
+          return (
+            <button
+              type="button"
+              className="list-view-row"
+              key={event.id}
+              onClick={() => onSelect(event.id)}
+            >
+              <span
+                className="list-view-dot"
+                style={{ background: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'] }}
+              />
+              <span className="list-view-main">
+                <strong>{fields.title}</strong>
+                <span className="list-view-sub">{fields.venue} · {fields.dateTime}</span>
+              </span>
+              <span className="list-view-price">{fields.price}</span>
+              {favorites.includes(event.id) && <span aria-hidden="true">❤️</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ListView({
   events,
   favorites,
@@ -1207,7 +1375,6 @@ function CalendarView({
   showFavoritesOnly,
   selectedDay,
   onSelectDay,
-  onOpenDetails,
   locale
 }: {
   month: Date;
@@ -1217,8 +1384,7 @@ function CalendarView({
   favorites: string[];
   showFavoritesOnly: boolean;
   selectedDay: string | undefined;
-  onSelectDay: (day: string | undefined) => void;
-  onOpenDetails: (id: string) => void;
+  onSelectDay: (day: string | undefined, events: PublicEvent[]) => void;
   locale: SupportedLocale;
 }) {
   const visibleEvents = showFavoritesOnly
@@ -1250,8 +1416,6 @@ function CalendarView({
     month: 'long',
     year: 'numeric'
   });
-
-  const dayEvents = selectedDay ? eventsByDay.get(selectedDay) ?? [] : [];
 
   return (
     <div className="calendar-view">
@@ -1288,7 +1452,12 @@ function CalendarView({
               type="button"
               key={cell.key}
               className={`calendar-cell ${selectedDay === cell.key ? 'selected' : ''} ${dayCount > 0 ? 'has-events' : ''}`}
-              onClick={() => onSelectDay(selectedDay === cell.key ? undefined : cell.key)}
+              onClick={() =>
+                onSelectDay(
+                  selectedDay === cell.key ? undefined : cell.key,
+                  eventsByDay.get(cell.key) ?? []
+                )
+              }
             >
               <span className="calendar-day-number">{cell.day}</span>
               {dayCount > 0 && <span className="calendar-day-count">{dayCount}</span>}
@@ -1299,39 +1468,6 @@ function CalendarView({
 
       {state === 'loading' && <p className="calendar-status">Chargement…</p>}
       {state === 'error' && <p className="calendar-status">Erreur de chargement.</p>}
-
-      {selectedDay && (
-        <div className="calendar-day-events">
-          <h4>
-            {new Date(`${selectedDay}T00:00:00`).toLocaleDateString(
-              locale === 'fr' ? 'fr-CA' : 'en-CA',
-              { weekday: 'long', day: 'numeric', month: 'long' }
-            )}
-          </h4>
-          {dayEvents.length === 0 && <p className="list-view-empty">Aucun événement ce jour-là.</p>}
-          {dayEvents.map((event) => {
-            const fields = eventPreviewFields(event, locale);
-            return (
-              <button
-                type="button"
-                className="list-view-row"
-                key={event.id}
-                onClick={() => onOpenDetails(event.id)}
-              >
-                <span
-                  className="list-view-dot"
-                  style={{ background: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'] }}
-                />
-                <span className="list-view-main">
-                  <strong>{fields.title}</strong>
-                  <span className="list-view-sub">{fields.venue} · {fields.dateTime}</span>
-                </span>
-                <span className="list-view-price">{fields.price}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -1689,6 +1825,41 @@ function ActiveFilters({
         </button>
       ))}
     </div>
+  );
+}
+
+function AboutPanel({ onClose }: { onClose: () => void }) {
+  return (
+    <aside className="filter-overlay glass-panel slide-up" aria-label="À propos de Pulso">
+      <div className="filter-heading">
+        <h2>À propos de Pulso</h2>
+        <button type="button" onClick={onClose}>Fermer</button>
+      </div>
+      <div className="about-content">
+        <p>
+          Pulso est un répertoire d'événements festifs, musicaux et de soirée
+          géolocalisés à Montréal : concerts, clubs, bars, spectacles, comedy
+          clubs et catégories similaires. Vous pouvez explorer la carte sans
+          compte ni intention précise, ou chercher exactement ce que vous
+          voulez en langage naturel.
+        </p>
+        <p>
+          L'objectif est de regrouper le plus grand nombre possible
+          d'événements montréalais correctement référencés, avec un accès en
+          une action vers la billetterie ou la source d'origine — sans
+          réservation ni billet géré par Pulso lui-même.
+        </p>
+        <h3>Vous organisez un événement ?</h3>
+        <p>
+          Si vous voulez que votre événement soit listé sur Pulso, ou que vous
+          représentez une salle, un organisateur ou une billetterie
+          intéressé·e à collaborer, écrivez-nous :
+        </p>
+        <a className="primary-action-btn glow-purple" href="mailto:hello@pulsonight.com">
+          hello@pulsonight.com
+        </a>
+      </div>
+    </aside>
   );
 }
 
