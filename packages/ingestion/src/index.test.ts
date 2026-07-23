@@ -283,6 +283,30 @@ describe('enrichMissingAddresses', () => {
     expect(result?.address).toBe('Parc Gouin, Montréal, QC, Canada');
   });
 
+  it('reuses one lookup for multiple events sharing the exact same point (recurring shows)', async () => {
+    // Verified in practice: two DB rows for the same recurring exhibition
+    // shared one coordinate, each independently called Nominatim, and one
+    // resolved while the other didn't - pure per-request flakiness. Sharing
+    // one lookup across same-point events avoids both the wasted request
+    // and that inconsistency.
+    const reverseGeocodeImpl = vi.fn().mockResolvedValue({
+      venueName: 'Bibliothèque Robert-Bourassa',
+      address: '41 Avenue Saint-Just'
+    });
+    const secondShowing: RawIngestedEvent = {
+      ...pointedNoAddress,
+      title: 'Trio Brasil (2nd date)',
+      startsAt: '2026-08-18T23:00:00Z'
+    };
+    const results = await enrichMissingAddresses(
+      [pointedNoAddress, secondShowing],
+      { delayMs: 0, reverseGeocodeImpl }
+    );
+    expect(reverseGeocodeImpl).toHaveBeenCalledTimes(1);
+    expect(results[0]?.venueName).toBe('Bibliothèque Robert-Bourassa');
+    expect(results[1]?.venueName).toBe('Bibliothèque Robert-Bourassa');
+  });
+
   it('retries a transient reverse-geocode failure before giving up', async () => {
     // Verified in practice: coordinates that returned nothing during a
     // large sequential ingestion batch resolved fine moments later on

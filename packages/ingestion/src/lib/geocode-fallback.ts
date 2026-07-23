@@ -178,6 +178,16 @@ export async function enrichMissingAddresses(
   const reverseGeocode = options.reverseGeocodeImpl ?? reverseGeocodeAddress;
   const maxAttempts = options.maxAttempts ?? 3;
 
+  // Recurring events (a multi-date exhibition, a weekly show) commonly share
+  // the exact same point - verified in practice, two rows for the same
+  // point independently hit Nominatim and got different outcomes (one
+  // resolved, one didn't) purely from per-request flakiness. Caching by
+  // coordinate means every event at a given point converges on the same
+  // answer instead of each rolling its own dice, and cuts real request
+  // volume on the rate-limited endpoint.
+  type ReverseGeocodeResult = { venueName: string | undefined; address: string } | undefined;
+  const cache = new Map<string, ReverseGeocodeResult>();
+
   const enriched: RawIngestedEvent[] = [];
   for (const event of events) {
     const hasVenueName = Boolean(event.venueName && event.venueName.trim());
@@ -187,22 +197,30 @@ export async function enrichMissingAddresses(
       continue;
     }
 
-    // Verified in practice against the live endpoint: coordinates that
-    // came back empty during a large sequential batch resolved correctly
-    // moments later on their own - transient failures (rate-limiting,
-    // timeouts), not a real absence of data. Retry before giving up rather
-    // than settling for "Unknown venue" on what Nominatim can actually
-    // answer.
-    let resolved: Awaited<ReturnType<typeof reverseGeocodeAddress>>;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        resolved = await reverseGeocode(event.point, fetchImpl);
-      } catch {
-        resolved = undefined;
+    const cacheKey = `${event.point.latitude.toFixed(5)},${event.point.longitude.toFixed(5)}`;
+    let resolved: ReverseGeocodeResult = cache.get(cacheKey);
+    if (!cache.has(cacheKey)) {
+      // Verified in practice against the live endpoint: coordinates that
+      // came back empty during a large sequential batch resolved correctly
+      // moments later on their own - transient failures (rate-limiting,
+      // timeouts), not a real absence of data. Retry before giving up
+      // rather than settling for "Unknown venue" on what Nominatim can
+      // actually answer.
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          resolved = await reverseGeocode(event.point, fetchImpl);
+        } catch {
+          resolved = undefined;
+        }
+        if (resolved || attempt === maxAttempts) break;
+        await delay(delayMs);
       }
-      if (resolved || attempt === maxAttempts) break;
+      cache.set(cacheKey, resolved);
+      // Respect Nominatim's 1 request/second policy between calls - only
+      // needed when this coordinate actually made a request.
       await delay(delayMs);
     }
+
     enriched.push({
       ...event,
       // OSM only tags a leisure/amenity/building/tourism name for actual
@@ -211,13 +229,10 @@ export async function enrichMissingAddresses(
       // all. Falling back to that address rather than leaving venueName
       // unset means the mapper's 'Unknown venue' placeholder (to-public-
       // event.ts) never fires for an event whose location is genuinely
-      // known, only for the rarer case for genuinely no data (below).
+      // known, only for the rarer case of genuinely no data.
       venueName: resolved?.venueName ?? resolved?.address ?? event.venueName,
       address: resolved?.address ?? event.address
     });
-
-    // Respect Nominatim's 1 request/second policy between calls.
-    await delay(delayMs);
   }
 
   return enriched;
