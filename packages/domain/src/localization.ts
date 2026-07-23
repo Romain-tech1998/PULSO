@@ -97,7 +97,8 @@ const en = {
   'filters.statusHelp':
     'Upcoming and postponed events; cancelled events are excluded.',
   'filters.clearAll': 'Clear all filters',
-  'date.next7': 'Next 7 days',
+  'date.next7': 'This week',
+  'date.today': 'Today',
   'date.tonight': 'Tonight',
   'date.tomorrow': 'Tomorrow',
   'date.weekend': 'This weekend',
@@ -298,10 +299,11 @@ const fr = {
   'filters.statusHelp':
     'Événements à venir et reportés; les événements annulés sont exclus.',
   'filters.clearAll': 'Effacer tous les filtres',
-  'date.next7': '7 prochains jours',
+  'date.next7': 'Cette semaine',
+  'date.today': "Aujourd'hui",
   'date.tonight': 'Ce soir',
   'date.tomorrow': 'Demain',
-  'date.weekend': 'Cette fin de semaine',
+  'date.weekend': 'Ce week-end',
   'date.custom': 'Date ou période sélectionnée',
   'category.music': 'Musique / concerts',
   'category.nightlife':

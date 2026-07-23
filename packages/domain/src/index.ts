@@ -19,6 +19,7 @@ export const TRUST_LABELS = [
 export const MONTREAL_TIMEZONE = 'America/Toronto' as const;
 export const DATE_FILTER_VALUES = [
   'next7',
+  'today',
   'tonight',
   'tomorrow',
   'weekend',
@@ -51,12 +52,15 @@ export interface DiscoveryFilters {
   customEndDate?: string;
 }
 
-// 'tonight' rather than the originally-specified 'next7' (MAP-003) - revised
+// 'today' rather than the originally-specified 'next7' (MAP-003) - revised
 // by product decision once real ingestion volume made a 7-day default feel
-// too dense to browse. The 7-day window itself is unchanged and still
-// selectable; only the unconfigured default moved. See PROJECT_INDEX.md.
+// too dense to browse. Briefly 'tonight' (see PROJECT_INDEX.md), then
+// refined once more to 'today' as the more broadly relevant default while
+// 'tonight' stays a distinct, still-selectable option. The 7-day window
+// itself is unchanged and still selectable; only the unconfigured default
+// moved. See PROJECT_INDEX.md.
 export const DEFAULT_DISCOVERY_FILTERS: DiscoveryFilters = {
-  date: 'tonight',
+  date: 'today',
   categories: [],
   price: 'all'
 };
@@ -255,10 +259,20 @@ export function createFilteredDiscoveryWindow(
 
   if (filters.date === 'next7') return rolling;
 
-  if (filters.date === 'tonight') {
+  if (filters.date === 'today') {
+    // Strictly today's Montréal calendar date - unlike 'tonight' below, this
+    // does not bleed into tomorrow morning.
     requested = {
       startsAt: new Date(now),
-      endsAt: montrealLocalToInstant(atLocalTime(addLocalDays(localNow, 1), 5))
+      endsAt: montrealLocalToInstant(atLocalTime(localNow, 23, 59, 59, 999))
+    };
+  } else if (filters.date === 'tonight') {
+    // Ends at 3am the next day rather than local midnight: a late-night
+    // event that starts this evening and runs past midnight is still
+    // "tonight" to someone browsing, not tomorrow's listing.
+    requested = {
+      startsAt: new Date(now),
+      endsAt: montrealLocalToInstant(atLocalTime(addLocalDays(localNow, 1), 3))
     };
   } else if (filters.date === 'tomorrow') {
     requested = {

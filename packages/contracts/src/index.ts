@@ -332,10 +332,11 @@ export type IntelligentSearchResponse = z.infer<
 >;
 
 export const DATE_FILTER_OPTIONS = [
-  { value: 'next7' },
+  { value: 'today' },
   { value: 'tonight' },
   { value: 'tomorrow' },
   { value: 'weekend' },
+  { value: 'next7' },
   { value: 'custom' }
 ] as const;
 

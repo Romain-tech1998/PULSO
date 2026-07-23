@@ -195,6 +195,12 @@ export function ExploreMap({
   const [locale, setLocale] = useState(initialLocale);
   const { favorites, toggleFavorite } = useFavorites();
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  // Client-side only: filters the already-fetched events by source.name.
+  // Empty = no restriction. Not sent to the API since every currently wired
+  // source (Ticketmaster, Ville de Montréal) is already fetched together;
+  // this only narrows what's shown on the map/list, same pattern as
+  // showFavoritesOnly below.
+  const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     new Set()
   );
@@ -262,9 +268,15 @@ export function ExploreMap({
   const [calendarEvents, setCalendarEvents] = useState<PublicEvent[]>([]);
   const [calendarState, setCalendarState] = useState<LoadState>('loading');
   const [selectedDay, setSelectedDay] = useState<string>();
+  // Calendar references every event in scope, with its own optional filters
+  // kept deliberately separate from the map's `filters` state - per user
+  // feedback, switching a category/price pill on the map should not silently
+  // narrow what the calendar shows, and vice versa.
+  const [calendarCategories, setCalendarCategories] = useState<EventCategory[]>([]);
+  const [calendarPrice, setCalendarPrice] = useState<DiscoveryFilters['price']>('all');
 
   const loadCalendarEvents = useCallback(
-    async (month: Date, activeFilters: DiscoveryFilters) => {
+    async (month: Date, categories: EventCategory[], price: DiscoveryFilters['price']) => {
       setCalendarState('loading');
       const monthStart = getMontrealCalendarDate(
         new Date(month.getFullYear(), month.getMonth(), 1)
@@ -275,10 +287,11 @@ export function ExploreMap({
       try {
         const response = await fetch(
           boundsUrl(INITIAL_BOUNDS, {
-            ...activeFilters,
             date: 'custom',
             customStartDate: monthStart,
-            customEndDate: monthEnd
+            customEndDate: monthEnd,
+            categories,
+            price
           })
         );
         if (!response.ok) throw new Error('Event API unavailable');
@@ -294,9 +307,9 @@ export function ExploreMap({
 
   useEffect(() => {
     if (viewMode === 'calendar') {
-      void loadCalendarEvents(calendarMonth, filters);
+      void loadCalendarEvents(calendarMonth, calendarCategories, calendarPrice);
     }
-  }, [viewMode, calendarMonth, filters, loadCalendarEvents]);
+  }, [viewMode, calendarMonth, calendarCategories, calendarPrice, loadCalendarEvents]);
 
   useEffect(() => {
     const resolved = resolveBrowserLocale([initialLocale], localStorage);
@@ -718,8 +731,11 @@ export function ExploreMap({
     const evs = pendingDataRef.current;
     const favs = favoritesRef.current;
     const showFavs = showFavoritesOnlyRef.current;
+    const sources = selectedSourcesRef.current;
     const sel = selectedRef.current;
-    const visibleEvents = showFavs ? evs.filter(e => favs.includes(e.id)) : evs;
+    const visibleEvents = evs
+      .filter((e) => (showFavs ? favs.includes(e.id) : true))
+      .filter((e) => (sources.length === 0 ? true : sources.includes(e.source.name)));
     source.setData({
       type: 'FeatureCollection',
       features: visibleEvents.map(event => ({
@@ -751,10 +767,12 @@ export function ExploreMap({
   // Refs pour éviter les closures périmées dans pushEventsToMap
   const favoritesRef = useRef(favorites);
   const showFavoritesOnlyRef = useRef(showFavoritesOnly);
+  const selectedSourcesRef = useRef(selectedSources);
   const selectedRef = useRef(selected);
   const detailsRef = useRef(details);
   useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
   useEffect(() => { showFavoritesOnlyRef.current = showFavoritesOnly; }, [showFavoritesOnly]);
+  useEffect(() => { selectedSourcesRef.current = selectedSources; }, [selectedSources]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { detailsRef.current = details; }, [details]);
   useEffect(() => { distanceKmRef.current = distanceKm; }, [distanceKm]);
@@ -765,7 +783,7 @@ export function ExploreMap({
   // Synchronisation des données vers la carte (se déclenche aussi quand on revient à la carte)
   useEffect(() => {
     if (map.current) pushEventsToMap(map.current);
-  }, [events, favorites, showFavoritesOnly, selected, pushEventsToMap]);
+  }, [events, favorites, showFavoritesOnly, selectedSources, selected, pushEventsToMap]);
 
   async function openDetails(eventId: string) {
     setPickerList(undefined);
@@ -790,6 +808,10 @@ export function ExploreMap({
   }
 
   const showingDetails = details.kind !== 'closed';
+  const sourceFilteredEvents =
+    selectedSources.length === 0
+      ? events
+      : events.filter((event) => selectedSources.includes(event.source.name));
   // Prefer real-distance nearby results; fall back to the bounds-based list
   // when geolocation was denied/unsupported or hasn't resolved yet.
   const carouselEvents = userLocation && nearbyState === 'success' ? nearbyEvents : events;
@@ -863,30 +885,124 @@ export function ExploreMap({
         {/* Left Sidebar */}
         <aside className="sidebar-left">
           <h2 className="sidebar-section-title">Découvrir</h2>
-          
+
           <div className="view-toggles">
+            <div className="view-toggles-list">
+              <button
+                type="button"
+                className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
+                onClick={() => setViewMode('map')}
+              >
+                <ViewModeIcon kind="map" /> Carte
+              </button>
+              <button
+                type="button"
+                className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+                onClick={() => setViewMode('list')}
+              >
+                <ViewModeIcon kind="list" /> Liste
+              </button>
+              <button
+                type="button"
+                className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
+                onClick={() => setViewMode('calendar')}
+              >
+                <ViewModeIcon kind="calendar" /> Calendrier
+              </button>
+            </div>
             <button
               type="button"
-              className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
-              onClick={() => setViewMode('map')}
+              className={`view-toggle-fav ${showFavoritesOnly ? 'active' : ''}`}
+              aria-label={showFavoritesOnly ? 'Afficher tous les événements' : 'Afficher uniquement mes favoris'}
+              aria-pressed={showFavoritesOnly}
+              onClick={() => setShowFavoritesOnly((prev) => !prev)}
             >
-              Carte
-            </button>
-            <button
-              type="button"
-              className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
-              onClick={() => setViewMode('list')}
-            >
-              Liste
-            </button>
-            <button
-              type="button"
-              className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
-              onClick={() => setViewMode('calendar')}
-            >
-              Calendrier
+              <HeartIcon filled={showFavoritesOnly} />
             </button>
           </div>
+
+          <CollapsibleFilterGroup
+            title="Filtres"
+            collapsed={collapsedSections.has('filtres')}
+            onToggle={() => toggleSection('filtres')}
+            action={
+              <button
+                className="filter-reset"
+                onClick={() => {
+                  clearAll();
+                  // An explicit reset is a deliberate action, unlike initial
+                  // load - the pill for whatever default actually applies
+                  // (see DEFAULT_DISCOVERY_FILTERS) should now show as
+                  // selected rather than looking like nothing is active.
+                  setDateFilterTouched(true);
+                }}
+              >
+                Réinitialiser
+              </button>
+            }
+          >
+            <div className="pill-list pill-list-long">
+              {(['today', 'weekend', 'next7'] as const).map((value) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={`filter-pill ${dateFilterTouched && filters.date === value ? 'active' : ''}`}
+                  onClick={() => {
+                    setDateFilterTouched(true);
+                    applyFilters(withoutCustomDates(filters, value));
+                  }}
+                >
+                  {getDateFilterLabel(locale, value)}
+                </button>
+              ))}
+            </div>
+          </CollapsibleFilterGroup>
+
+          <CollapsibleFilterGroup
+            title="Catégories"
+            collapsed={collapsedSections.has('categories')}
+            onToggle={() => toggleSection('categories')}
+          >
+            <div className="category-grid">
+              {CATEGORY_FILTER_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  key={option.value}
+                  className={`category-item ${filters.categories.includes(option.value) ? 'active' : ''}`}
+                  onClick={() => {
+                    const nextCategories = filters.categories.includes(option.value)
+                      ? filters.categories.filter((c) => c !== option.value)
+                      : [...filters.categories, option.value];
+                    applyFilters({ ...filters, categories: nextCategories });
+                  }}
+                >
+                  <div className="category-icon">
+                    <CategoryIcon category={option.value} />
+                  </div>
+                  <span>{SHORT_CATEGORY_LABELS[locale][option.value]}</span>
+                </button>
+              ))}
+            </div>
+          </CollapsibleFilterGroup>
+
+          <CollapsibleFilterGroup
+            title="Prix"
+            collapsed={collapsedSections.has('prix')}
+            onToggle={() => toggleSection('prix')}
+          >
+            <div className="pill-list">
+              {PRICE_FILTER_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  key={option.value}
+                  className={`filter-pill ${filters.price === option.value ? 'active' : ''}`}
+                  onClick={() => applyFilters({ ...filters, price: option.value })}
+                >
+                  {getPriceLabel(locale, option.value)}
+                </button>
+              ))}
+            </div>
+          </CollapsibleFilterGroup>
 
           <CollapsibleFilterGroup
             title="Distance"
@@ -923,65 +1039,6 @@ export function ExploreMap({
           </CollapsibleFilterGroup>
 
           <CollapsibleFilterGroup
-            title="Filtres"
-            collapsed={collapsedSections.has('filtres')}
-            onToggle={() => toggleSection('filtres')}
-            action={
-              <button
-                className="filter-reset"
-                onClick={() => {
-                  clearAll();
-                  setDateFilterTouched(false);
-                }}
-              >
-                Réinitialiser
-              </button>
-            }
-          >
-            <div className="pill-list">
-              {(['tonight', 'weekend', 'next7'] as const).map((value) => (
-                <button
-                  type="button"
-                  key={value}
-                  className={`filter-pill ${dateFilterTouched && filters.date === value ? 'active' : ''}`}
-                  onClick={() => {
-                    setDateFilterTouched(true);
-                    applyFilters(withoutCustomDates(filters, value));
-                  }}
-                >
-                  {getDateFilterLabel(locale, value)}
-                </button>
-              ))}
-              <button
-                type="button"
-                className={`filter-pill ${showFavoritesOnly ? 'active' : ''}`}
-                onClick={() => setShowFavoritesOnly((prev) => !prev)}
-              >
-                ❤️ Mes Favoris
-              </button>
-            </div>
-          </CollapsibleFilterGroup>
-
-          <CollapsibleFilterGroup
-            title="Prix"
-            collapsed={collapsedSections.has('prix')}
-            onToggle={() => toggleSection('prix')}
-          >
-            <div className="pill-list">
-              {PRICE_FILTER_OPTIONS.map((option) => (
-                <button
-                  type="button"
-                  key={option.value}
-                  className={`filter-pill ${filters.price === option.value ? 'active' : ''}`}
-                  onClick={() => applyFilters({ ...filters, price: option.value })}
-                >
-                  {getPriceLabel(locale, option.value)}
-                </button>
-              ))}
-            </div>
-          </CollapsibleFilterGroup>
-
-          <CollapsibleFilterGroup
             title="Ambiance"
             collapsed={collapsedSections.has('ambiance')}
             onToggle={() => toggleSection('ambiance')}
@@ -995,27 +1052,30 @@ export function ExploreMap({
           </CollapsibleFilterGroup>
 
           <CollapsibleFilterGroup
-            title="Catégories"
-            collapsed={collapsedSections.has('categories')}
-            onToggle={() => toggleSection('categories')}
+            title="Source"
+            collapsed={collapsedSections.has('source')}
+            onToggle={() => toggleSection('source')}
           >
-            <div className="category-grid">
-              {CATEGORY_FILTER_OPTIONS.map((option) => (
+            <div className="source-filter-grid">
+              {KNOWN_EVENT_SOURCES.map((source) => (
                 <button
                   type="button"
-                  key={option.value}
-                  className={`category-item ${filters.categories.includes(option.value) ? 'active' : ''}`}
-                  onClick={() => {
-                    const nextCategories = filters.categories.includes(option.value)
-                      ? filters.categories.filter((c) => c !== option.value)
-                      : [...filters.categories, option.value];
-                    applyFilters({ ...filters, categories: nextCategories });
-                  }}
+                  key={source.matchName}
+                  className={`source-filter-item ${selectedSources.includes(source.matchName) ? 'active' : ''} ${!source.available ? 'disabled' : ''}`}
+                  disabled={!source.available}
+                  onClick={() =>
+                    setSelectedSources((prev) =>
+                      prev.includes(source.matchName)
+                        ? prev.filter((name) => name !== source.matchName)
+                        : [...prev, source.matchName]
+                    )
+                  }
                 >
-                  <div className="category-icon">
-                    <CategoryIcon category={option.value} />
-                  </div>
-                  <span>{SHORT_CATEGORY_LABELS[locale][option.value]}</span>
+                  <span className="source-filter-logo">
+                    <SourceIcon kind={source.icon} />
+                  </span>
+                  <span>{source.label}</span>
+                  {!source.available && <span className="source-soon">Bientôt</span>}
                 </button>
               ))}
             </div>
@@ -1089,7 +1149,7 @@ export function ExploreMap({
 
           {viewMode === 'list' && (
             <ListView
-              events={events}
+              events={sourceFilteredEvents}
               favorites={favorites}
               showFavoritesOnly={showFavoritesOnly}
               onToggleFavorite={toggleFavorite}
@@ -1106,6 +1166,10 @@ export function ExploreMap({
               state={calendarState}
               favorites={favorites}
               showFavoritesOnly={showFavoritesOnly}
+              categories={calendarCategories}
+              onChangeCategories={setCalendarCategories}
+              price={calendarPrice}
+              onChangePrice={setCalendarPrice}
               selectedDay={selectedDay}
               onSelectDay={(day, dayEvents) => {
                 setSelectedDay(day);
@@ -1354,6 +1418,126 @@ function CategoryIcon({ category }: { category: EventCategory }) {
   );
 }
 
+function ViewModeIcon({ kind }: { kind: 'map' | 'list' | 'calendar' }) {
+  const paths: Record<typeof kind, ReactNode> = {
+    map: (
+      <>
+        <path d="M9 3v15M15 6v15" />
+        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z" />
+      </>
+    ),
+    list: (
+      <>
+        <line x1="8" y1="6" x2="21" y2="6" />
+        <line x1="8" y1="12" x2="21" y2="12" />
+        <line x1="8" y1="18" x2="21" y2="18" />
+        <line x1="3" y1="6" x2="3.01" y2="6" />
+        <line x1="3" y1="12" x2="3.01" y2="12" />
+        <line x1="3" y1="18" x2="3.01" y2="18" />
+      </>
+    ),
+    calendar: (
+      <>
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+      </>
+    )
+  };
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[kind]}
+    </svg>
+  );
+}
+
+/**
+ * Known event sources for the sidebar "Source" filter. `matchName` must be
+ * the exact `PublicEvent.source.name` string produced by the corresponding
+ * ingestion connector - Instagram (Pulso Scout, DEC-0006) has no live
+ * connector yet, so it's shown disabled rather than implying a working
+ * filter for data that doesn't exist.
+ */
+const KNOWN_EVENT_SOURCES: Array<{
+  matchName: string;
+  label: string;
+  icon: 'ticket' | 'city' | 'instagram';
+  available: boolean;
+}> = [
+  { matchName: 'Ticketmaster', label: 'Ticketmaster', icon: 'ticket', available: true },
+  {
+    matchName: 'Ville de Montréal — Événements publics',
+    label: 'Ville de Montréal',
+    icon: 'city',
+    available: true
+  },
+  { matchName: 'Instagram', label: 'Instagram', icon: 'instagram', available: false }
+];
+
+function resolveSourceIconKind(
+  sourceName: string
+): 'ticket' | 'city' | 'instagram' | 'generic' {
+  return (
+    KNOWN_EVENT_SOURCES.find((source) => source.matchName === sourceName)?.icon ??
+    'generic'
+  );
+}
+
+function SourceIcon({ kind }: { kind: 'ticket' | 'city' | 'instagram' | 'generic' }) {
+  const paths: Record<typeof kind, ReactNode> = {
+    ticket: (
+      <path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V8z" />
+    ),
+    city: (
+      <>
+        <path d="M4 21V9l6-4 6 4v12" />
+        <path d="M16 21v-8l4 2v6" />
+        <line x1="9" y1="13" x2="9" y2="13.01" />
+        <line x1="9" y1="17" x2="9" y2="17.01" />
+      </>
+    ),
+    instagram: (
+      <>
+        <rect x="3" y="3" width="18" height="18" rx="5" />
+        <circle cx="12" cy="12" r="4" />
+        <line x1="17.5" y1="6.5" x2="17.5" y2="6.5" />
+      </>
+    ),
+    generic: (
+      <>
+        <circle cx="12" cy="12" r="10" />
+        <path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" />
+      </>
+    )
+  };
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[kind]}
+    </svg>
+  );
+}
+
 function PickerList({
   title,
   events,
@@ -1484,6 +1668,10 @@ function CalendarView({
   state,
   favorites,
   showFavoritesOnly,
+  categories,
+  onChangeCategories,
+  price,
+  onChangePrice,
   selectedDay,
   onSelectDay,
   locale
@@ -1494,6 +1682,10 @@ function CalendarView({
   state: LoadState;
   favorites: string[];
   showFavoritesOnly: boolean;
+  categories: EventCategory[];
+  onChangeCategories: (categories: EventCategory[]) => void;
+  price: DiscoveryFilters['price'];
+  onChangePrice: (price: DiscoveryFilters['price']) => void;
   selectedDay: string | undefined;
   onSelectDay: (day: string | undefined, events: PublicEvent[]) => void;
   locale: SupportedLocale;
@@ -1546,6 +1738,43 @@ function CalendarView({
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
         </button>
+      </div>
+
+      <p className="calendar-scope-note">
+        Tous les événements référencés, indépendamment des filtres de la carte.
+      </p>
+
+      <div className="calendar-filter-bar">
+        <div className="pill-list">
+          {CATEGORY_FILTER_OPTIONS.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              className={`filter-pill ${categories.includes(option.value) ? 'active' : ''}`}
+              onClick={() =>
+                onChangeCategories(
+                  categories.includes(option.value)
+                    ? categories.filter((value) => value !== option.value)
+                    : [...categories, option.value]
+                )
+              }
+            >
+              {SHORT_CATEGORY_LABELS[locale][option.value]}
+            </button>
+          ))}
+        </div>
+        <div className="pill-list">
+          {PRICE_FILTER_OPTIONS.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              className={`filter-pill ${price === option.value ? 'active' : ''}`}
+              onClick={() => onChangePrice(option.value)}
+            >
+              {getPriceLabel(locale, option.value)}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="calendar-weekdays">
@@ -2491,13 +2720,17 @@ function EventDetails({
       <div className="details-section">
         <h3>Sources</h3>
         <div className="source-item">
-          <span className="source-logo">ℹ️</span>
+          <span className="source-logo">
+            <SourceIcon kind={resolveSourceIconKind(event.source.name)} />
+          </span>
           <span>{event.source.name}</span>
           <span className="source-trust">{presentation.trust}</span>
         </div>
         {event.additionalSources?.map((source) => (
           <div className="source-item" key={source.url}>
-            <span className="source-logo">ℹ️</span>
+            <span className="source-logo">
+              <SourceIcon kind={resolveSourceIconKind(source.name)} />
+            </span>
             <span>{source.name}</span>
           </div>
         ))}
