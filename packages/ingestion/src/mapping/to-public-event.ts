@@ -174,7 +174,14 @@ export function mapRawEventToPublicEvent(
       ? {
           externalDestination: {
             label: event.sourceName,
-            kind: 'ticketing' as const,
+            // Only an actual ticketing platform gets labelled 'ticketing' -
+            // a civic open-data source's own page is a real, useful redirect
+            // (and one Pulso wants click-through data on regardless of
+            // price) but it's not a ticket purchase.
+            kind:
+              KNOWN_SOURCE_AUTHORITY[event.sourceId] === 'ticketing_platform'
+                ? ('ticketing' as const)
+                : ('event_source' as const),
             status: 'available' as const
           }
         }

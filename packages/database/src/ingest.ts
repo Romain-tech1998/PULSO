@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   createMontrealOpenDataConnector,
   createTicketmasterConnector,
+  enrichMissingAddresses,
   enrichMissingCoordinates,
   extractInstagramWatchlist,
   fetchInstagramScoutSignals,
@@ -102,7 +103,8 @@ async function main(): Promise<void> {
       rawEvents.push(...result.events);
     }
 
-    const enriched = await enrichMissingCoordinates(rawEvents);
+    const withPoints = await enrichMissingCoordinates(rawEvents);
+    const enriched = await enrichMissingAddresses(withPoints);
     const { events, skipped } = mapAndDeduplicateRawEvents(enriched);
 
     await upsertPublicEvents(pool, events);

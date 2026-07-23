@@ -51,8 +51,12 @@ export interface DiscoveryFilters {
   customEndDate?: string;
 }
 
+// 'tonight' rather than the originally-specified 'next7' (MAP-003) - revised
+// by product decision once real ingestion volume made a 7-day default feel
+// too dense to browse. The 7-day window itself is unchanged and still
+// selectable; only the unconfigured default moved. See PROJECT_INDEX.md.
 export const DEFAULT_DISCOVERY_FILTERS: DiscoveryFilters = {
-  date: 'next7',
+  date: 'tonight',
   categories: [],
   price: 'all'
 };

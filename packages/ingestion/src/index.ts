@@ -30,7 +30,9 @@ export { extractInstagramWatchlist } from './registry.js';
 export { parseCsv } from './lib/csv.js';
 export {
   geocodeAddress,
-  enrichMissingCoordinates
+  enrichMissingCoordinates,
+  reverseGeocodeAddress,
+  enrichMissingAddresses
 } from './lib/geocode-fallback.js';
 
 export { computeDedupeKey, normalizeForKey } from './mapping/dedupe-key.js';

@@ -68,6 +68,20 @@ describe('mapRawEventToPublicEvent', () => {
     expect(result.event.trust.freshness).toBe('fresh');
     expect(result.event.trust.locationConfidence).toBe('confirmed');
     expect(result.event.venue.point).toEqual({ longitude: -73.5605, latitude: 45.5106 });
+    expect(result.event.externalDestination?.kind).toBe('ticketing');
+  });
+
+  it('labels a non-ticketing source (e.g. Ville de Montréal) as event_source, not ticketing', () => {
+    const result = mapRawEventToPublicEvent(
+      ticketmasterEvent({
+        sourceId: 'ville-de-montreal-evenements-publics',
+        sourceName: 'Ville de Montréal',
+        ticketingUrl: 'https://montreal.ca/evenements/some-event'
+      }),
+      { now }
+    );
+    if (!('event' in result)) throw new Error('expected event');
+    expect(result.event.externalDestination?.kind).toBe('event_source');
   });
 
   it('marks official sources as confirmed', () => {

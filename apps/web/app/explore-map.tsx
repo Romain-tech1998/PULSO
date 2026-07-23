@@ -208,9 +208,8 @@ export function ExploreMap({
   // restricting results the moment geolocation resolves - per user feedback,
   // moving markers out from under someone who hasn't touched the slider yet
   // is disorienting. It only takes effect once the user releases the slider
-  // themselves. Max is 10km per user feedback - people don't search farther
-  // than that for nightlife/events.
-  const [distanceKm, setDistanceKm] = useState(10);
+  // themselves.
+  const [distanceKm, setDistanceKm] = useState(15);
   const distanceKmRef = useRef(distanceKm);
   const [distanceFilterActive, setDistanceFilterActive] = useState(false);
   const distanceFilterActiveRef = useRef(distanceFilterActive);
@@ -858,7 +857,7 @@ export function ExploreMap({
               <input
                 type="range"
                 min="1"
-                max="10"
+                max="15"
                 value={distanceKm}
                 onChange={(event) => setDistanceKm(Number(event.target.value))}
                 onMouseUp={applyDistanceFilter}
@@ -868,9 +867,9 @@ export function ExploreMap({
               />
               <div className="distance-labels">
                 <span>1km</span>
-                <span>3km</span>
-                <span>6km</span>
+                <span>5km</span>
                 <span>10km</span>
+                <span>15km</span>
               </div>
               <p className="distance-value">
                 {distanceFilterActive
@@ -976,7 +975,7 @@ export function ExploreMap({
                   <div className="category-icon">
                     <CategoryIcon category={option.value} />
                   </div>
-                  <span>{getCategoryLabel(locale, option.value)}</span>
+                  <span>{SHORT_CATEGORY_LABELS[locale][option.value]}</span>
                 </button>
               ))}
             </div>
@@ -1194,6 +1193,30 @@ export function ExploreMap({
   );
 }
 
+// getCategoryLabel returns MVP-0001's precise scope-boundary text (e.g.
+// "Nightlife / DJ / club / qualifying bar events"), which is exactly right
+// for the filter overlay's checkboxes but too long to fit the sidebar grid
+// on one line. Short display-only labels for that grid; the overlay still
+// uses the full scope text.
+const SHORT_CATEGORY_LABELS: Record<SupportedLocale, Record<EventCategory, string>> = {
+  fr: {
+    music: 'Musique',
+    nightlife: 'Vie nocturne',
+    festival: 'Festivals',
+    show: 'Spectacles',
+    comedy: 'Humour',
+    other: 'Autres'
+  },
+  en: {
+    music: 'Music',
+    nightlife: 'Nightlife',
+    festival: 'Festivals',
+    show: 'Shows',
+    comedy: 'Comedy',
+    other: 'Other'
+  }
+};
+
 const CATEGORY_ICON_PATHS: Record<EventCategory, ReactNode> = {
   music: (
     <>
@@ -1224,6 +1247,24 @@ const CATEGORY_ICON_PATHS: Record<EventCategory, ReactNode> = {
     <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V7z" />
   )
 };
+
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  );
+}
 
 function CategoryIcon({ category }: { category: EventCategory }) {
   return (
@@ -1855,8 +1896,8 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
           représentez une salle, un organisateur ou une billetterie
           intéressé·e à collaborer, écrivez-nous :
         </p>
-        <a className="primary-action-btn glow-purple" href="mailto:hello@pulsonight.com">
-          hello@pulsonight.com
+        <a className="primary-action-btn glow-purple" href="mailto:rmeynaud@pulsonight.com">
+          rmeynaud@pulsonight.com
         </a>
       </div>
     </aside>
@@ -2069,7 +2110,7 @@ function EventPreview({
             )}
             onClick={onToggleFavorite}
           >
-            <span aria-hidden="true">{isFavorite ? '❤️' : '🤍'}</span>
+            <HeartIcon filled={isFavorite} />
           </button>
           <button type="button" className="close-button" onClick={onClose} style={{background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: 28, height: 28, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -2148,6 +2189,14 @@ function EventDetails({
 }) {
   const { presentation } = eventDetailsFields(event, locale);
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const DESCRIPTION_PREVIEW_LENGTH = 180;
+  const description = presentation.description ?? '';
+  const descriptionIsLong = description.length > DESCRIPTION_PREVIEW_LENGTH;
+  const visibleDescription =
+    descriptionIsLong && !descriptionExpanded
+      ? `${description.slice(0, DESCRIPTION_PREVIEW_LENGTH).trimEnd()}…`
+      : description;
 
   const onShare = async () => {
     const url = `${window.location.origin}/events/${event.id}`;
@@ -2184,7 +2233,14 @@ function EventDetails({
             onClick={onShare}
             style={{ marginRight: '12px' }}
           >
-            <span aria-hidden="true">↗️</span> {translate(locale, 'details.share')}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+            {translate(locale, 'details.share')}
           </button>
           <button
             type="button"
@@ -2196,16 +2252,11 @@ function EventDetails({
             )}
             onClick={onToggleFavorite}
           >
-            <span aria-hidden="true">{isFavorite ? '❤️' : '🤍'}</span>
+            <HeartIcon filled={isFavorite} />
           </button>
         </div>
       </div>
-      <div
-        className="details-hero"
-        style={{
-          background: `linear-gradient(160deg, ${CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']}55, ${CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']}11)`
-        }}
-      >
+      <div className="details-hero">
         <div className="details-badge">{presentation.category}</div>
         <h2 ref={headingRef} tabIndex={-1} className="details-title">
           {event.title}
@@ -2217,14 +2268,18 @@ function EventDetails({
 
       <div className="details-info-list">
         <div className="info-item">
-          <span className="info-icon">📅</span>
+          <span className="info-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </span>
           <div>
             <strong>Date et heure</strong>
             <p>{presentation.dateTime}</p>
           </div>
         </div>
         <div className="info-item">
-          <span className="info-icon">📍</span>
+          <span className="info-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          </span>
           <div>
             <strong>Lieu</strong>
             <p>{event.venue.name}</p>
@@ -2232,7 +2287,9 @@ function EventDetails({
           </div>
         </div>
         <div className="info-item">
-          <span className="info-icon">🎟️</span>
+          <span className="info-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+          </span>
           <div>
             <strong>Prix</strong>
             <p>{presentation.price}</p>
@@ -2251,14 +2308,23 @@ function EventDetails({
           </button>
         )}
         <button className="secondary-action-btn" onClick={onToggleFavorite}>
-          {isFavorite ? '❤️ Retirer des favoris' : '🤍 Ajouter aux favoris'}
+          <HeartIcon filled={isFavorite} />
+          {isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
         </button>
       </div>
 
       <div className="details-section">
         <h3>À propos</h3>
-        <p className="details-description">{presentation.description}</p>
-        <button className="text-btn">Voir plus</button>
+        <p className="details-description">{visibleDescription}</p>
+        {descriptionIsLong && (
+          <button
+            type="button"
+            className="text-btn"
+            onClick={() => setDescriptionExpanded((prev) => !prev)}
+          >
+            {descriptionExpanded ? 'Voir moins' : 'Voir plus'}
+          </button>
+        )}
       </div>
 
       <div className="details-section">

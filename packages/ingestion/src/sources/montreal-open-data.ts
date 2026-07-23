@@ -89,6 +89,12 @@ export function mapMontrealOpenDataRow(
     point: hasPoint ? { longitude, latitude } : undefined,
     price: parsePrice(row.cout ?? ''),
     organizer: cleanField(row.arrondissement),
+    // Not a ticket purchase, but per product decision this still counts as
+    // an actionable external destination: the montreal.ca page is real and
+    // useful even for free events, and redirect click-throughs are data
+    // Pulso wants to collect regardless of price. mapRawEventToPublicEvent
+    // labels this 'event_source' rather than 'ticketing' based on sourceId.
+    ticketingUrl: row.url_fiche || 'https://montreal.ca/calendrier',
     raw: row
   };
 }

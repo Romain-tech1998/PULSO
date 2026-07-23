@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { parseCsv } from './lib/csv.js';
-import { enrichMissingCoordinates } from './lib/geocode-fallback.js';
+import {
+  enrichMissingAddresses,
+  enrichMissingCoordinates
+} from './lib/geocode-fallback.js';
 import { parseIcs } from './sources/ics-calendar.js';
 import { mapMontrealOpenDataRow } from './sources/montreal-open-data.js';
 import { mapTicketmasterEvent } from './sources/ticketmaster.js';
@@ -49,6 +52,11 @@ describe('mapMontrealOpenDataRow', () => {
     expect(event?.category).toBe('other');
     expect(event?.price).toEqual({ kind: 'free' });
     expect(event?.point).toEqual({ longitude: -73.5673, latitude: 45.5088 });
+    // Even a free civic event should still get a redirect link - Pulso wants
+    // the click-through data regardless of price, per product decision.
+    expect(event?.ticketingUrl).toBe(
+      'https://montreal.ca/evenements/marche-de-noel'
+    );
   });
 
   it('returns undefined when the row has no title or start date', () => {
@@ -241,6 +249,63 @@ describe('enrichMissingCoordinates', () => {
     });
     expect(result?.pointResolution).toBe('unresolved');
     expect(result?.point).toBeUndefined();
+  });
+});
+
+describe('enrichMissingAddresses', () => {
+  const pointedNoAddress: RawIngestedEvent = {
+    sourceId: 'ville-de-montreal-evenements-publics',
+    sourceName: 'Ville de Montréal',
+    sourceUrl: 'https://montreal.ca/evenements/trio-brasil',
+    observedAt: '2026-07-21T00:00:00.000Z',
+    title: 'Trio Brasil',
+    category: 'music',
+    startsAt: '2026-08-17T23:00:00Z',
+    venueName: undefined,
+    address: undefined,
+    point: { longitude: -73.6, latitude: 45.55 }
+  };
+
+  it('reverse-geocodes events with a point but no name/address at all', async () => {
+    const reverseGeocodeImpl = vi.fn().mockResolvedValue({
+      venueName: 'Parc Gouin',
+      address: 'Parc Gouin, Montréal, QC, Canada'
+    });
+    const [result] = await enrichMissingAddresses([pointedNoAddress], {
+      delayMs: 0,
+      reverseGeocodeImpl
+    });
+    expect(reverseGeocodeImpl).toHaveBeenCalledWith(
+      pointedNoAddress.point,
+      expect.anything()
+    );
+    expect(result?.venueName).toBe('Parc Gouin');
+    expect(result?.address).toBe('Parc Gouin, Montréal, QC, Canada');
+  });
+
+  it('leaves events with an existing venue name or address untouched', async () => {
+    const reverseGeocodeImpl = vi.fn();
+    const hasVenueName: RawIngestedEvent = {
+      ...pointedNoAddress,
+      venueName: 'Le Balcon'
+    };
+    const [result] = await enrichMissingAddresses([hasVenueName], {
+      delayMs: 0,
+      reverseGeocodeImpl
+    });
+    expect(reverseGeocodeImpl).not.toHaveBeenCalled();
+    expect(result).toEqual(hasVenueName);
+  });
+
+  it('does nothing for events without a resolved point', async () => {
+    const reverseGeocodeImpl = vi.fn();
+    const noPoint: RawIngestedEvent = { ...pointedNoAddress, point: undefined };
+    const [result] = await enrichMissingAddresses([noPoint], {
+      delayMs: 0,
+      reverseGeocodeImpl
+    });
+    expect(reverseGeocodeImpl).not.toHaveBeenCalled();
+    expect(result).toEqual(noPoint);
   });
 });
 
