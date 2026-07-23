@@ -283,6 +283,35 @@ describe('enrichMissingAddresses', () => {
     expect(result?.address).toBe('Parc Gouin, Montréal, QC, Canada');
   });
 
+  it('retries a transient reverse-geocode failure before giving up', async () => {
+    // Verified in practice: coordinates that returned nothing during a
+    // large sequential ingestion batch resolved fine moments later on
+    // their own - a transient failure, not missing data.
+    const reverseGeocodeImpl = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockResolvedValueOnce({ venueName: 'Bibliothèque Robert-Bourassa', address: '41 Avenue Saint-Just' });
+    const [result] = await enrichMissingAddresses([pointedNoAddress], {
+      delayMs: 0,
+      reverseGeocodeImpl
+    });
+    expect(reverseGeocodeImpl).toHaveBeenCalledTimes(3);
+    expect(result?.venueName).toBe('Bibliothèque Robert-Bourassa');
+  });
+
+  it('gives up after maxAttempts and leaves the event without a venue name/address', async () => {
+    const reverseGeocodeImpl = vi.fn().mockResolvedValue(undefined);
+    const [result] = await enrichMissingAddresses([pointedNoAddress], {
+      delayMs: 0,
+      maxAttempts: 2,
+      reverseGeocodeImpl
+    });
+    expect(reverseGeocodeImpl).toHaveBeenCalledTimes(2);
+    expect(result?.venueName).toBeUndefined();
+    expect(result?.address).toBeUndefined();
+  });
+
   it('falls back to the resolved address as the venue name when OSM has no named POI at that point', async () => {
     // Most reverse-geocoded points (a park bench, a random street corner)
     // resolve to a real, correct address but no leisure/amenity/building/

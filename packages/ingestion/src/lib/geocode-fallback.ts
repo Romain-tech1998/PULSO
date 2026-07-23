@@ -170,11 +170,13 @@ export async function enrichMissingAddresses(
     fetchImpl?: typeof fetch;
     delayMs?: number;
     reverseGeocodeImpl?: typeof reverseGeocodeAddress;
+    maxAttempts?: number;
   } = {}
 ): Promise<RawIngestedEvent[]> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const delayMs = options.delayMs ?? MIN_DELAY_MS;
   const reverseGeocode = options.reverseGeocodeImpl ?? reverseGeocodeAddress;
+  const maxAttempts = options.maxAttempts ?? 3;
 
   const enriched: RawIngestedEvent[] = [];
   for (const event of events) {
@@ -185,7 +187,22 @@ export async function enrichMissingAddresses(
       continue;
     }
 
-    const resolved = await reverseGeocode(event.point, fetchImpl);
+    // Verified in practice against the live endpoint: coordinates that
+    // came back empty during a large sequential batch resolved correctly
+    // moments later on their own - transient failures (rate-limiting,
+    // timeouts), not a real absence of data. Retry before giving up rather
+    // than settling for "Unknown venue" on what Nominatim can actually
+    // answer.
+    let resolved: Awaited<ReturnType<typeof reverseGeocodeAddress>>;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        resolved = await reverseGeocode(event.point, fetchImpl);
+      } catch {
+        resolved = undefined;
+      }
+      if (resolved || attempt === maxAttempts) break;
+      await delay(delayMs);
+    }
     enriched.push({
       ...event,
       // OSM only tags a leisure/amenity/building/tourism name for actual
