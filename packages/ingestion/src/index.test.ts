@@ -283,6 +283,24 @@ describe('enrichMissingAddresses', () => {
     expect(result?.address).toBe('Parc Gouin, Montréal, QC, Canada');
   });
 
+  it('falls back to the resolved address as the venue name when OSM has no named POI at that point', async () => {
+    // Most reverse-geocoded points (a park bench, a random street corner)
+    // resolve to a real, correct address but no leisure/amenity/building/
+    // tourism tag at all - falling back to venueName: undefined would
+    // still surface as "Unknown venue" downstream even though the location
+    // itself is genuinely known.
+    const reverseGeocodeImpl = vi.fn().mockResolvedValue({
+      venueName: undefined,
+      address: '4120, Rue Ontario Est, Montréal, QC, Canada'
+    });
+    const [result] = await enrichMissingAddresses([pointedNoAddress], {
+      delayMs: 0,
+      reverseGeocodeImpl
+    });
+    expect(result?.venueName).toBe('4120, Rue Ontario Est, Montréal, QC, Canada');
+    expect(result?.address).toBe('4120, Rue Ontario Est, Montréal, QC, Canada');
+  });
+
   it('leaves events with an existing venue name or address untouched', async () => {
     const reverseGeocodeImpl = vi.fn();
     const hasVenueName: RawIngestedEvent = {

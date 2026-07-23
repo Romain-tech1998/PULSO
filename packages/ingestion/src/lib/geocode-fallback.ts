@@ -188,7 +188,14 @@ export async function enrichMissingAddresses(
     const resolved = await reverseGeocode(event.point, fetchImpl);
     enriched.push({
       ...event,
-      venueName: resolved?.venueName ?? event.venueName,
+      // OSM only tags a leisure/amenity/building/tourism name for actual
+      // POIs - most reverse-geocoded points (a park bench, a random street
+      // corner) resolve to a real, correct address but no named venue at
+      // all. Falling back to that address rather than leaving venueName
+      // unset means the mapper's 'Unknown venue' placeholder (to-public-
+      // event.ts) never fires for an event whose location is genuinely
+      // known, only for the rarer case for genuinely no data (below).
+      venueName: resolved?.venueName ?? resolved?.address ?? event.venueName,
       address: resolved?.address ?? event.address
     });
 
