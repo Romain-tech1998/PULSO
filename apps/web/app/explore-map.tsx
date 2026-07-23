@@ -252,12 +252,6 @@ export function ExploreMap({
     { title: string; events: PublicEvent[] } | undefined
   >();
   const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
-  // The 7-day rolling window (MAP-003/PRD FILTER-001) is always the backend
-  // baseline - it's never actually "off". This only controls whether a date
-  // pill visually shows as selected: per user feedback, showing "7 prochains
-  // jours" highlighted by default implied a deliberate choice nobody made.
-  // Any pill click (including re-picking next7) turns this on.
-  const [dateFilterTouched, setDateFilterTouched] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterNotice, setFilterNotice] = useState<string>();
   const [queryInput, setQueryInput] = useState('');
@@ -1043,17 +1037,7 @@ export function ExploreMap({
             collapsed={collapsedSections.has('filtres')}
             onToggle={() => toggleSection('filtres')}
             action={
-              <button
-                className="filter-reset"
-                onClick={() => {
-                  clearAll();
-                  // An explicit reset is a deliberate action, unlike initial
-                  // load - the pill for whatever default actually applies
-                  // (see DEFAULT_DISCOVERY_FILTERS) should now show as
-                  // selected rather than looking like nothing is active.
-                  setDateFilterTouched(true);
-                }}
-              >
+              <button className="filter-reset" onClick={clearAll}>
                 Réinitialiser
               </button>
             }
@@ -1063,11 +1047,8 @@ export function ExploreMap({
                 <button
                   type="button"
                   key={value}
-                  className={`filter-pill ${dateFilterTouched && filters.date === value ? 'active' : ''}`}
-                  onClick={() => {
-                    setDateFilterTouched(true);
-                    applyFilters(withoutCustomDates(filters, value));
-                  }}
+                  className={`filter-pill ${filters.date === value ? 'active' : ''}`}
+                  onClick={() => applyFilters(withoutCustomDates(filters, value))}
                 >
                   {getDateFilterLabel(locale, value)}
                 </button>
@@ -1100,7 +1081,11 @@ export function ExploreMap({
                     className="category-icon"
                     style={
                       filters.categories.includes(option.value)
-                        ? undefined
+                        ? {
+                            background: CATEGORY_COLORS[option.value],
+                            borderColor: CATEGORY_COLORS[option.value],
+                            color: '#fff'
+                          }
                         : {
                             borderColor: CATEGORY_COLORS[option.value],
                             color: CATEGORY_COLORS[option.value]
