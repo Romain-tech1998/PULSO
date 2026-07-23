@@ -211,6 +211,50 @@ export function ExploreMap({
     userLocationRef.current = userLocation;
   }, [userLocation]);
 
+  const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [calendarEvents, setCalendarEvents] = useState<PublicEvent[]>([]);
+  const [calendarState, setCalendarState] = useState<LoadState>('loading');
+  const [selectedDay, setSelectedDay] = useState<string>();
+
+  const loadCalendarEvents = useCallback(
+    async (month: Date, activeFilters: DiscoveryFilters) => {
+      setCalendarState('loading');
+      const monthStart = getMontrealCalendarDate(
+        new Date(month.getFullYear(), month.getMonth(), 1)
+      );
+      const monthEnd = getMontrealCalendarDate(
+        new Date(month.getFullYear(), month.getMonth() + 1, 0)
+      );
+      try {
+        const response = await fetch(
+          boundsUrl(INITIAL_BOUNDS, {
+            ...activeFilters,
+            date: 'custom',
+            customStartDate: monthStart,
+            customEndDate: monthEnd
+          })
+        );
+        if (!response.ok) throw new Error('Event API unavailable');
+        const result = eventListResponseSchema.parse(await response.json());
+        setCalendarEvents(result.data);
+        setCalendarState(result.data.length === 0 ? 'empty' : 'success');
+      } catch {
+        setCalendarState('error');
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (viewMode === 'calendar') {
+      void loadCalendarEvents(calendarMonth, filters);
+    }
+  }, [viewMode, calendarMonth, filters, loadCalendarEvents]);
+
   useEffect(() => {
     const resolved = resolveBrowserLocale([initialLocale], localStorage);
     localeRef.current = resolved;
@@ -703,9 +747,27 @@ export function ExploreMap({
           <h2 className="sidebar-section-title">Découvrir</h2>
           
           <div className="view-toggles">
-            <button className="view-toggle-btn active">Carte</button>
-            <button className="view-toggle-btn">Liste</button>
-            <button className="view-toggle-btn">Calendrier</button>
+            <button
+              type="button"
+              className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
+              onClick={() => setViewMode('map')}
+            >
+              Carte
+            </button>
+            <button
+              type="button"
+              className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+              onClick={() => setViewMode('list')}
+            >
+              Liste
+            </button>
+            <button
+              type="button"
+              className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
+              onClick={() => setViewMode('calendar')}
+            >
+              Calendrier
+            </button>
           </div>
 
           <CollapsibleFilterGroup
@@ -840,7 +902,11 @@ export function ExploreMap({
 
         {/* Map Area */}
         <section className="map-container-wrapper" aria-label={translate(locale, 'map.label')}>
-          <div className="map-shell" data-map-context="preserved">
+          <div
+            className="map-shell"
+            data-map-context="preserved"
+            style={{ display: viewMode === 'map' ? undefined : 'none' }}
+          >
              <div ref={container} className="map" />
              <button className="map-floating-search" onClick={() => loadEvents(currentBounds.current, filters)}>
                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight: 8}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -854,13 +920,39 @@ export function ExploreMap({
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginLeft: 8}}><path d="M6 9l6 6 6-6"/></svg>
                 </button>
              </div>
-             
+
              {basemapState !== 'loaded' && (
               <p className="map-basemap-status" role="status">
                 {basemapState === 'loading' ? 'Loading map...' : 'Map unavailable'}
               </p>
              )}
           </div>
+
+          {viewMode === 'list' && (
+            <ListView
+              events={events}
+              favorites={favorites}
+              showFavoritesOnly={showFavoritesOnly}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetails={openDetails}
+              locale={locale}
+            />
+          )}
+
+          {viewMode === 'calendar' && (
+            <CalendarView
+              month={calendarMonth}
+              onChangeMonth={setCalendarMonth}
+              events={calendarEvents}
+              state={calendarState}
+              favorites={favorites}
+              showFavoritesOnly={showFavoritesOnly}
+              selectedDay={selectedDay}
+              onSelectDay={setSelectedDay}
+              onOpenDetails={openDetails}
+              locale={locale}
+            />
+          )}
         </section>
 
         {/* Right Sidebar (Details) */}
@@ -1031,6 +1123,216 @@ function CategoryIcon({ category }: { category: EventCategory }) {
     >
       {CATEGORY_ICON_PATHS[category]}
     </svg>
+  );
+}
+
+function ListView({
+  events,
+  favorites,
+  showFavoritesOnly,
+  onToggleFavorite,
+  onOpenDetails,
+  locale
+}: {
+  events: PublicEvent[];
+  favorites: string[];
+  showFavoritesOnly: boolean;
+  onToggleFavorite: (id: string) => void;
+  onOpenDetails: (id: string) => void;
+  locale: SupportedLocale;
+}) {
+  const visible = showFavoritesOnly
+    ? events.filter((event) => favorites.includes(event.id))
+    : events;
+
+  return (
+    <div className="list-view">
+      {visible.length === 0 && (
+        <p className="list-view-empty">Aucun événement à afficher.</p>
+      )}
+      {visible.map((event) => {
+        const fields = eventPreviewFields(event, locale);
+        return (
+          <button
+            type="button"
+            className="list-view-row"
+            key={event.id}
+            onClick={() => onOpenDetails(event.id)}
+          >
+            <span
+              className="list-view-dot"
+              style={{ background: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'] }}
+            />
+            <span className="list-view-main">
+              <strong>{fields.title}</strong>
+              <span className="list-view-sub">
+                {fields.venue} · {fields.dateTime}
+              </span>
+            </span>
+            <span className="list-view-price">{fields.price}</span>
+            <span
+              role="button"
+              tabIndex={0}
+              className="list-view-fav"
+              aria-pressed={favorites.includes(event.id)}
+              onClick={(clickEvent) => {
+                clickEvent.stopPropagation();
+                onToggleFavorite(event.id);
+              }}
+              onKeyDown={(keyEvent) => {
+                if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+                  keyEvent.preventDefault();
+                  keyEvent.stopPropagation();
+                  onToggleFavorite(event.id);
+                }
+              }}
+            >
+              {favorites.includes(event.id) ? '❤️' : '🤍'}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const CALENDAR_WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+function CalendarView({
+  month,
+  onChangeMonth,
+  events,
+  state,
+  favorites,
+  showFavoritesOnly,
+  selectedDay,
+  onSelectDay,
+  onOpenDetails,
+  locale
+}: {
+  month: Date;
+  onChangeMonth: (month: Date) => void;
+  events: PublicEvent[];
+  state: LoadState;
+  favorites: string[];
+  showFavoritesOnly: boolean;
+  selectedDay: string | undefined;
+  onSelectDay: (day: string | undefined) => void;
+  onOpenDetails: (id: string) => void;
+  locale: SupportedLocale;
+}) {
+  const visibleEvents = showFavoritesOnly
+    ? events.filter((event) => favorites.includes(event.id))
+    : events;
+
+  const eventsByDay = new Map<string, PublicEvent[]>();
+  for (const event of visibleEvents) {
+    const dayKey = event.startsAt.slice(0, 10);
+    const list = eventsByDay.get(dayKey) ?? [];
+    list.push(event);
+    eventsByDay.set(dayKey, list);
+  }
+
+  const firstOfMonth = new Date(month.getFullYear(), month.getMonth(), 1);
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  // Monday-first grid: JS getDay() is 0=Sunday, shift so Monday=0.
+  const leadingBlanks = (firstOfMonth.getDay() + 6) % 7;
+  const cells: Array<{ day: number; key: string } | undefined> = [
+    ...Array(leadingBlanks).fill(undefined),
+    ...Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      const key = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return { day, key };
+    })
+  ];
+
+  const monthLabel = month.toLocaleDateString(locale === 'fr' ? 'fr-CA' : 'en-CA', {
+    month: 'long',
+    year: 'numeric'
+  });
+
+  const dayEvents = selectedDay ? eventsByDay.get(selectedDay) ?? [] : [];
+
+  return (
+    <div className="calendar-view">
+      <div className="calendar-header">
+        <button
+          type="button"
+          onClick={() => onChangeMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+          aria-label="Mois précédent"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <h3>{monthLabel}</h3>
+        <button
+          type="button"
+          onClick={() => onChangeMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+          aria-label="Mois suivant"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+
+      <div className="calendar-weekdays">
+        {CALENDAR_WEEKDAYS.map((label, index) => (
+          <span key={`${label}-${index}`}>{label}</span>
+        ))}
+      </div>
+
+      <div className="calendar-grid">
+        {cells.map((cell, index) => {
+          if (!cell) return <div className="calendar-cell empty" key={`blank-${index}`} />;
+          const dayCount = eventsByDay.get(cell.key)?.length ?? 0;
+          return (
+            <button
+              type="button"
+              key={cell.key}
+              className={`calendar-cell ${selectedDay === cell.key ? 'selected' : ''} ${dayCount > 0 ? 'has-events' : ''}`}
+              onClick={() => onSelectDay(selectedDay === cell.key ? undefined : cell.key)}
+            >
+              <span className="calendar-day-number">{cell.day}</span>
+              {dayCount > 0 && <span className="calendar-day-count">{dayCount}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {state === 'loading' && <p className="calendar-status">Chargement…</p>}
+      {state === 'error' && <p className="calendar-status">Erreur de chargement.</p>}
+
+      {selectedDay && (
+        <div className="calendar-day-events">
+          <h4>
+            {new Date(`${selectedDay}T00:00:00`).toLocaleDateString(
+              locale === 'fr' ? 'fr-CA' : 'en-CA',
+              { weekday: 'long', day: 'numeric', month: 'long' }
+            )}
+          </h4>
+          {dayEvents.length === 0 && <p className="list-view-empty">Aucun événement ce jour-là.</p>}
+          {dayEvents.map((event) => {
+            const fields = eventPreviewFields(event, locale);
+            return (
+              <button
+                type="button"
+                className="list-view-row"
+                key={event.id}
+                onClick={() => onOpenDetails(event.id)}
+              >
+                <span
+                  className="list-view-dot"
+                  style={{ background: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'] }}
+                />
+                <span className="list-view-main">
+                  <strong>{fields.title}</strong>
+                  <span className="list-view-sub">{fields.venue} · {fields.dateTime}</span>
+                </span>
+                <span className="list-view-price">{fields.price}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
