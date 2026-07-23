@@ -118,6 +118,39 @@ function buildPinImageData(color: string): ImageData {
   return ctx.getImageData(0, 0, PIN_WIDTH, PIN_HEIGHT);
 }
 
+const CLUSTER_BADGE_SIZE = 72;
+
+/**
+ * Cluster badge: a soft brand-gradient disc (UI-0001's canonical
+ * #7336C1 → #EA3E81 → #FE7C5C gradient) with a white ring, replacing the
+ * previous flat single-color circle - the point-count text is drawn by a
+ * separate symbol layer stacked on top, unchanged.
+ */
+function buildClusterBadgeImageData(): ImageData {
+  const canvas = document.createElement('canvas');
+  canvas.width = CLUSTER_BADGE_SIZE;
+  canvas.height = CLUSTER_BADGE_SIZE;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2D canvas context unavailable.');
+
+  const center = CLUSTER_BADGE_SIZE / 2;
+  const radius = center - 4;
+  const gradient = ctx.createLinearGradient(0, 0, CLUSTER_BADGE_SIZE, CLUSTER_BADGE_SIZE);
+  gradient.addColorStop(0, '#7336C1');
+  gradient.addColorStop(0.5, '#EA3E81');
+  gradient.addColorStop(1, '#FE7C5C');
+
+  ctx.beginPath();
+  ctx.arc(center, center, radius, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+
+  return ctx.getImageData(0, 0, CLUSTER_BADGE_SIZE, CLUSTER_BADGE_SIZE);
+}
+
 type LoadState = 'loading' | 'success' | 'empty' | 'error';
 type BasemapState = 'loading' | 'loaded' | 'error';
 type DetailsState =
@@ -557,6 +590,7 @@ export function ExploreMap({
       for (const [category, color] of Object.entries(CATEGORY_COLORS)) {
         instance.addImage(`pin-${category}`, buildPinImageData(color));
       }
+      instance.addImage('cluster-badge', buildClusterBadgeImageData());
 
       // Source pour les événements avec clustering
       instance.addSource('events-source', {
@@ -584,15 +618,16 @@ export function ExploreMap({
 
       instance.addLayer({
         id: 'clusters',
-        type: 'circle',
+        type: 'symbol',
         source: 'events-source',
         filter: ['has', 'point_count'],
-        paint: {
-          'circle-color': '#7058ff',
-          'circle-radius': ['step', ['get', 'point_count'], 20, 10, 30, 50, 40],
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#FFFFFF',
-          'circle-opacity': 0.9
+        layout: {
+          'icon-image': 'cluster-badge',
+          // Matches the previous circle-radius steps (20/30/40px radius)
+          // scaled against the 72px badge image.
+          'icon-size': ['step', ['get', 'point_count'], 0.56, 10, 0.83, 50, 1.1],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
         }
       });
 
@@ -691,15 +726,45 @@ export function ExploreMap({
         const source = instance.getSource('events-source') as
           | maplibregl.GeoJSONSource
           | undefined;
-        if (clusterId === undefined || !source) return;
+        if (clusterId === undefined || !source || !feature) return;
+        const coordinates = (
+          feature.geometry as { type: 'Point'; coordinates: [number, number] }
+        ).coordinates;
+
         source.getClusterLeaves(clusterId, Infinity, 0).then((leaves) => {
           const ids = leaves.map((leaf) => leaf.properties?.id as string);
           const matched = ids
             .map((id) => eventsRef.current.find((ev) => ev.id === id))
             .filter((ev): ev is PublicEvent => Boolean(ev));
-          setPickerList({
-            title: `${matched.length} événements dans cette zone`,
-            events: matched
+
+          // If every event in this cluster sits at the exact same coordinate
+          // (same venue), zooming in can never split them apart - open the
+          // list right away instead of re-clustering at the same spot
+          // forever. Otherwise: more than 10 zooms in one step toward this
+          // cluster's natural breakup point; 10 or fewer opens the list.
+          const samePlace = leaves.every((leaf) => {
+            const [lng, lat] = (
+              leaf.geometry as { type: 'Point'; coordinates: [number, number] }
+            ).coordinates;
+            return (
+              Math.abs(lng - coordinates[0]) < 1e-5 &&
+              Math.abs(lat - coordinates[1]) < 1e-5
+            );
+          });
+
+          if (samePlace || matched.length <= 10) {
+            if (samePlace && instance.getZoom() < 15) {
+              instance.easeTo({ center: coordinates, zoom: 15 });
+            }
+            setPickerList({
+              title: `${matched.length} événements ${samePlace ? 'à cet endroit' : 'dans cette zone'}`,
+              events: matched
+            });
+            return;
+          }
+
+          source.getClusterExpansionZoom(clusterId).then((zoom) => {
+            instance.easeTo({ center: coordinates, zoom });
           });
         });
       });
@@ -888,8 +953,15 @@ export function ExploreMap({
                className={!aboutOpen && viewMode === 'list' && showFavoritesOnly ? 'active' : ''}
                onClick={() => {
                  setAboutOpen(false);
-                 setShowFavoritesOnly(true);
-                 setViewMode('list');
+                 if (viewMode === 'list' && showFavoritesOnly) {
+                   // Already showing the favorites list - clicking again
+                   // turns it off rather than doing nothing.
+                   setShowFavoritesOnly(false);
+                   setViewMode('map');
+                 } else {
+                   setShowFavoritesOnly(true);
+                   setViewMode('list');
+                 }
                }}
              >
                Favoris
@@ -2318,8 +2390,24 @@ function MapFilterBar({
 }
 
 function AboutPanel({ onClose }: { onClose: () => void }) {
+  const panelRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [onClose]);
+
   return (
-    <aside className="filter-overlay glass-panel slide-up" aria-label="À propos de Pulso">
+    <aside
+      className="filter-overlay glass-panel slide-up"
+      aria-label="À propos de Pulso"
+      ref={panelRef}
+    >
       <div className="filter-heading">
         <h2>À propos de Pulso</h2>
         <button type="button" onClick={onClose}>Fermer</button>

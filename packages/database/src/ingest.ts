@@ -103,7 +103,18 @@ async function main(): Promise<void> {
       rawEvents.push(...result.events);
     }
 
-    const withPoints = await enrichMissingCoordinates(rawEvents);
+    // Category is already resolved per-connector (or 'unmapped') before this
+    // point, and out-of-scope events are discarded later in
+    // mapAndDeduplicateRawEvents regardless - filtering them out now avoids
+    // burning enrichMissingCoordinates/enrichMissingAddresses's rate-limited
+    // Nominatim budget (1 req/s) on ~87% of raw volume that gets thrown away
+    // anyway (see PROJECT_INDEX.md entry 28).
+    const inScopeEvents = rawEvents.filter((event) => event.category !== 'unmapped');
+    console.log(
+      `[ingest] ${rawEvents.length - inScopeEvents.length} out-of-scope event(s) skipped before enrichment.`
+    );
+
+    const withPoints = await enrichMissingCoordinates(inScopeEvents);
     const enriched = await enrichMissingAddresses(withPoints);
     const { events, skipped } = mapAndDeduplicateRawEvents(enriched);
 
