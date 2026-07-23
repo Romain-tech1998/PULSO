@@ -8,7 +8,6 @@ import {
   eventListResponseSchema,
   intelligentSearchResponseSchema,
   PRICE_FILTER_OPTIONS,
-  summarizeActiveFilters,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
   type PublicEvent
@@ -171,6 +170,8 @@ export function ExploreMap({
   const detailsButton = useRef<HTMLButtonElement>(null);
   const detailsHeading = useRef<HTMLHeadingElement>(null);
   const [events, setEvents] = useState<PublicEvent[]>([]);
+  const [nearbyEvents, setNearbyEvents] = useState<PublicEvent[]>([]);
+  const [nearbyState, setNearbyState] = useState<LoadState>('loading');
   const [selected, setSelected] = useState<PublicEvent>();
   const [state, setState] = useState<LoadState>('loading');
   const [basemapState, setBasemapState] = useState<BasemapState>('loading');
@@ -217,6 +218,39 @@ export function ExploreMap({
   const userLocationRef = useRef(userLocation);
   useEffect(() => {
     userLocationRef.current = userLocation;
+  }, [userLocation]);
+
+  // "Événements autour de vous": the 15 closest events to the user's real
+  // position, independent of the map viewport/filters - per user feedback,
+  // this carousel should reflect actual proximity, not whatever the map
+  // happens to be panned to. Falls back to the bounds-based `events` list
+  // below when geolocation is unavailable/denied.
+  useEffect(() => {
+    if (!userLocation) return;
+    let cancelled = false;
+    setNearbyState('loading');
+    const params = new URLSearchParams({
+      longitude: String(userLocation.longitude),
+      latitude: String(userLocation.latitude),
+      radiusMeters: '50000'
+    });
+    fetch(`${API_BASE_URL}/events/near?${params.toString()}`)
+      .then((response) => {
+        if (!response.ok) throw new Error('Nearby events API unavailable');
+        return response.json();
+      })
+      .then((json) => {
+        if (cancelled) return;
+        const result = eventListResponseSchema.parse(json);
+        setNearbyEvents(result.data.slice(0, 15));
+        setNearbyState(result.data.length === 0 ? 'empty' : 'success');
+      })
+      .catch(() => {
+        if (!cancelled) setNearbyState('error');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [userLocation]);
 
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
@@ -630,7 +664,6 @@ export function ExploreMap({
     });
 
     instance.on('error', () => setBasemapState('error'));
-    instance.addControl(new maplibregl.NavigationControl(), 'top-right');
     const onMoveEnd = () => {
       const bounds = instance.getBounds();
       void loadEvents({
@@ -757,6 +790,13 @@ export function ExploreMap({
   }
 
   const showingDetails = details.kind !== 'closed';
+  // Prefer real-distance nearby results; fall back to the bounds-based list
+  // when geolocation was denied/unsupported or hasn't resolved yet.
+  const carouselEvents = userLocation && nearbyState === 'success' ? nearbyEvents : events;
+  const carouselEmpty =
+    userLocation && (nearbyState === 'success' || nearbyState === 'empty')
+      ? nearbyEvents.length === 0
+      : events.length === 0;
 
   return (
     <div className="app-container">
@@ -1002,12 +1042,42 @@ export function ExploreMap({
                Rechercher dans cette zone
              </button>
 
-             <div className="map-floating-filters">
-                <ActiveFilters filters={filters} onChange={applyFilters} locale={locale} />
-                <button className="map-filter-btn" onClick={() => setFiltersOpen((prev) => !prev)}>
-                  Plus de filtres
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginLeft: 8}}><path d="M6 9l6 6 6-6"/></svg>
-                </button>
+             <MapFilterBar
+               filters={filters}
+               onChange={applyFilters}
+               onOpenMore={() => setFiltersOpen((prev) => !prev)}
+               locale={locale}
+             />
+
+             <div className="map-zoom-controls">
+               <button
+                 type="button"
+                 className="map-zoom-btn"
+                 aria-label={translate(locale, 'map.zoomIn')}
+                 onClick={() => map.current?.zoomIn()}
+               >
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+               </button>
+               <button
+                 type="button"
+                 className="map-zoom-btn"
+                 aria-label={translate(locale, 'map.zoomOut')}
+                 onClick={() => map.current?.zoomOut()}
+               >
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+               </button>
+               <button
+                 type="button"
+                 className="map-zoom-btn map-recenter-btn"
+                 aria-label={translate(locale, 'map.recenter')}
+                 disabled={!userLocation}
+                 onClick={() => {
+                   if (!userLocation) return;
+                   map.current?.flyTo({ center: [userLocation.longitude, userLocation.latitude], zoom: 14 });
+                 }}
+               >
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+               </button>
              </div>
 
              {basemapState !== 'loaded' && (
@@ -1130,7 +1200,7 @@ export function ExploreMap({
          </div>
          
          <div className="event-carousel">
-           {events.slice(0, 10).map(evt => (
+           {carouselEvents.slice(0, 15).map(evt => (
               <div className="event-card" key={evt.id} onClick={() => openDetails(evt.id)} style={{cursor: 'pointer'}}>
                 <div
                   className="event-card-img"
@@ -1155,7 +1225,7 @@ export function ExploreMap({
                 </div>
               </div>
            ))}
-           {events.length === 0 && <p>Aucun événement trouvé.</p>}
+           {carouselEmpty && <p>Aucun événement trouvé.</p>}
          </div>
 
          <div className="feature-footer">
@@ -1817,54 +1887,145 @@ function applySearchFilterEdits(
   };
 }
 
-function ActiveFilters({
+/**
+ * The map-embedded filter bar: Date/Prix/Catégorie as compact dropdown
+ * chips, plus a "Plus de filtres" chip opening the full FilterOverlay -
+ * replaces the previous always-expanded ActiveFilters chip row per user
+ * feedback that a second, redundant pill "ne sert a rien" on the map.
+ */
+function MapFilterBar({
   filters,
   onChange,
+  onOpenMore,
   locale
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
+  onOpenMore: () => void;
   locale: SupportedLocale;
 }) {
-  const summary = summarizeActiveFilters(filters, locale);
-  if (summary.length === 0) {
-    return (
-      <span className="default-filter">
-        {translate(locale, 'filters.default')}
-      </span>
-    );
-  }
+  const [openChip, setOpenChip] = useState<'date' | 'price' | 'category'>();
+  const barRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!openChip) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (barRef.current && !barRef.current.contains(event.target as Node)) {
+        setOpenChip(undefined);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [openChip]);
+
+  const toggleChip = (chip: 'date' | 'price' | 'category') =>
+    setOpenChip((prev) => (prev === chip ? undefined : chip));
+
+  const toggleCategory = (category: EventCategory) => {
+    onChange({
+      ...filters,
+      categories: filters.categories.includes(category)
+        ? filters.categories.filter((value) => value !== category)
+        : [...filters.categories, category]
+    });
+  };
+
+  const categoryLabel =
+    filters.categories.length === 0
+      ? translate(locale, 'filters.categories')
+      : filters.categories
+          .map((category) => SHORT_CATEGORY_LABELS[locale][category])
+          .join(', ');
+
   return (
-    <div
-      className="active-filters-row"
-      aria-label={translate(locale, 'filters.activeAria')}
-    >
-      {summary.map((item) => (
+    <div className="map-filter-bar" ref={barRef}>
+      <div className="map-filter-chip-wrapper">
         <button
           type="button"
-          className="filter-pill active"
-          key={`${item.key}-${item.value}`}
-          aria-label={translate(locale, 'filters.clearAria', {
-            label: item.label
-          })}
-          onClick={() => {
-            if (item.key === 'date') {
-              onChange(withoutCustomDates(filters));
-            } else if (item.key === 'price') {
-              onChange({ ...filters, price: 'all' });
-            } else {
-              onChange({
-                ...filters,
-                categories: filters.categories.filter(
-                  (category) => category !== item.value
-                )
-              });
-            }
-          }}
+          className={`map-filter-chip ${openChip === 'date' ? 'open' : ''}`}
+          onClick={() => toggleChip('date')}
         >
-          {item.label} <span className="close-icon">×</span>
+          {getDateFilterLabel(locale, filters.date)}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
         </button>
-      ))}
+        {openChip === 'date' && (
+          <div className="map-filter-dropdown">
+            {DATE_FILTER_OPTIONS.map((option) => (
+              <label key={option.value}>
+                <input
+                  type="radio"
+                  name="map-date-filter"
+                  checked={filters.date === option.value}
+                  onChange={() => {
+                    onChange(withoutCustomDates(filters, option.value));
+                    setOpenChip(undefined);
+                  }}
+                />
+                {getDateFilterLabel(locale, option.value)}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="map-filter-chip-wrapper">
+        <button
+          type="button"
+          className={`map-filter-chip ${openChip === 'price' ? 'open' : ''}`}
+          onClick={() => toggleChip('price')}
+        >
+          {getPriceLabel(locale, filters.price)}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        {openChip === 'price' && (
+          <div className="map-filter-dropdown">
+            {PRICE_FILTER_OPTIONS.map((option) => (
+              <label key={option.value}>
+                <input
+                  type="radio"
+                  name="map-price-filter"
+                  checked={filters.price === option.value}
+                  onChange={() => {
+                    onChange({ ...filters, price: option.value });
+                    setOpenChip(undefined);
+                  }}
+                />
+                {getPriceLabel(locale, option.value)}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="map-filter-chip-wrapper">
+        <button
+          type="button"
+          className={`map-filter-chip ${openChip === 'category' ? 'open' : ''} ${filters.categories.length > 0 ? 'active' : ''}`}
+          onClick={() => toggleChip('category')}
+        >
+          {categoryLabel}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        {openChip === 'category' && (
+          <div className="map-filter-dropdown">
+            {CATEGORY_FILTER_OPTIONS.map((option) => (
+              <label key={option.value}>
+                <input
+                  type="checkbox"
+                  checked={filters.categories.includes(option.value)}
+                  onChange={() => toggleCategory(option.value)}
+                />
+                {SHORT_CATEGORY_LABELS[locale][option.value]}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <button type="button" className="map-filter-chip map-filter-more" onClick={onOpenMore}>
+        Plus de filtres
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
     </div>
   );
 }
