@@ -46,6 +46,7 @@ const publicEventSelect = `
     e.external_destination_label,
     e.external_destination_url,
     e.external_destination_status,
+    e.external_destination_kind,
     e.trust_label,
     e.freshness,
     e.location_confidence,
@@ -75,6 +76,7 @@ interface EventRow {
   external_destination_label: string | null;
   external_destination_url: string | null;
   external_destination_status: 'available' | 'unavailable' | null;
+  external_destination_kind: 'event_source' | 'ticketing' | null;
   trust_label: PublicEvent['trust']['label'];
   freshness: PublicEvent['trust']['freshness'];
   location_confidence: PublicEvent['trust']['locationConfidence'];
@@ -125,7 +127,10 @@ function toPublicEvent(row: EventRow): PublicEvent {
   if (row.external_destination_label && row.external_destination_status) {
     event.externalDestination = {
       label: row.external_destination_label,
-      kind: 'event_source',
+      // Legacy rows ingested before external_destination_kind existed have
+      // no value here; 'event_source' is the safe fallback since it never
+      // overstates a plain source link as an actual ticket purchase page.
+      kind: row.external_destination_kind ?? 'event_source',
       status: row.external_destination_status
     };
   }

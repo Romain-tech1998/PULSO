@@ -51,6 +51,23 @@ describe('accepted Montréal date filters', () => {
     ).toBe('2026-07-21T03:59:59.999Z');
   });
 
+  it('does not clip a custom date/range to the rolling 7-day baseline (Calendar view relies on this)', () => {
+    // Regression: 'custom' used to fall through to the same rolling-window
+    // intersection as the relative presets, so any explicitly chosen range
+    // beyond ~7 days from `now` produced an inverted (startsAt > endsAt),
+    // always-empty window instead of the actually-requested month.
+    expect(
+      createFilteredDiscoveryWindow(now, {
+        date: 'custom',
+        customStartDate: '2026-09-01',
+        customEndDate: '2026-09-30'
+      })
+    ).toEqual({
+      startsAt: new Date('2026-09-01T04:00:00.000Z'),
+      endsAt: new Date('2026-10-01T03:59:59.999Z')
+    });
+  });
+
   it('uses the current weekend on Saturday and intersects past time with now', () => {
     const saturday = new Date('2026-07-18T18:00:00.000Z');
     const window = createFilteredDiscoveryWindow(saturday, { date: 'weekend' });

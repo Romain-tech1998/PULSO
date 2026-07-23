@@ -79,6 +79,45 @@ const MAP_STYLE_DARK: maplibregl.StyleSpecification = {
 const MAP_STYLE_URL: string | maplibregl.StyleSpecification =
   process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? MAP_STYLE_DARK;
 
+const PIN_WIDTH = 34;
+const PIN_HEIGHT = 44;
+
+/**
+ * Classic teardrop map-pin shape (colored fill, white ring, white dot
+ * center), rasterized on a canvas - replaces the plain flat circle markers,
+ * which read as generic dots rather than map pins. Drawn on canvas and
+ * passed to maplibre as raw ImageData rather than an SVG data URI fed
+ * through Map.loadImage(): that path threw "source image could not be
+ * decoded" in this environment, silently dropping every pin.
+ */
+function buildPinImageData(color: string): ImageData {
+  const canvas = document.createElement('canvas');
+  canvas.width = PIN_WIDTH;
+  canvas.height = PIN_HEIGHT;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2D canvas context unavailable.');
+
+  ctx.beginPath();
+  ctx.moveTo(17, 0);
+  ctx.bezierCurveTo(7.611, 0, 0, 7.611, 0, 17);
+  ctx.bezierCurveTo(0, 29.75, 17, 44, 17, 44);
+  ctx.bezierCurveTo(17, 44, 34, 29.75, 34, 17);
+  ctx.bezierCurveTo(34, 7.611, 26.389, 0, 17, 0);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(17, 17, 6.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+
+  return ctx.getImageData(0, 0, PIN_WIDTH, PIN_HEIGHT);
+}
+
 type LoadState = 'loading' | 'success' | 'empty' | 'error';
 type BasemapState = 'loading' | 'loaded' | 'error';
 type DetailsState =
@@ -513,6 +552,12 @@ export function ExploreMap({
     instance.on('load', () => {
       setBasemapState('loaded');
 
+      // Pin icons must be registered before any layer references them, or
+      // that layer silently renders nothing for that image.
+      for (const [category, color] of Object.entries(CATEGORY_COLORS)) {
+        instance.addImage(`pin-${category}`, buildPinImageData(color));
+      }
+
       // Source pour les événements avec clustering
       instance.addSource('events-source', {
         type: 'geojson',
@@ -583,33 +628,32 @@ export function ExploreMap({
         filter: ['!', ['has', 'point_count']]
       });
 
-      // Layer pour les événements non-sélectionnés (gouttes)
+      // Layer pour les événements non-sélectionnés (pins par catégorie)
       instance.addLayer({
         id: 'events-circles',
-        type: 'circle',
+        type: 'symbol',
         source: 'events-source',
-        paint: {
-          'circle-radius': 12,
-          'circle-color': ['get', 'color'],
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#000000',
-          'circle-opacity': 0.9
+        layout: {
+          'icon-image': ['concat', 'pin-', ['get', 'category']],
+          'icon-size': 0.85,
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
         },
         filter: ['!', ['has', 'point_count']]
       });
 
-      // Layer pour l'événement sélectionné (grand pin lumineux)
+      // Layer pour l'événement sélectionné (grand pin)
       instance.addLayer({
         id: 'events-selected',
-        type: 'circle',
+        type: 'symbol',
         source: 'events-source',
-        paint: {
-          'circle-radius': 20,
-          'circle-color': ['get', 'color'],
-          'circle-stroke-width': 4,
-          'circle-stroke-color': '#FFFFFF',
-          'circle-opacity': 1,
-          'circle-pitch-alignment': 'map'
+        layout: {
+          'icon-image': ['concat', 'pin-', ['get', 'category']],
+          'icon-size': 1.25,
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
         },
         filter: ['==', ['get', 'id'], selected?.id ?? '']
       });
@@ -746,7 +790,8 @@ export function ExploreMap({
         },
         properties: {
           id: event.id,
-          color: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']
+          color: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
+          category: event.category
         }
       }))
     });
@@ -963,6 +1008,9 @@ export function ExploreMap({
             collapsed={collapsedSections.has('categories')}
             onToggle={() => toggleSection('categories')}
           >
+            <p className="category-legend-hint">
+              La couleur de chaque catégorie correspond à celle des pins sur la carte.
+            </p>
             <div className="category-grid">
               {CATEGORY_FILTER_OPTIONS.map((option) => (
                 <button
@@ -976,7 +1024,17 @@ export function ExploreMap({
                     applyFilters({ ...filters, categories: nextCategories });
                   }}
                 >
-                  <div className="category-icon">
+                  <div
+                    className="category-icon"
+                    style={
+                      filters.categories.includes(option.value)
+                        ? undefined
+                        : {
+                            borderColor: CATEGORY_COLORS[option.value],
+                            color: CATEGORY_COLORS[option.value]
+                          }
+                    }
+                  >
                     <CategoryIcon category={option.value} />
                   </div>
                   <span>{SHORT_CATEGORY_LABELS[locale][option.value]}</span>

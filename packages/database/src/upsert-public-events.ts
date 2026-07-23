@@ -45,11 +45,12 @@ export async function upsertPublicEvents(
          id, venue_id, title, category, status, starts_at, ends_at, timezone,
          source_name, source_url, observed_at, freshness, location_confidence, price_kind,
          description, organizer_name, access_information, external_destination_label,
-         external_destination_url, external_destination_status, trust_label, additional_sources
+         external_destination_url, external_destination_status, external_destination_kind,
+         trust_label, additional_sources
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8,
          $9, $10, $11, $12, $13, $14,
-         $15, $16, $17, $18, $19, $20, $21, $22
+         $15, $16, $17, $18, $19, $20, $21, $22, $23
        )
        ON CONFLICT (id) DO UPDATE SET
          venue_id = EXCLUDED.venue_id,
@@ -70,6 +71,7 @@ export async function upsertPublicEvents(
          external_destination_label = EXCLUDED.external_destination_label,
          external_destination_url = EXCLUDED.external_destination_url,
          external_destination_status = EXCLUDED.external_destination_status,
+         external_destination_kind = EXCLUDED.external_destination_kind,
          trust_label = EXCLUDED.trust_label,
          additional_sources = EXCLUDED.additional_sources`,
       [
@@ -93,6 +95,7 @@ export async function upsertPublicEvents(
         event.externalDestination?.label ?? null,
         externalDestinationUrl,
         event.externalDestination?.status ?? null,
+        event.externalDestination?.kind ?? null,
         event.trust.label,
         JSON.stringify(additionalSources)
       ]

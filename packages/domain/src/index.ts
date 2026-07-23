@@ -259,6 +259,29 @@ export function createFilteredDiscoveryWindow(
 
   if (filters.date === 'next7') return rolling;
 
+  if (filters.date === 'custom') {
+    // Deliberately NOT intersected with the MAP-003 rolling baseline below,
+    // unlike every relative preset: a user (or the Calendar view, which
+    // always sends 'custom' for its displayed month) explicitly chose this
+    // exact date/range, so silently clipping it to "within 7 days from now"
+    // would make picking any date beyond a week pointless - previously this
+    // fell through to the intersection and produced an inverted, always-
+    // empty window for any custom range past the rolling cutoff.
+    if (!filters.customStartDate) {
+      throw new Error('A selected Montréal date is required.');
+    }
+    const start = parseLocalDate(filters.customStartDate);
+    const end = parseLocalDate(filters.customEndDate ?? filters.customStartDate);
+    const custom: DiscoveryWindow = {
+      startsAt: montrealLocalToInstant(atLocalTime(start, 0)),
+      endsAt: montrealLocalToInstant(atLocalTime(end, 23, 59, 59, 999))
+    };
+    if (custom.startsAt > custom.endsAt) {
+      throw new Error('The selected date range is invalid.');
+    }
+    return custom;
+  }
+
   if (filters.date === 'today') {
     // Strictly today's Montréal calendar date - unlike 'tonight' below, this
     // does not bleed into tomorrow morning.
@@ -281,7 +304,9 @@ export function createFilteredDiscoveryWindow(
       ),
       endsAt: montrealLocalToInstant(atLocalTime(addLocalDays(localNow, 2), 5))
     };
-  } else if (filters.date === 'weekend') {
+  } else {
+    // 'weekend' - the only DateFilterValue left after next7/custom (returned
+    // above) and today/tonight/tomorrow (handled above).
     const weekday = new Date(
       Date.UTC(localNow.year, localNow.month - 1, localNow.day)
     ).getUTCDay();
@@ -292,21 +317,6 @@ export function createFilteredDiscoveryWindow(
       startsAt: montrealLocalToInstant(atLocalTime(friday, 17)),
       endsAt: montrealLocalToInstant(atLocalTime(addLocalDays(friday, 3), 5))
     };
-  } else {
-    if (!filters.customStartDate) {
-      throw new Error('A selected Montréal date is required.');
-    }
-    const start = parseLocalDate(filters.customStartDate);
-    const end = parseLocalDate(
-      filters.customEndDate ?? filters.customStartDate
-    );
-    requested = {
-      startsAt: montrealLocalToInstant(atLocalTime(start, 0)),
-      endsAt: montrealLocalToInstant(atLocalTime(end, 23, 59, 59, 999))
-    };
-    if (requested.startsAt > requested.endsAt) {
-      throw new Error('The selected date range is invalid.');
-    }
   }
 
   return {
