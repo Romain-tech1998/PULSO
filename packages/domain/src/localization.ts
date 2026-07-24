@@ -144,7 +144,7 @@ const en = {
   'search.expand': 'Intelligent search',
   'search.collapse': 'Collapse search',
   'search.question': 'What do you want to do?',
-  'search.placeholder': 'Example: free music tonight',
+  'search.placeholder': 'Search for an event, a venue, an artist…',
   'search.submit': 'Search',
   'search.help':
     'Optional deterministic matching. Manual filters always remain available; no external AI provider is used.',
@@ -350,7 +350,7 @@ const fr = {
   'search.expand': 'Recherche intelligente',
   'search.collapse': 'Réduire la recherche',
   'search.question': 'Que voulez-vous faire?',
-  'search.placeholder': 'Exemple : musique gratuite ce soir',
+  'search.placeholder': 'Rechercher un événement, un lieu, un artiste…',
   'search.submit': 'Rechercher',
   'search.help':
     'Correspondance déterministe facultative. Les filtres manuels restent toujours disponibles; aucun fournisseur d’IA externe n’est utilisé.',

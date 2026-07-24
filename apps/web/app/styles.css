@@ -5,8 +5,10 @@
   color: var(--text-primary);
 
   /* Brand Colors from Mockup */
-  --brand-purple: #7058ff;
-  /* Deeper vibrant purple */
+  --brand-purple: #5b3fe0;
+  /* Darkened from the original #7058ff - the lighter tone read as too
+     bright/neon for highlight states once the map went dark, see
+     PROJECT_INDEX. */
   --brand-pink: #ff2a7a;
   /* Hot pink */
   --brand-orange: #ff7b00;
@@ -19,9 +21,18 @@
   /* Surfaces */
   --background: #09080d;
   /* Very dark background */
-  --surface-base: #13111c;
+  --surface-base: #0c0a12;
+  /* Darkened from #13111c so the app chrome (sidebars, header) reads as
+     clearly separate from the dark map beneath it (map background is
+     ~#100e19) rather than blending into the same tone - still a deliberate
+     dark purple-black, not pure #000. */
   --surface-raised: #1c192b;
-  --surface-overlay: rgba(28, 25, 43, 0.6);
+  --surface-overlay: rgba(10, 9, 16, 0.82);
+  /* Darkened/more opaque than the original rgba(28,25,43,0.6) - the
+     floating controls on top of the map (search, filter bar, zoom,
+     recenter) were letting too much of the map's own light-ish road/label
+     colors show through, reading as washed out rather than a clear UI
+     layer on top of the map. */
   --brand-border: rgba(255, 255, 255, 0.08);
 
   /* Typography */
@@ -218,22 +229,24 @@ h6 {
 .city-selector {
   position: relative;
   flex-shrink: 0;
-  border-left: 1px solid var(--brand-border);
 }
 
 .city-selector-trigger {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.85rem 1.25rem 0.85rem 0.9rem;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--brand-border);
   color: var(--text-secondary);
-  font-weight: 500;
-  font-size: 0.9rem;
+  font-weight: 600;
+  font-size: 0.85rem;
   white-space: nowrap;
-  transition: color 0.2s;
+  transition: border-color 0.2s, color 0.2s;
 }
 
 .city-selector-trigger:hover {
+  border-color: var(--brand-purple);
   color: var(--text-primary);
 }
 
@@ -454,8 +467,9 @@ h6 {
 }
 
 .view-toggle-btn.active {
-  background: var(--surface-raised);
+  background: rgba(91, 63, 224, 0.22);
   color: var(--text-primary);
+  font-weight: 600;
 }
 
 .view-toggle-fav {
@@ -724,6 +738,19 @@ h6 {
   flex-direction: column;
   gap: 0.5rem;
   background: var(--surface-base);
+}
+.list-view-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--brand-border);
+  margin-bottom: 0.5rem;
+}
+.list-view-heading h3 {
+  margin: 0;
+  font-size: 1rem;
 }
 .list-view-empty {
   color: var(--text-muted);
@@ -1386,12 +1413,19 @@ h6 {
 /* "You are here" marker */
 .user-location-marker {
   position: relative;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: #4285f4;
   border: 3px solid #fff;
   box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.4), 0 2px 8px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.user-location-marker-icon {
+  position: relative;
+  z-index: 1;
 }
 .user-location-marker-pulse {
   position: absolute;
@@ -1520,6 +1554,11 @@ h6 {
 }
 
 .view-all {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
@@ -1565,6 +1604,14 @@ h6 {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.event-image-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .card-badge {

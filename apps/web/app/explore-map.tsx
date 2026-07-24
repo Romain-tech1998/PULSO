@@ -81,6 +81,13 @@ const MAP_STYLE_URL: string | maplibregl.StyleSpecification =
 
 const PIN_WIDTH = 34;
 const PIN_HEIGHT = 44;
+// Pins are rasterized once at load time, not re-drawn per zoom level -
+// without oversampling, MapLibre stretches these few dozen source pixels
+// across many device pixels on any HiDPI screen, which is what read as a
+// jagged/discontinuous outline rather than a clean stroke. Rendering at 3x
+// and declaring that via addImage's pixelRatio option keeps the edge crisp
+// regardless of screen density or icon-size zoom scaling.
+const PIN_SCALE = 3;
 
 /**
  * Classic teardrop map-pin shape (colored fill, white ring, white dot
@@ -92,10 +99,11 @@ const PIN_HEIGHT = 44;
  */
 function buildPinImageData(color: string): ImageData {
   const canvas = document.createElement('canvas');
-  canvas.width = PIN_WIDTH;
-  canvas.height = PIN_HEIGHT;
+  canvas.width = PIN_WIDTH * PIN_SCALE;
+  canvas.height = PIN_HEIGHT * PIN_SCALE;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('2D canvas context unavailable.');
+  ctx.scale(PIN_SCALE, PIN_SCALE);
 
   ctx.beginPath();
   ctx.moveTo(17, 0);
@@ -115,7 +123,7 @@ function buildPinImageData(color: string): ImageData {
   ctx.fillStyle = '#ffffff';
   ctx.fill();
 
-  return ctx.getImageData(0, 0, PIN_WIDTH, PIN_HEIGHT);
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
 const CLUSTER_BADGE_SIZE = 72;
@@ -124,14 +132,16 @@ const CLUSTER_BADGE_SIZE = 72;
  * Cluster badge: a soft brand-gradient disc (UI-0001's canonical
  * #7336C1 → #EA3E81 → #FE7C5C gradient) with a white ring, replacing the
  * previous flat single-color circle - the point-count text is drawn by a
- * separate symbol layer stacked on top, unchanged.
+ * separate symbol layer stacked on top, unchanged. Oversampled at PIN_SCALE
+ * for the same reason as buildPinImageData above.
  */
 function buildClusterBadgeImageData(): ImageData {
   const canvas = document.createElement('canvas');
-  canvas.width = CLUSTER_BADGE_SIZE;
-  canvas.height = CLUSTER_BADGE_SIZE;
+  canvas.width = CLUSTER_BADGE_SIZE * PIN_SCALE;
+  canvas.height = CLUSTER_BADGE_SIZE * PIN_SCALE;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('2D canvas context unavailable.');
+  ctx.scale(PIN_SCALE, PIN_SCALE);
 
   const center = CLUSTER_BADGE_SIZE / 2;
   const radius = center - 4;
@@ -148,7 +158,7 @@ function buildClusterBadgeImageData(): ImageData {
   ctx.strokeStyle = '#ffffff';
   ctx.stroke();
 
-  return ctx.getImageData(0, 0, CLUSTER_BADGE_SIZE, CLUSTER_BADGE_SIZE);
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
 type LoadState = 'loading' | 'success' | 'empty' | 'error';
@@ -241,8 +251,18 @@ function useTransitionedMount(open: boolean, durationMs = 180) {
   useEffect(() => {
     if (open) {
       setMounted(true);
-      const frame = requestAnimationFrame(() => setVisible(true));
-      return () => cancelAnimationFrame(frame);
+      // A single rAF can still land in the same paint as the mount (the
+      // browser hasn't necessarily committed the "invisible" starting
+      // style yet), which was skipping the opening transition entirely -
+      // two nested frames guarantee a paint happens in between.
+      let inner = 0;
+      const outer = requestAnimationFrame(() => {
+        inner = requestAnimationFrame(() => setVisible(true));
+      });
+      return () => {
+        cancelAnimationFrame(outer);
+        cancelAnimationFrame(inner);
+      };
     }
     setVisible(false);
     const timeout = setTimeout(() => setMounted(false), durationMs);
@@ -289,6 +309,15 @@ export function ExploreMap({
   const [locale, setLocale] = useState(initialLocale);
   const { favorites, toggleFavorite } = useFavorites();
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  // Set when the user follows "Voir tous les événements" from the nearby
+  // carousel, so List shows that same distance-sorted set instead of the
+  // map's viewport-bound events - the carousel is deliberately about
+  // proximity to the user, not what the map happens to be panned to (see
+  // PROJECT_INDEX entry 41), and this gives that a real destination
+  // instead of a dead link.
+  const [listOverride, setListOverride] = useState<
+    { title: string; events: PublicEvent[] } | undefined
+  >();
   // Client-side only: filters the already-fetched events by source.name.
   // Empty = no restriction. Not sent to the API since every currently wired
   // source (Ticketmaster, Ville de Montréal) is already fetched together;
@@ -623,9 +652,9 @@ export function ExploreMap({
       // Pin icons must be registered before any layer references them, or
       // that layer silently renders nothing for that image.
       for (const [category, color] of Object.entries(CATEGORY_COLORS)) {
-        instance.addImage(`pin-${category}`, buildPinImageData(color));
+        instance.addImage(`pin-${category}`, buildPinImageData(color), { pixelRatio: PIN_SCALE });
       }
-      instance.addImage('cluster-badge', buildClusterBadgeImageData());
+      instance.addImage('cluster-badge', buildClusterBadgeImageData(), { pixelRatio: PIN_SCALE });
 
       // Source pour les événements avec clustering
       instance.addSource('events-source', {
@@ -869,7 +898,14 @@ export function ExploreMap({
     if (!map.current || !userLocation) return;
     const el = document.createElement('div');
     el.className = 'user-location-marker';
-    el.innerHTML = '<span class="user-location-marker-pulse"></span>';
+    el.title = 'Vous êtes ici';
+    el.setAttribute('aria-label', 'Vous êtes ici');
+    // A plain dot read as just another marker at a glance - a small glyph
+    // inside makes "this one is you" unambiguous rather than relying on
+    // color alone to distinguish it from event pins.
+    el.innerHTML =
+      '<span class="user-location-marker-pulse"></span>' +
+      '<svg class="user-location-marker-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="#fff" stroke="none"/></svg>';
     userMarker.current?.remove();
     userMarker.current = new maplibregl.Marker({ element: el })
       .setLngLat([userLocation.longitude, userLocation.latitude])
@@ -975,6 +1011,30 @@ export function ExploreMap({
   }
 
   const showingDetails = details.kind !== 'closed';
+  // Details and the picker list share one right-side slot and are mutually
+  // exclusive (see the map click handlers, which always close one before
+  // opening the other) - tracked as a single transition lifecycle instead
+  // of two independent ones so their open/close animations can never both
+  // be mid-flight and stack in the same layout slot at once.
+  const rightPanelOpen = showingDetails || pickerList !== undefined;
+  const rightPanelMount = useTransitionedMount(rightPanelOpen);
+  const lastRightPanelContentRef = useRef<
+    | { kind: 'details'; state: DetailsState }
+    | { kind: 'picker'; list: { title: string; events: PublicEvent[] } }
+    | { kind: 'none' }
+  >({ kind: 'none' });
+  useEffect(() => {
+    if (showingDetails) {
+      lastRightPanelContentRef.current = { kind: 'details', state: details };
+    } else if (pickerList !== undefined) {
+      lastRightPanelContentRef.current = { kind: 'picker', list: pickerList };
+    }
+  }, [showingDetails, details, pickerList]);
+  const shownRightPanelContent = rightPanelOpen
+    ? showingDetails
+      ? ({ kind: 'details', state: details } as const)
+      : ({ kind: 'picker', list: pickerList! } as const)
+    : lastRightPanelContentRef.current;
   const sourceFilteredEvents =
     selectedSources.length === 0
       ? events
@@ -1017,6 +1077,7 @@ export function ExploreMap({
                    setViewMode('map');
                  } else {
                    setShowFavoritesOnly(true);
+                   setListOverride(undefined);
                    setViewMode('list');
                  }
                }}
@@ -1025,8 +1086,9 @@ export function ExploreMap({
              </button>
              <button
                type="button"
+               data-about-toggle
                className={aboutOpen ? 'active' : ''}
-               onClick={() => setAboutOpen(true)}
+               onClick={() => setAboutOpen((prev) => !prev)}
              >
                À propos
              </button>
@@ -1047,6 +1109,7 @@ export function ExploreMap({
           />
         </div>
         <div className="nav-actions">
+          <CitySelector />
           <LanguageSelector locale={locale} onChange={selectLocale} />
         </div>
       </header>
@@ -1068,7 +1131,10 @@ export function ExploreMap({
               <button
                 type="button"
                 className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
-                onClick={() => setViewMode('list')}
+                onClick={() => {
+                  setListOverride(undefined);
+                  setViewMode('list');
+                }}
               >
                 <ViewModeIcon kind="list" /> Liste
               </button>
@@ -1326,11 +1392,13 @@ export function ExploreMap({
 
           {viewMode === 'list' && (
             <ListView
-              events={sourceFilteredEvents}
+              events={listOverride?.events ?? sourceFilteredEvents}
               favorites={favorites}
               showFavoritesOnly={showFavoritesOnly}
               onToggleFavorite={toggleFavorite}
               onOpenDetails={openDetails}
+              title={listOverride?.title}
+              onClearTitle={listOverride ? () => setListOverride(undefined) : undefined}
               locale={locale}
             />
           )}
@@ -1351,11 +1419,18 @@ export function ExploreMap({
               onSelectDay={(day, dayEvents) => {
                 setSelectedDay(day);
                 if (day) {
+                  const dayLabel = new Date(`${day}T00:00:00`).toLocaleDateString(
+                    locale === 'fr' ? 'fr-CA' : 'en-CA',
+                    { weekday: 'long', day: 'numeric', month: 'long' }
+                  );
+                  // The festive-day marker on the grid only had a hover
+                  // tooltip, easy to miss (and useless on touch) - naming
+                  // it in the picker title that opens on click/tap makes
+                  // "what is this highlighted day" self-evident the moment
+                  // someone actually interacts with it.
+                  const festiveLabel = FESTIVE_DAYS[day.slice(5)];
                   setPickerList({
-                    title: new Date(`${day}T00:00:00`).toLocaleDateString(
-                      locale === 'fr' ? 'fr-CA' : 'en-CA',
-                      { weekday: 'long', day: 'numeric', month: 'long' }
-                    ),
+                    title: festiveLabel ? `${dayLabel} — ${festiveLabel}` : dayLabel,
                     events: dayEvents
                   });
                 } else {
@@ -1367,42 +1442,46 @@ export function ExploreMap({
           )}
         </section>
 
-        {/* Right Sidebar (Details) */}
-        {details.kind !== 'closed' && (
-           <div className="sidebar-right">
-             {details.kind === 'success' && (
-               <EventDetails
-                 event={details.event}
-                 headingRef={detailsHeading}
-                 onBack={returnToMap}
-                 isFavorite={favorites.includes(details.event.id)}
-                 onToggleFavorite={() => toggleFavorite(details.event.id)}
-                 locale={locale}
-               />
-             )}
-             {details.kind === 'loading' && (
+        {/* Right Sidebar (Details / cluster picker) - one shared slot, see
+            rightPanelMount above for why these aren't two independent panels. */}
+        {rightPanelMount.mounted && (
+           <div className={`sidebar-right panel-transition ${rightPanelMount.visible ? 'panel-visible' : ''}`}>
+             {shownRightPanelContent.kind === 'details' && shownRightPanelContent.state.kind === 'success' && (() => {
+               const shownEvent = shownRightPanelContent.state.event;
+               return (
+                 <EventDetails
+                   event={shownEvent}
+                   headingRef={detailsHeading}
+                   onBack={returnToMap}
+                   isFavorite={favorites.includes(shownEvent.id)}
+                   onToggleFavorite={() => toggleFavorite(shownEvent.id)}
+                   locale={locale}
+                 />
+               );
+             })()}
+             {shownRightPanelContent.kind === 'details' && shownRightPanelContent.state.kind === 'loading' && (
                <div style={{padding: '2rem'}}>Chargement...</div>
              )}
-             {details.kind === 'error' && (
-               <div style={{padding: '2rem'}}>
-                 Erreur de chargement.
-                 <button className="btn-secondary" onClick={() => void openDetails(details.eventId)} style={{marginTop: '1rem'}}>Réessayer</button>
-               </div>
+             {shownRightPanelContent.kind === 'details' && shownRightPanelContent.state.kind === 'error' && (() => {
+               const failedEventId = shownRightPanelContent.state.eventId;
+               return (
+                 <div style={{padding: '2rem'}}>
+                   Erreur de chargement.
+                   <button className="btn-secondary" onClick={() => void openDetails(failedEventId)} style={{marginTop: '1rem'}}>Réessayer</button>
+                 </div>
+               );
+             })()}
+             {shownRightPanelContent.kind === 'picker' && (
+               <PickerList
+                 title={shownRightPanelContent.list.title}
+                 events={shownRightPanelContent.list.events}
+                 favorites={favorites}
+                 locale={locale}
+                 onClose={() => setPickerList(undefined)}
+                 onSelect={(id) => void openDetails(id)}
+               />
              )}
            </div>
-        )}
-
-        {details.kind === 'closed' && pickerList && (
-          <div className="sidebar-right">
-            <PickerList
-              title={pickerList.title}
-              events={pickerList.events}
-              favorites={favorites}
-              locale={locale}
-              onClose={() => setPickerList(undefined)}
-              onSelect={(id) => void openDetails(id)}
-            />
-          </div>
         )}
       </div>
 
@@ -1440,7 +1519,19 @@ export function ExploreMap({
       <div className="bottom-section">
          <div className="section-header">
            <h2>Événements autour de vous</h2>
-           <a href="#" className="view-all">Voir tous les événements <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{verticalAlign: 'middle', marginLeft: 4}}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg></a>
+           <button
+             type="button"
+             className="view-all"
+             onClick={() => {
+               setListOverride({
+                 title: 'Événements les plus proches de vous',
+                 events: carouselEvents.slice(0, 15)
+               });
+               setViewMode('list');
+             }}
+           >
+             Voir tous les événements <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{verticalAlign: 'middle', marginLeft: 4}}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+           </button>
          </div>
          
          <div className="event-carousel">
@@ -1455,11 +1546,10 @@ export function ExploreMap({
                           backgroundSize: 'cover',
                           backgroundPosition: 'center'
                         }
-                      : {
-                          background: `linear-gradient(160deg, ${CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']}55, ${CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']}11)`
-                        }
+                      : undefined
                   }
                 >
+                   {!evt.imageUrl && <EventImageFallback category={evt.category} />}
                    <div
                      className="card-badge"
                      style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
@@ -1588,11 +1678,11 @@ function HeartIcon({ filled }: { filled: boolean }) {
   );
 }
 
-function CategoryIcon({ category }: { category: EventCategory }) {
+function CategoryIcon({ category, size = 20 }: { category: EventCategory; size?: number }) {
   return (
     <svg
-      width="20"
-      height="20"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -1603,6 +1693,28 @@ function CategoryIcon({ category }: { category: EventCategory }) {
     >
       {CATEGORY_ICON_PATHS[category]}
     </svg>
+  );
+}
+
+/**
+ * Honest stand-in for events with no real photo (Ville de Montréal's open
+ * data has no image field at all; a handful of Ticketmaster events omit
+ * one too): a large, clearly-abstract watermark icon over the category
+ * gradient, not something that could be mistaken for an actual photo of
+ * the venue or event - per product decision, Pulso never fabricates
+ * imagery that looks real.
+ */
+function EventImageFallback({ category }: { category: EventCategory }) {
+  const color = CATEGORY_COLORS[category] ?? CATEGORY_COLORS['other'];
+  return (
+    <div
+      className="event-image-fallback"
+      style={{ background: `linear-gradient(160deg, ${color}55, ${color}11)` }}
+    >
+      <span style={{ color: `${color}66` }}>
+        <CategoryIcon category={category} size={56} />
+      </span>
+    </div>
   );
 }
 
@@ -1783,7 +1895,9 @@ function ListView({
   showFavoritesOnly,
   onToggleFavorite,
   onOpenDetails,
-  locale
+  locale,
+  title,
+  onClearTitle
 }: {
   events: PublicEvent[];
   favorites: string[];
@@ -1791,6 +1905,8 @@ function ListView({
   onToggleFavorite: (id: string) => void;
   onOpenDetails: (id: string) => void;
   locale: SupportedLocale;
+  title?: string | undefined;
+  onClearTitle?: (() => void) | undefined;
 }) {
   const visible = showFavoritesOnly
     ? events.filter((event) => favorites.includes(event.id))
@@ -1798,6 +1914,16 @@ function ListView({
 
   return (
     <div className="list-view">
+      {title && (
+        <div className="list-view-heading">
+          <h3>{title}</h3>
+          {onClearTitle && (
+            <button type="button" className="text-btn" onClick={onClearTitle}>
+              Voir tous les événements de la zone
+            </button>
+          )}
+        </div>
+      )}
       {visible.length === 0 && (
         <p className="list-view-empty">Aucun événement à afficher.</p>
       )}
@@ -2237,7 +2363,6 @@ function SearchPanel({
             placeholder={translate(locale, 'search.placeholder')}
             onChange={(event) => onQueryChange(event.target.value)}
           />
-          <CitySelector />
         </div>
       </form>
 
@@ -2549,7 +2674,14 @@ function AboutPanel({ onClose, visible }: { onClose: () => void; visible: boolea
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+      const target = event.target as HTMLElement;
+      // The header's own "À propos" button already toggles open/closed
+      // itself - if this outside-click handler also closed on the same
+      // click, reopening from the button's onClick right after created an
+      // open-close-open flicker (mousedown closes it, then the click event
+      // that follows immediately reopens it).
+      if (target.closest('[data-about-toggle]')) return;
+      if (panelRef.current && !panelRef.current.contains(target)) {
         onClose();
       }
     };

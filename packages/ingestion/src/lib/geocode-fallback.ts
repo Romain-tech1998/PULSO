@@ -87,7 +87,12 @@ export async function reverseGeocodeAddress(
   point: { longitude: number; latitude: number },
   fetchImpl: typeof fetch = fetch
 ): Promise<
-  { venueName: string | undefined; address: string } | undefined
+  | {
+      venueName: string | undefined;
+      shortLabel: string | undefined;
+      address: string;
+    }
+  | undefined
 > {
   const url = new URL(NOMINATIM_REVERSE_URL);
   url.searchParams.set('lat', String(point.latitude));
@@ -108,8 +113,15 @@ export async function reverseGeocodeAddress(
     result.address?.amenity ??
     result.address?.building ??
     result.address?.tourism;
+  // A short "123 Rue Example" label, distinct from the full display_name
+  // (which repeats the same street plus borough/city/province/postal code/
+  // country) - used as a lighter-weight fallback venue label so "Lieu" and
+  // "Adresse" don't show the exact same long string twice.
+  const shortLabel = result.address?.road
+    ? [result.address.house_number, result.address.road].filter(Boolean).join(' ')
+    : undefined;
 
-  return { venueName, address: result.display_name };
+  return { venueName, shortLabel, address: result.display_name };
 }
 
 function delay(ms: number): Promise<void> {
@@ -185,7 +197,7 @@ export async function enrichMissingAddresses(
   // coordinate means every event at a given point converges on the same
   // answer instead of each rolling its own dice, and cuts real request
   // volume on the rate-limited endpoint.
-  type ReverseGeocodeResult = { venueName: string | undefined; address: string } | undefined;
+  type ReverseGeocodeResult = Awaited<ReturnType<typeof reverseGeocodeAddress>>;
   const cache = new Map<string, ReverseGeocodeResult>();
 
   const enriched: RawIngestedEvent[] = [];
@@ -226,11 +238,13 @@ export async function enrichMissingAddresses(
       // OSM only tags a leisure/amenity/building/tourism name for actual
       // POIs - most reverse-geocoded points (a park bench, a random street
       // corner) resolve to a real, correct address but no named venue at
-      // all. Falling back to that address rather than leaving venueName
-      // unset means the mapper's 'Unknown venue' placeholder (to-public-
-      // event.ts) never fires for an event whose location is genuinely
-      // known, only for the rarer case of genuinely no data.
-      venueName: resolved?.venueName ?? resolved?.address ?? event.venueName,
+      // all. Falling back to the short "123 Rue Example" label (not the
+      // full display_name, which repeats the same street plus borough/city/
+      // province/postal code/country) means the mapper's 'Unknown venue'
+      // placeholder (to-public-event.ts) never fires for an event whose
+      // location is genuinely known, without making "Lieu" and "Adresse"
+      // show the identical long string twice.
+      venueName: resolved?.venueName ?? resolved?.shortLabel ?? event.venueName,
       address: resolved?.address ?? event.address
     });
   }

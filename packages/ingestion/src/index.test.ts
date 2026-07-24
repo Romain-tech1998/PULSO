@@ -7,9 +7,13 @@ import {
 } from './lib/geocode-fallback.js';
 import { parseIcs } from './sources/ics-calendar.js';
 import { fetchInstagramScoutSignals } from './sources/instagram-scout.js';
+import { buildInstagramScoutReviewQueue } from './instagram-scout-review.js';
 import { mapMontrealOpenDataRow } from './sources/montreal-open-data.js';
 import { mapTicketmasterEvent } from './sources/ticketmaster.js';
-import { extractInstagramWatchlist } from './registry.js';
+import {
+  extractInstagramWatchlist,
+  selectInstagramPilotTargets
+} from './registry.js';
 import type { RawIngestedEvent } from './types.js';
 
 describe('parseCsv', () => {
@@ -389,22 +393,38 @@ describe('enrichMissingAddresses', () => {
     expect(result?.address).toBeUndefined();
   });
 
-  it('falls back to the resolved address as the venue name when OSM has no named POI at that point', async () => {
+  it('falls back to a short road label as the venue name when OSM has no named POI at that point', async () => {
     // Most reverse-geocoded points (a park bench, a random street corner)
     // resolve to a real, correct address but no leisure/amenity/building/
     // tourism tag at all - falling back to venueName: undefined would
     // still surface as "Unknown venue" downstream even though the location
-    // itself is genuinely known.
+    // itself is genuinely known. The short label (not the full address)
+    // keeps "Lieu" and "Adresse" from showing the identical long string.
     const reverseGeocodeImpl = vi.fn().mockResolvedValue({
       venueName: undefined,
-      address: '4120, Rue Ontario Est, Montréal, QC, Canada'
+      shortLabel: '4120 Rue Ontario Est',
+      address: '4120, Rue Ontario Est, Montréal, QC, Canada, H1V 1J9'
     });
     const [result] = await enrichMissingAddresses([pointedNoAddress], {
       delayMs: 0,
       reverseGeocodeImpl
     });
-    expect(result?.venueName).toBe('4120, Rue Ontario Est, Montréal, QC, Canada');
-    expect(result?.address).toBe('4120, Rue Ontario Est, Montréal, QC, Canada');
+    expect(result?.venueName).toBe('4120 Rue Ontario Est');
+    expect(result?.address).toBe('4120, Rue Ontario Est, Montréal, QC, Canada, H1V 1J9');
+  });
+
+  it('falls back to venueName undefined when even the road is unavailable', async () => {
+    const reverseGeocodeImpl = vi.fn().mockResolvedValue({
+      venueName: undefined,
+      shortLabel: undefined,
+      address: 'Somewhere, Montréal, QC, Canada'
+    });
+    const [result] = await enrichMissingAddresses([pointedNoAddress], {
+      delayMs: 0,
+      reverseGeocodeImpl
+    });
+    expect(result?.venueName).toBeUndefined();
+    expect(result?.address).toBe('Somewhere, Montréal, QC, Canada');
   });
 
   it('leaves events with an existing venue name or address untouched', async () => {
@@ -484,6 +504,63 @@ describe('fetchInstagramScoutSignals', () => {
       handle: 'newcitygas',
       mediaType: 'VIDEO',
       mediaProductType: 'REELS'
+    });
+  });
+});
+
+describe('selectInstagramPilotTargets', () => {
+  const registry =
+    'source_id,instagram_handle\nnew-city-gas,newcitygas\nmtelus,mtelusmontreal\n';
+
+  it('keeps the explicit pilot order and removes duplicate source ids', () => {
+    expect(
+      selectInstagramPilotTargets(registry, [
+        'mtelus',
+        'new-city-gas',
+        'mtelus'
+      ])
+    ).toEqual([
+      { sourceId: 'mtelus', handle: 'mtelusmontreal' },
+      { sourceId: 'new-city-gas', handle: 'newcitygas' }
+    ]);
+  });
+
+  it('rejects a source outside the DATA-0002 registry', () => {
+    expect(() =>
+      selectInstagramPilotTargets(registry, ['unknown-source'])
+    ).toThrow('unknown-source');
+  });
+});
+
+describe('buildInstagramScoutReviewQueue', () => {
+  it('deduplicates signals and leaves every item for human review', () => {
+    const signal = {
+      sourceId: 'new-city-gas',
+      handle: 'newcitygas',
+      mediaId: 'media-1',
+      mediaType: 'VIDEO',
+      mediaProductType: 'REELS',
+      permalink: 'https://www.instagram.com/reel/example/',
+      timestamp: '2026-07-23T20:00:00+0000',
+      observedAt: '2026-07-24T12:00:00.000Z'
+    };
+
+    const queue = buildInstagramScoutReviewQueue(
+      [signal, signal],
+      '2026-07-24T12:01:00.000Z'
+    );
+
+    expect(queue).toMatchObject({
+      generatedAt: '2026-07-24T12:01:00.000Z',
+      publicationAuthorized: false,
+      itemCount: 1,
+      sourceCount: 1,
+      productTypeCounts: { REELS: 1 }
+    });
+    expect(queue.items[0]).toMatchObject({
+      reviewId: 'new-city-gas:media-1',
+      status: 'needs_review',
+      reviewerNotes: ''
     });
   });
 });
