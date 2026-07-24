@@ -44,13 +44,14 @@ export async function upsertPublicEvents(
       `INSERT INTO events (
          id, venue_id, title, category, status, starts_at, ends_at, timezone,
          source_name, source_url, observed_at, freshness, location_confidence, price_kind,
+         price_minimum_amount, image_url,
          description, organizer_name, access_information, external_destination_label,
          external_destination_url, external_destination_status, external_destination_kind,
          trust_label, additional_sources
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8,
-         $9, $10, $11, $12, $13, $14,
-         $15, $16, $17, $18, $19, $20, $21, $22, $23
+         $9, $10, $11, $12, $13, $14, $15, $16,
+         $17, $18, $19, $20, $21, $22, $23, $24, $25
        )
        ON CONFLICT (id) DO UPDATE SET
          venue_id = EXCLUDED.venue_id,
@@ -65,6 +66,8 @@ export async function upsertPublicEvents(
          freshness = EXCLUDED.freshness,
          location_confidence = EXCLUDED.location_confidence,
          price_kind = EXCLUDED.price_kind,
+         price_minimum_amount = EXCLUDED.price_minimum_amount,
+         image_url = EXCLUDED.image_url,
          description = EXCLUDED.description,
          organizer_name = EXCLUDED.organizer_name,
          access_information = EXCLUDED.access_information,
@@ -89,6 +92,8 @@ export async function upsertPublicEvents(
         event.trust.freshness,
         event.trust.locationConfidence,
         event.price.kind,
+        event.price.kind === 'paid' ? event.price.minimumAmount ?? null : null,
+        event.imageUrl ?? null,
         event.description ?? null,
         event.organizer ?? null,
         event.accessInformation,

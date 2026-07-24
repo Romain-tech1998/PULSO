@@ -150,7 +150,7 @@ h6 {
 }
 
 .nav-logo img {
-  height: 56px;
+  height: 50px;
 }
 
 .nav-links {
@@ -218,14 +218,14 @@ h6 {
 .city-selector {
   position: relative;
   flex-shrink: 0;
-  border-right: 1px solid var(--brand-border);
+  border-left: 1px solid var(--brand-border);
 }
 
 .city-selector-trigger {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.85rem 0.9rem 0.85rem 1.25rem;
+  padding: 0.85rem 1.25rem 0.85rem 0.9rem;
   color: var(--text-secondary);
   font-weight: 500;
   font-size: 0.9rem;
@@ -240,7 +240,7 @@ h6 {
 .city-selector-dropdown {
   position: absolute;
   top: calc(100% + 0.5rem);
-  left: 0;
+  right: 0;
   background: var(--surface-raised);
   backdrop-filter: blur(24px);
   border: 1px solid var(--brand-border);
@@ -555,6 +555,15 @@ h6 {
   color: #fff;
 }
 
+.filter-pill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.filter-pill:disabled:hover {
+  border-color: var(--brand-border);
+}
+
 .category-legend-hint {
   font-size: 0.75rem;
   color: var(--text-secondary);
@@ -865,6 +874,19 @@ h6 {
   background: var(--brand-purple);
   border-color: var(--brand-purple);
   color: #fff;
+}
+.calendar-cell.is-festive {
+  border-color: var(--brand-pink);
+  background: rgba(234, 62, 129, 0.1);
+}
+.calendar-cell.is-festive.selected {
+  background: var(--brand-purple);
+}
+.calendar-festive-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand-purple), var(--brand-pink), #FE7C5C);
 }
 .calendar-day-number {
   font-weight: 600;
@@ -1656,17 +1678,23 @@ h6 {
   flex-direction: column;
   gap: 1.5rem;
 }
-.slide-up {
-  animation: slide-up-in 0.2s ease-out;
+/* Transition-based, not @keyframes: a class toggle drives it, so it plays
+   smoothly in both directions (an @keyframes animation restarts from its
+   `from` state every time, which is exactly what made closing feel abrupt -
+   the panel had an entrance but no reverse). */
+.panel-transition {
+  transition: transform 0.18s ease-out, opacity 0.18s ease-out;
+  transform: translateX(16px);
+  opacity: 0;
 }
-@keyframes slide-up-in {
-  from {
-    transform: translateX(24px);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
+.panel-transition.panel-visible {
+  transform: translateX(0);
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-transition {
+    transition: opacity 0.18s ease-out;
+    transform: none;
   }
 }
 .filter-heading {

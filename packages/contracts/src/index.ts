@@ -150,6 +150,10 @@ export const publicEventSchema = z.object({
   ]),
   description: z.string().min(1).optional(),
   organizer: z.string().min(1).optional(),
+  // A real photo from the source, when it provides one - absent rather
+  // than a fabricated/generic image when it doesn't (e.g. Ville de
+  // Montréal's open data has no image field at all).
+  imageUrl: z.url().optional(),
   accessInformation: z.string().min(1),
   venue: z.object({
     id: z.uuid(),

@@ -28,6 +28,7 @@ interface TicketmasterEvent {
   name: string;
   url: string;
   info?: string;
+  images?: Array<{ ratio?: string; url: string; width?: number; height?: number }>;
   classifications?: Array<{
     segment?: { name?: string };
     genre?: { name?: string };
@@ -50,6 +51,22 @@ interface TicketmasterEvent {
 interface TicketmasterResponse {
   _embedded?: { events?: TicketmasterEvent[] };
   page?: { totalPages?: number; number?: number };
+}
+
+/**
+ * Ticketmaster returns a dozen-plus crops/resolutions per event. Prefer a
+ * real photo (16:9, since that's what every card/hero in the UI is built
+ * for) at a size that looks sharp without shipping a multi-megabyte source
+ * image - the smallest candidate at or above 640px wide, falling back to
+ * the largest available if every image is smaller than that.
+ */
+function pickImageUrl(images?: TicketmasterEvent['images']): string | undefined {
+  if (!images || images.length === 0) return undefined;
+  const sixteenByNine = images.filter((img) => img.ratio === '16_9');
+  const candidates = sixteenByNine.length > 0 ? sixteenByNine : images;
+  const sorted = [...candidates].sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
+  const goodEnough = sorted.find((img) => (img.width ?? 0) >= 640);
+  return (goodEnough ?? sorted[sorted.length - 1])?.url;
 }
 
 function mapCategory(event: TicketmasterEvent): RawIngestedEvent['category'] {
@@ -104,6 +121,7 @@ export function mapTicketmasterEvent(
       ? { kind: 'paid', minimumAmount: priceRange.min }
       : { kind: 'paid' },
     ticketingUrl: event.url,
+    imageUrl: pickImageUrl(event.images),
     organizer: event._embedded?.attractions?.[0]?.name,
     raw: event
   };

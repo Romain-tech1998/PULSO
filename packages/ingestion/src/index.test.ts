@@ -6,6 +6,7 @@ import {
   enrichMissingCoordinates
 } from './lib/geocode-fallback.js';
 import { parseIcs } from './sources/ics-calendar.js';
+import { fetchInstagramScoutSignals } from './sources/instagram-scout.js';
 import { mapMontrealOpenDataRow } from './sources/montreal-open-data.js';
 import { mapTicketmasterEvent } from './sources/ticketmaster.js';
 import { extractInstagramWatchlist } from './registry.js';
@@ -161,6 +162,58 @@ describe('mapTicketmasterEvent', () => {
     );
 
     expect(event.price).toEqual({ kind: 'paid' });
+  });
+
+  it('picks the smallest 16:9 image at or above 640px wide', () => {
+    const event = mapTicketmasterEvent(
+      {
+        id: 'tm-4',
+        name: 'Festival',
+        url: 'https://ticketmaster.ca/event/tm-4',
+        dates: { start: { dateTime: '2026-08-01T23:00:00Z' } },
+        images: [
+          { ratio: '16_9', url: 'https://example.com/tiny.jpg', width: 100 },
+          { ratio: '16_9', url: 'https://example.com/good.jpg', width: 1024 },
+          { ratio: '16_9', url: 'https://example.com/huge.jpg', width: 2426 },
+          { ratio: '3_2', url: 'https://example.com/wrong-ratio.jpg', width: 700 }
+        ]
+      },
+      '2026-07-21T00:00:00.000Z'
+    );
+
+    expect(event.imageUrl).toBe('https://example.com/good.jpg');
+  });
+
+  it('falls back to the largest available image when none reach 640px', () => {
+    const event = mapTicketmasterEvent(
+      {
+        id: 'tm-5',
+        name: 'Small show',
+        url: 'https://ticketmaster.ca/event/tm-5',
+        dates: { start: { dateTime: '2026-08-01T23:00:00Z' } },
+        images: [
+          { ratio: '16_9', url: 'https://example.com/small.jpg', width: 100 },
+          { ratio: '16_9', url: 'https://example.com/smaller.jpg', width: 50 }
+        ]
+      },
+      '2026-07-21T00:00:00.000Z'
+    );
+
+    expect(event.imageUrl).toBe('https://example.com/small.jpg');
+  });
+
+  it('leaves imageUrl undefined when the source has no images', () => {
+    const event = mapTicketmasterEvent(
+      {
+        id: 'tm-6',
+        name: 'No image show',
+        url: 'https://ticketmaster.ca/event/tm-6',
+        dates: { start: { dateTime: '2026-08-01T23:00:00Z' } }
+      },
+      '2026-07-21T00:00:00.000Z'
+    );
+
+    expect(event.imageUrl).toBeUndefined();
   });
 });
 
@@ -386,5 +439,51 @@ describe('extractInstagramWatchlist', () => {
       'source_id,instagram_handle\nmtelus,mtelusmontreal\nno-handle,\nmtelus,duplicate\n';
     const targets = extractInstagramWatchlist(csv);
     expect(targets).toEqual([{ sourceId: 'mtelus', handle: 'mtelusmontreal' }]);
+  });
+});
+
+describe('fetchInstagramScoutSignals', () => {
+  it('uses Graph API v25 and preserves the Feed/Reel product distinction', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          business_discovery: {
+            media: {
+              data: [
+                {
+                  id: 'media-1',
+                  media_type: 'VIDEO',
+                  media_product_type: 'REELS',
+                  permalink: 'https://www.instagram.com/reel/example/',
+                  timestamp: '2026-07-09T20:00:20+0000'
+                }
+              ]
+            }
+          }
+        }),
+        { status: 200 }
+      )
+    );
+
+    const signals = await fetchInstagramScoutSignals(
+      [{ sourceId: 'new-city-gas', handle: 'newcitygas' }],
+      {
+        queryingInstagramUserId: '17841410162193967',
+        accessToken: 'test-token',
+        fetchImpl
+      }
+    );
+
+    const requestedUrl = new URL(fetchImpl.mock.calls[0]?.[0] as string);
+    expect(requestedUrl.pathname).toBe('/v25.0/17841410162193967');
+    expect(requestedUrl.searchParams.get('fields')).toContain(
+      'media_product_type'
+    );
+    expect(signals[0]).toMatchObject({
+      sourceId: 'new-city-gas',
+      handle: 'newcitygas',
+      mediaType: 'VIDEO',
+      mediaProductType: 'REELS'
+    });
   });
 });

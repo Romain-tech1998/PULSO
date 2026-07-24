@@ -37,6 +37,8 @@ const publicEventSelect = `
     e.ends_at,
     e.timezone,
     e.price_kind,
+    e.price_minimum_amount,
+    e.image_url,
     e.source_name,
     e.source_url,
     e.observed_at,
@@ -67,6 +69,8 @@ interface EventRow {
   ends_at: Date | null;
   timezone: 'America/Toronto';
   price_kind: PublicEvent['price']['kind'];
+  price_minimum_amount: string | null;
+  image_url: string | null;
   source_name: string;
   source_url: string;
   observed_at: Date;
@@ -97,7 +101,16 @@ function toPublicEvent(row: EventRow): PublicEvent {
     status: row.status,
     startsAt: row.starts_at.toISOString(),
     timezone: row.timezone,
-    price: { kind: row.price_kind, currency: 'CAD' },
+    price:
+      row.price_kind === 'paid'
+        ? {
+            kind: 'paid',
+            currency: 'CAD',
+            ...(row.price_minimum_amount !== null
+              ? { minimumAmount: Number(row.price_minimum_amount) }
+              : {})
+          }
+        : { kind: row.price_kind, currency: 'CAD' },
     accessInformation: row.access_information,
     venue: {
       id: row.venue_id,
@@ -124,6 +137,7 @@ function toPublicEvent(row: EventRow): PublicEvent {
   if (row.ends_at) event.endsAt = row.ends_at.toISOString();
   if (row.description) event.description = row.description;
   if (row.organizer_name) event.organizer = row.organizer_name;
+  if (row.image_url) event.imageUrl = row.image_url;
   if (row.external_destination_label && row.external_destination_status) {
     event.externalDestination = {
       label: row.external_destination_label,

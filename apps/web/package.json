@@ -6,7 +6,8 @@
     "build": "next build",
     "dev": "next dev",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:dark-style": "node scripts/build-dark-map-style.mjs"
   },
   "dependencies": {
     "@pulso/contracts": "workspace:*",

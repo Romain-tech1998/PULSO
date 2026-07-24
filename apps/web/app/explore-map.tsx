@@ -225,6 +225,33 @@ function useFavorites() {
   return { favorites, toggleFavorite };
 }
 
+/**
+ * Keeps a conditionally-rendered panel mounted for `durationMs` after it's
+ * asked to close, so a CSS transition can play in reverse instead of the
+ * panel just vanishing the instant its condition flips false. `visible`
+ * drives the transition (false -> true one frame after mount, so the
+ * transition actually fires instead of starting already-settled; false
+ * immediately on close); `mounted` gates whether the panel is in the DOM
+ * at all.
+ */
+function useTransitionedMount(open: boolean, durationMs = 180) {
+  const [mounted, setMounted] = useState(open);
+  const [visible, setVisible] = useState(open);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const frame = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(frame);
+    }
+    setVisible(false);
+    const timeout = setTimeout(() => setMounted(false), durationMs);
+    return () => clearTimeout(timeout);
+  }, [open, durationMs]);
+
+  return { mounted, visible };
+}
+
 export function ExploreMap({
   initialLocale
 }: {
@@ -253,6 +280,7 @@ export function ExploreMap({
   >();
   const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersOverlayMount = useTransitionedMount(filtersOpen);
   const [filterNotice, setFilterNotice] = useState<string>();
   const [queryInput, setQueryInput] = useState('');
   const [searchResult, setSearchResult] = useState<IntelligentSearchResponse>();
@@ -327,6 +355,7 @@ export function ExploreMap({
 
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
   const [aboutOpen, setAboutOpen] = useState(false);
+  const aboutPanelMount = useTransitionedMount(aboutOpen);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1188,11 +1217,14 @@ export function ExploreMap({
             collapsed={collapsedSections.has('ambiance')}
             onToggle={() => toggleSection('ambiance')}
           >
+            <p className="category-legend-hint">
+              Bientôt : une IA déterminera l'ambiance de chaque événement.
+            </p>
             <div className="pill-list">
-              <button className="filter-pill active">🔥 Énergique</button>
-              <button className="filter-pill">☕ Chill</button>
-              <button className="filter-pill">🥂 Romantique</button>
-              <button className="filter-pill">🎉 Festif</button>
+              <button className="filter-pill" disabled>🔥 Énergique</button>
+              <button className="filter-pill" disabled>☕ Chill</button>
+              <button className="filter-pill" disabled>🥂 Romantique</button>
+              <button className="filter-pill" disabled>🎉 Festif</button>
             </div>
           </CollapsibleFilterGroup>
 
@@ -1374,17 +1406,20 @@ export function ExploreMap({
         )}
       </div>
 
-      {filtersOpen && (
+      {filtersOverlayMount.mounted && (
         <FilterOverlay
           filters={filters}
           onChange={applyFilters}
           onClose={() => setFiltersOpen(false)}
           onClearAll={clearAll}
           locale={locale}
+          visible={filtersOverlayMount.visible}
         />
       )}
 
-      {aboutOpen && <AboutPanel onClose={() => setAboutOpen(false)} />}
+      {aboutPanelMount.mounted && (
+        <AboutPanel onClose={() => setAboutOpen(false)} visible={aboutPanelMount.visible} />
+      )}
 
       {/* Selected marker preview fallback logic */}
       {selected && details.kind === 'closed' && (
@@ -1413,9 +1448,17 @@ export function ExploreMap({
               <div className="event-card" key={evt.id} onClick={() => openDetails(evt.id)} style={{cursor: 'pointer'}}>
                 <div
                   className="event-card-img"
-                  style={{
-                    background: `linear-gradient(160deg, ${CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']}55, ${CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']}11)`
-                  }}
+                  style={
+                    evt.imageUrl
+                      ? {
+                          backgroundImage: `url(${evt.imageUrl})`,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center'
+                        }
+                      : {
+                          background: `linear-gradient(160deg, ${CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']}55, ${CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']}11)`
+                        }
+                  }
                 >
                    <div
                      className="card-badge"
@@ -1806,6 +1849,20 @@ function ListView({
 
 const CALENDAR_WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
+// Recurring festive days worth calling out on the calendar, keyed by
+// "MM-DD" so they repeat every year regardless of the displayed month.
+// Chosen for where Pulso actually operates (Québec/Canada) rather than
+// France, even though Bastille Day is the more famous illustration of "a
+// country's festive day" - Fête nationale du Québec and Fête du Canada are
+// the local equivalents, both real excuses for concerts/fireworks/nightlife.
+const FESTIVE_DAYS: Record<string, string> = {
+  '01-01': "Jour de l'An",
+  '06-21': 'Fête de la Musique',
+  '06-24': 'Fête nationale du Québec',
+  '07-01': 'Fête du Canada',
+  '12-31': "Réveillon du Jour de l'An"
+};
+
 function CalendarView({
   month,
   onChangeMonth,
@@ -1932,11 +1989,13 @@ function CalendarView({
         {cells.map((cell, index) => {
           if (!cell) return <div className="calendar-cell empty" key={`blank-${index}`} />;
           const dayCount = eventsByDay.get(cell.key)?.length ?? 0;
+          const festiveLabel = FESTIVE_DAYS[cell.key.slice(5)];
           return (
             <button
               type="button"
               key={cell.key}
-              className={`calendar-cell ${selectedDay === cell.key ? 'selected' : ''} ${dayCount > 0 ? 'has-events' : ''}`}
+              className={`calendar-cell ${selectedDay === cell.key ? 'selected' : ''} ${dayCount > 0 ? 'has-events' : ''} ${festiveLabel ? 'is-festive' : ''}`}
+              title={festiveLabel}
               onClick={() =>
                 onSelectDay(
                   selectedDay === cell.key ? undefined : cell.key,
@@ -1945,6 +2004,7 @@ function CalendarView({
               }
             >
               <span className="calendar-day-number">{cell.day}</span>
+              {festiveLabel && <span className="calendar-festive-dot" aria-hidden="true" />}
               {dayCount > 0 && <span className="calendar-day-count">{dayCount}</span>}
             </button>
           );
@@ -2164,7 +2224,6 @@ function SearchPanel({
           {translate(locale, 'search.question')}
         </label>
         <div className="search-input-wrapper">
-          <CitySelector />
           <span className="search-icon" aria-hidden="true">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"></circle>
@@ -2178,6 +2237,7 @@ function SearchPanel({
             placeholder={translate(locale, 'search.placeholder')}
             onChange={(event) => onQueryChange(event.target.value)}
           />
+          <CitySelector />
         </div>
       </form>
 
@@ -2484,7 +2544,7 @@ function MapFilterBar({
   );
 }
 
-function AboutPanel({ onClose }: { onClose: () => void }) {
+function AboutPanel({ onClose, visible }: { onClose: () => void; visible: boolean }) {
   const panelRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -2499,7 +2559,7 @@ function AboutPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <aside
-      className="filter-overlay glass-panel slide-up"
+      className={`filter-overlay glass-panel panel-transition ${visible ? 'panel-visible' : ''}`}
       aria-label="À propos de Pulso"
       ref={panelRef}
     >
@@ -2540,13 +2600,15 @@ function FilterOverlay({
   onChange,
   onClose,
   onClearAll,
-  locale
+  locale,
+  visible
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
   onClose: () => void;
   onClearAll: () => void;
   locale: SupportedLocale;
+  visible: boolean;
 }) {
   const today = getMontrealCalendarDate(new Date());
   const setDate = (date: DiscoveryFilters['date']) => {
@@ -2573,7 +2635,7 @@ function FilterOverlay({
   return (
     <aside
       id="map-filters"
-      className="filter-overlay glass-panel slide-up"
+      className={`filter-overlay glass-panel panel-transition ${visible ? 'panel-visible' : ''}`}
       aria-label={translate(locale, 'filters.title')}
     >
       <div className="filter-heading">
@@ -2887,7 +2949,18 @@ function EventDetails({
           </button>
         </div>
       </div>
-      <div className="details-hero">
+      <div
+        className="details-hero"
+        style={
+          event.imageUrl
+            ? {
+                backgroundImage: `linear-gradient(180deg, rgba(13,11,20,0.35), rgba(13,11,20,0.85)), url(${event.imageUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }
+            : undefined
+        }
+      >
         <div className="details-badge">{presentation.category}</div>
         <h2 ref={headingRef} tabIndex={-1} className="details-title">
           {event.title}

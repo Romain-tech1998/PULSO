@@ -42,6 +42,8 @@ export interface RawIngestedEvent {
     | { kind: 'unknown' }
     | undefined;
   ticketingUrl?: string | undefined;
+  /** A real photo for the event, when the source actually provides one. */
+  imageUrl?: string | undefined;
   organizer?: string | undefined;
   /** Original payload fragment, kept for audit/debugging only. */
   raw?: unknown;

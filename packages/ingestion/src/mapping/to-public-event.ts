@@ -153,6 +153,7 @@ export function mapRawEventToPublicEvent(
     price,
     ...(event.description ? { description: event.description } : {}),
     ...(event.organizer ? { organizer: event.organizer } : {}),
+    ...(event.imageUrl ? { imageUrl: event.imageUrl } : {}),
     accessInformation: buildAccessInformation(event),
     venue: {
       id: venueId,
