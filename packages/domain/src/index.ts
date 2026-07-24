@@ -41,7 +41,11 @@ export const CATEGORY_COLORS: Record<EventCategory, string> = {
   festival: '#FE7C5C',
   comedy: '#FFD700',
   show: '#00CED1',
-  other: '#FFFFFF'
+  // Was pure white - on the teardrop pin (white ring + white center dot),
+  // that left the whole marker reading as "just a white dot" with no
+  // shape definition. A real hue restores the contrast the other five
+  // categories already have.
+  other: '#94A3B8'
 };
 
 export interface DiscoveryFilters {

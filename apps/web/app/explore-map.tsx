@@ -268,7 +268,7 @@ export function ExploreMap({
   // showFavoritesOnly below.
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
-    new Set()
+    () => new Set(['filtres', 'categories', 'prix', 'distance', 'ambiance', 'source'])
   );
   const toggleSection = (key: string) =>
     setCollapsedSections((prev) => {
@@ -554,6 +554,18 @@ export function ExploreMap({
     void loadEvents(currentBounds.current, defaults);
   }
 
+  function goHome() {
+    setAboutOpen(false);
+    setShowFavoritesOnly(false);
+    setViewMode('map');
+    setFiltersOpen(false);
+    setPickerList(undefined);
+    setDetails({ kind: 'closed' });
+    setSelected(undefined);
+    clearSearch();
+    requestAnimationFrame(() => map.current?.resize());
+  }
+
   function clearDerivedConstraint(key: SearchConstraintKey) {
     if (!activeSearch.current) return;
     activeSearch.current = {
@@ -709,6 +721,9 @@ export function ExploreMap({
           }
           return;
         }
+        // A map click is a real intent to look at the map, even if the
+        // details panel was open - it should not silently swallow this.
+        setDetails({ kind: 'closed' });
         setPickerList({
           title: `${matched.length} événements à cet endroit`,
           events: matched
@@ -750,6 +765,9 @@ export function ExploreMap({
             if (samePlace && instance.getZoom() < 15) {
               instance.easeTo({ center: coordinates, zoom: 15 });
             }
+            // Same as above: prioritize this click over an already-open
+            // details panel rather than leaving it stuck in front.
+            setDetails({ kind: 'closed' });
             setPickerList({
               title: `${matched.length} événements ${samePlace ? 'à cet endroit' : 'dans cette zone'}`,
               events: matched
@@ -773,6 +791,22 @@ export function ExploreMap({
       });
       instance.on('mouseleave', 'events-circles', () => {
         instance.getCanvas().style.cursor = '';
+      });
+
+      // A click on genuinely empty map (not a pin/cluster, handled above)
+      // is a real intent to look at the map - close the details panel on
+      // its own rather than making the user hit "Retour" first. Layer-
+      // specific handlers above also fire for this same click, so this
+      // only acts when the click hit nothing interactive.
+      instance.on('click', (e) => {
+        if (detailsRef.current.kind === 'closed') return;
+        const hits = instance.queryRenderedFeatures(e.point, {
+          layers: ['events-circles', 'clusters']
+        });
+        if (hits.length === 0) {
+          setDetails({ kind: 'closed' });
+          requestAnimationFrame(() => map.current?.resize());
+        }
       });
 
       // Drainer les données qui sont arrivées AVANT que la source n'existait
@@ -928,12 +962,12 @@ export function ExploreMap({
     <div className="app-container">
       <header className="top-navbar">
         <div className="nav-left">
-          <div className="nav-logo">
+          <button type="button" className="nav-logo" onClick={goHome} aria-label={translate(locale, 'app.title')}>
             <img
               src="/brand/pulso-logo-horizontal-dark.svg"
               alt={translate(locale, 'app.title')}
             />
-          </div>
+          </button>
           <div className="nav-actions-links">
              <button
                type="button"
@@ -984,10 +1018,6 @@ export function ExploreMap({
           />
         </div>
         <div className="nav-actions">
-          <div className="location-selector">
-            <span>Montréal</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
-          </div>
           <LanguageSelector locale={locale} onChange={selectLocale} />
         </div>
       </header>
@@ -1965,17 +1995,41 @@ function CollapsibleFilterGroup({
           </svg>
           <span>{title}</span>
         </button>
-        {action}
+        {!collapsed && action}
       </div>
       {!collapsed && children}
     </div>
   );
 }
 
-const LOCALE_META: Record<SupportedLocale, { flag: string; code: string; title: string }> = {
-  fr: { flag: '🇫🇷', code: 'FR', title: 'Français' },
-  en: { flag: '🇬🇧', code: 'EN', title: 'English' }
+const LOCALE_META: Record<SupportedLocale, { title: string }> = {
+  fr: { title: 'Français' },
+  en: { title: 'English' }
 };
+
+// SVG flags rather than emoji: flag emoji render as raw two-letter text on
+// this environment's Chromium/Windows font stack (no color-emoji flag
+// support), which looked broken rather than "mignon" as requested.
+function LocaleFlagIcon({ locale }: { locale: SupportedLocale }) {
+  if (locale === 'fr') {
+    return (
+      <svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true">
+        <rect width="20" height="14" fill="#ED2939" />
+        <rect width="13.33" height="14" fill="#fff" />
+        <rect width="6.67" height="14" fill="#002395" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true">
+      <rect width="20" height="14" fill="#00247D" />
+      <path d="M0 0L20 14M20 0L0 14" stroke="#fff" strokeWidth="3" />
+      <path d="M0 0L20 14M20 0L0 14" stroke="#CF142B" strokeWidth="1.5" />
+      <path d="M10 0V14M0 7H20" stroke="#fff" strokeWidth="4.5" />
+      <path d="M10 0V14M0 7H20" stroke="#CF142B" strokeWidth="2.5" />
+    </svg>
+  );
+}
 
 function LanguageSelector({
   locale,
@@ -1994,7 +2048,7 @@ function LanguageSelector({
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
       >
-        <span aria-hidden="true" className="lang-flag">{LOCALE_META[locale].flag}</span>
+        <span className="lang-flag"><LocaleFlagIcon locale={locale} /></span>
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       {open && (
@@ -2007,9 +2061,64 @@ function LanguageSelector({
             }}
             title={LOCALE_META[other].title}
           >
-            <span aria-hidden="true">{LOCALE_META[other].flag}</span>
+            <span className="lang-flag"><LocaleFlagIcon locale={other} /></span>
             {LOCALE_META[other].title}
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Other major Canadian metro areas where Pulso could plausibly expand
+// (PROJECT_INDEX Roadmap: "autres villes") - shown disabled with a "Bientôt"
+// badge rather than a working switch, since Pulso only has real data for
+// Montréal (MVP-0001 scopes the MVP to a single city).
+const OTHER_CANADIAN_CITIES = ['Toronto', 'Vancouver', 'Calgary', 'Edmonton', 'Ottawa'];
+
+function CitySelector() {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  return (
+    <div className="city-selector" ref={wrapperRef}>
+      <button
+        type="button"
+        className="city-selector-trigger"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
+      >
+        Montréal
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="city-selector-dropdown">
+          <button
+            type="button"
+            className="city-option active"
+            onClick={() => setOpen(false)}
+          >
+            Montréal
+          </button>
+          {OTHER_CANADIAN_CITIES.map((city) => (
+            <button type="button" key={city} className="city-option" disabled>
+              {city}
+              <span className="city-soon">Bientôt</span>
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -2055,6 +2164,7 @@ function SearchPanel({
           {translate(locale, 'search.question')}
         </label>
         <div className="search-input-wrapper">
+          <CitySelector />
           <span className="search-icon" aria-hidden="true">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"></circle>
