@@ -8,6 +8,8 @@ import {
 import { parseIcs } from './sources/ics-calendar.js';
 import { fetchInstagramScoutSignals } from './sources/instagram-scout.js';
 import { buildInstagramScoutReviewQueue } from './instagram-scout-review.js';
+import { triageInstagramScoutItem } from './instagram-scout-triage.js';
+import { extractInstagramScoutFacts } from './instagram-scout-extraction.js';
 import { mapMontrealOpenDataRow } from './sources/montreal-open-data.js';
 import { mapTicketmasterEvent } from './sources/ticketmaster.js';
 import {
@@ -383,17 +385,41 @@ describe('enrichMissingAddresses', () => {
 
   it('gives up after maxAttempts and leaves the event without a venue name/address', async () => {
     const reverseGeocodeImpl = vi.fn().mockResolvedValue(undefined);
+    const nearbyPlaceImpl = vi.fn().mockResolvedValue(undefined);
     const [result] = await enrichMissingAddresses([pointedNoAddress], {
       delayMs: 0,
       maxAttempts: 2,
-      reverseGeocodeImpl
+      reverseGeocodeImpl,
+      nearbyPlaceImpl
     });
     expect(reverseGeocodeImpl).toHaveBeenCalledTimes(2);
     expect(result?.venueName).toBeUndefined();
     expect(result?.address).toBeUndefined();
   });
 
-  it('falls back to a short road label as the venue name when OSM has no named POI at that point', async () => {
+  it('prefers a real named facility a short walk away over a bare street label', async () => {
+    // The exact point often has no on-point POI name at all (a park bench,
+    // a random street corner), but a real, already-named OSM facility -
+    // a pool, a community centre - can still sit a short walk away. That
+    // beats a bare street address as a venue label, and is still entirely
+    // OSM-sourced (findNearbyNamedPlace), never invented.
+    const reverseGeocodeImpl = vi.fn().mockResolvedValue({
+      venueName: undefined,
+      shortLabel: '2329 Avenue Gascon',
+      address: '2329, Avenue Gascon, Montréal, QC, Canada, H2K 2V6'
+    });
+    const nearbyPlaceImpl = vi.fn().mockResolvedValue('Piscine Médéric-Martin');
+    const [result] = await enrichMissingAddresses([pointedNoAddress], {
+      delayMs: 0,
+      reverseGeocodeImpl,
+      nearbyPlaceImpl
+    });
+    expect(nearbyPlaceImpl).toHaveBeenCalledWith(pointedNoAddress.point, expect.anything());
+    expect(result?.venueName).toBe('Piscine Médéric-Martin');
+    expect(result?.address).toBe('2329, Avenue Gascon, Montréal, QC, Canada, H2K 2V6');
+  });
+
+  it('falls back to a short road label as the venue name when OSM has no named POI at that point or nearby', async () => {
     // Most reverse-geocoded points (a park bench, a random street corner)
     // resolve to a real, correct address but no leisure/amenity/building/
     // tourism tag at all - falling back to venueName: undefined would
@@ -405,9 +431,11 @@ describe('enrichMissingAddresses', () => {
       shortLabel: '4120 Rue Ontario Est',
       address: '4120, Rue Ontario Est, Montréal, QC, Canada, H1V 1J9'
     });
+    const nearbyPlaceImpl = vi.fn().mockResolvedValue(undefined);
     const [result] = await enrichMissingAddresses([pointedNoAddress], {
       delayMs: 0,
-      reverseGeocodeImpl
+      reverseGeocodeImpl,
+      nearbyPlaceImpl
     });
     expect(result?.venueName).toBe('4120 Rue Ontario Est');
     expect(result?.address).toBe('4120, Rue Ontario Est, Montréal, QC, Canada, H1V 1J9');
@@ -419,9 +447,11 @@ describe('enrichMissingAddresses', () => {
       shortLabel: undefined,
       address: 'Somewhere, Montréal, QC, Canada'
     });
+    const nearbyPlaceImpl = vi.fn().mockResolvedValue(undefined);
     const [result] = await enrichMissingAddresses([pointedNoAddress], {
       delayMs: 0,
-      reverseGeocodeImpl
+      reverseGeocodeImpl,
+      nearbyPlaceImpl
     });
     expect(result?.venueName).toBeUndefined();
     expect(result?.address).toBe('Somewhere, Montréal, QC, Canada');
@@ -561,6 +591,115 @@ describe('buildInstagramScoutReviewQueue', () => {
       reviewId: 'new-city-gas:media-1',
       status: 'needs_review',
       reviewerNotes: ''
+    });
+  });
+});
+
+describe('triageInstagramScoutItem', () => {
+  const baseItem = {
+    reviewId: 'source:media',
+    status: 'needs_review' as const,
+    sourceId: 'source',
+    handle: 'source',
+    mediaId: 'media',
+    observedAt: '2026-07-24T12:00:00.000Z',
+    reviewerNotes: ''
+  };
+
+  it('prioritizes a dated ticket announcement without accepting it', () => {
+    expect(
+      triageInstagramScoutItem({
+        ...baseItem,
+        caption:
+          'Concert le 30 juillet. Billets en vente maintenant, portes à 20h.'
+      })
+    ).toMatchObject({
+      decision: 'likely_event',
+      reviewPriority: 'high',
+      manualReviewRequired: true,
+      dateMentions: ['30 juillet']
+    });
+  });
+
+  it('sets a clear recap aside without authorizing publication', () => {
+    expect(
+      triageInstagramScoutItem({
+        ...baseItem,
+        caption: 'What a night! Thank you all for coming. Photos from the show.'
+      })
+    ).toMatchObject({
+      decision: 'likely_not_event',
+      reviewPriority: 'low',
+      manualReviewRequired: false
+    });
+  });
+
+  it('keeps an ambiguous contest in the review queue', () => {
+    expect(
+      triageInstagramScoutItem({
+        ...baseItem,
+        caption: 'Concours : deux billets à gagner pour notre prochain show.'
+      })
+    ).toMatchObject({
+      decision: 'uncertain',
+      reviewPriority: 'normal',
+      manualReviewRequired: true
+    });
+  });
+});
+
+describe('extractInstagramScoutFacts', () => {
+  it('keeps caption facts raw and does not claim the source is the venue', () => {
+    const item = {
+      reviewId: 'evenko:media',
+      status: 'needs_review' as const,
+      sourceId: 'evenko',
+      handle: 'evenko',
+      mediaId: 'media',
+      caption:
+        'ARTIST LIVE\n30 juillet à 20h — billets 25$ en vente avec @artist',
+      observedAt: '2026-07-24T12:00:00.000Z',
+      reviewerNotes: ''
+    };
+    const triage = triageInstagramScoutItem(item);
+
+    expect(extractInstagramScoutFacts(item, triage)).toMatchObject({
+      workingTitle: 'ARTIST LIVE',
+      workingTitleConfidence: 0.35,
+      dateMentions: ['30 juillet'],
+      timeMentions: ['20h'],
+      priceMentions: ['25$'],
+      mentionedAccounts: ['@artist'],
+      ticketingMentioned: true,
+      sourceAccount: {
+        sourceId: 'evenko',
+        handle: 'evenko',
+        role: 'possible_host_or_organizer'
+      },
+      missingFacts: ['venue_confirmation'],
+      evidenceCompleteness: 0.75
+    });
+  });
+
+  it('reports missing facts instead of inventing them', () => {
+    const item = {
+      reviewId: 'source:media',
+      status: 'needs_review' as const,
+      sourceId: 'source',
+      handle: 'source',
+      mediaId: 'media',
+      caption: 'Big news soon',
+      observedAt: '2026-07-24T12:00:00.000Z',
+      reviewerNotes: ''
+    };
+    const triage = triageInstagramScoutItem(item);
+
+    expect(extractInstagramScoutFacts(item, triage)).toMatchObject({
+      workingTitle: 'Big news soon',
+      dateMentions: [],
+      timeMentions: [],
+      missingFacts: ['date', 'time', 'venue_confirmation'],
+      evidenceCompleteness: 0.25
     });
   });
 });

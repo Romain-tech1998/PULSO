@@ -124,6 +124,118 @@ export async function reverseGeocodeAddress(
   return { venueName, shortLabel, address: result.display_name };
 }
 
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const NEARBY_POI_RADIUS_METERS = 120;
+
+// Tags recognized as a real, named place worth surfacing as a venue label
+// when the event's exact point itself has no POI name (see
+// reverseGeocodeAddress above) - deliberately narrow to the kind of public/
+// civic/cultural/recreational facility Ville de Montréal's own open data
+// events actually occur at (a park, a pool, a community centre), and
+// excludes anything commercial (a shop, an office) or purely
+// infrastructural (a bus stop, a bike-share dock) that a raw radius search
+// would otherwise happily return.
+const NEARBY_POI_LEISURE_VALUES = new Set([
+  'park',
+  'sports_centre',
+  'swimming_pool',
+  'stadium',
+  'pitch',
+  'ice_rink',
+  'garden',
+  'common'
+]);
+const NEARBY_POI_AMENITY_VALUES = new Set([
+  'community_centre',
+  'arts_centre',
+  'theatre',
+  'social_facility',
+  'library',
+  'events_venue',
+  'conference_centre',
+  'marketplace'
+]);
+const NEARBY_POI_TOURISM_VALUES = new Set(['museum', 'gallery', 'attraction']);
+
+interface OverpassElement {
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
+  tags?: {
+    name?: string;
+    leisure?: string;
+    amenity?: string;
+    tourism?: string;
+  };
+}
+
+function haversineMeters(
+  a: { longitude: number; latitude: number },
+  b: { longitude: number; latitude: number }
+): number {
+  const earthRadiusMeters = 6371000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLon = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * earthRadiusMeters * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Last-resort venue label for a point with no on-point OSM name at all
+ * (reverseGeocodeAddress found neither a leisure/amenity/tourism/building
+ * tag) - looks for the closest allowlisted named facility within
+ * NEARBY_POI_RADIUS_METERS via the Overpass API. Real, OpenStreetMap-sourced
+ * data only: never invents a name, and only ever returns one that's already
+ * mapped and named by OSM contributors near the event's real coordinates.
+ */
+export async function findNearbyNamedPlace(
+  point: { longitude: number; latitude: number },
+  fetchImpl: typeof fetch = fetch
+): Promise<string | undefined> {
+  const query =
+    `[out:json][timeout:15];` +
+    `(node(around:${NEARBY_POI_RADIUS_METERS},${point.latitude},${point.longitude})[name];` +
+    `way(around:${NEARBY_POI_RADIUS_METERS},${point.latitude},${point.longitude})[name];);` +
+    `out center 30;`;
+
+  const response = await fetchImpl(OVERPASS_URL, {
+    method: 'POST',
+    headers: {
+      'User-Agent': USER_AGENT,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: `data=${encodeURIComponent(query)}`
+  });
+  if (!response.ok) return undefined;
+
+  const result = (await response.json()) as { elements?: OverpassElement[] };
+  const candidates = (result.elements ?? [])
+    .map((element) => {
+      const tags = element.tags;
+      const name = tags?.name;
+      if (!name) return undefined;
+      const qualifies =
+        (tags.leisure !== undefined && NEARBY_POI_LEISURE_VALUES.has(tags.leisure)) ||
+        (tags.amenity !== undefined && NEARBY_POI_AMENITY_VALUES.has(tags.amenity)) ||
+        (tags.tourism !== undefined && NEARBY_POI_TOURISM_VALUES.has(tags.tourism));
+      if (!qualifies) return undefined;
+      const lat = element.lat ?? element.center?.lat;
+      const lon = element.lon ?? element.center?.lon;
+      if (lat === undefined || lon === undefined) return undefined;
+      return { name, distanceMeters: haversineMeters(point, { latitude: lat, longitude: lon }) };
+    })
+    .filter((candidate): candidate is { name: string; distanceMeters: number } =>
+      Boolean(candidate)
+    );
+  if (candidates.length === 0) return undefined;
+
+  candidates.sort((a, b) => a.distanceMeters - b.distanceMeters);
+  return candidates[0]!.name;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -182,12 +294,14 @@ export async function enrichMissingAddresses(
     fetchImpl?: typeof fetch;
     delayMs?: number;
     reverseGeocodeImpl?: typeof reverseGeocodeAddress;
+    nearbyPlaceImpl?: typeof findNearbyNamedPlace;
     maxAttempts?: number;
   } = {}
 ): Promise<RawIngestedEvent[]> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const delayMs = options.delayMs ?? MIN_DELAY_MS;
   const reverseGeocode = options.reverseGeocodeImpl ?? reverseGeocodeAddress;
+  const findNearbyPlace = options.nearbyPlaceImpl ?? findNearbyNamedPlace;
   const maxAttempts = options.maxAttempts ?? 3;
 
   // Recurring events (a multi-date exhibition, a weekly show) commonly share
@@ -199,6 +313,7 @@ export async function enrichMissingAddresses(
   // volume on the rate-limited endpoint.
   type ReverseGeocodeResult = Awaited<ReturnType<typeof reverseGeocodeAddress>>;
   const cache = new Map<string, ReverseGeocodeResult>();
+  const nearbyPlaceCache = new Map<string, string | undefined>();
 
   const enriched: RawIngestedEvent[] = [];
   for (const event of events) {
@@ -233,18 +348,39 @@ export async function enrichMissingAddresses(
       await delay(delayMs);
     }
 
+    // The exact point often has no on-point POI name at all (a park bench,
+    // a random street corner) - before settling for a bare street address,
+    // check for a real named facility a short walk away (findNearbyNamedPlace
+    // above). Still cached per coordinate, still only attempted when nothing
+    // better is already known.
+    let nearbyPlace: string | undefined;
+    if (!resolved?.venueName) {
+      if (nearbyPlaceCache.has(cacheKey)) {
+        nearbyPlace = nearbyPlaceCache.get(cacheKey);
+      } else {
+        try {
+          nearbyPlace = await findNearbyPlace(event.point, fetchImpl);
+        } catch {
+          nearbyPlace = undefined;
+        }
+        nearbyPlaceCache.set(cacheKey, nearbyPlace);
+        await delay(delayMs);
+      }
+    }
+
     enriched.push({
       ...event,
       // OSM only tags a leisure/amenity/building/tourism name for actual
       // POIs - most reverse-geocoded points (a park bench, a random street
       // corner) resolve to a real, correct address but no named venue at
-      // all. Falling back to the short "123 Rue Example" label (not the
-      // full display_name, which repeats the same street plus borough/city/
-      // province/postal code/country) means the mapper's 'Unknown venue'
-      // placeholder (to-public-event.ts) never fires for an event whose
-      // location is genuinely known, without making "Lieu" and "Adresse"
-      // show the identical long string twice.
-      venueName: resolved?.venueName ?? resolved?.shortLabel ?? event.venueName,
+      // all. A real named facility a short walk away (nearbyPlace) beats the
+      // short "123 Rue Example" label (shortLabel), which itself beats the
+      // full display_name (which repeats the same street plus borough/city/
+      // province/postal code/country) - together they mean the mapper's
+      // 'Unknown venue' placeholder (to-public-event.ts) never fires for an
+      // event whose location is genuinely known, without making "Lieu" and
+      // "Adresse" show the identical long string twice.
+      venueName: resolved?.venueName ?? nearbyPlace ?? resolved?.shortLabel ?? event.venueName,
       address: resolved?.address ?? event.address
     });
   }

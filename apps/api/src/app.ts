@@ -4,7 +4,9 @@ import {
   eventListResponseSchema,
   intelligentSearchRequestSchema,
   intelligentSearchResponseSchema,
-  mapBoundsQuerySchema
+  mapBoundsQuerySchema,
+  venueListResponseSchema,
+  venuesQuerySchema
 } from '@pulso/contracts';
 import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
 import type { EventRepository } from '@pulso/database';
@@ -219,6 +221,13 @@ export function buildApp(
     const query = directDistanceQuerySchema.parse(request.query);
     return eventListResponseSchema.parse({
       data: await repository.findWithinDirectDistance(query)
+    });
+  });
+
+  app.get('/venues', async (request) => {
+    const query = venuesQuerySchema.parse(request.query);
+    return venueListResponseSchema.parse({
+      data: await repository.findVenuesWithoutUpcomingEvents(query)
     });
   });
 

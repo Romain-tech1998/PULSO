@@ -131,6 +131,34 @@ export const directDistanceQuerySchema = z.object({
   radiusMeters: z.coerce.number().positive().max(50_000)
 });
 
+export const venuesQuerySchema = z
+  .object({
+    west: z.coerce.number().min(-180).max(180),
+    south: z.coerce.number().min(-90).max(90),
+    east: z.coerce.number().min(-180).max(180),
+    north: z.coerce.number().min(-90).max(90)
+  })
+  .strict()
+  .refine(
+    (bounds) => bounds.west < bounds.east && bounds.south < bounds.north,
+    { message: 'Bounds must have increasing west/east and south/north values.' }
+  );
+
+// A venue with no upcoming event of its own - a hand-curated landmark added
+// as a fixed reference point in the Lieux view (see /venues), distinct from
+// PublicEvent's embedded `venue` object which always comes with a real
+// event attached.
+export const publicVenueSchema = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  address: z.string().min(1),
+  point: geographicPointSchema
+});
+
+export const venueListResponseSchema = z.object({
+  data: z.array(publicVenueSchema)
+});
+
 export const publicEventSchema = z.object({
   id: z.uuid(),
   title: z.string().min(1),
@@ -207,6 +235,9 @@ export type EventListResponse = z.infer<typeof eventListResponseSchema>;
 export type EventDetailsResponse = z.infer<typeof eventDetailsResponseSchema>;
 export type MapBoundsQuery = z.infer<typeof mapBoundsQuerySchema>;
 export type DirectDistanceQuery = z.infer<typeof directDistanceQuerySchema>;
+export type VenuesQuery = z.infer<typeof venuesQuerySchema>;
+export type PublicVenue = z.infer<typeof publicVenueSchema>;
+export type VenueListResponse = z.infer<typeof venueListResponseSchema>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

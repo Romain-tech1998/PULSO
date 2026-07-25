@@ -8,9 +8,11 @@ import {
   eventListResponseSchema,
   intelligentSearchResponseSchema,
   PRICE_FILTER_OPTIONS,
+  venueListResponseSchema,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
-  type PublicEvent
+  type PublicEvent,
+  type PublicVenue
 } from '@pulso/contracts';
 import {
   DEFAULT_DISCOVERY_FILTERS,
@@ -384,6 +386,7 @@ export function ExploreMap({
 
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'venues' | 'calendar'>('map');
   const [venueCategoryFilter, setVenueCategoryFilter] = useState<EventCategory[]>([]);
+  const [noEventVenues, setNoEventVenues] = useState<PublicVenue[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const aboutPanelMount = useTransitionedMount(aboutOpen);
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -435,6 +438,17 @@ export function ExploreMap({
       void loadCalendarEvents(calendarMonth, calendarCategories, calendarPrice);
     }
   }, [viewMode, calendarMonth, calendarCategories, calendarPrice, loadCalendarEvents]);
+
+  useEffect(() => {
+    if (viewMode !== 'venues') return;
+    const bounds = currentBounds.current;
+    fetch(
+      `${API_BASE_URL}/venues?west=${bounds.west}&south=${bounds.south}&east=${bounds.east}&north=${bounds.north}`
+    )
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setNoEventVenues(venueListResponseSchema.parse(json).data))
+      .catch(() => setNoEventVenues([]));
+  }, [viewMode]);
 
   useEffect(() => {
     const resolved = resolveBrowserLocale([initialLocale], localStorage);
@@ -989,8 +1003,14 @@ export function ExploreMap({
     if (map.current) pushEventsToMap(map.current);
   }, [events, favorites, showFavoritesOnly, selectedSources, selected, pushEventsToMap]);
 
-  async function openDetails(eventId: string) {
-    setPickerList(undefined);
+  // keepPickerList: when an event is opened from a picker list (cluster,
+  // venue, or calendar day), leave that list in state instead of discarding
+  // it - returnToMap only closes `details`, so the underlying list
+  // reappears automatically instead of the whole panel closing. A fresh
+  // direct open (map pin, deep link, carousel) has no list to return to, so
+  // it keeps the old clear-on-open behavior.
+  async function openDetails(eventId: string, options: { keepPickerList?: boolean } = {}) {
+    if (!options.keepPickerList) setPickerList(undefined);
     setDetails({ kind: 'loading', eventId });
     try {
       const response = await fetch(`${API_BASE_URL}/events/${eventId}`);
@@ -1040,7 +1060,23 @@ export function ExploreMap({
     selectedSources.length === 0
       ? events
       : events.filter((event) => selectedSources.includes(event.source.name));
-  const venueGroups = groupEventsByVenue(sourceFilteredEvents);
+  // noEventVenues (fixed reference points like Clébard, La Rockette - real
+  // venues seeded ahead of any event ever being recorded there, see
+  // seed-curated-venues.ts) can never share an id with an event-derived
+  // group: findVenuesWithoutUpcomingEvents only returns venues with zero
+  // event rows, ever.
+  const venueGroups: VenueGroup[] = [
+    ...groupEventsByVenue(sourceFilteredEvents),
+    ...noEventVenues.map(
+      (venue): VenueGroup => ({
+        id: venue.id,
+        name: venue.name,
+        address: venue.address,
+        events: [],
+        categories: []
+      })
+    )
+  ];
   const filteredVenueGroups =
     venueCategoryFilter.length === 0
       ? venueGroups
@@ -1423,12 +1459,17 @@ export function ExploreMap({
               groups={filteredVenueGroups}
               categoryFilter={venueCategoryFilter}
               onChangeCategoryFilter={setVenueCategoryFilter}
-              onSelectVenue={(group) =>
+              onSelectVenue={(group) => {
+                // A newly-picked list must win over an already-open details
+                // panel (same rule as map cluster/pin clicks below) - without
+                // this, clicking another venue while one's events are open
+                // silently swapped the list behind the visible details panel.
+                setDetails({ kind: 'closed' });
                 setPickerList({
                   title: `${group.name} — ${group.address}`,
                   events: group.events
-                })
-              }
+                });
+              }}
               locale={locale}
             />
           )}
@@ -1459,6 +1500,7 @@ export function ExploreMap({
                   // "what is this highlighted day" self-evident the moment
                   // someone actually interacts with it.
                   const festiveLabel = FESTIVE_DAYS[day.slice(5)];
+                  setDetails({ kind: 'closed' });
                   setPickerList({
                     title: festiveLabel ? `${dayLabel} — ${festiveLabel}` : dayLabel,
                     events: dayEvents
@@ -1497,7 +1539,7 @@ export function ExploreMap({
                return (
                  <div style={{padding: '2rem'}}>
                    Erreur de chargement.
-                   <button className="btn-secondary" onClick={() => void openDetails(failedEventId)} style={{marginTop: '1rem'}}>Réessayer</button>
+                   <button className="btn-secondary" onClick={() => void openDetails(failedEventId, { keepPickerList: true })} style={{marginTop: '1rem'}}>Réessayer</button>
                  </div>
                );
              })()}
@@ -1508,7 +1550,7 @@ export function ExploreMap({
                  favorites={favorites}
                  locale={locale}
                  onClose={() => setPickerList(undefined)}
-                 onSelect={(id) => void openDetails(id)}
+                 onSelect={(id) => void openDetails(id, { keepPickerList: true })}
                />
              )}
            </div>
@@ -1898,6 +1940,9 @@ function PickerList({
         </button>
       </div>
       <div className="picker-list-rows">
+        {events.length === 0 && (
+          <p className="list-view-empty">Aucun événement prévu pour le moment.</p>
+        )}
         {events.map((event) => {
           const fields = eventPreviewFields(event, locale);
           return (
@@ -2150,7 +2195,9 @@ function VenueListView({
                 )}
               </div>
               <span className="venue-card-count">
-                {group.events.length} événement{group.events.length > 1 ? 's' : ''} à venir
+                {group.events.length > 0
+                  ? `${group.events.length} événement${group.events.length > 1 ? 's' : ''} à venir`
+                  : 'Aucun événement prévu pour le moment'}
               </span>
             </div>
           </button>

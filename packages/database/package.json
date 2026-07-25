@@ -8,7 +8,9 @@
     "build": "tsc -p tsconfig.build.json",
     "db:migrate": "tsx src/migrate.ts",
     "db:seed": "tsx src/seed.ts",
+    "db:seed-curated-venues": "tsx src/seed-curated-venues.ts",
     "db:ingest": "tsx src/ingest.ts",
+    "instagram:scout": "tsx src/instagram-scout-pilot.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

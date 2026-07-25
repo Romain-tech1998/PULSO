@@ -1,7 +1,9 @@
 import type {
   DirectDistanceQuery,
   MapBoundsQuery,
-  PublicEvent
+  PublicEvent,
+  PublicVenue,
+  VenuesQuery
 } from '@pulso/contracts';
 import type { DiscoveryWindow } from '@pulso/domain';
 import type { EventCategory } from '@pulso/domain';
@@ -25,6 +27,7 @@ export interface EventRepository {
   findExternalDestination(
     id: string
   ): Promise<ExternalDestinationRecord | undefined>;
+  findVenuesWithoutUpcomingEvents(bounds: VenuesQuery): Promise<PublicVenue[]>;
 }
 
 const publicEventSelect = `
@@ -260,5 +263,40 @@ export class PostgresEventRepository implements EventRepository {
       status: row.status,
       eventStatus: row.event_status
     };
+  }
+
+  // Surfaces venues that were never attached to any event at all - every
+  // venue produced by ingestion (Ville de Montréal, Ticketmaster) always
+  // arrives together with an event row (see upsertPublicEvents), so the
+  // only venues with zero event rows, ever, are hand-curated landmarks like
+  // seed-curated-venues.ts. Deliberately not "no *upcoming* event": that
+  // would also catch the long tail of real venues whose only ingested
+  // events happen to be in the past, which is a normal, common state for
+  // Ville de Montréal's one-off events and not what the Lieux view's fixed
+  // reference points are meant to single out.
+  async findVenuesWithoutUpcomingEvents(
+    bounds: VenuesQuery
+  ): Promise<PublicVenue[]> {
+    const result = await this.pool.query<{
+      id: string;
+      name: string;
+      address: string;
+      longitude: number;
+      latitude: number;
+    }>(
+      `SELECT v.id, v.name, v.address,
+              ST_X(v.location) AS longitude, ST_Y(v.location) AS latitude
+       FROM venues v
+       WHERE v.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+         AND NOT EXISTS (SELECT 1 FROM events e WHERE e.venue_id = v.id)
+       ORDER BY v.name`,
+      [bounds.west, bounds.south, bounds.east, bounds.north]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      address: row.address,
+      point: { longitude: Number(row.longitude), latitude: Number(row.latitude) }
+    }));
   }
 }

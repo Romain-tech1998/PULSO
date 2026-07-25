@@ -48,7 +48,8 @@ const repository: EventRepository = {
           status: 'available',
           eventStatus: 'scheduled'
         }
-      : undefined
+      : undefined,
+  findVenuesWithoutUpcomingEvents: async () => []
 };
 
 describe('event discovery API', () => {
