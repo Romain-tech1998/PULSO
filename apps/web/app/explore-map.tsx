@@ -382,7 +382,8 @@ export function ExploreMap({
     };
   }, [userLocation]);
 
-  const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
+  const [viewMode, setViewMode] = useState<'map' | 'list' | 'venues' | 'calendar'>('map');
+  const [venueCategoryFilter, setVenueCategoryFilter] = useState<EventCategory[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const aboutPanelMount = useTransitionedMount(aboutOpen);
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -1039,6 +1040,13 @@ export function ExploreMap({
     selectedSources.length === 0
       ? events
       : events.filter((event) => selectedSources.includes(event.source.name));
+  const venueGroups = groupEventsByVenue(sourceFilteredEvents);
+  const filteredVenueGroups =
+    venueCategoryFilter.length === 0
+      ? venueGroups
+      : venueGroups.filter((group) =>
+          group.categories.some((category) => venueCategoryFilter.includes(category))
+        );
   // Prefer real-distance nearby results; fall back to the bounds-based list
   // when geolocation was denied/unsupported or hasn't resolved yet.
   const carouselEvents = userLocation && nearbyState === 'success' ? nearbyEvents : events;
@@ -1137,6 +1145,13 @@ export function ExploreMap({
                 }}
               >
                 <ViewModeIcon kind="list" /> Liste
+              </button>
+              <button
+                type="button"
+                className={`view-toggle-btn ${viewMode === 'venues' ? 'active' : ''}`}
+                onClick={() => setViewMode('venues')}
+              >
+                <ViewModeIcon kind="venues" /> Lieux
               </button>
               <button
                 type="button"
@@ -1399,6 +1414,21 @@ export function ExploreMap({
               onOpenDetails={openDetails}
               title={listOverride?.title}
               onClearTitle={listOverride ? () => setListOverride(undefined) : undefined}
+              locale={locale}
+            />
+          )}
+
+          {viewMode === 'venues' && (
+            <VenueListView
+              groups={filteredVenueGroups}
+              categoryFilter={venueCategoryFilter}
+              onChangeCategoryFilter={setVenueCategoryFilter}
+              onSelectVenue={(group) =>
+                setPickerList({
+                  title: `${group.name} — ${group.address}`,
+                  events: group.events
+                })
+              }
               locale={locale}
             />
           )}
@@ -1718,7 +1748,7 @@ function EventImageFallback({ category }: { category: EventCategory }) {
   );
 }
 
-function ViewModeIcon({ kind }: { kind: 'map' | 'list' | 'calendar' }) {
+function ViewModeIcon({ kind }: { kind: 'map' | 'list' | 'venues' | 'calendar' }) {
   const paths: Record<typeof kind, ReactNode> = {
     map: (
       <>
@@ -1734,6 +1764,12 @@ function ViewModeIcon({ kind }: { kind: 'map' | 'list' | 'calendar' }) {
         <line x1="3" y1="6" x2="3.01" y2="6" />
         <line x1="3" y1="12" x2="3.01" y2="12" />
         <line x1="3" y1="18" x2="3.01" y2="18" />
+      </>
+    ),
+    venues: (
+      <>
+        <path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z" />
+        <circle cx="12" cy="9.5" r="2.5" />
       </>
     ),
     calendar: (
@@ -1969,6 +2005,157 @@ function ListView({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+interface VenueGroup {
+  id: string;
+  name: string;
+  address: string;
+  events: PublicEvent[];
+  categories: EventCategory[];
+  imageUrl?: string;
+}
+
+// Groups the currently-loaded events (same source-filtered set the List view
+// uses) by venue.id rather than fetching a separate venues endpoint - venue
+// grouping is a client-side view over data already on screen, not new data.
+// Two kinds of rows are excluded as not being a real, referenceable place to
+// browse: "Unknown venue" is the mapper's placeholder (to-public-event.ts)
+// for events with no name/address at all, and name === address is the
+// signature of a reverse-geocode fallback that had no real venue name to
+// find (a park, a street corner) - see geocode-fallback.ts's shortLabel.
+function groupEventsByVenue(events: PublicEvent[]): VenueGroup[] {
+  const byId = new Map<string, VenueGroup>();
+  for (const event of events) {
+    if (event.venue.name === 'Unknown venue' || event.venue.name === event.venue.address) {
+      continue;
+    }
+    let group = byId.get(event.venue.id);
+    if (!group) {
+      group = {
+        id: event.venue.id,
+        name: event.venue.name,
+        address: event.venue.address,
+        events: [],
+        categories: []
+      };
+      byId.set(event.venue.id, group);
+    }
+    group.events.push(event);
+    if (!group.categories.includes(event.category)) {
+      group.categories.push(event.category);
+    }
+    if (!group.imageUrl && event.imageUrl) {
+      group.imageUrl = event.imageUrl;
+    }
+  }
+  return [...byId.values()].sort(
+    (a, b) => b.events.length - a.events.length || a.name.localeCompare(b.name)
+  );
+}
+
+function VenueListView({
+  groups,
+  categoryFilter,
+  onChangeCategoryFilter,
+  onSelectVenue,
+  locale
+}: {
+  groups: VenueGroup[];
+  categoryFilter: EventCategory[];
+  onChangeCategoryFilter: (categories: EventCategory[]) => void;
+  onSelectVenue: (group: VenueGroup) => void;
+  locale: SupportedLocale;
+}) {
+  return (
+    <div className="venue-view">
+      <div className="venue-view-filters">
+        {CATEGORY_FILTER_OPTIONS.map((option) => {
+          const active = categoryFilter.includes(option.value);
+          return (
+            <button
+              type="button"
+              key={option.value}
+              className={`venue-filter-chip ${active ? 'active' : ''}`}
+              style={
+                active
+                  ? {
+                      background: CATEGORY_COLORS[option.value],
+                      borderColor: CATEGORY_COLORS[option.value],
+                      color: '#fff'
+                    }
+                  : {
+                      borderColor: CATEGORY_COLORS[option.value],
+                      color: CATEGORY_COLORS[option.value]
+                    }
+              }
+              onClick={() =>
+                onChangeCategoryFilter(
+                  active
+                    ? categoryFilter.filter((c) => c !== option.value)
+                    : [...categoryFilter, option.value]
+                )
+              }
+            >
+              {SHORT_CATEGORY_LABELS[locale][option.value]}
+            </button>
+          );
+        })}
+      </div>
+
+      {groups.length === 0 && (
+        <p className="list-view-empty">Aucun lieu à afficher dans cette zone.</p>
+      )}
+
+      <div className="venue-grid">
+        {groups.map((group) => (
+          <button
+            type="button"
+            key={group.id}
+            className="venue-card"
+            onClick={() => onSelectVenue(group)}
+          >
+            <div
+              className="venue-card-thumb"
+              style={
+                group.imageUrl
+                  ? {
+                      backgroundImage: `url(${group.imageUrl})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center'
+                    }
+                  : undefined
+              }
+            >
+              {!group.imageUrl && (
+                <EventImageFallback category={group.categories[0] ?? 'other'} />
+              )}
+            </div>
+            <div className="venue-card-body">
+              <strong className="venue-card-name">{group.name}</strong>
+              <span className="venue-card-address">{group.address}</span>
+              <div className="venue-card-categories">
+                {group.categories.slice(0, 3).map((category) => (
+                  <span
+                    key={category}
+                    className="venue-card-category-dot"
+                    style={{ background: CATEGORY_COLORS[category] ?? CATEGORY_COLORS['other'] }}
+                    title={SHORT_CATEGORY_LABELS[locale][category]}
+                  />
+                ))}
+                {group.categories.length > 3 && (
+                  <span className="venue-card-more">+{group.categories.length - 3}</span>
+                )}
+              </div>
+              <span className="venue-card-count">
+                {group.events.length} événement{group.events.length > 1 ? 's' : ''} à venir
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
