@@ -1338,6 +1338,23 @@ export function ExploreMap({
     if (section === 'explorer') setExplorerPinKind('event');
   }, [section]);
 
+  // Lieu's and Explorer's map containers are always mounted but start
+  // hidden (display:none) behind whichever section shows on load - a
+  // MapLibre instance created while its container has zero size never
+  // recovers on its own once shown, so force a resize the moment each one
+  // actually becomes visible for the first time (and every time after,
+  // which is a harmless no-op if the size hasn't changed).
+  useEffect(() => {
+    if (section === 'lieu' && lieuTab === 'map') {
+      requestAnimationFrame(() => lieuMap.current?.resize());
+    }
+  }, [section, lieuTab]);
+  useEffect(() => {
+    if (section === 'explorer') {
+      requestAnimationFrame(() => explorerMap.current?.resize());
+    }
+  }, [section]);
+
   const explorerPinKindRef = useRef(explorerPinKind);
   const explorerVenueGroupsRef = useRef<VenueGroup[]>([]);
   useEffect(() => {
@@ -1693,8 +1710,7 @@ export function ExploreMap({
 
       <div className="dashboard-main">
         {(section === 'evenement' || section === 'lieu') && (
-        <>
-        {/* Left Sidebar */}
+        /* Left Sidebar */
         <aside className="sidebar-left">
           <h2 className="sidebar-section-title">
             {section === 'evenement' ? 'Événement' : 'Lieu'}
@@ -1950,7 +1966,7 @@ export function ExploreMap({
               La plupart des lieux n'ont pas encore de catégorie connue - seuls
               les lieux vérifiés manuellement en ont une pour l'instant.
             </p>
-            <div className="pill-list pill-list-long">
+            <div className="pill-list venue-category-pills">
               {VENUE_CATEGORY_FILTER_OPTIONS.map((option) => (
                 <button
                   type="button"
@@ -2056,9 +2072,18 @@ export function ExploreMap({
              </div>
           </div>
         </aside>
+        )}
 
-        {/* Map Area */}
-        <section className="map-container-wrapper" aria-label={translate(locale, 'map.label')}>
+        {/* Événement map + content - always mounted (never conditionally
+            unmounted by section) so the MapLibre instance attached to
+            `container` is never torn down and recreated; only its CSS
+            display toggles. A map created while its container isn't in the
+            DOM never recovers its size once it reappears. */}
+        <section
+          className="map-container-wrapper"
+          aria-label={translate(locale, 'map.label')}
+          style={{ display: section === 'evenement' ? undefined : 'none' }}
+        >
           <div
             className="map-shell"
             data-map-context="preserved"
@@ -2128,71 +2153,6 @@ export function ExploreMap({
             />
           )}
 
-          {section === 'lieu' && (
-            <div className="venue-section">
-              <div className="map-shell" style={{ display: lieuTab === 'map' ? undefined : 'none' }}>
-                <div ref={lieuMapContainer} className="map" />
-              </div>
-              {lieuTab === 'list' && (
-                <VenueListView
-                  groups={filteredVenueGroups}
-                  onSelectVenue={(group) => {
-                    // A newly-picked list must win over an already-open
-                    // details panel (same rule as map cluster/pin clicks) -
-                    // without this, clicking another venue while one's
-                    // events are open silently swapped the list behind the
-                    // visible details panel.
-                    setDetails({ kind: 'closed' });
-                    setVenuePickerList(undefined);
-                    setPickerList({
-                      title: `${group.name} — ${group.address}`,
-                      events: group.events
-                    });
-                  }}
-                  locale={locale}
-                />
-              )}
-              {lieuTab === 'calendar' && (
-                <CalendarView
-                  month={calendarMonth}
-                  onChangeMonth={setCalendarMonth}
-                  events={calendarEvents}
-                  state={calendarState}
-                  favorites={favorites}
-                  showFavoritesOnly={false}
-                  categories={calendarCategories}
-                  onChangeCategories={setCalendarCategories}
-                  price={calendarPrice}
-                  onChangePrice={setCalendarPrice}
-                  selectedDay={selectedDay}
-                  onSelectDay={(day, dayEvents) => {
-                    // The one real divergence from Événement's calendar:
-                    // a day groups its events by venue first (confirmed with
-                    // the user) rather than opening the raw event list -
-                    // drilling into one venue from there opens the normal
-                    // PickerList with that venue's events for the day.
-                    setSelectedDay(day);
-                    if (day) {
-                      const dayLabel = new Date(`${day}T00:00:00`).toLocaleDateString(
-                        locale === 'fr' ? 'fr-CA' : 'en-CA',
-                        { weekday: 'long', day: 'numeric', month: 'long' }
-                      );
-                      setDetails({ kind: 'closed' });
-                      setPickerList(undefined);
-                      setVenuePickerList({
-                        title: dayLabel,
-                        groups: groupEventsByVenue(dayEvents)
-                      });
-                    } else {
-                      setVenuePickerList(undefined);
-                    }
-                  }}
-                  locale={locale}
-                />
-              )}
-            </div>
-          )}
-
           {viewMode === 'calendar' && (
             <CalendarView
               month={calendarMonth}
@@ -2232,32 +2192,103 @@ export function ExploreMap({
             />
           )}
         </section>
-        </>
-        )}
 
-        {section === 'explorer' && (
-          <section className="map-container-wrapper">
-            <div className="map-shell">
-              <div ref={explorerMapContainer} className="map" />
-              <div className="map-floating-pin-toggle">
-                <button
-                  type="button"
-                  className={explorerPinKind === 'event' ? 'active' : ''}
-                  onClick={() => setExplorerPinKind('event')}
-                >
-                  Événements
-                </button>
-                <button
-                  type="button"
-                  className={explorerPinKind === 'venue' ? 'active' : ''}
-                  onClick={() => setExplorerPinKind('venue')}
-                >
-                  Lieux
-                </button>
-              </div>
+        {/* Lieu map + content - same always-mounted rationale as Événement's
+            map above. */}
+        <section
+          className="map-container-wrapper"
+          style={{ display: section === 'lieu' ? undefined : 'none' }}
+        >
+          <div className="venue-section">
+            <div className="map-shell" style={{ display: lieuTab === 'map' ? undefined : 'none' }}>
+              <div ref={lieuMapContainer} className="map" />
             </div>
-          </section>
-        )}
+            {lieuTab === 'list' && (
+              <VenueListView
+                groups={filteredVenueGroups}
+                onSelectVenue={(group) => {
+                  // A newly-picked list must win over an already-open
+                  // details panel (same rule as map cluster/pin clicks) -
+                  // without this, clicking another venue while one's
+                  // events are open silently swapped the list behind the
+                  // visible details panel.
+                  setDetails({ kind: 'closed' });
+                  setVenuePickerList(undefined);
+                  setPickerList({
+                    title: `${group.name} — ${group.address}`,
+                    events: group.events
+                  });
+                }}
+                locale={locale}
+              />
+            )}
+            {lieuTab === 'calendar' && (
+              <CalendarView
+                month={calendarMonth}
+                onChangeMonth={setCalendarMonth}
+                events={calendarEvents}
+                state={calendarState}
+                favorites={favorites}
+                showFavoritesOnly={false}
+                categories={calendarCategories}
+                onChangeCategories={setCalendarCategories}
+                price={calendarPrice}
+                onChangePrice={setCalendarPrice}
+                selectedDay={selectedDay}
+                onSelectDay={(day, dayEvents) => {
+                  // The one real divergence from Événement's calendar: a day
+                  // groups its events by venue first (confirmed with the
+                  // user) rather than opening the raw event list - drilling
+                  // into one venue from there opens the normal PickerList
+                  // with that venue's events for the day.
+                  setSelectedDay(day);
+                  if (day) {
+                    const dayLabel = new Date(`${day}T00:00:00`).toLocaleDateString(
+                      locale === 'fr' ? 'fr-CA' : 'en-CA',
+                      { weekday: 'long', day: 'numeric', month: 'long' }
+                    );
+                    setDetails({ kind: 'closed' });
+                    setPickerList(undefined);
+                    setVenuePickerList({
+                      title: dayLabel,
+                      groups: groupEventsByVenue(dayEvents)
+                    });
+                  } else {
+                    setVenuePickerList(undefined);
+                  }
+                }}
+                locale={locale}
+              />
+            )}
+          </div>
+        </section>
+
+        {/* Explorer map - same always-mounted rationale. */}
+        <section
+          className="map-container-wrapper"
+          style={{ display: section === 'explorer' ? undefined : 'none' }}
+        >
+          <div className="map-shell">
+            <div ref={explorerMapContainer} className="map" />
+            <div className="map-floating-pin-toggle">
+              <button
+                type="button"
+                className={explorerPinKind === 'event' ? 'active' : ''}
+                onClick={() => setExplorerPinKind('event')}
+              >
+                Événements
+              </button>
+              <button
+                type="button"
+                className={explorerPinKind === 'venue' ? 'active' : ''}
+                onClick={() => setExplorerPinKind('venue')}
+              >
+                Lieux
+              </button>
+            </div>
+          </div>
+        </section>
+
         {section === 'favoris' && (
           <FavorisSection
             favorites={favorites}
