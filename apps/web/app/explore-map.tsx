@@ -291,6 +291,8 @@ export function ExploreMap({
   const map = useRef<maplibregl.Map | null>(null);
   const lieuMapContainer = useRef<HTMLDivElement>(null);
   const lieuMap = useRef<maplibregl.Map | null>(null);
+  const explorerMapContainer = useRef<HTMLDivElement>(null);
+  const explorerMap = useRef<maplibregl.Map | null>(null);
   const currentBounds = useRef(INITIAL_BOUNDS);
   const activeSearch = useRef<ActiveSearch | undefined>(undefined);
   const localeRef = useRef(initialLocale);
@@ -402,6 +404,10 @@ export function ExploreMap({
   );
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
   const [lieuTab, setLieuTab] = useState<'map' | 'list' | 'calendar'>('list');
+  // Reset to 'event' every time Explorer is (re-)entered rather than
+  // persisted - simplest, least surprising default per the restructuring
+  // plan.
+  const [explorerPinKind, setExplorerPinKind] = useState<'event' | 'venue'>('event');
   const [venueCategoryFilter, setVenueCategoryFilter] = useState<VenueCategory[]>([]);
   const [lieuPriceFilter, setLieuPriceFilter] = useState<VenuePriceTier[]>([]);
   const [noEventVenues, setNoEventVenues] = useState<PublicVenue[]>([]);
@@ -1302,6 +1308,300 @@ export function ExploreMap({
     if (lieuMap.current) pushVenuesToMap(lieuMap.current);
   }, [filteredVenueGroups, pushVenuesToMap]);
 
+  // Explorer: a third, genuinely independent MapLibre instance - no sidebar,
+  // just the map and a floating toggle switching which of two always-loaded
+  // sources (events, venues) is visible. Both sources/layer sets are set up
+  // up front so switching the toggle is a cheap visibility flip, not a
+  // teardown/rebuild.
+  useEffect(() => {
+    explorerPinKindRef.current = explorerPinKind;
+    if (!explorerMap.current) return;
+    const visible = (kind: 'event' | 'venue') => (explorerPinKind === kind ? 'visible' : 'none');
+    for (const layer of ['explorer-events-glow', 'explorer-events-circles']) {
+      if (explorerMap.current.getLayer(layer)) {
+        explorerMap.current.setLayoutProperty(layer, 'visibility', visible('event'));
+      }
+    }
+    for (const layer of [
+      'explorer-venue-clusters-glow',
+      'explorer-venue-clusters',
+      'explorer-venue-cluster-count',
+      'explorer-venues-circles'
+    ]) {
+      if (explorerMap.current.getLayer(layer)) {
+        explorerMap.current.setLayoutProperty(layer, 'visibility', visible('venue'));
+      }
+    }
+  }, [explorerPinKind]);
+
+  useEffect(() => {
+    if (section === 'explorer') setExplorerPinKind('event');
+  }, [section]);
+
+  const explorerPinKindRef = useRef(explorerPinKind);
+  const explorerVenueGroupsRef = useRef<VenueGroup[]>([]);
+  useEffect(() => {
+    explorerVenueGroupsRef.current = venueGroups;
+  }, [venueGroups]);
+
+  const pushExplorerDataToMap = useCallback((instance: maplibregl.Map) => {
+    const eventSource = instance.getSource('explorer-events-source') as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (eventSource) {
+      eventSource.setData({
+        type: 'FeatureCollection',
+        features: eventsRef.current.map((event) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [event.venue.point.longitude, event.venue.point.latitude]
+          },
+          properties: {
+            id: event.id,
+            color: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
+            category: event.category
+          }
+        }))
+      });
+    }
+    const venueSource = instance.getSource('explorer-venues-source') as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (venueSource) {
+      venueSource.setData({
+        type: 'FeatureCollection',
+        features: explorerVenueGroupsRef.current.map((group) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [group.point.longitude, group.point.latitude]
+          },
+          properties: { id: group.id }
+        }))
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!explorerMapContainer.current) return;
+    const instance = new maplibregl.Map({
+      container: explorerMapContainer.current,
+      center: MONTREAL_CENTER,
+      zoom: 11,
+      style: MAP_STYLE_URL
+    });
+
+    instance.on('load', () => {
+      for (const [category, color] of Object.entries(CATEGORY_COLORS)) {
+        instance.addImage(`explorer-pin-${category}`, buildPinImageData(color), {
+          pixelRatio: PIN_SCALE
+        });
+      }
+      instance.addImage('explorer-cluster-badge', buildClusterBadgeImageData(), {
+        pixelRatio: PIN_SCALE
+      });
+      instance.addImage('explorer-pin-venue', buildPinImageData(VENUE_PIN_COLOR), {
+        pixelRatio: PIN_SCALE
+      });
+
+      instance.addSource('explorer-events-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        cluster: true,
+        clusterMaxZoom: 14,
+        clusterRadius: 50
+      });
+      instance.addSource('explorer-venues-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        cluster: true,
+        clusterMaxZoom: 14,
+        clusterRadius: 30
+      });
+
+      const eventVisible = explorerPinKindRef.current === 'event' ? 'visible' : 'none';
+      const venueVisible = explorerPinKindRef.current === 'venue' ? 'visible' : 'none';
+
+      instance.addLayer({
+        id: 'explorer-events-glow',
+        type: 'circle',
+        source: 'explorer-events-source',
+        layout: { visibility: eventVisible },
+        paint: {
+          'circle-radius': 18,
+          'circle-color': ['get', 'color'],
+          'circle-blur': 1,
+          'circle-opacity': 0.5
+        },
+        filter: ['!', ['has', 'point_count']]
+      });
+      instance.addLayer({
+        id: 'explorer-events-circles',
+        type: 'symbol',
+        source: 'explorer-events-source',
+        layout: {
+          visibility: eventVisible,
+          'icon-image': ['concat', 'explorer-pin-', ['get', 'category']],
+          'icon-size': 0.85,
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+
+      instance.addLayer({
+        id: 'explorer-venue-clusters-glow',
+        type: 'circle',
+        source: 'explorer-venues-source',
+        filter: ['has', 'point_count'],
+        layout: { visibility: venueVisible },
+        paint: {
+          'circle-color': VENUE_PIN_COLOR,
+          'circle-radius': ['step', ['get', 'point_count'], 26, 10, 36],
+          'circle-blur': 1,
+          'circle-opacity': 0.4
+        }
+      });
+      instance.addLayer({
+        id: 'explorer-venue-clusters',
+        type: 'symbol',
+        source: 'explorer-venues-source',
+        filter: ['has', 'point_count'],
+        layout: {
+          visibility: venueVisible,
+          'icon-image': 'explorer-cluster-badge',
+          'icon-size': ['step', ['get', 'point_count'], 0.5, 10, 0.7],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+      instance.addLayer({
+        id: 'explorer-venue-cluster-count',
+        type: 'symbol',
+        source: 'explorer-venues-source',
+        filter: ['has', 'point_count'],
+        layout: {
+          visibility: venueVisible,
+          'text-field': '{point_count_abbreviated}',
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 12
+        },
+        paint: { 'text-color': '#ffffff' }
+      });
+      instance.addLayer({
+        id: 'explorer-venues-circles',
+        type: 'symbol',
+        source: 'explorer-venues-source',
+        filter: ['!', ['has', 'point_count']],
+        layout: {
+          visibility: venueVisible,
+          'icon-image': 'explorer-pin-venue',
+          'icon-size': 0.85,
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+
+      instance.on('click', 'explorer-events-circles', (e) => {
+        if (!e.features?.[0]) return;
+        const ids = [...new Set(e.features.map((f) => f.properties?.id as string))];
+        const matched = ids
+          .map((id) => eventsRef.current.find((ev) => ev.id === id))
+          .filter((ev): ev is PublicEvent => Boolean(ev));
+        if (matched.length === 0) return;
+        setDetails({ kind: 'closed' });
+        setVenuePickerList(undefined);
+        if (matched.length === 1) {
+          setPickerList(undefined);
+          void openDetails(matched[0]!.id);
+          return;
+        }
+        setPickerList({ title: `${matched.length} événements à cet endroit`, events: matched });
+      });
+
+      instance.on('click', 'explorer-venues-circles', (e) => {
+        if (!e.features?.[0]) return;
+        const ids = [...new Set(e.features.map((f) => f.properties?.id as string))];
+        const matched = ids
+          .map((id) => explorerVenueGroupsRef.current.find((g) => g.id === id))
+          .filter((g): g is VenueGroup => Boolean(g));
+        if (matched.length === 0) return;
+        setDetails({ kind: 'closed' });
+        if (matched.length === 1) {
+          const group = matched[0]!;
+          setVenuePickerList(undefined);
+          setPickerList({ title: `${group.name} — ${group.address}`, events: group.events });
+          return;
+        }
+        setPickerList(undefined);
+        setVenuePickerList({ title: `${matched.length} lieux à cet endroit`, groups: matched });
+      });
+
+      instance.on('click', 'explorer-venue-clusters', (e) => {
+        const feature = e.features?.[0];
+        const clusterId = feature?.properties?.cluster_id;
+        const source = instance.getSource('explorer-venues-source') as
+          | maplibregl.GeoJSONSource
+          | undefined;
+        if (clusterId === undefined || !source || !feature) return;
+        const coordinates = (
+          feature.geometry as { type: 'Point'; coordinates: [number, number] }
+        ).coordinates;
+        source.getClusterLeaves(clusterId, Infinity, 0).then((leaves) => {
+          const ids = leaves.map((leaf) => leaf.properties?.id as string);
+          const matched = ids
+            .map((id) => explorerVenueGroupsRef.current.find((g) => g.id === id))
+            .filter((g): g is VenueGroup => Boolean(g));
+          if (matched.length <= 10) {
+            setDetails({ kind: 'closed' });
+            setPickerList(undefined);
+            setVenuePickerList({
+              title: `${matched.length} lieux dans cette zone`,
+              groups: matched
+            });
+            return;
+          }
+          source.getClusterExpansionZoom(clusterId).then((zoom) => {
+            instance.easeTo({ center: coordinates, zoom });
+          });
+        });
+      });
+
+      for (const layer of ['explorer-events-circles', 'explorer-venues-circles', 'explorer-venue-clusters']) {
+        instance.on('mouseenter', layer, () => {
+          instance.getCanvas().style.cursor = 'pointer';
+        });
+        instance.on('mouseleave', layer, () => {
+          instance.getCanvas().style.cursor = '';
+        });
+      }
+
+      pushExplorerDataToMap(instance);
+    });
+
+    const onMoveEnd = () => {
+      const bounds = instance.getBounds();
+      void loadEvents({
+        west: bounds.getWest(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        north: bounds.getNorth()
+      });
+    };
+    instance.on('moveend', onMoveEnd);
+    explorerMap.current = instance;
+    return () => {
+      instance.off('moveend', onMoveEnd);
+      instance.remove();
+    };
+  }, [pushExplorerDataToMap, loadEvents]);
+
+  useEffect(() => {
+    if (explorerMap.current) pushExplorerDataToMap(explorerMap.current);
+  }, [events, venueGroups, pushExplorerDataToMap]);
+
   // Prefer real-distance nearby results; fall back to the bounds-based list
   // when geolocation was denied/unsupported or hasn't resolved yet.
   const carouselEvents = userLocation && nearbyState === 'success' ? nearbyEvents : events;
@@ -1935,7 +2235,29 @@ export function ExploreMap({
         </>
         )}
 
-        {section === 'explorer' && <ExplorerSection locale={locale} />}
+        {section === 'explorer' && (
+          <section className="map-container-wrapper">
+            <div className="map-shell">
+              <div ref={explorerMapContainer} className="map" />
+              <div className="map-floating-pin-toggle">
+                <button
+                  type="button"
+                  className={explorerPinKind === 'event' ? 'active' : ''}
+                  onClick={() => setExplorerPinKind('event')}
+                >
+                  Événements
+                </button>
+                <button
+                  type="button"
+                  className={explorerPinKind === 'venue' ? 'active' : ''}
+                  onClick={() => setExplorerPinKind('venue')}
+                >
+                  Lieux
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
         {section === 'favoris' && (
           <FavorisSection
             favorites={favorites}
@@ -2497,17 +2819,6 @@ function VenuePickerList({
         ))}
       </div>
     </div>
-  );
-}
-
-// Placeholder for Phase E of the nav restructuring: a pure map with a
-// floating lieu/événement pin-kind toggle, no left sidebar. Filled in next.
-function ExplorerSection({ locale }: { locale: SupportedLocale }) {
-  void locale;
-  return (
-    <section className="map-container-wrapper explorer-placeholder">
-      <p className="list-view-empty">Explorer arrive bientôt.</p>
-    </section>
   );
 }
 

@@ -1080,6 +1080,36 @@ h6 {
   background: var(--surface-raised);
 }
 
+.map-floating-pin-toggle {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  background: var(--surface-overlay);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--brand-border);
+  border-radius: 999px;
+  padding: 0.25rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+.map-floating-pin-toggle button {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  padding: 0.5rem 1.1rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.map-floating-pin-toggle button.active {
+  background: rgba(91, 63, 224, 0.35);
+  color: var(--text-primary);
+}
+
 .map-filter-bar {
   position: absolute;
   bottom: 1.5rem;
