@@ -27,7 +27,27 @@ export const DATE_FILTER_VALUES = [
 ] as const;
 export const PRICE_FILTER_VALUES = ['all', 'free', 'paid'] as const;
 
+// A venue's own type - distinct from EVENT_CATEGORIES above, which describes
+// what kind of event is happening, not what kind of place it happens at.
+// Genuinely unpopulated for almost every ingested venue at launch (Ville de
+// Montréal/Ticketmaster never provide this) - only hand-curated venues
+// (see seed-curated-venues.ts) have a real value. Never inferred from a
+// venue's name string.
+export const VENUE_CATEGORIES = [
+  'bar',
+  'nightclub',
+  'concert_hall',
+  'theater',
+  'brewery_with_stage',
+  'outdoor_festival_site',
+  'cafe_concert',
+  'gallery_museum',
+  'community_space',
+  'other'
+] as const;
+
 export type EventCategory = (typeof EVENT_CATEGORIES)[number];
+export type VenueCategory = (typeof VENUE_CATEGORIES)[number];
 export type EventStatus = (typeof EVENT_STATUSES)[number];
 export type FreshnessState = (typeof FRESHNESS_STATES)[number];
 export type LocationConfidence = (typeof LOCATION_CONFIDENCE_STATES)[number];

@@ -6,7 +6,7 @@ import type {
   VenuesQuery
 } from '@pulso/contracts';
 import type { DiscoveryWindow } from '@pulso/domain';
-import type { EventCategory } from '@pulso/domain';
+import type { EventCategory, VenueCategory } from '@pulso/domain';
 import type { Pool } from 'pg';
 
 export interface ExternalDestinationRecord {
@@ -59,6 +59,7 @@ const publicEventSelect = `
     v.id AS venue_id,
     v.name AS venue_name,
     v.address,
+    v.category AS venue_category,
     ST_X(v.location) AS longitude,
     ST_Y(v.location) AS latitude
 `;
@@ -91,6 +92,7 @@ interface EventRow {
   venue_id: string;
   venue_name: string;
   address: string;
+  venue_category: VenueCategory | null;
   longitude: number;
   latitude: number;
   distance_meters?: number;
@@ -122,7 +124,8 @@ function toPublicEvent(row: EventRow): PublicEvent {
       point: {
         longitude: Number(row.longitude),
         latitude: Number(row.latitude)
-      }
+      },
+      ...(row.venue_category !== null ? { category: row.venue_category } : {})
     },
     source: {
       name: row.source_name,
@@ -281,10 +284,11 @@ export class PostgresEventRepository implements EventRepository {
       id: string;
       name: string;
       address: string;
+      category: VenueCategory | null;
       longitude: number;
       latitude: number;
     }>(
-      `SELECT v.id, v.name, v.address,
+      `SELECT v.id, v.name, v.address, v.category,
               ST_X(v.location) AS longitude, ST_Y(v.location) AS latitude
        FROM venues v
        WHERE v.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
@@ -296,7 +300,8 @@ export class PostgresEventRepository implements EventRepository {
       id: row.id,
       name: row.name,
       address: row.address,
-      point: { longitude: Number(row.longitude), latitude: Number(row.latitude) }
+      point: { longitude: Number(row.longitude), latitude: Number(row.latitude) },
+      ...(row.category !== null ? { category: row.category } : {})
     }));
   }
 }

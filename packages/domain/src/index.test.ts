@@ -5,7 +5,8 @@ import {
   createMontrealDiscoveryWindow,
   EVENT_CATEGORIES,
   isEligibleForActiveDiscovery,
-  MONTREAL_TIMEZONE
+  MONTREAL_TIMEZONE,
+  VENUE_CATEGORIES
 } from './index.js';
 
 // Traceability: PRD-0001 MAP-003, EVENT-004, and EVENT-008.
@@ -14,6 +15,11 @@ describe('MVP domain vocabulary', () => {
   it('keeps the accepted compact category family and Montréal timezone', () => {
     expect(EVENT_CATEGORIES).toHaveLength(6);
     expect(MONTREAL_TIMEZONE).toBe('America/Toronto');
+  });
+
+  it('keeps the accepted venue category family', () => {
+    expect(VENUE_CATEGORIES).toHaveLength(10);
+    expect(VENUE_CATEGORIES).toContain('bar');
   });
 });
 

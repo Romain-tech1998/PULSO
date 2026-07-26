@@ -6,7 +6,8 @@ import {
   FRESHNESS_STATES,
   LOCATION_CONFIDENCE_STATES,
   PRICE_FILTER_VALUES,
-  TRUST_LABELS
+  TRUST_LABELS,
+  VENUE_CATEGORIES
 } from '@pulso/domain';
 import {
   formatCad,
@@ -20,7 +21,12 @@ import {
   SUPPORTED_LOCALES,
   translate
 } from '@pulso/domain/localization';
-import type { DiscoveryFilters, EventCategory, MapBounds } from '@pulso/domain';
+import type {
+  DiscoveryFilters,
+  EventCategory,
+  MapBounds,
+  VenueCategory
+} from '@pulso/domain';
 import type { SupportedLocale } from '@pulso/domain/localization';
 import { z } from 'zod';
 
@@ -131,6 +137,21 @@ export const directDistanceQuerySchema = z.object({
   radiusMeters: z.coerce.number().positive().max(50_000)
 });
 
+// Batch hydration for the Favoris section: favorites are stored client-side
+// only (no account system, see DEC-0007), so the client already knows which
+// event ids it wants - this just fetches full PublicEvent objects for ids
+// that may be outside the currently-loaded map viewport. Capped at 100 to
+// keep the query string bounded.
+export const eventIdsQuerySchema = z
+  .object({
+    ids: z
+      .string()
+      .min(1)
+      .transform((value) => value.split(','))
+      .pipe(z.array(z.uuid()).min(1).max(100))
+  })
+  .strict();
+
 export const venuesQuerySchema = z
   .object({
     west: z.coerce.number().min(-180).max(180),
@@ -152,7 +173,10 @@ export const publicVenueSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
   address: z.string().min(1),
-  point: geographicPointSchema
+  point: geographicPointSchema,
+  // Absent for almost every ingested venue - see VENUE_CATEGORIES's comment
+  // in @pulso/domain. Never inferred, only ever hand-set.
+  category: z.enum(VENUE_CATEGORIES).optional()
 });
 
 export const venueListResponseSchema = z.object({
@@ -187,7 +211,8 @@ export const publicEventSchema = z.object({
     id: z.uuid(),
     name: z.string().min(1),
     address: z.string().min(1),
-    point: geographicPointSchema
+    point: geographicPointSchema,
+    category: z.enum(VENUE_CATEGORIES).optional()
   }),
   source: z.object({
     name: z.string().min(1),
@@ -235,6 +260,7 @@ export type EventListResponse = z.infer<typeof eventListResponseSchema>;
 export type EventDetailsResponse = z.infer<typeof eventDetailsResponseSchema>;
 export type MapBoundsQuery = z.infer<typeof mapBoundsQuerySchema>;
 export type DirectDistanceQuery = z.infer<typeof directDistanceQuerySchema>;
+export type EventIdsQuery = z.infer<typeof eventIdsQuerySchema>;
 export type VenuesQuery = z.infer<typeof venuesQuerySchema>;
 export type PublicVenue = z.infer<typeof publicVenueSchema>;
 export type VenueListResponse = z.infer<typeof venueListResponseSchema>;
@@ -391,6 +417,21 @@ export const PRICE_FILTER_OPTIONS = [
   { value: 'free' },
   { value: 'paid' }
 ] as const;
+
+export const VENUE_CATEGORY_FILTER_OPTIONS: ReadonlyArray<{
+  value: VenueCategory;
+}> = [
+  { value: 'bar' },
+  { value: 'nightclub' },
+  { value: 'concert_hall' },
+  { value: 'theater' },
+  { value: 'brewery_with_stage' },
+  { value: 'outdoor_festival_site' },
+  { value: 'cafe_concert' },
+  { value: 'gallery_museum' },
+  { value: 'community_space' },
+  { value: 'other' }
+];
 
 export function buildMapEventsQuery(
   bounds: MapBounds,
