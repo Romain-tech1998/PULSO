@@ -1,6 +1,7 @@
 import {
   directDistanceQuerySchema,
   eventDetailsResponseSchema,
+  eventIdsQuerySchema,
   eventListResponseSchema,
   intelligentSearchRequestSchema,
   intelligentSearchResponseSchema,
@@ -221,6 +222,13 @@ export function buildApp(
     const query = directDistanceQuerySchema.parse(request.query);
     return eventListResponseSchema.parse({
       data: await repository.findWithinDirectDistance(query)
+    });
+  });
+
+  app.get('/events/by-ids', async (request) => {
+    const query = eventIdsQuerySchema.parse(request.query);
+    return eventListResponseSchema.parse({
+      data: await repository.findByIds(query.ids)
     });
   });
 

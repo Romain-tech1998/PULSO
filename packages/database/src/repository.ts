@@ -24,6 +24,7 @@ export interface EventRepository {
   ): Promise<PublicEvent[]>;
   findWithinDirectDistance(query: DirectDistanceQuery): Promise<PublicEvent[]>;
   findById(id: string): Promise<PublicEvent | undefined>;
+  findByIds(ids: string[]): Promise<PublicEvent[]>;
   findExternalDestination(
     id: string
   ): Promise<ExternalDestinationRecord | undefined>;
@@ -239,6 +240,22 @@ export class PostgresEventRepository implements EventRepository {
     );
     const row = result.rows[0];
     return row ? toPublicEvent(row) : undefined;
+  }
+
+  // Batch hydration for the Favoris section: favorites are stored
+  // client-side only (no account system), so the client already knows
+  // which ids it wants regardless of map viewport - this just fetches the
+  // full PublicEvent objects.
+  async findByIds(ids: string[]): Promise<PublicEvent[]> {
+    if (ids.length === 0) return [];
+    const result = await this.pool.query<EventRow>(
+      `${publicEventSelect}
+       FROM events e
+       JOIN venues v ON v.id = e.venue_id
+       WHERE e.id = ANY($1)`,
+      [ids]
+    );
+    return result.rows.map(toPublicEvent);
   }
 
   async findExternalDestination(

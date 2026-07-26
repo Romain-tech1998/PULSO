@@ -2822,9 +2822,11 @@ function VenuePickerList({
   );
 }
 
-// Placeholder for Phase F of the nav restructuring: a dedicated view of the
-// user's saved events regardless of map viewport, via GET /events/by-ids.
-// Filled in next.
+// A dedicated view of the user's saved events regardless of map viewport -
+// favorites are stored client-side only (no account system), so this
+// hydrates the full PublicEvent objects via GET /events/by-ids rather than
+// filtering whatever the map/list already happens to have loaded (which
+// would silently miss a favorite outside the current viewport).
 function FavorisSection({
   favorites,
   onToggleFavorite,
@@ -2836,12 +2838,51 @@ function FavorisSection({
   onOpenDetails: (id: string) => void;
   locale: SupportedLocale;
 }) {
-  void favorites;
-  void onToggleFavorite;
-  void onOpenDetails;
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+  const [state, setState] = useState<LoadState>('loading');
+
+  useEffect(() => {
+    if (favorites.length === 0) {
+      setEvents([]);
+      setState('empty');
+      return;
+    }
+    setState('loading');
+    fetch(`${API_BASE_URL}/events/by-ids?ids=${favorites.join(',')}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const result = eventListResponseSchema.parse(json);
+        setEvents(result.data);
+        setState(result.data.length === 0 ? 'empty' : 'success');
+      })
+      .catch(() => setState('error'));
+  }, [favorites]);
+
+  if (state === 'loading') {
+    return (
+      <section className="map-container-wrapper explorer-placeholder">
+        <p className="list-view-empty">Chargement de vos favoris…</p>
+      </section>
+    );
+  }
+  if (state === 'error') {
+    return (
+      <section className="map-container-wrapper explorer-placeholder">
+        <p className="list-view-empty">Impossible de charger vos favoris pour le moment.</p>
+      </section>
+    );
+  }
+
   return (
-    <section className="map-container-wrapper explorer-placeholder">
-      <p className="list-view-empty">Favoris arrive bientôt.</p>
+    <section className="map-container-wrapper">
+      <ListView
+        events={events}
+        favorites={favorites}
+        showFavoritesOnly={false}
+        onToggleFavorite={onToggleFavorite}
+        onOpenDetails={onOpenDetails}
+        locale={locale}
+      />
     </section>
   );
 }

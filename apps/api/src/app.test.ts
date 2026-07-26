@@ -49,7 +49,8 @@ const repository: EventRepository = {
           eventStatus: 'scheduled'
         }
       : undefined,
-  findVenuesWithoutUpcomingEvents: async () => []
+  findVenuesWithoutUpcomingEvents: async () => [],
+  findByIds: async (ids) => (ids.includes(event.id) ? [event] : [])
 };
 
 describe('event discovery API', () => {
@@ -63,6 +64,28 @@ describe('event discovery API', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().data[0].id).toBe(event.id);
+    await app.close();
+  });
+
+  it('returns events for a batch of ids, regardless of map bounds', async () => {
+    const app = buildApp(repository);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/events/by-ids?ids=${event.id}`
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toHaveLength(1);
+    expect(response.json().data[0].id).toBe(event.id);
+    await app.close();
+  });
+
+  it('rejects a by-ids request with no ids', async () => {
+    const app = buildApp(repository);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/events/by-ids?ids='
+    });
+    expect(response.statusCode).toBe(400);
     await app.close();
   });
 
