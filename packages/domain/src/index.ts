@@ -68,6 +68,19 @@ export const CATEGORY_COLORS: Record<EventCategory, string> = {
   other: '#94A3B8'
 };
 
+export const VENUE_CATEGORY_COLORS: Record<VenueCategory, string> = {
+  bar: '#D97706',
+  nightclub: '#DB2777',
+  concert_hall: '#7C3AED',
+  theater: '#DC2626',
+  brewery_with_stage: '#B45309',
+  outdoor_festival_site: '#16A34A',
+  cafe_concert: '#0891B2',
+  gallery_museum: '#4F46E5',
+  community_space: '#65A30D',
+  other: '#94A3B8'
+};
+
 export interface DiscoveryFilters {
   date: DateFilterValue;
   categories: EventCategory[];

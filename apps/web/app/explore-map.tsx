@@ -19,6 +19,7 @@ import {
   DEFAULT_DISCOVERY_FILTERS,
   getMontrealCalendarDate,
   CATEGORY_COLORS,
+  VENUE_CATEGORY_COLORS,
   type DiscoveryFilters,
   type EventCategory,
   type MapBounds,
@@ -1997,27 +1998,38 @@ export function ExploreMap({
             collapsed={collapsedSections.has('lieu-categorie')}
             onToggle={() => toggleSection('lieu-categorie')}
           >
-            <p className="category-legend-hint">
-              La plupart des lieux n'ont pas encore de catégorie connue - seuls
-              les lieux vérifiés manuellement en ont une pour l'instant.
-            </p>
             <div className="pill-list venue-category-pills">
-              {VENUE_CATEGORY_FILTER_OPTIONS.map((option) => (
-                <button
-                  type="button"
-                  key={option.value}
-                  className={`filter-pill ${venueCategoryFilter.includes(option.value) ? 'active' : ''}`}
-                  onClick={() =>
-                    setVenueCategoryFilter((prev) =>
-                      prev.includes(option.value)
-                        ? prev.filter((value) => value !== option.value)
-                        : [...prev, option.value]
-                    )
-                  }
-                >
-                  {VENUE_CATEGORY_LABELS[locale][option.value]}
-                </button>
-              ))}
+              {VENUE_CATEGORY_FILTER_OPTIONS.map((option) => {
+                const active = venueCategoryFilter.includes(option.value);
+                return (
+                  <button
+                    type="button"
+                    key={option.value}
+                    className={`filter-pill ${active ? 'active' : ''}`}
+                    style={
+                      active
+                        ? {
+                            background: VENUE_CATEGORY_COLORS[option.value],
+                            borderColor: VENUE_CATEGORY_COLORS[option.value],
+                            color: '#fff'
+                          }
+                        : {
+                            borderColor: VENUE_CATEGORY_COLORS[option.value],
+                            color: VENUE_CATEGORY_COLORS[option.value]
+                          }
+                    }
+                    onClick={() =>
+                      setVenueCategoryFilter((prev) =>
+                        prev.includes(option.value)
+                          ? prev.filter((value) => value !== option.value)
+                          : [...prev, option.value]
+                      )
+                    }
+                  >
+                    {VENUE_CATEGORY_LABELS[locale][option.value]}
+                  </button>
+                );
+              })}
             </div>
           </CollapsibleFilterGroup>
 
@@ -2026,10 +2038,6 @@ export function ExploreMap({
             collapsed={collapsedSections.has('lieu-prix')}
             onToggle={() => toggleSection('lieu-prix')}
           >
-            <p className="category-legend-hint">
-              Calculé à partir des événements payants du lieu - absent quand
-              le lieu n'en a aucun.
-            </p>
             <div className="pill-list">
               {(['$', '$$', '$$$'] as const).map((tier) => (
                 <button
@@ -2935,6 +2943,7 @@ function FavorisSection({
 }) {
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [state, setState] = useState<LoadState>('loading');
+  const [kind, setKind] = useState<'event' | 'venue'>('event');
 
   useEffect(() => {
     if (favorites.length === 0) {
@@ -2955,33 +2964,43 @@ function FavorisSection({
 
   return (
     <section className="map-container-wrapper favoris-section">
-      <div className="favoris-block">
-        <h3 className="favoris-block-title">Événements favoris</h3>
-        {state === 'loading' && <p className="list-view-empty">Chargement de vos favoris…</p>}
-        {state === 'error' && (
-          <p className="list-view-empty">Impossible de charger vos favoris pour le moment.</p>
-        )}
-        {(state === 'success' || state === 'empty') && (
-          <ListView
-            events={events}
-            favorites={favorites}
-            showFavoritesOnly={false}
-            onToggleFavorite={onToggleFavorite}
-            onOpenDetails={onOpenDetails}
+      <div className="favoris-kind-toggle">
+        <button type="button" className={kind === 'event' ? 'active' : ''} onClick={() => setKind('event')}>
+          Événements
+        </button>
+        <button type="button" className={kind === 'venue' ? 'active' : ''} onClick={() => setKind('venue')}>
+          Lieux
+        </button>
+      </div>
+      {kind === 'event' && (
+        <div className="favoris-block">
+          {state === 'loading' && <p className="list-view-empty">Chargement de vos favoris…</p>}
+          {state === 'error' && (
+            <p className="list-view-empty">Impossible de charger vos favoris pour le moment.</p>
+          )}
+          {(state === 'success' || state === 'empty') && (
+            <ListView
+              events={events}
+              favorites={favorites}
+              showFavoritesOnly={false}
+              onToggleFavorite={onToggleFavorite}
+              onOpenDetails={onOpenDetails}
+              locale={locale}
+            />
+          )}
+        </div>
+      )}
+      {kind === 'venue' && (
+        <div className="favoris-block">
+          <VenueListView
+            groups={favoriteVenueGroups}
+            onSelectVenue={onSelectVenue}
+            favoriteVenues={favoriteVenues}
+            onToggleFavoriteVenue={onToggleFavoriteVenue}
             locale={locale}
           />
-        )}
-      </div>
-      <div className="favoris-block">
-        <h3 className="favoris-block-title">Lieux favoris</h3>
-        <VenueListView
-          groups={favoriteVenueGroups}
-          onSelectVenue={onSelectVenue}
-          favoriteVenues={favoriteVenues}
-          onToggleFavoriteVenue={onToggleFavoriteVenue}
-          locale={locale}
-        />
-      </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -3194,7 +3213,14 @@ function VenueListView({
               <span className="venue-card-address">{group.address}</span>
               <div className="venue-card-categories">
                 {group.venueCategory && (
-                  <span className="venue-card-type-badge">
+                  <span
+                    className="venue-card-type-badge"
+                    style={{
+                      background: VENUE_CATEGORY_COLORS[group.venueCategory],
+                      borderColor: VENUE_CATEGORY_COLORS[group.venueCategory],
+                      color: '#fff'
+                    }}
+                  >
                     {VENUE_CATEGORY_LABELS[locale][group.venueCategory]}
                   </span>
                 )}

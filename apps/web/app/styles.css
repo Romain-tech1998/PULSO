@@ -719,19 +719,35 @@ h6 {
 .favoris-section {
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
   background: var(--surface-base);
 }
+.favoris-kind-toggle {
+  display: flex;
+  gap: 0.5rem;
+  padding: 1.5rem 1.5rem 0;
+  flex-shrink: 0;
+}
+.favoris-kind-toggle button {
+  border: 1px solid var(--brand-border);
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0.5rem 1.1rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.favoris-kind-toggle button.active {
+  background: rgba(91, 63, 224, 0.35);
+  border-color: var(--brand-purple);
+  color: var(--text-primary);
+}
 .favoris-block {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 1.5rem;
-  border-bottom: 1px solid var(--brand-border);
-}
-.favoris-block:last-child {
-  border-bottom: none;
-}
-.favoris-block-title {
-  margin: 0 0 1rem;
-  font-size: 1.1rem;
 }
 .favoris-block .venue-view,
 .favoris-block .list-view {
