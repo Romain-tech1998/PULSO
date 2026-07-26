@@ -401,7 +401,7 @@ export function ExploreMap({
     'evenement'
   );
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
-  const [lieuTab, setLieuTab] = useState<'map' | 'list'>('list');
+  const [lieuTab, setLieuTab] = useState<'map' | 'list' | 'calendar'>('list');
   const [venueCategoryFilter, setVenueCategoryFilter] = useState<VenueCategory[]>([]);
   const [lieuPriceFilter, setLieuPriceFilter] = useState<VenuePriceTier[]>([]);
   const [noEventVenues, setNoEventVenues] = useState<PublicVenue[]>([]);
@@ -452,10 +452,13 @@ export function ExploreMap({
   );
 
   useEffect(() => {
-    if (viewMode === 'calendar') {
+    // Shared by both Événement's and Lieu's Calendrier tab - same underlying
+    // month of events either way, only the day-click behavior differs (see
+    // the two CalendarView render sites below).
+    if (viewMode === 'calendar' || (section === 'lieu' && lieuTab === 'calendar')) {
       void loadCalendarEvents(calendarMonth, calendarCategories, calendarPrice);
     }
-  }, [viewMode, calendarMonth, calendarCategories, calendarPrice, loadCalendarEvents]);
+  }, [viewMode, section, lieuTab, calendarMonth, calendarCategories, calendarPrice, loadCalendarEvents]);
 
   useEffect(() => {
     if (section !== 'lieu') return;
@@ -1442,6 +1445,13 @@ export function ExploreMap({
                   >
                     <ViewModeIcon kind="list" /> Liste
                   </button>
+                  <button
+                    type="button"
+                    className={`view-toggle-btn ${lieuTab === 'calendar' ? 'active' : ''}`}
+                    onClick={() => setLieuTab('calendar')}
+                  >
+                    <ViewModeIcon kind="calendar" /> Calendrier
+                  </button>
                 </>
               )}
             </div>
@@ -1838,6 +1848,44 @@ export function ExploreMap({
                       title: `${group.name} — ${group.address}`,
                       events: group.events
                     });
+                  }}
+                  locale={locale}
+                />
+              )}
+              {lieuTab === 'calendar' && (
+                <CalendarView
+                  month={calendarMonth}
+                  onChangeMonth={setCalendarMonth}
+                  events={calendarEvents}
+                  state={calendarState}
+                  favorites={favorites}
+                  showFavoritesOnly={false}
+                  categories={calendarCategories}
+                  onChangeCategories={setCalendarCategories}
+                  price={calendarPrice}
+                  onChangePrice={setCalendarPrice}
+                  selectedDay={selectedDay}
+                  onSelectDay={(day, dayEvents) => {
+                    // The one real divergence from Événement's calendar:
+                    // a day groups its events by venue first (confirmed with
+                    // the user) rather than opening the raw event list -
+                    // drilling into one venue from there opens the normal
+                    // PickerList with that venue's events for the day.
+                    setSelectedDay(day);
+                    if (day) {
+                      const dayLabel = new Date(`${day}T00:00:00`).toLocaleDateString(
+                        locale === 'fr' ? 'fr-CA' : 'en-CA',
+                        { weekday: 'long', day: 'numeric', month: 'long' }
+                      );
+                      setDetails({ kind: 'closed' });
+                      setPickerList(undefined);
+                      setVenuePickerList({
+                        title: dayLabel,
+                        groups: groupEventsByVenue(dayEvents)
+                      });
+                    } else {
+                      setVenuePickerList(undefined);
+                    }
                   }}
                   locale={locale}
                 />
