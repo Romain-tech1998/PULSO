@@ -53,6 +53,21 @@ const curatedVenues: CuratedVenue[] = [
     longitude: -73.5822324,
     latitude: 45.5238269,
     category: 'bar'
+  },
+  {
+    // From DATA-0002's Instagram Scout pilot watchlist (source id
+    // "new-city-gas", handle @newcitygas) - a real nightclub with no
+    // ingested events yet. Address confirmed both via web search and
+    // OpenStreetMap's own building=yes "New City Gas" name tag at the
+    // exact address. The pilot's other 4 sources are either already
+    // real ingested venues (see categorize-known-venues.ts) or, for
+    // Evenko, a promoter with no fixed venue of its own - not added here.
+    id: '00000000-0000-4000-8000-000000000023',
+    name: 'New City Gas',
+    address: '950, Rue Ottawa, Montréal, QC H3C 1S4',
+    longitude: -73.5575195,
+    latitude: 45.4951304,
+    category: 'nightclub'
   }
 ];
 
