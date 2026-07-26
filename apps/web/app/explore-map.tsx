@@ -397,7 +397,10 @@ export function ExploreMap({
     };
   }, [userLocation]);
 
-  const [viewMode, setViewMode] = useState<'map' | 'list' | 'venues' | 'calendar'>('map');
+  const [section, setSection] = useState<'evenement' | 'lieu' | 'explorer' | 'favoris'>(
+    'evenement'
+  );
+  const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
   const [lieuTab, setLieuTab] = useState<'map' | 'list'>('list');
   const [venueCategoryFilter, setVenueCategoryFilter] = useState<VenueCategory[]>([]);
   const [lieuPriceFilter, setLieuPriceFilter] = useState<VenuePriceTier[]>([]);
@@ -455,7 +458,7 @@ export function ExploreMap({
   }, [viewMode, calendarMonth, calendarCategories, calendarPrice, loadCalendarEvents]);
 
   useEffect(() => {
-    if (viewMode !== 'venues') return;
+    if (section !== 'lieu') return;
     const bounds = currentBounds.current;
     fetch(
       `${API_BASE_URL}/venues?west=${bounds.west}&south=${bounds.south}&east=${bounds.east}&north=${bounds.north}`
@@ -463,7 +466,7 @@ export function ExploreMap({
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => setNoEventVenues(venueListResponseSchema.parse(json).data))
       .catch(() => setNoEventVenues([]));
-  }, [viewMode]);
+  }, [section]);
 
   useEffect(() => {
     const resolved = resolveBrowserLocale([initialLocale], localStorage);
@@ -644,10 +647,12 @@ export function ExploreMap({
 
   function goHome() {
     setAboutOpen(false);
+    setSection('evenement');
     setShowFavoritesOnly(false);
     setViewMode('map');
     setFiltersOpen(false);
     setPickerList(undefined);
+    setVenuePickerList(undefined);
     setDetails({ kind: 'closed' });
     setSelected(undefined);
     clearSearch();
@@ -1315,26 +1320,40 @@ export function ExploreMap({
           <div className="nav-actions-links">
              <button
                type="button"
-               className={!aboutOpen ? 'active' : ''}
-               onClick={() => setAboutOpen(false)}
+               className={!aboutOpen && section === 'evenement' ? 'active' : ''}
+               onClick={() => {
+                 setAboutOpen(false);
+                 setSection('evenement');
+               }}
+             >
+               Événement
+             </button>
+             <button
+               type="button"
+               className={!aboutOpen && section === 'lieu' ? 'active' : ''}
+               onClick={() => {
+                 setAboutOpen(false);
+                 setSection('lieu');
+               }}
+             >
+               Lieu
+             </button>
+             <button
+               type="button"
+               className={!aboutOpen && section === 'explorer' ? 'active' : ''}
+               onClick={() => {
+                 setAboutOpen(false);
+                 setSection('explorer');
+               }}
              >
                Explorer
              </button>
              <button
                type="button"
-               className={!aboutOpen && viewMode === 'list' && showFavoritesOnly ? 'active' : ''}
+               className={!aboutOpen && section === 'favoris' ? 'active' : ''}
                onClick={() => {
                  setAboutOpen(false);
-                 if (viewMode === 'list' && showFavoritesOnly) {
-                   // Already showing the favorites list - clicking again
-                   // turns it off rather than doing nothing.
-                   setShowFavoritesOnly(false);
-                   setViewMode('map');
-                 } else {
-                   setShowFavoritesOnly(true);
-                   setListOverride(undefined);
-                   setViewMode('list');
-                 }
+                 setSection('favoris');
                }}
              >
                Favoris
@@ -1370,56 +1389,76 @@ export function ExploreMap({
       </header>
 
       <div className="dashboard-main">
+        {(section === 'evenement' || section === 'lieu') && (
+        <>
         {/* Left Sidebar */}
         <aside className="sidebar-left">
-          <h2 className="sidebar-section-title">Découvrir</h2>
+          <h2 className="sidebar-section-title">
+            {section === 'evenement' ? 'Événement' : 'Lieu'}
+          </h2>
 
           <div className="view-toggles">
             <div className="view-toggles-list">
-              <button
-                type="button"
-                className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
-                onClick={() => setViewMode('map')}
-              >
-                <ViewModeIcon kind="map" /> Carte
-              </button>
-              <button
-                type="button"
-                className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
-                onClick={() => {
-                  setListOverride(undefined);
-                  setViewMode('list');
-                }}
-              >
-                <ViewModeIcon kind="list" /> Liste
-              </button>
-              <button
-                type="button"
-                className={`view-toggle-btn ${viewMode === 'venues' ? 'active' : ''}`}
-                onClick={() => setViewMode('venues')}
-              >
-                <ViewModeIcon kind="venues" /> Lieux
-              </button>
-              <button
-                type="button"
-                className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
-                onClick={() => setViewMode('calendar')}
-              >
-                <ViewModeIcon kind="calendar" /> Calendrier
-              </button>
+              {section === 'evenement' ? (
+                <>
+                  <button
+                    type="button"
+                    className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
+                    onClick={() => setViewMode('map')}
+                  >
+                    <ViewModeIcon kind="map" /> Carte
+                  </button>
+                  <button
+                    type="button"
+                    className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+                    onClick={() => {
+                      setListOverride(undefined);
+                      setViewMode('list');
+                    }}
+                  >
+                    <ViewModeIcon kind="list" /> Liste
+                  </button>
+                  <button
+                    type="button"
+                    className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
+                    onClick={() => setViewMode('calendar')}
+                  >
+                    <ViewModeIcon kind="calendar" /> Calendrier
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className={`view-toggle-btn ${lieuTab === 'map' ? 'active' : ''}`}
+                    onClick={() => setLieuTab('map')}
+                  >
+                    <ViewModeIcon kind="map" /> Carte
+                  </button>
+                  <button
+                    type="button"
+                    className={`view-toggle-btn ${lieuTab === 'list' ? 'active' : ''}`}
+                    onClick={() => setLieuTab('list')}
+                  >
+                    <ViewModeIcon kind="list" /> Liste
+                  </button>
+                </>
+              )}
             </div>
-            <button
-              type="button"
-              className={`view-toggle-fav ${showFavoritesOnly ? 'active' : ''}`}
-              aria-label={showFavoritesOnly ? 'Afficher tous les événements' : 'Afficher uniquement mes favoris'}
-              aria-pressed={showFavoritesOnly}
-              onClick={() => setShowFavoritesOnly((prev) => !prev)}
-            >
-              <HeartIcon filled={showFavoritesOnly} />
-            </button>
+            {section === 'evenement' && (
+              <button
+                type="button"
+                className={`view-toggle-fav ${showFavoritesOnly ? 'active' : ''}`}
+                aria-label={showFavoritesOnly ? 'Afficher tous les événements' : 'Afficher uniquement mes favoris'}
+                aria-pressed={showFavoritesOnly}
+                onClick={() => setShowFavoritesOnly((prev) => !prev)}
+              >
+                <HeartIcon filled={showFavoritesOnly} />
+              </button>
+            )}
           </div>
 
-          {viewMode !== 'venues' && (
+          {section === 'evenement' && (
           <>
           <CollapsibleFilterGroup
             title="Filtres"
@@ -1590,7 +1629,7 @@ export function ExploreMap({
           </>
           )}
 
-          {viewMode === 'venues' && (
+          {section === 'lieu' && (
           <>
           <CollapsibleFilterGroup
             title="Catégorie de lieu"
@@ -1779,24 +1818,8 @@ export function ExploreMap({
             />
           )}
 
-          {viewMode === 'venues' && (
+          {section === 'lieu' && (
             <div className="venue-section">
-              <div className="venue-section-tabs">
-                <button
-                  type="button"
-                  className={`view-toggle-btn ${lieuTab === 'map' ? 'active' : ''}`}
-                  onClick={() => setLieuTab('map')}
-                >
-                  <ViewModeIcon kind="map" /> Carte
-                </button>
-                <button
-                  type="button"
-                  className={`view-toggle-btn ${lieuTab === 'list' ? 'active' : ''}`}
-                  onClick={() => setLieuTab('list')}
-                >
-                  <ViewModeIcon kind="list" /> Liste
-                </button>
-              </div>
               <div className="map-shell" style={{ display: lieuTab === 'map' ? undefined : 'none' }}>
                 <div ref={lieuMapContainer} className="map" />
               </div>
@@ -1861,6 +1884,18 @@ export function ExploreMap({
             />
           )}
         </section>
+        </>
+        )}
+
+        {section === 'explorer' && <ExplorerSection locale={locale} />}
+        {section === 'favoris' && (
+          <FavorisSection
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
+            onOpenDetails={openDetails}
+            locale={locale}
+          />
+        )}
 
         {/* Right Sidebar (Details / cluster picker) - one shared slot, see
             rightPanelMount above for why these aren't two independent panels. */}
@@ -2414,6 +2449,41 @@ function VenuePickerList({
         ))}
       </div>
     </div>
+  );
+}
+
+// Placeholder for Phase E of the nav restructuring: a pure map with a
+// floating lieu/événement pin-kind toggle, no left sidebar. Filled in next.
+function ExplorerSection({ locale }: { locale: SupportedLocale }) {
+  void locale;
+  return (
+    <section className="map-container-wrapper explorer-placeholder">
+      <p className="list-view-empty">Explorer arrive bientôt.</p>
+    </section>
+  );
+}
+
+// Placeholder for Phase F of the nav restructuring: a dedicated view of the
+// user's saved events regardless of map viewport, via GET /events/by-ids.
+// Filled in next.
+function FavorisSection({
+  favorites,
+  onToggleFavorite,
+  onOpenDetails,
+  locale
+}: {
+  favorites: string[];
+  onToggleFavorite: (id: string) => void;
+  onOpenDetails: (id: string) => void;
+  locale: SupportedLocale;
+}) {
+  void favorites;
+  void onToggleFavorite;
+  void onOpenDetails;
+  return (
+    <section className="map-container-wrapper explorer-placeholder">
+      <p className="list-view-empty">Favoris arrive bientôt.</p>
+    </section>
   );
 }
 
