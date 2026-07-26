@@ -813,20 +813,21 @@ h6 {
   padding: 1rem;
   background: var(--surface-base);
 }
-.venue-view-filters {
+.venue-section {
+  height: 100%;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  flex-direction: column;
 }
-.venue-filter-chip {
-  padding: 0.35rem 0.85rem;
-  border-radius: 999px;
-  border: 1px solid var(--brand-border);
-  background: transparent;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+.venue-section-tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem 0;
+  flex-shrink: 0;
+}
+.venue-section > .map-shell,
+.venue-section > .venue-view {
+  flex: 1;
+  min-height: 0;
 }
 .venue-grid {
   display: grid;
@@ -858,11 +859,30 @@ h6 {
   flex-direction: column;
   gap: 0.3rem;
 }
+.venue-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
 .venue-card-name {
   font-size: 0.95rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.venue-card-price {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.venue-card-type-badge {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--brand-border);
+  color: var(--text-secondary);
+  font-size: 0.68rem;
 }
 .venue-card-address {
   color: var(--text-secondary);

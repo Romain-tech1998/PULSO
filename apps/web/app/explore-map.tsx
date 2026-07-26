@@ -8,6 +8,7 @@ import {
   eventListResponseSchema,
   intelligentSearchResponseSchema,
   PRICE_FILTER_OPTIONS,
+  VENUE_CATEGORY_FILTER_OPTIONS,
   venueListResponseSchema,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
@@ -20,7 +21,8 @@ import {
   CATEGORY_COLORS,
   type DiscoveryFilters,
   type EventCategory,
-  type MapBounds
+  type MapBounds,
+  type VenueCategory
 } from '@pulso/domain';
 import {
   getCategoryLabel,
@@ -43,8 +45,14 @@ import {
 
 import { eventDetailsFields, eventPreviewFields } from './event-view-model';
 import { persistBrowserLocale, resolveBrowserLocale } from './locale-client';
+import { deriveVenuePriceTier, type VenuePriceTier } from './venue-price-tier';
 
 const MONTREAL_CENTER: [number, number] = [-73.5673, 45.5017];
+// One neutral pin color for the Lieu map, rather than per-category icons
+// like the event map's - almost no venue has a real category yet (see
+// VENUE_CATEGORIES's comment), so color-coding by type would overstate a
+// confidence the data doesn't have.
+const VENUE_PIN_COLOR = '#8b7ff0';
 const INITIAL_BOUNDS = {
   west: -73.75,
   south: 45.4,
@@ -281,6 +289,8 @@ export function ExploreMap({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
+  const lieuMapContainer = useRef<HTMLDivElement>(null);
+  const lieuMap = useRef<maplibregl.Map | null>(null);
   const currentBounds = useRef(INITIAL_BOUNDS);
   const activeSearch = useRef<ActiveSearch | undefined>(undefined);
   const localeRef = useRef(initialLocale);
@@ -299,6 +309,9 @@ export function ExploreMap({
   const [details, setDetails] = useState<DetailsState>({ kind: 'closed' });
   const [pickerList, setPickerList] = useState<
     { title: string; events: PublicEvent[] } | undefined
+  >();
+  const [venuePickerList, setVenuePickerList] = useState<
+    { title: string; groups: VenueGroup[] } | undefined
   >();
   const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -385,7 +398,9 @@ export function ExploreMap({
   }, [userLocation]);
 
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'venues' | 'calendar'>('map');
-  const [venueCategoryFilter, setVenueCategoryFilter] = useState<EventCategory[]>([]);
+  const [lieuTab, setLieuTab] = useState<'map' | 'list'>('list');
+  const [venueCategoryFilter, setVenueCategoryFilter] = useState<VenueCategory[]>([]);
+  const [lieuPriceFilter, setLieuPriceFilter] = useState<VenuePriceTier[]>([]);
   const [noEventVenues, setNoEventVenues] = useState<PublicVenue[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const aboutPanelMount = useTransitionedMount(aboutOpen);
@@ -1037,11 +1052,13 @@ export function ExploreMap({
   // opening the other) - tracked as a single transition lifecycle instead
   // of two independent ones so their open/close animations can never both
   // be mid-flight and stack in the same layout slot at once.
-  const rightPanelOpen = showingDetails || pickerList !== undefined;
+  const rightPanelOpen =
+    showingDetails || pickerList !== undefined || venuePickerList !== undefined;
   const rightPanelMount = useTransitionedMount(rightPanelOpen);
   const lastRightPanelContentRef = useRef<
     | { kind: 'details'; state: DetailsState }
     | { kind: 'picker'; list: { title: string; events: PublicEvent[] } }
+    | { kind: 'venue-picker'; list: { title: string; groups: VenueGroup[] } }
     | { kind: 'none' }
   >({ kind: 'none' });
   useEffect(() => {
@@ -1049,12 +1066,16 @@ export function ExploreMap({
       lastRightPanelContentRef.current = { kind: 'details', state: details };
     } else if (pickerList !== undefined) {
       lastRightPanelContentRef.current = { kind: 'picker', list: pickerList };
+    } else if (venuePickerList !== undefined) {
+      lastRightPanelContentRef.current = { kind: 'venue-picker', list: venuePickerList };
     }
-  }, [showingDetails, details, pickerList]);
+  }, [showingDetails, details, pickerList, venuePickerList]);
   const shownRightPanelContent = rightPanelOpen
     ? showingDetails
       ? ({ kind: 'details', state: details } as const)
-      : ({ kind: 'picker', list: pickerList! } as const)
+      : pickerList !== undefined
+        ? ({ kind: 'picker', list: pickerList } as const)
+        : ({ kind: 'venue-picker', list: venuePickerList! } as const)
     : lastRightPanelContentRef.current;
   const sourceFilteredEvents =
     selectedSources.length === 0
@@ -1072,17 +1093,207 @@ export function ExploreMap({
         id: venue.id,
         name: venue.name,
         address: venue.address,
+        point: venue.point,
         events: [],
-        categories: []
+        categories: [],
+        ...(venue.category !== undefined ? { venueCategory: venue.category } : {})
       })
     )
   ];
-  const filteredVenueGroups =
-    venueCategoryFilter.length === 0
-      ? venueGroups
-      : venueGroups.filter((group) =>
-          group.categories.some((category) => venueCategoryFilter.includes(category))
-        );
+  // Never guessed: a venue with no known type/price simply isn't matched by
+  // an active filter rather than being bucketed into a default - same
+  // "omit, don't guess" rule as the untyped-venue card display.
+  const filteredVenueGroups = venueGroups
+    .filter(
+      (group) =>
+        venueCategoryFilter.length === 0 ||
+        (group.venueCategory !== undefined && venueCategoryFilter.includes(group.venueCategory))
+    )
+    .filter(
+      (group) =>
+        lieuPriceFilter.length === 0 ||
+        (group.priceTier !== undefined && lieuPriceFilter.includes(group.priceTier))
+    );
+
+  // Lieu's own map: a genuinely separate MapLibre instance (own container,
+  // own source/layers) rather than a mode switch on the Événement map above
+  // - kept as a second, deliberately simpler implementation for now rather
+  // than a shared generic hook, so this doesn't risk regressing the
+  // already-tuned event map's clustering/click behavior. One neutral pin
+  // color rather than per-category icons, since almost no venue has a real
+  // category yet (see VENUE_CATEGORIES's comment).
+  const venueGroupsRef = useRef<VenueGroup[]>([]);
+  useEffect(() => {
+    venueGroupsRef.current = filteredVenueGroups;
+  }, [filteredVenueGroups]);
+
+  const pushVenuesToMap = useCallback((instance: maplibregl.Map) => {
+    const source = instance.getSource('venues-source') as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (!source) return;
+    source.setData({
+      type: 'FeatureCollection',
+      features: venueGroupsRef.current.map((group) => ({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [group.point.longitude, group.point.latitude]
+        },
+        properties: { id: group.id }
+      }))
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!lieuMapContainer.current) return;
+    const instance = new maplibregl.Map({
+      container: lieuMapContainer.current,
+      center: MONTREAL_CENTER,
+      zoom: 11,
+      style: MAP_STYLE_URL
+    });
+
+    instance.on('load', () => {
+      instance.addImage('pin-venue', buildPinImageData(VENUE_PIN_COLOR), {
+        pixelRatio: PIN_SCALE
+      });
+      instance.addImage('venue-cluster-badge', buildClusterBadgeImageData(), {
+        pixelRatio: PIN_SCALE
+      });
+
+      instance.addSource('venues-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        cluster: true,
+        clusterMaxZoom: 14,
+        // Venue points are far sparser than event points, so a smaller
+        // radius avoids over-clustering a handful of nearby-but-distinct
+        // venues.
+        clusterRadius: 30
+      });
+
+      instance.addLayer({
+        id: 'venue-clusters-glow',
+        type: 'circle',
+        source: 'venues-source',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': VENUE_PIN_COLOR,
+          'circle-radius': ['step', ['get', 'point_count'], 26, 10, 36],
+          'circle-blur': 1,
+          'circle-opacity': 0.4
+        }
+      });
+      instance.addLayer({
+        id: 'venue-clusters',
+        type: 'symbol',
+        source: 'venues-source',
+        filter: ['has', 'point_count'],
+        layout: {
+          'icon-image': 'venue-cluster-badge',
+          'icon-size': ['step', ['get', 'point_count'], 0.5, 10, 0.7],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+      instance.addLayer({
+        id: 'venue-cluster-count',
+        type: 'symbol',
+        source: 'venues-source',
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': '{point_count_abbreviated}',
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 12
+        },
+        paint: { 'text-color': '#ffffff' }
+      });
+      instance.addLayer({
+        id: 'venues-circles',
+        type: 'symbol',
+        source: 'venues-source',
+        filter: ['!', ['has', 'point_count']],
+        layout: {
+          'icon-image': 'pin-venue',
+          'icon-size': 0.85,
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+
+      instance.on('click', 'venues-circles', (e) => {
+        if (!e.features?.[0]) return;
+        const ids = [...new Set(e.features.map((f) => f.properties?.id as string))];
+        const matched = ids
+          .map((id) => venueGroupsRef.current.find((g) => g.id === id))
+          .filter((g): g is VenueGroup => Boolean(g));
+        if (matched.length === 0) return;
+        setDetails({ kind: 'closed' });
+        if (matched.length === 1) {
+          const group = matched[0]!;
+          setVenuePickerList(undefined);
+          setPickerList({ title: `${group.name} — ${group.address}`, events: group.events });
+          return;
+        }
+        setPickerList(undefined);
+        setVenuePickerList({ title: `${matched.length} lieux à cet endroit`, groups: matched });
+      });
+      instance.on('click', 'venue-clusters', (e) => {
+        const feature = e.features?.[0];
+        const clusterId = feature?.properties?.cluster_id;
+        const source = instance.getSource('venues-source') as
+          | maplibregl.GeoJSONSource
+          | undefined;
+        if (clusterId === undefined || !source || !feature) return;
+        const coordinates = (
+          feature.geometry as { type: 'Point'; coordinates: [number, number] }
+        ).coordinates;
+
+        source.getClusterLeaves(clusterId, Infinity, 0).then((leaves) => {
+          const ids = leaves.map((leaf) => leaf.properties?.id as string);
+          const matched = ids
+            .map((id) => venueGroupsRef.current.find((g) => g.id === id))
+            .filter((g): g is VenueGroup => Boolean(g));
+          if (matched.length <= 10) {
+            setDetails({ kind: 'closed' });
+            setPickerList(undefined);
+            setVenuePickerList({
+              title: `${matched.length} lieux dans cette zone`,
+              groups: matched
+            });
+            return;
+          }
+          source.getClusterExpansionZoom(clusterId).then((zoom) => {
+            instance.easeTo({ center: coordinates, zoom });
+          });
+        });
+      });
+      instance.on('mouseenter', 'venue-clusters', () => {
+        instance.getCanvas().style.cursor = 'pointer';
+      });
+      instance.on('mouseleave', 'venue-clusters', () => {
+        instance.getCanvas().style.cursor = '';
+      });
+      instance.on('mouseenter', 'venues-circles', () => {
+        instance.getCanvas().style.cursor = 'pointer';
+      });
+      instance.on('mouseleave', 'venues-circles', () => {
+        instance.getCanvas().style.cursor = '';
+      });
+
+      pushVenuesToMap(instance);
+    });
+
+    lieuMap.current = instance;
+    return () => instance.remove();
+  }, [pushVenuesToMap]);
+
+  useEffect(() => {
+    if (lieuMap.current) pushVenuesToMap(lieuMap.current);
+  }, [filteredVenueGroups, pushVenuesToMap]);
+
   // Prefer real-distance nearby results; fall back to the bounds-based list
   // when geolocation was denied/unsupported or hasn't resolved yet.
   const carouselEvents = userLocation && nearbyState === 'success' ? nearbyEvents : events;
@@ -1208,6 +1419,8 @@ export function ExploreMap({
             </button>
           </div>
 
+          {viewMode !== 'venues' && (
+          <>
           <CollapsibleFilterGroup
             title="Filtres"
             collapsed={collapsedSections.has('filtres')}
@@ -1374,6 +1587,118 @@ export function ExploreMap({
               ))}
             </div>
           </CollapsibleFilterGroup>
+          </>
+          )}
+
+          {viewMode === 'venues' && (
+          <>
+          <CollapsibleFilterGroup
+            title="Catégorie de lieu"
+            collapsed={collapsedSections.has('lieu-categorie')}
+            onToggle={() => toggleSection('lieu-categorie')}
+          >
+            <p className="category-legend-hint">
+              La plupart des lieux n'ont pas encore de catégorie connue - seuls
+              les lieux vérifiés manuellement en ont une pour l'instant.
+            </p>
+            <div className="pill-list pill-list-long">
+              {VENUE_CATEGORY_FILTER_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  key={option.value}
+                  className={`filter-pill ${venueCategoryFilter.includes(option.value) ? 'active' : ''}`}
+                  onClick={() =>
+                    setVenueCategoryFilter((prev) =>
+                      prev.includes(option.value)
+                        ? prev.filter((value) => value !== option.value)
+                        : [...prev, option.value]
+                    )
+                  }
+                >
+                  {VENUE_CATEGORY_LABELS[locale][option.value]}
+                </button>
+              ))}
+            </div>
+          </CollapsibleFilterGroup>
+
+          <CollapsibleFilterGroup
+            title="Prix"
+            collapsed={collapsedSections.has('lieu-prix')}
+            onToggle={() => toggleSection('lieu-prix')}
+          >
+            <p className="category-legend-hint">
+              Calculé à partir des événements payants du lieu - absent quand
+              le lieu n'en a aucun.
+            </p>
+            <div className="pill-list">
+              {(['$', '$$', '$$$'] as const).map((tier) => (
+                <button
+                  type="button"
+                  key={tier}
+                  className={`filter-pill ${lieuPriceFilter.includes(tier) ? 'active' : ''}`}
+                  onClick={() =>
+                    setLieuPriceFilter((prev) =>
+                      prev.includes(tier) ? prev.filter((value) => value !== tier) : [...prev, tier]
+                    )
+                  }
+                >
+                  {tier}
+                </button>
+              ))}
+            </div>
+          </CollapsibleFilterGroup>
+
+          <CollapsibleFilterGroup
+            title="Distance"
+            collapsed={collapsedSections.has('distance')}
+            onToggle={() => toggleSection('distance')}
+          >
+            <div className="distance-slider-container">
+              <input
+                type="range"
+                min="1"
+                max="15"
+                value={distanceKm}
+                onChange={(event) => setDistanceKm(Number(event.target.value))}
+                onMouseUp={applyDistanceFilter}
+                onTouchEnd={applyDistanceFilter}
+                onKeyUp={applyDistanceFilter}
+                className="distance-slider"
+              />
+              <div className="distance-labels">
+                <span>1km</span>
+                <span>5km</span>
+                <span>10km</span>
+                <span>15km</span>
+              </div>
+              <p className="distance-value">
+                {distanceFilterActive
+                  ? `Rayon actif : ${distanceKm} km`
+                  : `Rayon max (${distanceKm} km) — non appliqué`}
+                {geoStatus === 'pending' && ' · localisation…'}
+                {geoStatus === 'denied' && ' · position non partagée'}
+                {geoStatus === 'unsupported' && ' · non disponible sur cet appareil'}
+              </p>
+            </div>
+          </CollapsibleFilterGroup>
+
+          <CollapsibleFilterGroup
+            title="Ambiance"
+            collapsed={collapsedSections.has('ambiance')}
+            onToggle={() => toggleSection('ambiance')}
+          >
+            <p className="category-legend-hint">
+              Bientôt : une IA déterminera l'ambiance de chaque lieu.
+            </p>
+            <div className="pill-list">
+              <button className="filter-pill" disabled>🔥 Énergique</button>
+              <button className="filter-pill" disabled>☕ Chill</button>
+              <button className="filter-pill" disabled>🥂 Romantique</button>
+              <button className="filter-pill" disabled>🎉 Festif</button>
+            </div>
+          </CollapsibleFilterGroup>
+          </>
+          )}
 
           <div className="promo-card">
              <div className="promo-content">
@@ -1455,23 +1780,46 @@ export function ExploreMap({
           )}
 
           {viewMode === 'venues' && (
-            <VenueListView
-              groups={filteredVenueGroups}
-              categoryFilter={venueCategoryFilter}
-              onChangeCategoryFilter={setVenueCategoryFilter}
-              onSelectVenue={(group) => {
-                // A newly-picked list must win over an already-open details
-                // panel (same rule as map cluster/pin clicks below) - without
-                // this, clicking another venue while one's events are open
-                // silently swapped the list behind the visible details panel.
-                setDetails({ kind: 'closed' });
-                setPickerList({
-                  title: `${group.name} — ${group.address}`,
-                  events: group.events
-                });
-              }}
-              locale={locale}
-            />
+            <div className="venue-section">
+              <div className="venue-section-tabs">
+                <button
+                  type="button"
+                  className={`view-toggle-btn ${lieuTab === 'map' ? 'active' : ''}`}
+                  onClick={() => setLieuTab('map')}
+                >
+                  <ViewModeIcon kind="map" /> Carte
+                </button>
+                <button
+                  type="button"
+                  className={`view-toggle-btn ${lieuTab === 'list' ? 'active' : ''}`}
+                  onClick={() => setLieuTab('list')}
+                >
+                  <ViewModeIcon kind="list" /> Liste
+                </button>
+              </div>
+              <div className="map-shell" style={{ display: lieuTab === 'map' ? undefined : 'none' }}>
+                <div ref={lieuMapContainer} className="map" />
+              </div>
+              {lieuTab === 'list' && (
+                <VenueListView
+                  groups={filteredVenueGroups}
+                  onSelectVenue={(group) => {
+                    // A newly-picked list must win over an already-open
+                    // details panel (same rule as map cluster/pin clicks) -
+                    // without this, clicking another venue while one's
+                    // events are open silently swapped the list behind the
+                    // visible details panel.
+                    setDetails({ kind: 'closed' });
+                    setVenuePickerList(undefined);
+                    setPickerList({
+                      title: `${group.name} — ${group.address}`,
+                      events: group.events
+                    });
+                  }}
+                  locale={locale}
+                />
+              )}
+            </div>
           )}
 
           {viewMode === 'calendar' && (
@@ -1551,6 +1899,21 @@ export function ExploreMap({
                  locale={locale}
                  onClose={() => setPickerList(undefined)}
                  onSelect={(id) => void openDetails(id, { keepPickerList: true })}
+               />
+             )}
+             {shownRightPanelContent.kind === 'venue-picker' && (
+               <VenuePickerList
+                 title={shownRightPanelContent.list.title}
+                 groups={shownRightPanelContent.list.groups}
+                 locale={locale}
+                 onClose={() => setVenuePickerList(undefined)}
+                 onSelectVenue={(group) => {
+                   setDetails({ kind: 'closed' });
+                   setPickerList({
+                     title: `${group.name} — ${group.address}`,
+                     events: group.events
+                   });
+                 }}
                />
              )}
            </div>
@@ -1697,6 +2060,33 @@ const SHORT_CATEGORY_LABELS: Record<SupportedLocale, Record<EventCategory, strin
     festival: 'Festivals',
     show: 'Shows',
     comedy: 'Comedy',
+    other: 'Other'
+  }
+};
+
+const VENUE_CATEGORY_LABELS: Record<SupportedLocale, Record<VenueCategory, string>> = {
+  fr: {
+    bar: 'Bar',
+    nightclub: 'Boîte de nuit',
+    concert_hall: 'Salle de concert',
+    theater: 'Théâtre / salle de spectacle',
+    brewery_with_stage: 'Brasserie avec scène',
+    outdoor_festival_site: 'Parc / festival extérieur',
+    cafe_concert: 'Café-concert',
+    gallery_museum: 'Galerie / musée',
+    community_space: 'Espace communautaire',
+    other: 'Autre'
+  },
+  en: {
+    bar: 'Bar',
+    nightclub: 'Nightclub',
+    concert_hall: 'Concert hall',
+    theater: 'Theater',
+    brewery_with_stage: 'Brewery with stage',
+    outdoor_festival_site: 'Outdoor park / festival site',
+    cafe_concert: 'Café-concert',
+    gallery_museum: 'Gallery / museum',
+    community_space: 'Community space',
     other: 'Other'
   }
 };
@@ -1970,6 +2360,63 @@ function PickerList({
   );
 }
 
+// A lightweight sibling of PickerList for venue rows (name/address/event
+// count) rather than event rows (title/date/price) - kept separate instead
+// of a shared "mode" prop, since the two row shapes differ enough that a
+// single component would need as much branching as just having two.
+function VenuePickerList({
+  title,
+  groups,
+  locale,
+  onClose,
+  onSelectVenue
+}: {
+  title: string;
+  groups: VenueGroup[];
+  locale: SupportedLocale;
+  onClose: () => void;
+  onSelectVenue: (group: VenueGroup) => void;
+}) {
+  return (
+    <div className="picker-list">
+      <div className="picker-list-header">
+        <h3>{title}</h3>
+        <button type="button" className="close-button" onClick={onClose} aria-label="Fermer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div className="picker-list-rows">
+        {groups.length === 0 && (
+          <p className="list-view-empty">Aucun lieu à afficher.</p>
+        )}
+        {groups.map((group) => (
+          <button
+            type="button"
+            className="list-view-row"
+            key={group.id}
+            onClick={() => onSelectVenue(group)}
+          >
+            <span
+              className="list-view-dot"
+              style={{ background: CATEGORY_COLORS[group.categories[0] ?? 'other'] }}
+            />
+            <span className="list-view-main">
+              <strong>{group.name}</strong>
+              <span className="list-view-sub">
+                {group.address}
+                {group.venueCategory && ` · ${VENUE_CATEGORY_LABELS[locale][group.venueCategory]}`}
+              </span>
+            </span>
+            <span className="list-view-price">
+              {group.events.length} événement{group.events.length > 1 ? 's' : ''}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ListView({
   events,
   favorites,
@@ -2058,8 +2505,11 @@ interface VenueGroup {
   id: string;
   name: string;
   address: string;
+  point: { longitude: number; latitude: number };
   events: PublicEvent[];
   categories: EventCategory[];
+  venueCategory?: VenueCategory;
+  priceTier?: VenuePriceTier;
   imageUrl?: string;
 }
 
@@ -2083,8 +2533,10 @@ function groupEventsByVenue(events: PublicEvent[]): VenueGroup[] {
         id: event.venue.id,
         name: event.venue.name,
         address: event.venue.address,
+        point: event.venue.point,
         events: [],
-        categories: []
+        categories: [],
+        ...(event.venue.category !== undefined ? { venueCategory: event.venue.category } : {})
       };
       byId.set(event.venue.id, group);
     }
@@ -2096,6 +2548,10 @@ function groupEventsByVenue(events: PublicEvent[]): VenueGroup[] {
       group.imageUrl = event.imageUrl;
     }
   }
+  for (const group of byId.values()) {
+    const priceTier = deriveVenuePriceTier(group.events);
+    if (priceTier !== undefined) group.priceTier = priceTier;
+  }
   return [...byId.values()].sort(
     (a, b) => b.events.length - a.events.length || a.name.localeCompare(b.name)
   );
@@ -2103,53 +2559,15 @@ function groupEventsByVenue(events: PublicEvent[]): VenueGroup[] {
 
 function VenueListView({
   groups,
-  categoryFilter,
-  onChangeCategoryFilter,
   onSelectVenue,
   locale
 }: {
   groups: VenueGroup[];
-  categoryFilter: EventCategory[];
-  onChangeCategoryFilter: (categories: EventCategory[]) => void;
   onSelectVenue: (group: VenueGroup) => void;
   locale: SupportedLocale;
 }) {
   return (
     <div className="venue-view">
-      <div className="venue-view-filters">
-        {CATEGORY_FILTER_OPTIONS.map((option) => {
-          const active = categoryFilter.includes(option.value);
-          return (
-            <button
-              type="button"
-              key={option.value}
-              className={`venue-filter-chip ${active ? 'active' : ''}`}
-              style={
-                active
-                  ? {
-                      background: CATEGORY_COLORS[option.value],
-                      borderColor: CATEGORY_COLORS[option.value],
-                      color: '#fff'
-                    }
-                  : {
-                      borderColor: CATEGORY_COLORS[option.value],
-                      color: CATEGORY_COLORS[option.value]
-                    }
-              }
-              onClick={() =>
-                onChangeCategoryFilter(
-                  active
-                    ? categoryFilter.filter((c) => c !== option.value)
-                    : [...categoryFilter, option.value]
-                )
-              }
-            >
-              {SHORT_CATEGORY_LABELS[locale][option.value]}
-            </button>
-          );
-        })}
-      </div>
-
       {groups.length === 0 && (
         <p className="list-view-empty">Aucun lieu à afficher dans cette zone.</p>
       )}
@@ -2179,9 +2597,19 @@ function VenueListView({
               )}
             </div>
             <div className="venue-card-body">
-              <strong className="venue-card-name">{group.name}</strong>
+              <div className="venue-card-title-row">
+                <strong className="venue-card-name">{group.name}</strong>
+                {group.priceTier && (
+                  <span className="venue-card-price">{group.priceTier}</span>
+                )}
+              </div>
               <span className="venue-card-address">{group.address}</span>
               <div className="venue-card-categories">
+                {group.venueCategory && (
+                  <span className="venue-card-type-badge">
+                    {VENUE_CATEGORY_LABELS[locale][group.venueCategory]}
+                  </span>
+                )}
                 {group.categories.slice(0, 3).map((category) => (
                   <span
                     key={category}
