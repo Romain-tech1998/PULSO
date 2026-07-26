@@ -716,6 +716,30 @@ h6 {
   background: var(--surface-base);
 }
 
+.favoris-section {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--surface-base);
+}
+.favoris-block {
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--brand-border);
+}
+.favoris-block:last-child {
+  border-bottom: none;
+}
+.favoris-block-title {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+.favoris-block .venue-view,
+.favoris-block .list-view {
+  height: auto;
+  overflow-y: visible;
+  padding: 0;
+}
+
 .map-shell {
   width: 100%;
   height: 100%;

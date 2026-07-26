@@ -245,6 +245,27 @@ function useFavorites() {
   return { favorites, toggleFavorite };
 }
 
+// A separate favorites list for venues, not events - own localStorage key,
+// own storage/filtering logic, per explicit user request rather than
+// reusing the event favorites list for a different kind of entity.
+function useFavoriteVenues() {
+  const [favoriteVenues, setFavoriteVenues] = useState<string[]>([]);
+  useEffect(() => {
+    const stored = localStorage.getItem('pulso-favorite-venues');
+    if (stored) {
+      try { setFavoriteVenues(JSON.parse(stored)); } catch (err) { console.warn('Failed to parse favorite venues', err); }
+    }
+  }, []);
+  const toggleFavoriteVenue = (id: string) => {
+    setFavoriteVenues((prev) => {
+      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      localStorage.setItem('pulso-favorite-venues', JSON.stringify(next));
+      return next;
+    });
+  };
+  return { favoriteVenues, toggleFavoriteVenue };
+}
+
 /**
  * Keeps a conditionally-rendered panel mounted for `durationMs` after it's
  * asked to close, so a CSS transition can play in reverse instead of the
@@ -326,6 +347,8 @@ export function ExploreMap({
   const [locale, setLocale] = useState(initialLocale);
   const { favorites, toggleFavorite } = useFavorites();
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const { favoriteVenues, toggleFavoriteVenue } = useFavoriteVenues();
+  const [showFavoriteVenuesOnly, setShowFavoriteVenuesOnly] = useState(false);
   // Set when the user follows "Voir tous les événements" from the nearby
   // carousel, so List shows that same distance-sorted set instead of the
   // map's viewport-bound events - the carousel is deliberately about
@@ -1127,7 +1150,8 @@ export function ExploreMap({
       (group) =>
         lieuPriceFilter.length === 0 ||
         (group.priceTier !== undefined && lieuPriceFilter.includes(group.priceTier))
-    );
+    )
+    .filter((group) => !showFavoriteVenuesOnly || favoriteVenues.includes(group.id));
 
   // Lieu's own map: a genuinely separate MapLibre instance (own container,
   // own source/layers) rather than a mode switch on the Événement map above
@@ -1782,6 +1806,17 @@ export function ExploreMap({
                 <HeartIcon filled={showFavoritesOnly} />
               </button>
             )}
+            {section === 'lieu' && (
+              <button
+                type="button"
+                className={`view-toggle-fav ${showFavoriteVenuesOnly ? 'active' : ''}`}
+                aria-label={showFavoriteVenuesOnly ? 'Afficher tous les lieux' : 'Afficher uniquement mes lieux favoris'}
+                aria-pressed={showFavoriteVenuesOnly}
+                onClick={() => setShowFavoriteVenuesOnly((prev) => !prev)}
+              >
+                <HeartIcon filled={showFavoriteVenuesOnly} />
+              </button>
+            )}
           </div>
 
           {section === 'evenement' && (
@@ -2219,6 +2254,8 @@ export function ExploreMap({
                     events: group.events
                   });
                 }}
+                favoriteVenues={favoriteVenues}
+                onToggleFavoriteVenue={toggleFavoriteVenue}
                 locale={locale}
               />
             )}
@@ -2294,6 +2331,15 @@ export function ExploreMap({
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
             onOpenDetails={openDetails}
+            favoriteVenueGroups={venueGroups.filter((group) => favoriteVenues.includes(group.id))}
+            favoriteVenues={favoriteVenues}
+            onToggleFavoriteVenue={toggleFavoriteVenue}
+            onSelectVenue={(group) => {
+              setDetails({ kind: 'closed' });
+              setVenuePickerList(undefined);
+              setPickerList({ title: `${group.name} — ${group.address}`, events: group.events });
+              setSection('lieu');
+            }}
             locale={locale}
           />
         )}
@@ -2341,6 +2387,7 @@ export function ExploreMap({
                <VenuePickerList
                  title={shownRightPanelContent.list.title}
                  groups={shownRightPanelContent.list.groups}
+                 favoriteVenues={favoriteVenues}
                  locale={locale}
                  onClose={() => setVenuePickerList(undefined)}
                  onSelectVenue={(group) => {
@@ -2803,12 +2850,14 @@ function PickerList({
 function VenuePickerList({
   title,
   groups,
+  favoriteVenues,
   locale,
   onClose,
   onSelectVenue
 }: {
   title: string;
   groups: VenueGroup[];
+  favoriteVenues: string[];
   locale: SupportedLocale;
   onClose: () => void;
   onSelectVenue: (group: VenueGroup) => void;
@@ -2846,6 +2895,7 @@ function VenuePickerList({
             <span className="list-view-price">
               {group.events.length} événement{group.events.length > 1 ? 's' : ''}
             </span>
+            {favoriteVenues.includes(group.id) && <span aria-hidden="true">❤️</span>}
           </button>
         ))}
       </div>
@@ -2862,11 +2912,25 @@ function FavorisSection({
   favorites,
   onToggleFavorite,
   onOpenDetails,
+  favoriteVenueGroups,
+  favoriteVenues,
+  onToggleFavoriteVenue,
+  onSelectVenue,
   locale
 }: {
   favorites: string[];
   onToggleFavorite: (id: string) => void;
   onOpenDetails: (id: string) => void;
+  // Unlike favorite events (hydrated via /events/by-ids regardless of map
+  // viewport), favorite venues are filtered from whatever venue groups are
+  // already loaded for the current viewport - a favorited venue outside
+  // that area won't appear here yet. Smaller gap than the one events used
+  // to have (no dedicated /venues/by-ids endpoint built for this pass);
+  // worth closing the same way if it turns out to matter in practice.
+  favoriteVenueGroups: VenueGroup[];
+  favoriteVenues: string[];
+  onToggleFavoriteVenue: (id: string) => void;
+  onSelectVenue: (group: VenueGroup) => void;
   locale: SupportedLocale;
 }) {
   const [events, setEvents] = useState<PublicEvent[]>([]);
@@ -2889,31 +2953,35 @@ function FavorisSection({
       .catch(() => setState('error'));
   }, [favorites]);
 
-  if (state === 'loading') {
-    return (
-      <section className="map-container-wrapper explorer-placeholder">
-        <p className="list-view-empty">Chargement de vos favoris…</p>
-      </section>
-    );
-  }
-  if (state === 'error') {
-    return (
-      <section className="map-container-wrapper explorer-placeholder">
-        <p className="list-view-empty">Impossible de charger vos favoris pour le moment.</p>
-      </section>
-    );
-  }
-
   return (
-    <section className="map-container-wrapper">
-      <ListView
-        events={events}
-        favorites={favorites}
-        showFavoritesOnly={false}
-        onToggleFavorite={onToggleFavorite}
-        onOpenDetails={onOpenDetails}
-        locale={locale}
-      />
+    <section className="map-container-wrapper favoris-section">
+      <div className="favoris-block">
+        <h3 className="favoris-block-title">Événements favoris</h3>
+        {state === 'loading' && <p className="list-view-empty">Chargement de vos favoris…</p>}
+        {state === 'error' && (
+          <p className="list-view-empty">Impossible de charger vos favoris pour le moment.</p>
+        )}
+        {(state === 'success' || state === 'empty') && (
+          <ListView
+            events={events}
+            favorites={favorites}
+            showFavoritesOnly={false}
+            onToggleFavorite={onToggleFavorite}
+            onOpenDetails={onOpenDetails}
+            locale={locale}
+          />
+        )}
+      </div>
+      <div className="favoris-block">
+        <h3 className="favoris-block-title">Lieux favoris</h3>
+        <VenueListView
+          groups={favoriteVenueGroups}
+          onSelectVenue={onSelectVenue}
+          favoriteVenues={favoriteVenues}
+          onToggleFavoriteVenue={onToggleFavoriteVenue}
+          locale={locale}
+        />
+      </div>
     </section>
   );
 }
@@ -3061,10 +3129,14 @@ function groupEventsByVenue(events: PublicEvent[]): VenueGroup[] {
 function VenueListView({
   groups,
   onSelectVenue,
+  favoriteVenues,
+  onToggleFavoriteVenue,
   locale
 }: {
   groups: VenueGroup[];
   onSelectVenue: (group: VenueGroup) => void;
+  favoriteVenues: string[];
+  onToggleFavoriteVenue: (id: string) => void;
   locale: SupportedLocale;
 }) {
   return (
@@ -3075,11 +3147,16 @@ function VenueListView({
 
       <div className="venue-grid">
         {groups.map((group) => (
-          <button
-            type="button"
+          // A plain div, not a button: it now contains its own nested
+          // favorite button, and interactive content can't nest inside a
+          // <button> (invalid HTML, unpredictable click handling) - matches
+          // the same div+onClick pattern already used for event cards below,
+          // which have the same "card + inner favorite button" shape.
+          <div
             key={group.id}
             className="venue-card"
             onClick={() => onSelectVenue(group)}
+            style={{ cursor: 'pointer' }}
           >
             <div
               className="venue-card-thumb"
@@ -3096,6 +3173,16 @@ function VenueListView({
               {!group.imageUrl && (
                 <EventImageFallback category={group.categories[0] ?? 'other'} />
               )}
+              <button
+                type="button"
+                className="card-fav"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleFavoriteVenue(group.id);
+                }}
+              >
+                {favoriteVenues.includes(group.id) ? '❤️' : '🤍'}
+              </button>
             </div>
             <div className="venue-card-body">
               <div className="venue-card-title-row">
@@ -3129,7 +3216,7 @@ function VenueListView({
                   : 'Aucun événement prévu pour le moment'}
               </span>
             </div>
-          </button>
+          </div>
         ))}
       </div>
     </div>
