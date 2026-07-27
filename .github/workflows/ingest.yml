@@ -1,0 +1,73 @@
+name: Ingestion
+
+on:
+  schedule:
+    # Run at 10:00 and 20:00 every day (Events)
+    - cron: '0 10,20 * * *'
+    # Run at 00:00 every Monday (Venues)
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+    inputs:
+      job_type:
+        description: 'Job to run (events or venues)'
+        required: true
+        default: 'events'
+        type: choice
+        options:
+          - events
+          - venues
+
+jobs:
+  ingest-events:
+    name: Run Events Ingestion
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' && github.event.schedule == '0 10,20 * * *' || github.event.inputs.job_type == 'events'
+    
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install
+      - name: Build packages
+        run: pnpm run build --filter="@pulso/database..."
+      - name: Run Events Ingestion
+        run: pnpm run --filter=@pulso/database db:ingest
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PARSE_BOT_API_KEY: ${{ secrets.PARSE_BOT_API_KEY }}
+
+  ingest-venues:
+    name: Run Venues Ingestion
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * 1' || github.event.inputs.job_type == 'venues'
+    
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install
+      - name: Build packages
+        run: pnpm run build --filter="@pulso/database..."
+      - name: Run Venues Ingestion
+        run: pnpm run --filter=@pulso/database db:ingest -- --venues
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PARSE_BOT_API_KEY: ${{ secrets.PARSE_BOT_API_KEY }}

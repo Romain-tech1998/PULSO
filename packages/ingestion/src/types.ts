@@ -63,6 +63,31 @@ export interface ConnectorRunResult {
   errors: string[];
 }
 
+export interface RawIngestedVenue {
+  sourceId: string;
+  sourceName: string;
+  sourceUrl: string;
+  observedAt: string;
+  name: string;
+  address?: string | undefined;
+  point?: { longitude: number; latitude: number } | undefined;
+  pointResolution?: 'source' | 'geocoded' | 'unresolved' | 'needs_research' | undefined;
+  raw?: unknown;
+}
+
+export interface VenueConnector {
+  id: string;
+  displayName: string;
+  fetch(): Promise<RawIngestedVenue[]>;
+}
+
+export interface VenueConnectorRunResult {
+  connectorId: string;
+  fetchedAt: string;
+  venues: RawIngestedVenue[];
+  errors: string[];
+}
+
 export async function runConnector(
   connector: IngestionConnector
 ): Promise<ConnectorRunResult> {
@@ -75,6 +100,23 @@ export async function runConnector(
       connectorId: connector.id,
       fetchedAt,
       events: [],
+      errors: [error instanceof Error ? error.message : String(error)]
+    };
+  }
+}
+
+export async function runVenueConnector(
+  connector: VenueConnector
+): Promise<VenueConnectorRunResult> {
+  const fetchedAt = new Date().toISOString();
+  try {
+    const venues = await connector.fetch();
+    return { connectorId: connector.id, fetchedAt, venues, errors: [] };
+  } catch (error) {
+    return {
+      connectorId: connector.id,
+      fetchedAt,
+      venues: [],
       errors: [error instanceof Error ? error.message : String(error)]
     };
   }

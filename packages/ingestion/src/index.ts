@@ -1,9 +1,12 @@
 export type {
   RawIngestedEvent,
   IngestionConnector,
-  ConnectorRunResult
+  ConnectorRunResult,
+  RawIngestedVenue,
+  VenueConnector,
+  VenueConnectorRunResult
 } from './types.js';
-export { runConnector } from './types.js';
+export { runConnector, runVenueConnector } from './types.js';
 
 export {
   createMontrealOpenDataConnector,
@@ -16,17 +19,77 @@ export {
 } from './sources/ticketmaster.js';
 
 export {
+  createEventbriteConnector,
+  mapEventbriteEvent
+} from './sources/eventbrite.js';
+
+export {
   createIcsCalendarConnector,
   parseIcs
 } from './sources/ics-calendar.js';
 
 export {
+  createParseBotRaClubsConnector,
+  createParseBotRaEventsConnector,
+  mapParseBotEvent,
+  mapParseBotClub
+} from './sources/parse-bot-ra.js';
+
+export {
   fetchInstagramScoutSignals,
   type InstagramScoutTarget,
-  type InstagramScoutSignal
+  type InstagramScoutSignal,
+  type InstagramScoutMediaAsset
 } from './sources/instagram-scout.js';
 
-export { extractInstagramWatchlist } from './registry.js';
+export {
+  extractInstagramWatchlist,
+  selectInstagramPilotTargets
+} from './registry.js';
+export {
+  automateInstagramScoutReviewQueue,
+  buildInstagramScoutReviewQueue,
+  type InstagramScoutReviewItem,
+  type InstagramScoutReviewOutcome,
+  type InstagramScoutReviewQueue
+} from './instagram-scout-review.js';
+export {
+  triageInstagramScoutItem,
+  type InstagramScoutAutomationDecision,
+  type InstagramScoutReviewPriority,
+  type InstagramScoutTriageResult
+} from './instagram-scout-triage.js';
+export {
+  extractInstagramScoutFacts,
+  type InstagramScoutExtraction,
+  type InstagramScoutMissingFact
+} from './instagram-scout-extraction.js';
+export {
+  crosscheckInstagramScoutVenueCandidates,
+  type InstagramScoutOfficialCrosscheck,
+  type InstagramScoutVenueCandidate
+} from './instagram-scout-official-crosscheck.js';
+export {
+  reconcileInstagramScoutDecisions,
+  type InstagramScoutDecisionCandidate,
+  type InstagramScoutDecisionReconciliation,
+  type InstagramScoutOperatorDecision
+} from './instagram-scout-decision-reconciliation.js';
+export {
+  prepareInstagramScoutMappingDraft,
+  type InstagramScoutMappingDraftResult,
+  type InstagramScoutValidatedEventFacts
+} from './instagram-scout-mapping-draft.js';
+export {
+  evaluateInstagramScoutGeographicEligibility,
+  linkInstagramScoutSourcesToKnownVenues,
+  type InstagramScoutGeographicEligibility,
+  type InstagramScoutKnownVenue,
+  type InstagramScoutMonthlyVenueDensity,
+  type InstagramScoutVenueLink,
+  type InstagramScoutVenueLinkingResult,
+  type InstagramScoutVenueSource
+} from './instagram-scout-venue-linking.js';
 export { parseCsv } from './lib/csv.js';
 export {
   geocodeAddress,

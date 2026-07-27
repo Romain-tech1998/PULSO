@@ -2,16 +2,20 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import {
-  createMontrealOpenDataConnector,
   createTicketmasterConnector,
+  createParseBotRaClubsConnector,
+  createParseBotRaEventsConnector,
   enrichMissingAddresses,
   enrichMissingCoordinates,
   extractInstagramWatchlist,
   fetchInstagramScoutSignals,
   mapAndDeduplicateRawEvents,
   runConnector,
+  runVenueConnector,
   type IngestionConnector,
-  type RawIngestedEvent
+  type VenueConnector,
+  type RawIngestedEvent,
+  type RawIngestedVenue
 } from '@pulso/ingestion';
 
 import { createPool } from './client.js';
@@ -52,6 +56,26 @@ function buildConnectors(): IngestionConnector[] {
     );
   }
 
+  if (process.env.PARSE_BOT_API_KEY) {
+    connectors.push(createParseBotRaEventsConnector());
+  } else {
+    console.warn(
+      '[ingest] Skipping Parse.bot RA Events: PARSE_BOT_API_KEY is not set.'
+    );
+  }
+
+  return connectors;
+}
+
+function buildVenueConnectors(): VenueConnector[] {
+  const connectors: VenueConnector[] = [];
+  if (process.env.PARSE_BOT_API_KEY) {
+    connectors.push(createParseBotRaClubsConnector());
+  } else {
+    console.warn(
+      '[ingest] Skipping Parse.bot RA Clubs: PARSE_BOT_API_KEY is not set.'
+    );
+  }
   return connectors;
 }
 
@@ -89,7 +113,41 @@ async function runInstagramScout(): Promise<void> {
 
 async function main(): Promise<void> {
   const pool = createPool();
+  const args = process.argv.slice(2);
+  const runVenues = args.includes('--venues');
+
   try {
+    if (runVenues) {
+      console.log('[ingest] Running Venues ingestion...');
+      const venueConnectors = buildVenueConnectors();
+      for (const connector of venueConnectors) {
+        const result = await runVenueConnector(connector);
+        for (const error of result.errors) {
+          console.warn(`[ingest] ${connector.id} error: ${error}`);
+        }
+        console.log(`[ingest] ${connector.id} fetched ${result.venues.length} raw venue(s).`);
+        
+        // Upsert venues directly
+        for (const venue of result.venues) {
+          // Note: If longitude/latitude is missing, we might want to geocode them, 
+          // but for now we'll just insert what we have.
+          await pool.query(
+            `INSERT INTO venues (id, name, address, location)
+             VALUES (gen_random_uuid(), $1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326))
+             ON CONFLICT DO NOTHING`, // Since we don't have a stable ID to conflict on yet, we skip if we can't match, or we could match by name.
+            [
+              venue.name,
+              venue.address || '',
+              venue.point?.longitude || 0,
+              venue.point?.latitude || 0
+            ]
+          );
+        }
+      }
+      return;
+    }
+
+    console.log('[ingest] Running Events ingestion...');
     const connectors = buildConnectors();
     const rawEvents: RawIngestedEvent[] = [];
     for (const connector of connectors) {
