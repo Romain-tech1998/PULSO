@@ -1825,36 +1825,6 @@ export function ExploreMap({
              >
                Explorer
              </button>
-             <button
-               type="button"
-               className={!aboutOpen && section === 'favoris' ? 'active' : ''}
-               onClick={() => {
-                 setAboutOpen(false);
-                 setSection('favoris');
-               }}
-             >
-               Favoris
-             </button>
-             {user && (
-               <button
-                 type="button"
-                 className={!aboutOpen && section === 'compte' ? 'active' : ''}
-                 onClick={() => {
-                   setAboutOpen(false);
-                   setSection('compte');
-                 }}
-               >
-                 Mon compte
-               </button>
-             )}
-             <button
-               type="button"
-               data-about-toggle
-               className={aboutOpen ? 'active' : ''}
-               onClick={() => setAboutOpen((prev) => !prev)}
-             >
-               À propos
-             </button>
           </div>
         </div>
         <div className="nav-search">
@@ -1872,8 +1842,38 @@ export function ExploreMap({
           />
         </div>
         <div className="nav-actions">
-          <CitySelector />
-          <LanguageSelector locale={locale} onChange={selectLocale} />
+          <button
+            type="button"
+            className={`nav-icon-btn ${!aboutOpen && section === 'favoris' ? 'active' : ''}`}
+            onClick={() => {
+              setAboutOpen(false);
+              setSection('favoris');
+            }}
+            aria-label="Favoris"
+            title="Favoris"
+          >
+            <HeartIcon filled={!aboutOpen && section === 'favoris'} />
+          </button>
+          <button
+            type="button"
+            data-about-toggle
+            className={`nav-icon-btn ${aboutOpen ? 'active' : ''}`}
+            onClick={() => setAboutOpen((prev) => !prev)}
+            aria-label="À propos"
+            title="À propos"
+          >
+            <InfoIcon />
+          </button>
+          <button
+            type="button"
+            className="nav-icon-btn"
+            disabled
+            aria-label="Notifications (bientôt disponible)"
+            title="Bientôt disponible"
+          >
+            <BellIcon />
+          </button>
+          {!user && <LanguageSelector locale={locale} onChange={selectLocale} />}
           <AccountMenu
             user={user}
             onLogin={login}
@@ -2512,6 +2512,8 @@ export function ExploreMap({
             favoriteVenuesCount={favoriteVenues.length}
             onViewFavorites={() => setSection('favoris')}
             onLogout={logout}
+            locale={locale}
+            onChangeLocale={selectLocale}
           />
         )}
 
@@ -2790,6 +2792,49 @@ function HeartIcon({ filled }: { filled: boolean }) {
       aria-hidden="true"
     >
       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="16" x2="12" y2="11" />
+      <line x1="12" y1="8" x2="12.01" y2="8" />
+    </svg>
+  );
+}
+
+// Icône seule pour l'instant - aucun système de notifications n'existe
+// encore (viendra avec la Phase 2/3 de l'espace compte) ; le bouton reste
+// désactivé plutôt que de simuler une fonctionnalité absente, même
+// principe que les villes "Bientôt" du sélecteur de ville.
+function BellIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
     </svg>
   );
 }
@@ -3796,7 +3841,9 @@ function CompteSection({
   favoritesCount,
   favoriteVenuesCount,
   onViewFavorites,
-  onLogout
+  onLogout,
+  locale,
+  onChangeLocale
 }: {
   user: User;
   authToken: string | undefined;
@@ -3804,6 +3851,8 @@ function CompteSection({
   favoriteVenuesCount: number;
   onViewFavorites: () => void;
   onLogout: () => void;
+  locale: SupportedLocale;
+  onChangeLocale: (locale: SupportedLocale) => void;
 }) {
   const [trends, setTrends] = useState<TrendsResponse['data']>();
   const [trendsState, setTrendsState] = useState<'loading' | 'success' | 'error'>('loading');
@@ -3895,6 +3944,11 @@ function CompteSection({
           </div>
         )}
       </div>
+
+      <div className="compte-block compte-block-language">
+        <h3>Langue</h3>
+        <LanguageSelector locale={locale} onChange={onChangeLocale} />
+      </div>
     </section>
   );
 }
@@ -3938,6 +3992,8 @@ function SearchPanel({
           {translate(locale, 'search.question')}
         </label>
         <div className="search-input-wrapper">
+          <CitySelector />
+          <span className="search-divider" aria-hidden="true" />
           <span className="search-icon" aria-hidden="true">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"></circle>

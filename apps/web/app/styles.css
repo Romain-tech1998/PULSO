@@ -223,7 +223,14 @@ h6 {
   align-items: center;
   flex-shrink: 0;
   color: var(--text-muted);
-  padding-left: 1rem;
+  padding-left: 0.5rem;
+}
+
+.search-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--brand-border);
+  flex-shrink: 0;
 }
 
 .city-selector {
@@ -231,22 +238,22 @@ h6 {
   flex-shrink: 0;
 }
 
+/* Embedded directly in the search bar (DEC-0007-era design, restored) -
+   no border/pill of its own, it reads as the first segment of one
+   continuous bar rather than a separate control next to it. */
 .city-selector-trigger {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.5rem 0.9rem;
-  border-radius: 999px;
-  border: 1px solid var(--brand-border);
+  padding: 0.85rem 0.5rem 0.85rem 1.25rem;
   color: var(--text-secondary);
   font-weight: 600;
   font-size: 0.85rem;
   white-space: nowrap;
-  transition: border-color 0.2s, color 0.2s;
+  transition: color 0.2s;
 }
 
 .city-selector-trigger:hover {
-  border-color: var(--brand-purple);
   color: var(--text-primary);
 }
 
@@ -459,8 +466,35 @@ h6 {
 .nav-actions {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 0.5rem;
   flex-shrink: 0;
+}
+
+.nav-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+
+.nav-icon-btn:hover:not(:disabled) {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.nav-icon-btn.active {
+  background: rgba(91, 63, 224, 0.35);
+  color: var(--text-primary);
+}
+
+.nav-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .nav-actions-links {
