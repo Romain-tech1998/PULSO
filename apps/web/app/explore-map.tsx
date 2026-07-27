@@ -32,6 +32,7 @@ import {
   type PublicEvent,
   type PublicUser,
   type PublicVenue,
+  type ReportTargetType,
   type TrendsResponse,
   type User
 } from '@pulso/contracts';
@@ -443,6 +444,31 @@ function useUnreadMessagesCount(authToken: string | undefined, refreshKey: unkno
   }, [authToken, refreshKey]);
 
   return count;
+}
+
+// Minimal safety net (DEC-0012): captures the report only, no moderation
+// queue or automated action exists yet - the acknowledgment says exactly
+// that rather than implying a review will happen.
+function reportContent(
+  authToken: string | undefined,
+  targetType: ReportTargetType,
+  targetId: string
+) {
+  if (!authToken) return;
+  // Cancelling the prompt aborts the report entirely; confirming with an
+  // empty reason still sends it (the target/reporter/timestamp alone are
+  // useful even with no reason given).
+  const input = window.prompt('Pourquoi signalez-vous ce contenu ? (optionnel)');
+  if (input === null) return;
+  fetch(`${API_BASE_URL}/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+    body: JSON.stringify({ targetType, targetId, ...(input.trim() ? { reason: input.trim() } : {}) })
+  })
+    .then((response) => {
+      if (response.ok) alert('Signalement envoyé.');
+    })
+    .catch(() => {});
 }
 
 const AUTH_TOKEN_KEY = 'pulso-auth-token';
@@ -4371,16 +4397,23 @@ function ConversationModal({
             <p className="list-view-empty">Aucun message pour l'instant.</p>
           )}
           {state === 'success' &&
-            messages.map((message) => (
-              <div
-                key={message.id}
-                className={`conversation-message ${
-                  message.senderId === friend.id ? 'incoming' : 'outgoing'
-                }`}
-              >
-                {message.body}
-              </div>
-            ))}
+            messages.map((message) => {
+              const incoming = message.senderId === friend.id;
+              return (
+                <div key={message.id} className={`conversation-message ${incoming ? 'incoming' : 'outgoing'}`}>
+                  {message.body}
+                  {incoming && (
+                    <button
+                      type="button"
+                      className="conversation-message-report"
+                      onClick={() => reportContent(authToken, 'message', message.id)}
+                    >
+                      Signaler
+                    </button>
+                  )}
+                </div>
+              );
+            })}
         </div>
         <form
           className="forum-composer"
@@ -5458,13 +5491,21 @@ function EventForum({
               <div className="forum-post-body">
                 <div className="forum-post-meta">
                   <strong>{post.author.displayName}</strong>
-                  {post.author.id === userId && (
+                  {post.author.id === userId ? (
                     <button
                       type="button"
                       className="text-btn"
                       onClick={() => removePost(post.id)}
                     >
                       Supprimer
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-btn"
+                      onClick={() => reportContent(authToken, 'forum_post', post.id)}
+                    >
+                      Signaler
                     </button>
                   )}
                 </div>

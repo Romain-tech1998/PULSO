@@ -7,6 +7,7 @@ import {
   PostgresForumRepository,
   PostgresFriendsRepository,
   PostgresMessagesRepository,
+  PostgresReportsRepository,
   PostgresTrendsRepository
 } from '@pulso/database';
 
@@ -36,6 +37,7 @@ const app = buildApp(new PostgresEventRepository(pool), {
         attendanceRepository: new PostgresAttendanceRepository(pool),
         forumRepository: new PostgresForumRepository(pool),
         messagesRepository: new PostgresMessagesRepository(pool),
+        reportsRepository: new PostgresReportsRepository(pool),
         google
       }
     : {})

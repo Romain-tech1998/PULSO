@@ -42,6 +42,11 @@ export {
   type MessagesRepository
 } from './messages-repository.js';
 export {
+  PostgresReportsRepository,
+  type ReportTargetType,
+  type ReportsRepository
+} from './reports-repository.js';
+export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';

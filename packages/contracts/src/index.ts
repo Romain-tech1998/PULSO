@@ -345,6 +345,16 @@ export const unreadCountResponseSchema = z.object({
   data: z.object({ count: z.number().int().min(0) })
 });
 
+// Captures a report only (DEC-0012) - no moderation queue or automated
+// action exists yet, this is a minimal safety net.
+export const reportTargetTypeSchema = z.enum(['forum_post', 'message']);
+
+export const createReportRequestSchema = z.object({
+  targetType: reportTargetTypeSchema,
+  targetId: z.uuid(),
+  reason: z.string().max(500).optional()
+});
+
 export const publicEventSchema = z.object({
   id: z.uuid(),
   title: z.string().min(1),
@@ -466,6 +476,8 @@ export type SendMessageRequest = z.infer<typeof sendMessageRequestSchema>;
 export type ConversationResponse = z.infer<typeof conversationResponseSchema>;
 export type MessageResponse = z.infer<typeof messageResponseSchema>;
 export type UnreadCountResponse = z.infer<typeof unreadCountResponseSchema>;
+export type ReportTargetType = z.infer<typeof reportTargetTypeSchema>;
+export type CreateReportRequest = z.infer<typeof createReportRequestSchema>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

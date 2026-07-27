@@ -10,6 +10,7 @@ import type {
   GoogleProfile,
   Message,
   MessagesRepository,
+  ReportsRepository,
   Trends,
   TrendsRepository
 } from '@pulso/database';
@@ -158,6 +159,15 @@ export function fakeMessage(overrides: Partial<Message> = {}): Message {
   };
 }
 
+export function fakeReportsRepository(
+  overrides: Partial<ReportsRepository> = {}
+): ReportsRepository {
+  return {
+    createReport: async () => undefined,
+    ...overrides
+  };
+}
+
 // Bundles all account-layer repositories (+ Google config) so every
 // buildApp(event, accountRepositories()) call in tests stays a one-liner
 // even as the account layer grows more repositories - override only the
@@ -171,6 +181,7 @@ export function accountRepositories(
     attendanceRepository?: AttendanceRepository;
     forumRepository?: ForumRepository;
     messagesRepository?: MessagesRepository;
+    reportsRepository?: ReportsRepository;
   } = {}
 ) {
   return {
@@ -181,6 +192,7 @@ export function accountRepositories(
     attendanceRepository: overrides.attendanceRepository ?? fakeAttendanceRepository(),
     forumRepository: overrides.forumRepository ?? fakeForumRepository(),
     messagesRepository: overrides.messagesRepository ?? fakeMessagesRepository(),
+    reportsRepository: overrides.reportsRepository ?? fakeReportsRepository(),
     google: testGoogleConfig
   };
 }
