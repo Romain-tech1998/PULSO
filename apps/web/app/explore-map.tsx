@@ -555,9 +555,9 @@ export function ExploreMap({
     };
   }, [userLocation]);
 
-  const [section, setSection] = useState<'evenement' | 'lieu' | 'explorer' | 'favoris'>(
-    'evenement'
-  );
+  const [section, setSection] = useState<
+    'evenement' | 'lieu' | 'explorer' | 'favoris' | 'compte'
+  >('evenement');
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
   const [lieuTab, setLieuTab] = useState<'map' | 'list' | 'calendar'>('list');
   // Reset to 'event' every time Explorer is (re-)entered rather than
@@ -1835,6 +1835,18 @@ export function ExploreMap({
              >
                Favoris
              </button>
+             {user && (
+               <button
+                 type="button"
+                 className={!aboutOpen && section === 'compte' ? 'active' : ''}
+                 onClick={() => {
+                   setAboutOpen(false);
+                   setSection('compte');
+                 }}
+               >
+                 Mon compte
+               </button>
+             )}
              <button
                type="button"
                data-about-toggle
@@ -1864,9 +1876,11 @@ export function ExploreMap({
           <LanguageSelector locale={locale} onChange={selectLocale} />
           <AccountMenu
             user={user}
-            authToken={authToken}
             onLogin={login}
-            onLogout={logout}
+            onOpenAccount={() => {
+              setAboutOpen(false);
+              setSection('compte');
+            }}
           />
         </div>
       </header>
@@ -2487,6 +2501,17 @@ export function ExploreMap({
               setSection('lieu');
             }}
             locale={locale}
+          />
+        )}
+
+        {section === 'compte' && user && (
+          <CompteSection
+            user={user}
+            authToken={authToken}
+            favoritesCount={favorites.length}
+            favoriteVenuesCount={favoriteVenues.length}
+            onViewFavorites={() => setSection('favoris')}
+            onLogout={logout}
           />
         )}
 
@@ -3725,46 +3750,20 @@ function CitySelector() {
   );
 }
 
+// Le compte reste facultatif (DEC-0007/MVP-0001) : "Se connecter" est la
+// seule chose qui change tant qu'on n'est pas connecté. Une fois connecté,
+// l'avatar ouvre directement l'onglet "Mon compte" (CompteSection) plutôt
+// qu'un menu déroulant - un espace compte réel plutôt qu'un résumé en coin.
 function AccountMenu({
   user,
-  authToken,
   onLogin,
-  onLogout
+  onOpenAccount
 }: {
   user: User | undefined;
-  authToken: string | undefined;
   onLogin: () => void;
-  onLogout: () => void;
+  onOpenAccount: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const [trends, setTrends] = useState<TrendsResponse['data']>();
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [open]);
-
-  // Re-fetched each time the menu opens rather than kept live - a real
-  // aggregation of the account's favorites (see /me/trends), so it only
-  // needs to be fresh at the moment it's actually shown.
-  useEffect(() => {
-    if (!open || !authToken) return;
-    fetch(`${API_BASE_URL}/me/trends`, { headers: { authorization: `Bearer ${authToken}` } })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setTrends(trendsResponseSchema.parse(json).data))
-      .catch(() => {});
-  }, [open, authToken]);
-
   if (!user) {
-    // Le compte reste facultatif (DEC-0007/MVP-0001) - ce bouton est la
-    // seule chose qui change tant qu'on n'est pas connecté.
     return (
       <button type="button" className="account-login-btn" onClick={onLogin}>
         Se connecter
@@ -3773,54 +3772,130 @@ function AccountMenu({
   }
 
   return (
-    <div className="account-menu" ref={wrapperRef}>
-      <button
-        type="button"
-        className="account-menu-trigger"
-        onClick={() => setOpen((prev) => !prev)}
-        aria-expanded={open}
-        aria-label={user.displayName}
-      >
-        <span className="account-avatar">
+    <button
+      type="button"
+      className="account-menu-trigger"
+      onClick={onOpenAccount}
+      aria-label={`Mon compte (${user.displayName})`}
+    >
+      <span className="account-avatar">
+        {user.avatarUrl ? (
+          <img src={user.avatarUrl} alt="" />
+        ) : (
+          user.displayName.slice(0, 1).toUpperCase()
+        )}
+        <span className="account-online-dot" aria-hidden="true" />
+      </span>
+    </button>
+  );
+}
+
+function CompteSection({
+  user,
+  authToken,
+  favoritesCount,
+  favoriteVenuesCount,
+  onViewFavorites,
+  onLogout
+}: {
+  user: User;
+  authToken: string | undefined;
+  favoritesCount: number;
+  favoriteVenuesCount: number;
+  onViewFavorites: () => void;
+  onLogout: () => void;
+}) {
+  const [trends, setTrends] = useState<TrendsResponse['data']>();
+  const [trendsState, setTrendsState] = useState<'loading' | 'success' | 'error'>('loading');
+
+  useEffect(() => {
+    if (!authToken) return;
+    setTrendsState('loading');
+    fetch(`${API_BASE_URL}/me/trends`, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setTrends(trendsResponseSchema.parse(json).data);
+        setTrendsState('success');
+      })
+      .catch(() => setTrendsState('error'));
+  }, [authToken]);
+
+  const hasTrends =
+    trends && (trends.eventCategories.length > 0 || trends.venueCategories.length > 0);
+
+  return (
+    <section className="map-container-wrapper compte-section">
+      <div className="compte-profile">
+        <span className="compte-avatar">
           {user.avatarUrl ? (
             <img src={user.avatarUrl} alt="" />
           ) : (
             user.displayName.slice(0, 1).toUpperCase()
           )}
-          <span className="account-online-dot" aria-hidden="true" />
         </span>
-      </button>
-      {open && (
-        <div className="account-menu-dropdown">
-          <p className="account-menu-name">{user.displayName}</p>
-          {trends && (() => {
-            const topLabels = [
-              ...trends.eventCategories
-                .slice(0, 2)
-                .map((entry) => getCategoryLabel('fr', entry.category)),
-              ...trends.venueCategories
-                .slice(0, 1)
-                .map((entry) => VENUE_CATEGORY_LABELS.fr[entry.category])
-            ];
-            return topLabels.length > 0 ? (
-              <p className="account-menu-trends">
-                Vous aimez surtout : {topLabels.join(', ')}
-              </p>
-            ) : null;
-          })()}
-          <button
-            type="button"
-            className="account-menu-logout"
-            onClick={() => {
-              setOpen(false);
-              onLogout();
-            }}
-          >
-            Se déconnecter
-          </button>
+        <div className="compte-profile-info">
+          <h2>{user.displayName}</h2>
+          <p>{user.email}</p>
         </div>
-      )}
-    </div>
+        <button type="button" className="btn-secondary" onClick={onLogout}>
+          Se déconnecter
+        </button>
+      </div>
+
+      <div className="compte-block">
+        <h3>Vos favoris</h3>
+        <p>
+          {favoritesCount} événement{favoritesCount !== 1 ? 's' : ''} et {favoriteVenuesCount}{' '}
+          lieu{favoriteVenuesCount !== 1 ? 'x' : ''} sauvegardés.
+        </p>
+        <button type="button" className="text-btn" onClick={onViewFavorites}>
+          Voir mes favoris
+        </button>
+      </div>
+
+      <div className="compte-block">
+        <h3>Vos tendances</h3>
+        {trendsState === 'loading' && <p className="list-view-empty">Chargement…</p>}
+        {trendsState === 'error' && (
+          <p className="list-view-empty">Impossible de charger vos tendances pour le moment.</p>
+        )}
+        {trendsState === 'success' && !hasTrends && (
+          <p className="list-view-empty">
+            Ajoutez des favoris pour voir vos tendances apparaître ici.
+          </p>
+        )}
+        {trendsState === 'success' && hasTrends && trends && (
+          <div className="compte-trends-lists">
+            {trends.eventCategories.length > 0 && (
+              <div className="compte-trends-group">
+                <h4>Catégories d'événements</h4>
+                <ul>
+                  {trends.eventCategories.map((entry) => (
+                    <li key={entry.category}>
+                      <span>{getCategoryLabel('fr', entry.category)}</span>
+                      <span className="compte-trends-count">{entry.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {trends.venueCategories.length > 0 && (
+              <div className="compte-trends-group">
+                <h4>Types de lieux</h4>
+                <ul>
+                  {trends.venueCategories.map((entry) => (
+                    <li key={entry.category}>
+                      <span>{VENUE_CATEGORY_LABELS.fr[entry.category]}</span>
+                      <span className="compte-trends-count">{entry.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
