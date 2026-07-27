@@ -271,6 +271,84 @@ describe('public event contract', () => {
     expect(presentEvent(cancelled, 'en').externalAction).toBeUndefined();
   });
 
+  it('shows a "see tickets" action for a ticketing destination, not the source name', () => {
+    const event = publicEventSchema.parse({
+      id: '00000000-0000-4000-8000-000000000001',
+      title: 'Synthetic ticketed event',
+      category: 'music',
+      status: 'scheduled',
+      startsAt: '2026-07-16T01:00:00.000Z',
+      timezone: 'America/Toronto',
+      price: { kind: 'paid', currency: 'CAD' },
+      accessInformation: 'Paid entry.',
+      venue: {
+        id: '00000000-0000-4000-8000-000000000002',
+        name: 'Synthetic venue',
+        address: 'Montréal',
+        point: { longitude: -73.56, latitude: 45.5 }
+      },
+      source: {
+        name: 'Ticketmaster',
+        url: 'https://example.com/event',
+        observedAt: '2026-07-15T12:00:00.000Z'
+      },
+      trust: {
+        label: 'probable',
+        freshness: 'fresh',
+        locationConfidence: 'confirmed'
+      },
+      externalDestination: {
+        label: 'Ticketmaster',
+        kind: 'ticketing',
+        status: 'available'
+      }
+    });
+
+    expect(presentEvent(event, 'en').externalAction).toBe('See tickets');
+    expect(presentEvent(event, 'fr').externalAction).toBe('Voir les billets');
+  });
+
+  it('keeps the generic "open {destination}" action for a non-ticketing source', () => {
+    const event = publicEventSchema.parse({
+      id: '00000000-0000-4000-8000-000000000001',
+      title: 'Synthetic source-linked event',
+      category: 'show',
+      status: 'scheduled',
+      startsAt: '2026-07-16T01:00:00.000Z',
+      timezone: 'America/Toronto',
+      price: { kind: 'unknown', currency: 'CAD' },
+      accessInformation: 'Access conditions are not confirmed.',
+      venue: {
+        id: '00000000-0000-4000-8000-000000000002',
+        name: 'Synthetic venue',
+        address: 'Montréal',
+        point: { longitude: -73.56, latitude: 45.5 }
+      },
+      source: {
+        name: 'Ville de Montréal',
+        url: 'https://example.com/event',
+        observedAt: '2026-07-15T12:00:00.000Z'
+      },
+      trust: {
+        label: 'confirmed',
+        freshness: 'fresh',
+        locationConfidence: 'confirmed'
+      },
+      externalDestination: {
+        label: 'Ville de Montréal',
+        kind: 'event_source',
+        status: 'available'
+      }
+    });
+
+    expect(presentEvent(event, 'en').externalAction).toBe(
+      'Open Ville de Montréal'
+    );
+    expect(presentEvent(event, 'fr').externalAction).toBe(
+      'Ouvrir Ville de Montréal'
+    );
+  });
+
   it('localizes Pulso labels while preserving external event content', () => {
     const event = publicEventSchema.parse({
       id: '00000000-0000-4000-8000-000000000001',

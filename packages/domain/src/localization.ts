@@ -136,6 +136,7 @@ const en = {
   'event.freshness.unknown':
     'Last checked {date}. No freshness claim is made without an approved policy.',
   'event.external.open': 'Open {destination}',
+  'event.external.viewTickets': 'See tickets',
   'event.external.cancelled':
     'The external event or ticket-source action is unavailable because this event is cancelled.',
   'event.external.unavailable':
@@ -342,6 +343,7 @@ const fr = {
   'event.freshness.unknown':
     'Dernière vérification le {date}. Aucune affirmation de fraîcheur n’est faite sans politique approuvée.',
   'event.external.open': 'Ouvrir {destination}',
+  'event.external.viewTickets': 'Voir les billets',
   'event.external.cancelled':
     'L’action vers la source externe de l’événement ou la billetterie est indisponible parce que cet événement est annulé.',
   'event.external.unavailable':

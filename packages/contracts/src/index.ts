@@ -293,8 +293,9 @@ export const friendsAttendingResponseSchema = z.object({
   data: z.array(publicUserSchema)
 });
 
-// DEC-0012: user-generated content, deliberately kept flat (no nested
-// replies) and not editable after posting - only deletable by its author.
+// DEC-0012 v1.1: user-generated content, not editable after posting (only
+// deletable by its author). A reply is a post with a parentId - one level
+// of nesting only, no recursive threads.
 export const forumCategorySchema = z.enum(FORUM_CATEGORIES);
 
 export const forumPostSchema = z.object({
@@ -303,11 +304,16 @@ export const forumPostSchema = z.object({
   author: publicUserSchema,
   category: forumCategorySchema,
   body: z.string().min(1),
-  createdAt: z.iso.datetime()
+  createdAt: z.iso.datetime(),
+  parentId: z.uuid().optional(),
+  likeCount: z.number().int().min(0),
+  likedByMe: z.boolean(),
+  replyCount: z.number().int().min(0)
 });
 
 export const createForumPostRequestSchema = z.object({
-  body: z.string().min(1).max(2000)
+  body: z.string().min(1).max(2000),
+  parentId: z.uuid().optional()
 });
 
 export const forumPostsResponseSchema = z.object({
@@ -766,9 +772,11 @@ export function presentEvent(
   const externalAvailable =
     event.status !== 'cancelled' &&
     event.externalDestination?.status === 'available'
-      ? translate(locale, 'event.external.open', {
-          destination: event.externalDestination.label
-        })
+      ? event.externalDestination.kind === 'ticketing'
+        ? translate(locale, 'event.external.viewTickets')
+        : translate(locale, 'event.external.open', {
+            destination: event.externalDestination.label
+          })
       : undefined;
 
   return {
