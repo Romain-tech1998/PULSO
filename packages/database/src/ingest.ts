@@ -11,7 +11,7 @@ import {
   enrichMissingCoordinates,
   extractInstagramWatchlist,
   fetchInstagramScoutSignals,
-  geocodeAddress,
+  geocodeAddressWithFrenchFallback,
   mapAndDeduplicateRawEvents,
   normalizeForKey,
   runConnector,
@@ -101,22 +101,22 @@ async function resolveVenuePoint(
   venue: RawIngestedVenue
 ): Promise<{ longitude: number; latitude: number } | undefined> {
   if (venue.point) return venue.point;
-  const hasAddress = Boolean(venue.address && venue.address.trim().length > 0);
-  const hasName = Boolean(venue.name && venue.name.trim().length > 0);
-  if (!hasAddress && !hasName) return undefined;
 
   // A source-provided address (e.g. Parse.bot RA clubs) is usually already
-  // complete, including city/province/postal code - appending ", Montréal,
-  // QC, Canada" to it confuses Nominatim's parser into finding nothing
-  // (verified live: it resolves the address alone or "name, address", but
-  // not "address, name, Montréal, QC, Canada"). The region suffix is only
-  // useful as a fallback when there's no address to disambiguate a bare name.
-  const query = hasAddress
-    ? hasName
-      ? `${venue.name}, ${venue.address}`
-      : venue.address!
-    : `${venue.name}, Montréal, QC, Canada`;
-  return geocodeAddress(query);
+  // complete, including city/province/postal code. Verified live that
+  // prepending the venue name ("Salon Daomé, 4465 ...") makes Nominatim's
+  // free-text parser fail on addresses that resolve fine alone - so the
+  // address is queried by itself whenever one exists, and the name is only
+  // used as a query when there is no address at all.
+  if (venue.address && venue.address.trim().length > 0) {
+    return geocodeAddressWithFrenchFallback(venue.address);
+  }
+  if (venue.name && venue.name.trim().length > 0) {
+    return geocodeAddressWithFrenchFallback(
+      `${venue.name}, Montréal, QC, Canada`
+    );
+  }
+  return undefined;
 }
 
 async function runInstagramScout(): Promise<void> {

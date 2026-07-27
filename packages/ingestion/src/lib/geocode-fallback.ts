@@ -54,7 +54,11 @@ export async function geocodeAddress(
   fetchImpl: typeof fetch = fetch
 ): Promise<{ longitude: number; latitude: number } | undefined> {
   const url = new URL(NOMINATIM_SEARCH_URL);
-  url.searchParams.set('q', query);
+  // Some sources (observed: Parse.bot RA) separate address components with
+  // semicolons instead of commas - verified live that Nominatim's free-text
+  // parser can fail on an otherwise-correct address purely because of that,
+  // while the identical address with commas resolves fine.
+  url.searchParams.set('q', query.replace(/;/g, ','));
   url.searchParams.set('format', 'json');
   url.searchParams.set('limit', '1');
   url.searchParams.set('countrycodes', 'ca');
@@ -70,8 +74,140 @@ export async function geocodeAddress(
 
   const latitude = Number(first.lat);
   const longitude = Number(first.lon);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return undefined;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude))
+    return undefined;
   return { longitude, latitude };
+}
+
+/**
+ * Nominatim's Montréal/Québec coverage is authoritatively in French ("Rue
+ * Sainte-Catherine Est"), but some sources format the same street in English
+ * ("Saint-Catherine Street East") - verified live that this alone is enough
+ * for Nominatim to return nothing, even though the street clearly exists.
+ * This is a narrow, position-aware heuristic for the small set of
+ * type/direction words actually observed (RA), not a general address
+ * parser: it moves a trailing English street-type word to the front in its
+ * French form, translates a trailing compass direction, and corrects the
+ * handful of well-known Montréal streets named after a woman saint (French
+ * "Sainte-" vs. "Saint-") that sources otherwise get wrong indiscriminately.
+ * Returns undefined when nothing recognizable was found, so callers know
+ * not to bother retrying with it.
+ */
+const STREET_TYPE_TO_FRENCH: Record<string, string> = {
+  street: 'Rue',
+  st: 'Rue',
+  boulevard: 'Boulevard',
+  blvd: 'Boulevard',
+  avenue: 'Avenue',
+  ave: 'Avenue',
+  road: 'Chemin',
+  rd: 'Chemin'
+};
+
+const DIRECTION_TO_FRENCH: Record<string, string> = {
+  east: 'Est',
+  e: 'Est',
+  west: 'Ouest',
+  w: 'Ouest',
+  north: 'Nord',
+  n: 'Nord',
+  south: 'Sud',
+  s: 'Sud'
+};
+
+// Montréal streets named after a female saint that English sources
+// (observed: RA) commonly spell with the masculine "Saint-" instead of the
+// correct feminine "Sainte-" - e.g. "Saint-Catherine" instead of
+// "Sainte-Catherine", Montréal's main downtown/nightlife street.
+const FEMININE_SAINT_STREET_NAMES = new Set([
+  'catherine',
+  'anne',
+  'famille',
+  'helene',
+  'hélène',
+  'cunegonde',
+  'cunégonde'
+]);
+
+export function translateStreetToFrench(
+  streetLine: string
+): string | undefined {
+  const match = /^(\d+[A-Za-z]?\s+)?(.+)$/.exec(streetLine.trim());
+  if (!match) return undefined;
+  const houseNumber = match[1] ?? '';
+  const words = match[2]!.split(/\s+/);
+
+  let direction: string | undefined;
+  const directionKey = words[words.length - 1]!.replace(
+    /\.$/,
+    ''
+  ).toLowerCase();
+  if (DIRECTION_TO_FRENCH[directionKey]) {
+    direction = DIRECTION_TO_FRENCH[directionKey];
+    words.pop();
+  }
+
+  let streetType: string | undefined;
+  const typeWord = words[words.length - 1];
+  if (typeWord) {
+    const typeKey = typeWord.replace(/\.$/, '').toLowerCase();
+    if (STREET_TYPE_TO_FRENCH[typeKey]) {
+      streetType = STREET_TYPE_TO_FRENCH[typeKey];
+      words.pop();
+    }
+  }
+
+  // Nothing recognizable (type or direction) - not worth retrying with.
+  if (!streetType && !direction) return undefined;
+  // The source omitted the street type entirely (e.g. "Saint Catherine
+  // East") - "Rue" is the most common type in Montréal's dense core and is
+  // only ever tried as a fallback query, after the original already failed.
+  streetType ??= 'Rue';
+
+  let name = words.join(' ');
+  name = name
+    .replace(/^Ste\.?\s+(?=[A-Z])/, 'Sainte-')
+    .replace(/^St\.?\s+(?=[A-Z])/, 'Saint-')
+    .replace(/\bSainte\s+(?=[A-Z])/g, 'Sainte-')
+    .replace(/\bSaint\s+(?=[A-Z])/g, 'Saint-')
+    .replace(/\bSaint-(\w+)/g, (full, saintName: string) =>
+      FEMININE_SAINT_STREET_NAMES.has(saintName.toLowerCase())
+        ? `Sainte-${saintName}`
+        : full
+    );
+
+  return [houseNumber.trim(), streetType, name, direction]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * Retries geocodeAddress with an English->French street-type translation
+ * applied to each comma/semicolon-separated segment of the query (a source
+ * may put the street segment first, e.g. "858 Main St East, Montreal, ..."
+ * or after a venue name, e.g. "Some Venue, 858 Main St East, Montreal,
+ * ..."). Only fires the second Nominatim request when the original query
+ * failed AND at least one segment actually had something to translate.
+ */
+export async function geocodeAddressWithFrenchFallback(
+  query: string,
+  fetchImpl: typeof fetch = fetch,
+  delayMs: number = MIN_DELAY_MS
+): Promise<{ longitude: number; latitude: number } | undefined> {
+  const direct = await geocodeAddress(query, fetchImpl);
+  if (direct) return direct;
+
+  const segments = query.split(/[,;]/).map((segment) => segment.trim());
+  let translatedAny = false;
+  const translatedSegments = segments.map((segment) => {
+    const translated = translateStreetToFrench(segment);
+    if (translated) translatedAny = true;
+    return translated ?? segment;
+  });
+  if (!translatedAny) return undefined;
+
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+  return geocodeAddress(translatedSegments.join(', '), fetchImpl);
 }
 
 /**
@@ -118,7 +254,9 @@ export async function reverseGeocodeAddress(
   // country) - used as a lighter-weight fallback venue label so "Lieu" and
   // "Adresse" don't show the exact same long string twice.
   const shortLabel = result.address?.road
-    ? [result.address.house_number, result.address.road].filter(Boolean).join(' ')
+    ? [result.address.house_number, result.address.road]
+        .filter(Boolean)
+        .join(' ')
     : undefined;
 
   return { venueName, shortLabel, address: result.display_name };
@@ -179,7 +317,9 @@ function haversineMeters(
   const dLon = toRad(b.longitude - a.longitude);
   const lat1 = toRad(a.latitude);
   const lat2 = toRad(b.latitude);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
   return 2 * earthRadiusMeters * Math.asin(Math.sqrt(h));
 }
 
@@ -218,17 +358,27 @@ export async function findNearbyNamedPlace(
       const name = tags?.name;
       if (!name) return undefined;
       const qualifies =
-        (tags.leisure !== undefined && NEARBY_POI_LEISURE_VALUES.has(tags.leisure)) ||
-        (tags.amenity !== undefined && NEARBY_POI_AMENITY_VALUES.has(tags.amenity)) ||
-        (tags.tourism !== undefined && NEARBY_POI_TOURISM_VALUES.has(tags.tourism));
+        (tags.leisure !== undefined &&
+          NEARBY_POI_LEISURE_VALUES.has(tags.leisure)) ||
+        (tags.amenity !== undefined &&
+          NEARBY_POI_AMENITY_VALUES.has(tags.amenity)) ||
+        (tags.tourism !== undefined &&
+          NEARBY_POI_TOURISM_VALUES.has(tags.tourism));
       if (!qualifies) return undefined;
       const lat = element.lat ?? element.center?.lat;
       const lon = element.lon ?? element.center?.lon;
       if (lat === undefined || lon === undefined) return undefined;
-      return { name, distanceMeters: haversineMeters(point, { latitude: lat, longitude: lon }) };
+      return {
+        name,
+        distanceMeters: haversineMeters(point, {
+          latitude: lat,
+          longitude: lon
+        })
+      };
     })
-    .filter((candidate): candidate is { name: string; distanceMeters: number } =>
-      Boolean(candidate)
+    .filter(
+      (candidate): candidate is { name: string; distanceMeters: number } =>
+        Boolean(candidate)
     );
   if (candidates.length === 0) return undefined;
 
@@ -255,7 +405,10 @@ export async function enrichMissingCoordinates(
   const enriched: RawIngestedEvent[] = [];
   for (const event of events) {
     if (event.point) {
-      enriched.push({ ...event, pointResolution: event.pointResolution ?? 'source' });
+      enriched.push({
+        ...event,
+        pointResolution: event.pointResolution ?? 'source'
+      });
       continue;
     }
 
@@ -380,7 +533,11 @@ export async function enrichMissingAddresses(
       // 'Unknown venue' placeholder (to-public-event.ts) never fires for an
       // event whose location is genuinely known, without making "Lieu" and
       // "Adresse" show the identical long string twice.
-      venueName: resolved?.venueName ?? nearbyPlace ?? resolved?.shortLabel ?? event.venueName,
+      venueName:
+        resolved?.venueName ??
+        nearbyPlace ??
+        resolved?.shortLabel ??
+        event.venueName,
       address: resolved?.address ?? event.address
     });
   }

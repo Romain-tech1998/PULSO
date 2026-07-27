@@ -93,6 +93,8 @@ export {
 export { parseCsv } from './lib/csv.js';
 export {
   geocodeAddress,
+  geocodeAddressWithFrenchFallback,
+  translateStreetToFrench,
   enrichMissingCoordinates,
   reverseGeocodeAddress,
   enrichMissingAddresses
