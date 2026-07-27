@@ -113,7 +113,7 @@ export function buildApp(
 
   app.addHook('onSend', async (_request, reply, payload) => {
     reply.header('access-control-allow-origin', '*');
-    reply.header('access-control-allow-methods', 'GET, POST, OPTIONS');
+    reply.header('access-control-allow-methods', 'GET, POST, PUT, DELETE, OPTIONS');
     reply.header('access-control-allow-headers', 'content-type, authorization');
     return payload;
   });

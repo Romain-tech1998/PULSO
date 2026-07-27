@@ -245,6 +245,22 @@ describe('deterministic intelligent-search API', () => {
     await app.close();
   });
 
+  // Regression test: app.inject() calls handlers directly and never
+  // actually enforces CORS the way a real browser does, so a PUT/DELETE
+  // route can pass every other test while still being silently unusable
+  // from the browser if this header omits the method - exactly what
+  // happened to /me/friends/requests/:id (PUT) and every other mutation
+  // route added after /search's original GET/POST/OPTIONS-only allowlist.
+  it('allows every HTTP method actually used by a mutation route', async () => {
+    const app = buildApp(repository);
+    const response = await app.inject({ method: 'OPTIONS', url: '/search' });
+    const allowed = response.headers['access-control-allow-methods'];
+    for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+      expect(allowed).toContain(method);
+    }
+    await app.close();
+  });
+
   it('applies cross-family hard constraints in the repository and explains exact results', async () => {
     let received:
       { date: string; categories: string[]; price: string } | undefined;
