@@ -16,6 +16,15 @@ export {
   type TrendsRepository
 } from './trends-repository.js';
 export {
+  PostgresFriendsRepository,
+  FriendCodeNotFoundError,
+  CannotFriendSelfError,
+  FriendshipAlreadyExistsError,
+  FriendRequestNotFoundError,
+  type FriendRequest,
+  type FriendsRepository
+} from './friends-repository.js';
+export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';

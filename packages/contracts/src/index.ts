@@ -231,6 +231,41 @@ export const trendsResponseSchema = z.object({
   })
 });
 
+// The public view of a user - id, display name, avatar only. Never an
+// email or friend_code, since this shape is used to show OTHER accounts
+// (friends, pending requests) rather than the signed-in user themselves.
+export const publicUserSchema = z.object({
+  id: z.uuid(),
+  displayName: z.string().min(1),
+  avatarUrl: z.url().optional()
+});
+
+export const friendCodeResponseSchema = z.object({
+  data: z.object({ friendCode: z.string() })
+});
+
+export const sendFriendRequestSchema = z.object({
+  friendCode: z.string().min(1)
+});
+
+export const friendRequestSchema = z.object({
+  id: z.uuid(),
+  user: publicUserSchema,
+  direction: z.enum(['incoming', 'outgoing']),
+  createdAt: z.iso.datetime()
+});
+export const friendRequestsResponseSchema = z.object({
+  data: z.array(friendRequestSchema)
+});
+
+export const respondFriendRequestSchema = z.object({
+  action: z.enum(['accept', 'decline'])
+});
+
+export const friendsResponseSchema = z.object({
+  data: z.array(publicUserSchema)
+});
+
 export const publicEventSchema = z.object({
   id: z.uuid(),
   title: z.string().min(1),
@@ -319,6 +354,13 @@ export type FavoriteEventsResponse = z.infer<typeof favoriteEventsResponseSchema
 export type FavoriteVenuesRequest = z.infer<typeof favoriteVenuesRequestSchema>;
 export type FavoriteVenuesResponse = z.infer<typeof favoriteVenuesResponseSchema>;
 export type TrendsResponse = z.infer<typeof trendsResponseSchema>;
+export type PublicUser = z.infer<typeof publicUserSchema>;
+export type FriendCodeResponse = z.infer<typeof friendCodeResponseSchema>;
+export type SendFriendRequest = z.infer<typeof sendFriendRequestSchema>;
+export type FriendRequestEntry = z.infer<typeof friendRequestSchema>;
+export type FriendRequestsResponse = z.infer<typeof friendRequestsResponseSchema>;
+export type RespondFriendRequest = z.infer<typeof respondFriendRequestSchema>;
+export type FriendsResponse = z.infer<typeof friendsResponseSchema>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

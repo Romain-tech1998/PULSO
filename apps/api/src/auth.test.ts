@@ -1,15 +1,14 @@
-import type { User } from '@pulso/contracts';
-import type {
-  AuthRepository,
-  FavoritesRepository,
-  GoogleProfile,
-  Trends,
-  TrendsRepository
-} from '@pulso/database';
 import type { EventRepository } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
+import {
+  accountRepositories,
+  fakeAuthRepository,
+  fakeFavoritesRepository,
+  fakeTrendsRepository,
+  testUser
+} from './test-support.js';
 
 const event: EventRepository = {
   findInBounds: async () => [],
@@ -20,46 +19,6 @@ const event: EventRepository = {
   findByIds: async () => []
 };
 
-const google = {
-  clientId: 'test-client-id',
-  clientSecret: 'test-client-secret',
-  callbackUri: 'http://localhost:3001/auth/google/callback',
-  appCallbackUrl: 'http://localhost:3000/auth/callback'
-};
-
-const user: User = {
-  id: '00000000-0000-4000-8000-000000000009',
-  email: 'test@example.com',
-  displayName: 'Test User'
-};
-
-function fakeAuthRepository(overrides: Partial<AuthRepository> = {}): AuthRepository {
-  return {
-    upsertUserFromGoogle: async (_profile: GoogleProfile) => user,
-    createSession: async () => ({ token: 'valid-token', expiresAt: new Date() }),
-    findUserBySessionToken: async (token: string) =>
-      token === 'valid-token' ? user : undefined,
-    deleteSession: async () => undefined,
-    ...overrides
-  };
-}
-
-function fakeFavoritesRepository(
-  overrides: Partial<FavoritesRepository> = {}
-): FavoritesRepository {
-  return {
-    getFavoriteEventIds: async () => [],
-    setFavoriteEventIds: async (_userId, eventIds) => eventIds,
-    getFavoriteVenueIds: async () => [],
-    setFavoriteVenueIds: async (_userId, venueIds) => venueIds,
-    ...overrides
-  };
-}
-
-function fakeTrendsRepository(trends: Trends = { eventCategories: [], venueCategories: [] }): TrendsRepository {
-  return { getTrends: async () => trends };
-}
-
 describe('account authentication API', () => {
   it('does not register auth routes when Google credentials are absent', async () => {
     const app = buildApp(event);
@@ -69,10 +28,7 @@ describe('account authentication API', () => {
   });
 
   it('rejects /me without a bearer token', async () => {
-    const app = buildApp(event, { authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository(),
-      trendsRepository: fakeTrendsRepository(),
-      google });
+    const app = buildApp(event, accountRepositories());
     const response = await app.inject({ method: 'GET', url: '/me' });
     expect(response.statusCode).toBe(401);
     expect(response.json().error.code).toBe('UNAUTHENTICATED');
@@ -80,10 +36,7 @@ describe('account authentication API', () => {
   });
 
   it('rejects /me with an unknown or expired token', async () => {
-    const app = buildApp(event, { authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository(),
-      trendsRepository: fakeTrendsRepository(),
-      google });
+    const app = buildApp(event, accountRepositories());
     const response = await app.inject({
       method: 'GET',
       url: '/me',
@@ -94,25 +47,19 @@ describe('account authentication API', () => {
   });
 
   it('returns the account for a valid bearer token', async () => {
-    const app = buildApp(event, { authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository(),
-      trendsRepository: fakeTrendsRepository(),
-      google });
+    const app = buildApp(event, accountRepositories());
     const response = await app.inject({
       method: 'GET',
       url: '/me',
       headers: { authorization: 'Bearer valid-token' }
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().data).toEqual(user);
+    expect(response.json().data).toEqual(testUser);
     await app.close();
   });
 
   it('starts the Google OAuth flow with a redirect', async () => {
-    const app = buildApp(event, { authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository(),
-      trendsRepository: fakeTrendsRepository(),
-      google });
+    const app = buildApp(event, accountRepositories());
     const response = await app.inject({ method: 'GET', url: '/auth/google' });
     expect(response.statusCode).toBe(302);
     expect(response.headers.location).toContain('accounts.google.com');
@@ -121,16 +68,16 @@ describe('account authentication API', () => {
 
   it('deletes the session on logout, regardless of whether it existed', async () => {
     let deletedToken: string | undefined;
-    const app = buildApp(event, {
-      authRepository: fakeAuthRepository({
-        deleteSession: async (token: string) => {
-          deletedToken = token;
-        }
-      }),
-      favoritesRepository: fakeFavoritesRepository(),
-      trendsRepository: fakeTrendsRepository(),
-      google
-    });
+    const app = buildApp(
+      event,
+      accountRepositories({
+        authRepository: fakeAuthRepository({
+          deleteSession: async (token: string) => {
+            deletedToken = token;
+          }
+        })
+      })
+    );
     const response = await app.inject({
       method: 'POST',
       url: '/auth/logout',
@@ -142,10 +89,7 @@ describe('account authentication API', () => {
   });
 
   it('includes authorization in the CORS preflight for any route', async () => {
-    const app = buildApp(event, { authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository(),
-      trendsRepository: fakeTrendsRepository(),
-      google });
+    const app = buildApp(event, accountRepositories());
     const response = await app.inject({ method: 'OPTIONS', url: '/me' });
     expect(response.statusCode).toBe(204);
     expect(response.headers['access-control-allow-headers']).toContain('authorization');
@@ -155,12 +99,7 @@ describe('account authentication API', () => {
 
 describe('account favorites API', () => {
   it('rejects favorites routes without a bearer token', async () => {
-    const app = buildApp(event, {
-      authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository(),
-      trendsRepository: fakeTrendsRepository(),
-      google
-    });
+    const app = buildApp(event, accountRepositories());
     const getEvents = await app.inject({ method: 'GET', url: '/me/favorites' });
     const putEvents = await app.inject({
       method: 'PUT',
@@ -173,14 +112,14 @@ describe('account favorites API', () => {
   });
 
   it('returns the stored favorite event ids', async () => {
-    const app = buildApp(event, {
-      authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository({
-        getFavoriteEventIds: async () => ['00000000-0000-4000-8000-000000000001']
-      }),
-      trendsRepository: fakeTrendsRepository(),
-      google
-    });
+    const app = buildApp(
+      event,
+      accountRepositories({
+        favoritesRepository: fakeFavoritesRepository({
+          getFavoriteEventIds: async () => ['00000000-0000-4000-8000-000000000001']
+        })
+      })
+    );
     const response = await app.inject({
       method: 'GET',
       url: '/me/favorites',
@@ -196,18 +135,18 @@ describe('account favorites API', () => {
   it('replaces the stored favorite event ids on PUT, so un-favoriting works', async () => {
     let setUserId: string | undefined;
     let setIds: string[] | undefined;
-    const app = buildApp(event, {
-      authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository({
-        setFavoriteEventIds: async (userId, eventIds) => {
-          setUserId = userId;
-          setIds = eventIds;
-          return eventIds;
-        }
-      }),
-      trendsRepository: fakeTrendsRepository(),
-      google
-    });
+    const app = buildApp(
+      event,
+      accountRepositories({
+        favoritesRepository: fakeFavoritesRepository({
+          setFavoriteEventIds: async (userId, eventIds) => {
+            setUserId = userId;
+            setIds = eventIds;
+            return eventIds;
+          }
+        })
+      })
+    );
     const response = await app.inject({
       method: 'PUT',
       url: '/me/favorites',
@@ -215,7 +154,7 @@ describe('account favorites API', () => {
       payload: { eventIds: ['00000000-0000-4000-8000-000000000001'] }
     });
     expect(response.statusCode).toBe(200);
-    expect(setUserId).toBe(user.id);
+    expect(setUserId).toBe(testUser.id);
     expect(setIds).toEqual(['00000000-0000-4000-8000-000000000001']);
     expect(response.json().data.eventIds).toEqual([
       '00000000-0000-4000-8000-000000000001'
@@ -224,14 +163,14 @@ describe('account favorites API', () => {
   });
 
   it('handles favorite venues the same way as favorite events', async () => {
-    const app = buildApp(event, {
-      authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository({
-        getFavoriteVenueIds: async () => ['00000000-0000-4000-8000-000000000003']
-      }),
-      trendsRepository: fakeTrendsRepository(),
-      google
-    });
+    const app = buildApp(
+      event,
+      accountRepositories({
+        favoritesRepository: fakeFavoritesRepository({
+          getFavoriteVenueIds: async () => ['00000000-0000-4000-8000-000000000003']
+        })
+      })
+    );
     const response = await app.inject({
       method: 'GET',
       url: '/me/favorite-venues',
@@ -247,27 +186,22 @@ describe('account favorites API', () => {
 
 describe('account trends API', () => {
   it('rejects /me/trends without a bearer token', async () => {
-    const app = buildApp(event, {
-      authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository(),
-      trendsRepository: fakeTrendsRepository(),
-      google
-    });
+    const app = buildApp(event, accountRepositories());
     const response = await app.inject({ method: 'GET', url: '/me/trends' });
     expect(response.statusCode).toBe(401);
     await app.close();
   });
 
   it('returns the real aggregated category counts from favorites', async () => {
-    const app = buildApp(event, {
-      authRepository: fakeAuthRepository(),
-      favoritesRepository: fakeFavoritesRepository(),
-      trendsRepository: fakeTrendsRepository({
-        eventCategories: [{ category: 'music', count: 3 }],
-        venueCategories: [{ category: 'bar', count: 1 }]
-      }),
-      google
-    });
+    const app = buildApp(
+      event,
+      accountRepositories({
+        trendsRepository: fakeTrendsRepository({
+          eventCategories: [{ category: 'music', count: 3 }],
+          venueCategories: [{ category: 'bar', count: 1 }]
+        })
+      })
+    );
     const response = await app.inject({
       method: 'GET',
       url: '/me/trends',

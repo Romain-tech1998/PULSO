@@ -28,14 +28,14 @@ interface GoogleUserInfo {
   picture?: string;
 }
 
-async function resolveBearerUser(request: FastifyRequest, authRepository: AuthRepository) {
+export async function resolveBearerUser(request: FastifyRequest, authRepository: AuthRepository) {
   const header = request.headers.authorization;
   if (!header?.startsWith('Bearer ')) return undefined;
   const token = header.slice('Bearer '.length);
   return authRepository.findUserBySessionToken(token);
 }
 
-function sendUnauthenticated(reply: FastifyReply) {
+export function sendUnauthenticated(reply: FastifyReply) {
   return reply.status(401).send({
     error: { code: 'UNAUTHENTICATED', message: 'Sign in to access this resource.' }
   });

@@ -43,9 +43,12 @@ export class PostgresAuthRepository implements AuthRepository {
   // whatever Google reports on each login instead of freezing them at
   // first signup.
   async upsertUserFromGoogle(profile: GoogleProfile): Promise<User> {
+    // friend_code is only ever set on the INSERT branch - the ON CONFLICT
+    // UPDATE deliberately doesn't touch it, so a returning user keeps the
+    // same code forever rather than it churning on every login.
     const result = await this.pool.query<UserRow>(
-      `INSERT INTO users (id, email, display_name, avatar_url, google_subject)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO users (id, email, display_name, avatar_url, google_subject, friend_code)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (google_subject) DO UPDATE SET
          email = EXCLUDED.email,
          display_name = EXCLUDED.display_name,
@@ -56,7 +59,8 @@ export class PostgresAuthRepository implements AuthRepository {
         profile.email,
         profile.displayName,
         profile.avatarUrl ?? null,
-        profile.googleSubject
+        profile.googleSubject,
+        randomBytes(4).toString('hex')
       ]
     );
     return toUser(result.rows[0]!);

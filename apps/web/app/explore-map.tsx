@@ -8,15 +8,20 @@ import {
   eventListResponseSchema,
   favoriteEventsResponseSchema,
   favoriteVenuesResponseSchema,
+  friendCodeResponseSchema,
+  friendRequestsResponseSchema,
+  friendsResponseSchema,
   intelligentSearchResponseSchema,
   meResponseSchema,
   PRICE_FILTER_OPTIONS,
   trendsResponseSchema,
   VENUE_CATEGORY_FILTER_OPTIONS,
   venueListResponseSchema,
+  type FriendRequestEntry,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
   type PublicEvent,
+  type PublicUser,
   type PublicVenue,
   type TrendsResponse,
   type User
@@ -3945,11 +3950,234 @@ function CompteSection({
         )}
       </div>
 
+      <FriendsBlock authToken={authToken} />
+
       <div className="compte-block compte-block-language">
         <h3>Langue</h3>
         <LanguageSelector locale={locale} onChange={onChangeLocale} />
       </div>
     </section>
+  );
+}
+
+const FRIEND_REQUEST_ERROR_MESSAGES: Record<string, string> = {
+  FRIEND_CODE_NOT_FOUND: 'Aucun compte ne correspond à ce code.',
+  CANNOT_FRIEND_SELF: 'Vous ne pouvez pas vous ajouter vous-même.',
+  FRIENDSHIP_ALREADY_EXISTS: 'Vous êtes déjà amis, ou une demande est déjà en attente.'
+};
+
+// Own block rather than folded into the trends/favoris blocks above - it
+// manages its own fetch/mutate cycle (code, pending requests, friends list
+// all change independently of the rest of Mon compte) and only renders
+// once signed in, same guard as the rest of this page.
+function FriendsBlock({ authToken }: { authToken: string | undefined }) {
+  const [friendCode, setFriendCode] = useState<string>();
+  const [pendingRequests, setPendingRequests] = useState<FriendRequestEntry[]>([]);
+  const [friends, setFriends] = useState<PublicUser[]>([]);
+  const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [codeInput, setCodeInput] = useState('');
+  const [sendError, setSendError] = useState<string>();
+  const [copied, setCopied] = useState(false);
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    const headers = { authorization: `Bearer ${authToken}` };
+    setLoadState('loading');
+    Promise.all([
+      fetch(`${API_BASE_URL}/me/friend-code`, { headers }).then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      ),
+      fetch(`${API_BASE_URL}/me/friends/requests`, { headers }).then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      ),
+      fetch(`${API_BASE_URL}/me/friends`, { headers }).then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      )
+    ])
+      .then(([codeJson, requestsJson, friendsJson]) => {
+        setFriendCode(friendCodeResponseSchema.parse(codeJson).data.friendCode);
+        setPendingRequests(friendRequestsResponseSchema.parse(requestsJson).data);
+        setFriends(friendsResponseSchema.parse(friendsJson).data);
+        setLoadState('success');
+      })
+      .catch(() => setLoadState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const sendRequest = () => {
+    if (!authToken || !codeInput.trim()) return;
+    setSendError(undefined);
+    fetch(`${API_BASE_URL}/me/friends/requests`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ friendCode: codeInput.trim() })
+    }).then((response) => {
+      if (response.status === 204) {
+        setCodeInput('');
+        refresh();
+        return;
+      }
+      response
+        .json()
+        .then((json) => {
+          setSendError(
+            FRIEND_REQUEST_ERROR_MESSAGES[json?.error?.code] ??
+              "Impossible d'envoyer la demande pour le moment."
+          );
+        })
+        .catch(() => setSendError("Impossible d'envoyer la demande pour le moment."));
+    });
+  };
+
+  const respond = (requestId: string, action: 'accept' | 'decline') => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/me/friends/requests/${requestId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ action })
+    }).then(() => refresh());
+  };
+
+  const removeFriend = (friendUserId: string) => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/me/friends/${friendUserId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).then(() => refresh());
+  };
+
+  const incoming = pendingRequests.filter((request) => request.direction === 'incoming');
+  const outgoing = pendingRequests.filter((request) => request.direction === 'outgoing');
+
+  return (
+    <div className="compte-block">
+      <h3>Vos amis</h3>
+      {loadState === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {loadState === 'error' && (
+        <p className="list-view-empty">Impossible de charger vos amis pour le moment.</p>
+      )}
+      {loadState === 'success' && (
+        <div className="friends-block">
+          {friendCode && (
+            <div className="friends-code-row">
+              <span>
+                Votre code : <strong>{friendCode}</strong>
+              </span>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => {
+                  void navigator.clipboard.writeText(friendCode);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+              >
+                {copied ? 'Copié !' : 'Copier'}
+              </button>
+            </div>
+          )}
+
+          <form
+            className="friends-add-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              sendRequest();
+            }}
+          >
+            <input
+              value={codeInput}
+              onChange={(event) => setCodeInput(event.target.value)}
+              placeholder="Coller le code d'un ami"
+              maxLength={32}
+            />
+            <button type="submit" className="btn-secondary">
+              Ajouter
+            </button>
+          </form>
+          {sendError && <p className="friends-error">{sendError}</p>}
+
+          {incoming.length > 0 && (
+            <div className="friends-list">
+              <h4>Demandes reçues</h4>
+              {incoming.map((request) => (
+                <div className="friends-row" key={request.id}>
+                  <span className="friends-row-avatar">
+                    {request.user.avatarUrl ? (
+                      <img src={request.user.avatarUrl} alt="" />
+                    ) : (
+                      request.user.displayName.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  <span className="friends-row-name">{request.user.displayName}</span>
+                  <button
+                    type="button"
+                    className="text-btn"
+                    onClick={() => respond(request.id, 'accept')}
+                  >
+                    Accepter
+                  </button>
+                  <button
+                    type="button"
+                    className="text-btn"
+                    onClick={() => respond(request.id, 'decline')}
+                  >
+                    Refuser
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {outgoing.length > 0 && (
+            <div className="friends-list">
+              <h4>Demandes envoyées</h4>
+              {outgoing.map((request) => (
+                <div className="friends-row" key={request.id}>
+                  <span className="friends-row-avatar">
+                    {request.user.avatarUrl ? (
+                      <img src={request.user.avatarUrl} alt="" />
+                    ) : (
+                      request.user.displayName.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  <span className="friends-row-name">{request.user.displayName}</span>
+                  <span className="friends-row-status">En attente</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="friends-list">
+            <h4>Amis ({friends.length})</h4>
+            {friends.length === 0 && (
+              <p className="list-view-empty">Aucun ami pour le moment.</p>
+            )}
+            {friends.map((friendUser) => (
+              <div className="friends-row" key={friendUser.id}>
+                <span className="friends-row-avatar">
+                  {friendUser.avatarUrl ? (
+                    <img src={friendUser.avatarUrl} alt="" />
+                  ) : (
+                    friendUser.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <span className="friends-row-name">{friendUser.displayName}</span>
+                <button
+                  type="button"
+                  className="text-btn"
+                  onClick={() => removeFriend(friendUser.id)}
+                >
+                  Retirer
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
