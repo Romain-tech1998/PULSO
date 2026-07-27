@@ -3,9 +3,10 @@ import {
   favoriteEventsResponseSchema,
   favoriteVenuesRequestSchema,
   favoriteVenuesResponseSchema,
-  meResponseSchema
+  meResponseSchema,
+  trendsResponseSchema
 } from '@pulso/contracts';
-import type { AuthRepository, FavoritesRepository } from '@pulso/database';
+import type { AuthRepository, FavoritesRepository, TrendsRepository } from '@pulso/database';
 import fastifyOauth2 from '@fastify/oauth2';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -51,6 +52,7 @@ export function registerAuthRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
   favoritesRepository: FavoritesRepository,
+  trendsRepository: TrendsRepository,
   google: GoogleAuthConfig
 ) {
   app.register(fastifyOauth2, {
@@ -128,6 +130,13 @@ export function registerAuthRoutes(
     const body = favoriteVenuesRequestSchema.parse(request.body);
     const venueIds = await favoritesRepository.setFavoriteVenueIds(user.id, body.venueIds);
     return favoriteVenuesResponseSchema.parse({ data: { venueIds } });
+  });
+
+  app.get('/me/trends', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const trends = await trendsRepository.getTrends(user.id);
+    return trendsResponseSchema.parse({ data: trends });
   });
 
   app.post('/auth/logout', async (request, reply) => {

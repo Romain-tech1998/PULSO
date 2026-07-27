@@ -10,6 +10,12 @@ export {
   type FavoritesRepository
 } from './favorites-repository.js';
 export {
+  PostgresTrendsRepository,
+  type CategoryCount,
+  type Trends,
+  type TrendsRepository
+} from './trends-repository.js';
+export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';

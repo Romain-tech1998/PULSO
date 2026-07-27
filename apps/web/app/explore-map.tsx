@@ -11,12 +11,14 @@ import {
   intelligentSearchResponseSchema,
   meResponseSchema,
   PRICE_FILTER_OPTIONS,
+  trendsResponseSchema,
   VENUE_CATEGORY_FILTER_OPTIONS,
   venueListResponseSchema,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
   type PublicEvent,
   type PublicVenue,
+  type TrendsResponse,
   type User
 } from '@pulso/contracts';
 import {
@@ -1860,7 +1862,12 @@ export function ExploreMap({
         <div className="nav-actions">
           <CitySelector />
           <LanguageSelector locale={locale} onChange={selectLocale} />
-          <AccountMenu user={user} onLogin={login} onLogout={logout} />
+          <AccountMenu
+            user={user}
+            authToken={authToken}
+            onLogin={login}
+            onLogout={logout}
+          />
         </div>
       </header>
 
@@ -3720,15 +3727,18 @@ function CitySelector() {
 
 function AccountMenu({
   user,
+  authToken,
   onLogin,
   onLogout
 }: {
   user: User | undefined;
+  authToken: string | undefined;
   onLogin: () => void;
   onLogout: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const [trends, setTrends] = useState<TrendsResponse['data']>();
 
   useEffect(() => {
     if (!open) return;
@@ -3740,6 +3750,17 @@ function AccountMenu({
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, [open]);
+
+  // Re-fetched each time the menu opens rather than kept live - a real
+  // aggregation of the account's favorites (see /me/trends), so it only
+  // needs to be fresh at the moment it's actually shown.
+  useEffect(() => {
+    if (!open || !authToken) return;
+    fetch(`${API_BASE_URL}/me/trends`, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setTrends(trendsResponseSchema.parse(json).data))
+      .catch(() => {});
+  }, [open, authToken]);
 
   if (!user) {
     // Le compte reste facultatif (DEC-0007/MVP-0001) - ce bouton est la
@@ -3772,6 +3793,21 @@ function AccountMenu({
       {open && (
         <div className="account-menu-dropdown">
           <p className="account-menu-name">{user.displayName}</p>
+          {trends && (() => {
+            const topLabels = [
+              ...trends.eventCategories
+                .slice(0, 2)
+                .map((entry) => getCategoryLabel('fr', entry.category)),
+              ...trends.venueCategories
+                .slice(0, 1)
+                .map((entry) => VENUE_CATEGORY_LABELS.fr[entry.category])
+            ];
+            return topLabels.length > 0 ? (
+              <p className="account-menu-trends">
+                Vous aimez surtout : {topLabels.join(', ')}
+              </p>
+            ) : null;
+          })()}
           <button
             type="button"
             className="account-menu-logout"

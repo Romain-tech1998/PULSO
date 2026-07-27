@@ -2,7 +2,8 @@ import {
   createPool,
   PostgresAuthRepository,
   PostgresEventRepository,
-  PostgresFavoritesRepository
+  PostgresFavoritesRepository,
+  PostgresTrendsRepository
 } from '@pulso/database';
 
 import { buildApp } from './app.js';
@@ -26,6 +27,7 @@ const app = buildApp(new PostgresEventRepository(pool), {
     ? {
         authRepository: new PostgresAuthRepository(pool),
         favoritesRepository: new PostgresFavoritesRepository(pool),
+        trendsRepository: new PostgresTrendsRepository(pool),
         google
       }
     : {})

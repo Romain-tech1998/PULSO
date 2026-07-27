@@ -10,7 +10,12 @@ import {
   venuesQuerySchema
 } from '@pulso/contracts';
 import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
-import type { AuthRepository, EventRepository, FavoritesRepository } from '@pulso/database';
+import type {
+  AuthRepository,
+  EventRepository,
+  FavoritesRepository,
+  TrendsRepository
+} from '@pulso/database';
 import {
   createFilteredDiscoveryWindow,
   type DiscoveryFilters
@@ -37,16 +42,23 @@ export function buildApp(
     // "account stays optional" principle.
     authRepository?: AuthRepository;
     favoritesRepository?: FavoritesRepository;
+    trendsRepository?: TrendsRepository;
     google?: GoogleAuthConfig;
   } = {}
 ) {
   const app = Fastify({ logger: options.logger ?? false });
 
-  if (options.authRepository && options.favoritesRepository && options.google) {
+  if (
+    options.authRepository &&
+    options.favoritesRepository &&
+    options.trendsRepository &&
+    options.google
+  ) {
     registerAuthRoutes(
       app,
       options.authRepository,
       options.favoritesRepository,
+      options.trendsRepository,
       options.google
     );
   }

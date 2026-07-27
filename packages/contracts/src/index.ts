@@ -216,6 +216,21 @@ export const favoriteVenuesResponseSchema = z.object({
   data: z.object({ venueIds: z.array(z.uuid()) })
 });
 
+// A real aggregation of the account's own favorites (category frequency),
+// never an inferred or ML-derived recommendation - same "no fabricated
+// data" principle as deriveVenuePriceTier. Sorted most-favorited first;
+// a category with zero favorites is simply absent rather than listed at 0.
+export const trendsResponseSchema = z.object({
+  data: z.object({
+    eventCategories: z.array(
+      z.object({ category: z.enum(EVENT_CATEGORIES), count: z.number().int().min(1) })
+    ),
+    venueCategories: z.array(
+      z.object({ category: z.enum(VENUE_CATEGORIES), count: z.number().int().min(1) })
+    )
+  })
+});
+
 export const publicEventSchema = z.object({
   id: z.uuid(),
   title: z.string().min(1),
@@ -303,6 +318,7 @@ export type FavoriteEventsRequest = z.infer<typeof favoriteEventsRequestSchema>;
 export type FavoriteEventsResponse = z.infer<typeof favoriteEventsResponseSchema>;
 export type FavoriteVenuesRequest = z.infer<typeof favoriteVenuesRequestSchema>;
 export type FavoriteVenuesResponse = z.infer<typeof favoriteVenuesResponseSchema>;
+export type TrendsResponse = z.infer<typeof trendsResponseSchema>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

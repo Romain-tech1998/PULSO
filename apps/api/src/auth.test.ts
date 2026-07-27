@@ -1,5 +1,11 @@
 import type { User } from '@pulso/contracts';
-import type { AuthRepository, FavoritesRepository, GoogleProfile } from '@pulso/database';
+import type {
+  AuthRepository,
+  FavoritesRepository,
+  GoogleProfile,
+  Trends,
+  TrendsRepository
+} from '@pulso/database';
 import type { EventRepository } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
@@ -50,6 +56,10 @@ function fakeFavoritesRepository(
   };
 }
 
+function fakeTrendsRepository(trends: Trends = { eventCategories: [], venueCategories: [] }): TrendsRepository {
+  return { getTrends: async () => trends };
+}
+
 describe('account authentication API', () => {
   it('does not register auth routes when Google credentials are absent', async () => {
     const app = buildApp(event);
@@ -61,6 +71,7 @@ describe('account authentication API', () => {
   it('rejects /me without a bearer token', async () => {
     const app = buildApp(event, { authRepository: fakeAuthRepository(),
       favoritesRepository: fakeFavoritesRepository(),
+      trendsRepository: fakeTrendsRepository(),
       google });
     const response = await app.inject({ method: 'GET', url: '/me' });
     expect(response.statusCode).toBe(401);
@@ -71,6 +82,7 @@ describe('account authentication API', () => {
   it('rejects /me with an unknown or expired token', async () => {
     const app = buildApp(event, { authRepository: fakeAuthRepository(),
       favoritesRepository: fakeFavoritesRepository(),
+      trendsRepository: fakeTrendsRepository(),
       google });
     const response = await app.inject({
       method: 'GET',
@@ -84,6 +96,7 @@ describe('account authentication API', () => {
   it('returns the account for a valid bearer token', async () => {
     const app = buildApp(event, { authRepository: fakeAuthRepository(),
       favoritesRepository: fakeFavoritesRepository(),
+      trendsRepository: fakeTrendsRepository(),
       google });
     const response = await app.inject({
       method: 'GET',
@@ -98,6 +111,7 @@ describe('account authentication API', () => {
   it('starts the Google OAuth flow with a redirect', async () => {
     const app = buildApp(event, { authRepository: fakeAuthRepository(),
       favoritesRepository: fakeFavoritesRepository(),
+      trendsRepository: fakeTrendsRepository(),
       google });
     const response = await app.inject({ method: 'GET', url: '/auth/google' });
     expect(response.statusCode).toBe(302);
@@ -114,6 +128,7 @@ describe('account authentication API', () => {
         }
       }),
       favoritesRepository: fakeFavoritesRepository(),
+      trendsRepository: fakeTrendsRepository(),
       google
     });
     const response = await app.inject({
@@ -129,6 +144,7 @@ describe('account authentication API', () => {
   it('includes authorization in the CORS preflight for any route', async () => {
     const app = buildApp(event, { authRepository: fakeAuthRepository(),
       favoritesRepository: fakeFavoritesRepository(),
+      trendsRepository: fakeTrendsRepository(),
       google });
     const response = await app.inject({ method: 'OPTIONS', url: '/me' });
     expect(response.statusCode).toBe(204);
@@ -142,6 +158,7 @@ describe('account favorites API', () => {
     const app = buildApp(event, {
       authRepository: fakeAuthRepository(),
       favoritesRepository: fakeFavoritesRepository(),
+      trendsRepository: fakeTrendsRepository(),
       google
     });
     const getEvents = await app.inject({ method: 'GET', url: '/me/favorites' });
@@ -161,6 +178,7 @@ describe('account favorites API', () => {
       favoritesRepository: fakeFavoritesRepository({
         getFavoriteEventIds: async () => ['00000000-0000-4000-8000-000000000001']
       }),
+      trendsRepository: fakeTrendsRepository(),
       google
     });
     const response = await app.inject({
@@ -187,6 +205,7 @@ describe('account favorites API', () => {
           return eventIds;
         }
       }),
+      trendsRepository: fakeTrendsRepository(),
       google
     });
     const response = await app.inject({
@@ -210,6 +229,7 @@ describe('account favorites API', () => {
       favoritesRepository: fakeFavoritesRepository({
         getFavoriteVenueIds: async () => ['00000000-0000-4000-8000-000000000003']
       }),
+      trendsRepository: fakeTrendsRepository(),
       google
     });
     const response = await app.inject({
@@ -220,6 +240,43 @@ describe('account favorites API', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toEqual({
       venueIds: ['00000000-0000-4000-8000-000000000003']
+    });
+    await app.close();
+  });
+});
+
+describe('account trends API', () => {
+  it('rejects /me/trends without a bearer token', async () => {
+    const app = buildApp(event, {
+      authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository(),
+      trendsRepository: fakeTrendsRepository(),
+      google
+    });
+    const response = await app.inject({ method: 'GET', url: '/me/trends' });
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns the real aggregated category counts from favorites', async () => {
+    const app = buildApp(event, {
+      authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository(),
+      trendsRepository: fakeTrendsRepository({
+        eventCategories: [{ category: 'music', count: 3 }],
+        venueCategories: [{ category: 'bar', count: 1 }]
+      }),
+      google
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/trends',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual({
+      eventCategories: [{ category: 'music', count: 3 }],
+      venueCategories: [{ category: 'bar', count: 1 }]
     });
     await app.close();
   });
