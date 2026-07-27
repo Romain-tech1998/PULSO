@@ -5,31 +5,73 @@ import type {
   RawIngestedVenue
 } from '../types.js';
 
+/**
+ * Parse.bot-hosted "ra.co API" scraper.
+ *
+ * The actual contract - verified live against the Parse.bot dashboard for
+ * this scraper - differs from what was originally guessed and committed:
+ * GET requests (not POST), the scraper's *canonical* id in the URL path
+ * (distinct from the per-account subscription id used by the Parse SDK),
+ * an `API-Snapshot-Version` header, and query-string parameters rather than
+ * a JSON body. `content_url`/`flyer_url`/`logo_url` are all RA-relative
+ * paths (e.g. "/clubs/828"), not absolute URLs.
+ */
+
+const CANONICAL_SCRAPER_ID = 'b89b7fc2-7fcb-49f4-8b0d-8ba592c967cc';
+const API_SNAPSHOT_VERSION = '8';
+const RA_BASE_URL = 'https://ra.co';
+
 interface ParseBotRaClub {
   id?: string;
   name?: string;
   address?: string;
   content_url?: string;
+  follower_count?: number;
+  is_closed?: boolean | null;
+  logo_url?: string | null;
+}
+
+interface ParseBotRaClubsResult {
+  area?: string;
+  country?: string;
+  total_clubs?: number;
+  clubs?: ParseBotRaClub[];
+}
+
+interface ParseBotRaEventVenue {
+  id?: string;
+  name?: string;
+  content_url?: string | null;
 }
 
 interface ParseBotRaEvent {
   id?: string;
   title?: string;
+  /** Midnight-only date (e.g. "2026-07-28T00:00:00.000") - startsAt uses start_time instead when present. */
   date?: string;
+  /** Already a full local datetime, e.g. "2026-07-28T22:00:00.000" - NOT a bare "HH:MM". */
   start_time?: string;
-  end_time?: string;
   content_url?: string;
-  flyer_url?: string;
-  venue_name?: string;
-  venue_id?: string;
-  interested_count?: string | number;
+  flyer_url?: string | null;
+  interested_count?: number;
+  venue?: ParseBotRaEventVenue;
+}
+
+interface ParseBotRaEventsResult {
+  total_results?: number;
+  page?: number;
+  page_size?: number;
+  events?: ParseBotRaEvent[];
 }
 
 interface ParseBotRaResponse<T> {
-  data?: {
-    clubs?: T[];
-    events?: T[];
-  };
+  status?: string;
+  data?: T;
+}
+
+function absoluteRaUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined;
+  return path.startsWith('http') ? path : `${RA_BASE_URL}${path}`;
 }
 
 export function mapParseBotClub(
@@ -39,10 +81,11 @@ export function mapParseBotClub(
   return {
     sourceId: `ra_club_${club.id || ''}`,
     sourceName: 'Parse.bot RA Scraper',
-    sourceUrl: club.content_url || 'https://ra.co/',
+    sourceUrl: absoluteRaUrl(club.content_url) ?? `${RA_BASE_URL}/`,
     observedAt,
     name: club.name || 'Lieu Inconnu',
     address: club.address,
+    imageUrl: absoluteRaUrl(club.logo_url),
     raw: club
   };
 }
@@ -51,27 +94,39 @@ export function mapParseBotEvent(
   event: ParseBotRaEvent,
   observedAt: string
 ): RawIngestedEvent {
-  let startsAt = event.date || '';
-  if (event.date && event.start_time) {
-    startsAt = `${event.date}T${event.start_time}:00`;
-  }
+  const contentUrl = absoluteRaUrl(event.content_url);
 
   return {
     sourceId: `ra_event_${event.id || ''}`,
     sourceName: 'Parse.bot RA Scraper',
-    sourceUrl: event.content_url || 'https://ra.co/',
+    sourceUrl: contentUrl ?? `${RA_BASE_URL}/`,
     observedAt,
     title: event.title || 'Événement RA',
     category: 'nightlife', // RA events are generally nightlife/music
-    startsAt,
-    venueName: event.venue_name,
-    ticketingUrl: event.content_url,
-    imageUrl: event.flyer_url,
+    startsAt: event.start_time || event.date || '',
+    venueName: event.venue?.name,
+    ticketingUrl: contentUrl,
+    imageUrl: absoluteRaUrl(event.flyer_url),
     raw: event
   };
 }
 
-const SCRAPER_ID = '5e7fdf6f-3af4-46ce-8acf-61dd24b968fe';
+function buildScraperUrl(
+  endpoint: string,
+  params: Record<string, string>
+): URL {
+  const url = new URL(
+    `https://api.parse.bot/scraper/${CANONICAL_SCRAPER_ID}/${endpoint}`
+  );
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+  return url;
+}
+
+function scraperHeaders(apiKey: string): HeadersInit {
+  return { 'X-API-Key': apiKey, 'API-Snapshot-Version': API_SNAPSHOT_VERSION };
+}
 
 export function createParseBotRaClubsConnector(
   options: {
@@ -86,8 +141,6 @@ export function createParseBotRaClubsConnector(
   const countryCode = options.countryCode ?? 'ca';
   const fetchImpl = options.fetchImpl ?? fetch;
 
-  const API_URL = `https://api.parse.bot/v1/scrapers/${SCRAPER_ID}/run`;
-
   return {
     id: 'parse_bot_ra_clubs',
     displayName: 'Parse.bot RA Clubs Scraper',
@@ -95,22 +148,14 @@ export function createParseBotRaClubsConnector(
       if (!apiKey) throw new Error('PARSE_BOT_API_KEY is not set.');
 
       const observedAt = new Date().toISOString();
-      const venues: RawIngestedVenue[] = [];
-
-      const response = await fetchImpl(API_URL, {
-        method: 'POST',
-        headers: {
-          'X-API-Key': apiKey,
-          'Content-Type': 'application/json',
-          Accept: 'application/json'
-        },
-        body: JSON.stringify({
-          endpoint: 'list_clubs',
-          area_name: areaName,
-          country_code: countryCode
-        })
+      const url = buildScraperUrl('list_clubs', {
+        area_name: areaName,
+        country_code: countryCode
       });
 
+      const response = await fetchImpl(url.toString(), {
+        headers: scraperHeaders(apiKey)
+      });
       if (!response.ok) {
         throw new Error(
           `Parse.bot API request failed with status ${response.status}`
@@ -118,12 +163,10 @@ export function createParseBotRaClubsConnector(
       }
 
       const body =
-        (await response.json()) as ParseBotRaResponse<ParseBotRaClub>;
-      const pageClubs = body.data?.clubs ?? [];
+        (await response.json()) as ParseBotRaResponse<ParseBotRaClubsResult>;
+      const clubs = (body.data?.clubs ?? []).filter((club) => !club.is_closed);
 
-      venues.push(...pageClubs.map((c) => mapParseBotClub(c, observedAt)));
-
-      return venues;
+      return clubs.map((club) => mapParseBotClub(club, observedAt));
     }
   };
 }
@@ -133,7 +176,6 @@ export function createParseBotRaEventsConnector(
     apiKey?: string;
     areaId?: string;
     fetchImpl?: typeof fetch;
-    pageSize?: number;
     maxPages?: number;
   } = {}
 ): IngestionConnector {
@@ -141,13 +183,10 @@ export function createParseBotRaEventsConnector(
   // Fallback to Montreal's RA area ID which is 40
   const areaId = options.areaId ?? '40';
   const fetchImpl = options.fetchImpl ?? fetch;
-  const pageSize = options.pageSize ?? 50;
-  // Safety cap, not an expected real volume: Parse.bot's response has no
-  // total-count/next-page field, so pagination below is a heuristic (a full
-  // page implies there may be more) rather than a known page count.
+  // Safety cap in case total_results/page_size are ever missing from a
+  // response - real pagination below is driven by the server-reported
+  // total_results, not this cap.
   const maxPages = options.maxPages ?? 20;
-
-  const API_URL = `https://api.parse.bot/v1/scrapers/${SCRAPER_ID}/run`;
 
   return {
     id: 'parse_bot_ra_events',
@@ -159,21 +198,14 @@ export function createParseBotRaEventsConnector(
       const events: RawIngestedEvent[] = [];
 
       for (let page = 1; page <= maxPages; page += 1) {
-        const response = await fetchImpl(API_URL, {
-          method: 'POST',
-          headers: {
-            'X-API-Key': apiKey,
-            'Content-Type': 'application/json',
-            Accept: 'application/json'
-          },
-          body: JSON.stringify({
-            endpoint: 'list_area_events',
-            area_id: areaId,
-            page,
-            page_size: pageSize
-          })
+        const url = buildScraperUrl('list_area_events', {
+          area_id: areaId,
+          page: String(page)
         });
 
+        const response = await fetchImpl(url.toString(), {
+          headers: scraperHeaders(apiKey)
+        });
         if (!response.ok) {
           throw new Error(
             `Parse.bot API request failed with status ${response.status}`
@@ -181,13 +213,17 @@ export function createParseBotRaEventsConnector(
         }
 
         const body =
-          (await response.json()) as ParseBotRaResponse<ParseBotRaEvent>;
-        const pageEvents = body.data?.events ?? [];
+          (await response.json()) as ParseBotRaResponse<ParseBotRaEventsResult>;
+        const result = body.data;
+        const pageEvents = result?.events ?? [];
 
-        events.push(...pageEvents.map((e) => mapParseBotEvent(e, observedAt)));
+        events.push(
+          ...pageEvents.map((event) => mapParseBotEvent(event, observedAt))
+        );
 
-        // A page shorter than requested means this was the last one.
-        if (pageEvents.length < pageSize) break;
+        const pageSize = result?.page_size ?? pageEvents.length;
+        const totalResults = result?.total_results ?? pageEvents.length;
+        if (pageEvents.length === 0 || page * pageSize >= totalResults) break;
       }
 
       return events;

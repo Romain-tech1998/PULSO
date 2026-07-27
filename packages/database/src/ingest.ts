@@ -101,11 +101,22 @@ async function resolveVenuePoint(
   venue: RawIngestedVenue
 ): Promise<{ longitude: number; latitude: number } | undefined> {
   if (venue.point) return venue.point;
-  const queryParts = [venue.address, venue.name].filter(
-    (part): part is string => Boolean(part && part.trim().length > 0)
-  );
-  if (queryParts.length === 0) return undefined;
-  return geocodeAddress(`${queryParts.join(', ')}, Montréal, QC, Canada`);
+  const hasAddress = Boolean(venue.address && venue.address.trim().length > 0);
+  const hasName = Boolean(venue.name && venue.name.trim().length > 0);
+  if (!hasAddress && !hasName) return undefined;
+
+  // A source-provided address (e.g. Parse.bot RA clubs) is usually already
+  // complete, including city/province/postal code - appending ", Montréal,
+  // QC, Canada" to it confuses Nominatim's parser into finding nothing
+  // (verified live: it resolves the address alone or "name, address", but
+  // not "address, name, Montréal, QC, Canada"). The region suffix is only
+  // useful as a fallback when there's no address to disambiguate a bare name.
+  const query = hasAddress
+    ? hasName
+      ? `${venue.name}, ${venue.address}`
+      : venue.address!
+    : `${venue.name}, Montréal, QC, Canada`;
+  return geocodeAddress(query);
 }
 
 async function runInstagramScout(): Promise<void> {
@@ -175,13 +186,15 @@ async function main(): Promise<void> {
             await delay(NOMINATIM_DELAY_MS);
           }
 
-          // Deterministic id (same "venue|name|address" convention as
-          // to-public-event.ts, normalized the same way as computeDedupeKey)
-          // so re-running this job - or an event elsewhere referencing the
-          // same real venue under a slightly different spelling - converges
-          // on the same row instead of inserting a fresh duplicate.
+          // Same key formula as to-public-event.ts's venue id: name if
+          // present, else address - never both concatenated. Verified live
+          // that combining them creates a second row for the same real venue
+          // ("Le Red Room" got one id from an event that only ever carries a
+          // venueName, and a different id here once this connector also had
+          // its address), because the two paths no longer agree on what
+          // string identifies a venue.
           const venueId = deriveDeterministicEventId(
-            `venue|${normalizeForKey(venue.name)}|${normalizeForKey(venue.address ?? '')}`
+            `venue|${normalizeForKey(venue.name || venue.address || '')}`
           );
           await pool.query(
             `INSERT INTO venues (id, name, address, location, image_url)

@@ -16,21 +16,44 @@ function jsonResponse(body: unknown, ok = true): Response {
 }
 
 describe('mapParseBotClub', () => {
-  it('maps a well-formed club into a RawIngestedVenue', () => {
+  it('maps a well-formed club into a RawIngestedVenue with absolute URLs', () => {
     const venue = mapParseBotClub(
       {
-        id: 'club-1',
+        id: '102279',
         name: 'Newspeak',
-        address: '1403 Rue Sainte-Élisabeth',
-        content_url: 'https://ra.co/clubs/club-1'
+        address: '1403 Rue Sainte-Elisabeth, Montréal, QC H2X 3C5',
+        content_url: '/clubs/102279',
+        logo_url: '/images/clubs/newspeak.jpg'
       },
       '2026-07-27T00:00:00.000Z'
     );
 
-    expect(venue.sourceId).toBe('ra_club_club-1');
+    expect(venue.sourceId).toBe('ra_club_102279');
     expect(venue.name).toBe('Newspeak');
-    expect(venue.address).toBe('1403 Rue Sainte-Élisabeth');
-    expect(venue.sourceUrl).toBe('https://ra.co/clubs/club-1');
+    expect(venue.sourceUrl).toBe('https://ra.co/clubs/102279');
+    expect(venue.imageUrl).toBe('https://ra.co/images/clubs/newspeak.jpg');
+  });
+
+  it('leaves an already-absolute logo_url untouched', () => {
+    const venue = mapParseBotClub(
+      {
+        id: '828',
+        name: 'Stereo',
+        logo_url: 'https://static.ra.co/images/clubs/ca-stereo.jpg'
+      },
+      '2026-07-27T00:00:00.000Z'
+    );
+    expect(venue.imageUrl).toBe(
+      'https://static.ra.co/images/clubs/ca-stereo.jpg'
+    );
+  });
+
+  it('has no image when the source provides none', () => {
+    const venue = mapParseBotClub(
+      { id: '1', name: 'X' },
+      '2026-07-27T00:00:00.000Z'
+    );
+    expect(venue.imageUrl).toBeUndefined();
   });
 
   it('falls back to a placeholder name when RA omits it', () => {
@@ -41,48 +64,135 @@ describe('mapParseBotClub', () => {
 });
 
 describe('mapParseBotEvent', () => {
-  it('combines date and start_time into a single ISO-like startsAt', () => {
+  it('uses start_time directly as startsAt - it is already a full datetime, not a bare time', () => {
     const event = mapParseBotEvent(
       {
-        id: 'evt-1',
-        title: 'Techno Night',
-        date: '2026-08-01',
-        start_time: '23:00',
-        venue_name: 'Newspeak',
-        content_url: 'https://ra.co/events/evt-1',
-        flyer_url: 'https://ra.co/flyers/evt-1.jpg'
+        id: '2481150',
+        title: '5:14 Sessions: NOS-talgia',
+        date: '2026-07-28T00:00:00.000',
+        start_time: '2026-07-28T22:00:00.000',
+        content_url: '/events/2481150',
+        flyer_url: '/images/flyer.png',
+        venue: {
+          id: '229112',
+          name: 'Le Red Room',
+          content_url: '/clubs/229112'
+        }
       },
       '2026-07-27T00:00:00.000Z'
     );
 
-    expect(event.startsAt).toBe('2026-08-01T23:00:00');
+    expect(event.startsAt).toBe('2026-07-28T22:00:00.000');
     expect(event.category).toBe('nightlife');
-    expect(event.venueName).toBe('Newspeak');
-    expect(event.ticketingUrl).toBe('https://ra.co/events/evt-1');
-    expect(event.imageUrl).toBe('https://ra.co/flyers/evt-1.jpg');
+    expect(event.venueName).toBe('Le Red Room');
+    expect(event.sourceUrl).toBe('https://ra.co/events/2481150');
+    expect(event.ticketingUrl).toBe('https://ra.co/events/2481150');
+    expect(event.imageUrl).toBe('https://ra.co/images/flyer.png');
+  });
+
+  it('falls back to date when start_time is absent', () => {
+    const event = mapParseBotEvent(
+      { date: '2026-08-01T00:00:00.000' },
+      '2026-07-27T00:00:00.000Z'
+    );
+    expect(event.startsAt).toBe('2026-08-01T00:00:00.000');
   });
 
   it('falls back to a placeholder title when RA omits it', () => {
     const event = mapParseBotEvent(
-      { date: '2026-08-01' },
+      { date: '2026-08-01T00:00:00.000' },
       '2026-07-27T00:00:00.000Z'
     );
     expect(event.title).toBe('Événement RA');
   });
+
+  it('has no venueName when RA reports no venue for the event', () => {
+    const event = mapParseBotEvent(
+      { date: '2026-08-01T00:00:00.000' },
+      '2026-07-27T00:00:00.000Z'
+    );
+    expect(event.venueName).toBeUndefined();
+  });
 });
 
 describe('createParseBotRaEventsConnector', () => {
-  it('stops after a single request when the page is not full', async () => {
+  it('stops after a single request when total_results fits on one page', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: 'success',
+        data: {
+          total_results: 1,
+          page: 1,
+          page_size: 20,
+          events: [{ id: 'evt-1', title: 'One' }]
+        }
+      })
+    );
+
+    const connector = createParseBotRaEventsConnector({
+      apiKey: 'test-key',
+      fetchImpl
+    });
+    const events = await connector.fetch();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [calledUrl, calledInit] = fetchImpl.mock.calls[0]!;
+    expect(String(calledUrl)).toContain(
+      '/scraper/b89b7fc2-7fcb-49f4-8b0d-8ba592c967cc/list_area_events'
+    );
+    expect(String(calledUrl)).toContain('area_id=40');
+    expect((calledInit as RequestInit).headers).toMatchObject({
+      'X-API-Key': 'test-key',
+      'API-Snapshot-Version': '8'
+    });
+    expect(events).toHaveLength(1);
+  });
+
+  it('follows pagination until total_results is reached', async () => {
+    const page1 = Array.from({ length: 2 }, (_, i) => ({
+      id: `p1-${i}`,
+      title: `P1 ${i}`
+    }));
+    const page2 = [{ id: 'p2-0', title: 'P2 0' }];
+
     const fetchImpl = vi
       .fn()
-      .mockResolvedValue(
-        jsonResponse({ data: { events: [{ id: 'evt-1', title: 'One' }] } })
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'success',
+          data: { total_results: 3, page: 1, page_size: 2, events: page1 }
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'success',
+          data: { total_results: 3, page: 2, page_size: 2, events: page2 }
+        })
       );
 
     const connector = createParseBotRaEventsConnector({
       apiKey: 'test-key',
+      fetchImpl
+    });
+    const events = await connector.fetch();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(events).toHaveLength(3);
+    expect(events.map((e) => e.title)).toEqual(['P1 0', 'P1 1', 'P2 0']);
+  });
+
+  it('treats a response with no pagination metadata as a single complete page', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: 'success',
+        data: { events: [{ id: 'x', title: 'X' }] }
+      })
+    );
+
+    const connector = createParseBotRaEventsConnector({
+      apiKey: 'test-key',
       fetchImpl,
-      pageSize: 50
+      maxPages: 3
     });
     const events = await connector.fetch();
 
@@ -90,41 +200,22 @@ describe('createParseBotRaEventsConnector', () => {
     expect(events).toHaveLength(1);
   });
 
-  it('follows pagination until a page returns fewer events than requested', async () => {
-    const fullPage = Array.from({ length: 2 }, (_, i) => ({
-      id: `full-${i}`,
-      title: `Full ${i}`
-    }));
-    const partialPage = [{ id: 'last-1', title: 'Last' }];
-
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ data: { events: fullPage } }))
-      .mockResolvedValueOnce(jsonResponse({ data: { events: partialPage } }));
-
-    const connector = createParseBotRaEventsConnector({
-      apiKey: 'test-key',
-      fetchImpl,
-      pageSize: 2
-    });
-    const events = await connector.fetch();
-
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(events).toHaveLength(3);
-    expect(events.map((e) => e.title)).toEqual(['Full 0', 'Full 1', 'Last']);
-  });
-
-  it('stops at maxPages even if every page stays full', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse({ data: { events: [{ id: 'x', title: 'X' }] } })
-      );
+  it('never exceeds maxPages even if total_results implies more', async () => {
+    const fetchImpl = vi.fn().mockImplementation(async () =>
+      jsonResponse({
+        status: 'success',
+        data: {
+          total_results: 1000,
+          page: 1,
+          page_size: 1,
+          events: [{ id: 'x', title: 'X' }]
+        }
+      })
+    );
 
     const connector = createParseBotRaEventsConnector({
       apiKey: 'test-key',
       fetchImpl,
-      pageSize: 1,
       maxPages: 3
     });
     const events = await connector.fetch();
@@ -149,13 +240,18 @@ describe('createParseBotRaEventsConnector', () => {
 });
 
 describe('createParseBotRaClubsConnector', () => {
-  it('maps every club returned by a single request', async () => {
+  it('maps every open club returned by a single request', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       jsonResponse({
+        status: 'success',
         data: {
+          area: 'montreal',
+          country: 'ca',
+          total_clubs: 3,
           clubs: [
-            { id: 'c1', name: 'Newspeak' },
-            { id: 'c2', name: 'Stereo' }
+            { id: 'c1', name: 'Newspeak', is_closed: null },
+            { id: 'c2', name: 'Stereo', is_closed: null },
+            { id: 'c3', name: 'Defunct Club', is_closed: true }
           ]
         }
       })
