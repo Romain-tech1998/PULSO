@@ -2059,6 +2059,46 @@ h6 {
   cursor: not-allowed;
 }
 
+.forum-post-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.35rem;
+}
+.forum-like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.forum-like-btn:hover {
+  color: var(--text-primary);
+}
+.forum-like-btn.active {
+  color: var(--brand-purple);
+}
+.forum-replies {
+  margin-top: 0.75rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--brand-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.forum-post.forum-reply {
+  gap: 0.5rem;
+}
+.forum-reply-composer {
+  margin-top: 0.3rem;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;

@@ -5,7 +5,7 @@ import {
   forumPostsResponseSchema
 } from '@pulso/contracts';
 import type { AuthRepository, ForumRepository } from '@pulso/database';
-import { EventNotFoundError } from '@pulso/database';
+import { EventNotFoundError, ForumPostNotFoundError } from '@pulso/database';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -30,7 +30,7 @@ export function registerForumRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { eventId, category } = categoryParamsSchema.parse(request.params);
-    const posts = await forumRepository.getPosts(eventId, category);
+    const posts = await forumRepository.getPosts(eventId, category, user.id);
     return forumPostsResponseSchema.parse({ data: posts });
   });
 
@@ -38,9 +38,9 @@ export function registerForumRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { eventId, category } = categoryParamsSchema.parse(request.params);
-    const { body } = createForumPostRequestSchema.parse(request.body);
+    const { body, parentId } = createForumPostRequestSchema.parse(request.body);
     try {
-      const post = await forumRepository.createPost(eventId, user.id, category, body);
+      const post = await forumRepository.createPost(eventId, user.id, category, body, parentId);
       return reply.status(201).send(forumPostResponseSchema.parse({ data: post }));
     } catch (error) {
       if (error instanceof EventNotFoundError) {
@@ -57,6 +57,31 @@ export function registerForumRoutes(
     if (!user) return sendUnauthenticated(reply);
     const { postId } = postParamsSchema.parse(request.params);
     await forumRepository.deletePost(postId, user.id);
+    return reply.status(204).send();
+  });
+
+  app.post('/events/:eventId/forum/posts/:postId/like', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { postId } = postParamsSchema.parse(request.params);
+    try {
+      await forumRepository.likePost(postId, user.id);
+    } catch (error) {
+      if (error instanceof ForumPostNotFoundError) {
+        return reply.status(404).send({
+          error: { code: 'FORUM_POST_NOT_FOUND', message: error.message }
+        });
+      }
+      throw error;
+    }
+    return reply.status(204).send();
+  });
+
+  app.delete('/events/:eventId/forum/posts/:postId/like', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { postId } = postParamsSchema.parse(request.params);
+    await forumRepository.unlikePost(postId, user.id);
     return reply.status(204).send();
   });
 }

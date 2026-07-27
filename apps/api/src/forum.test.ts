@@ -1,5 +1,5 @@
 import type { EventRepository } from '@pulso/database';
-import { EventNotFoundError } from '@pulso/database';
+import { EventNotFoundError, ForumPostNotFoundError } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
@@ -63,14 +63,20 @@ describe('event forum API', () => {
 
   it('creates a post as the signed-in author', async () => {
     let received:
-      | { eventId: string; authorId: string; category: string; body: string }
+      | {
+          eventId: string;
+          authorId: string;
+          category: string;
+          body: string;
+          parentId: string | undefined;
+        }
       | undefined;
     const app = buildApp(
       event,
       accountRepositories({
         forumRepository: fakeForumRepository({
-          createPost: async (id, authorId, category, body) => {
-            received = { eventId: id, authorId, category, body };
+          createPost: async (id, authorId, category, body, parentId) => {
+            received = { eventId: id, authorId, category, body, parentId };
             return fakeForumPost({ eventId: id, category, body });
           }
         })
@@ -87,9 +93,36 @@ describe('event forum API', () => {
       eventId,
       authorId: testUser.id,
       category: 'find_partners',
-      body: 'Quelqu\'un pour y aller ensemble ?'
+      body: 'Quelqu\'un pour y aller ensemble ?',
+      parentId: undefined
     });
     expect(response.json().data.body).toBe('Quelqu\'un pour y aller ensemble ?');
+    await app.close();
+  });
+
+  it('creates a reply carrying its parentId', async () => {
+    const parentId = '00000000-0000-4000-8000-000000000013';
+    let receivedParentId: string | undefined;
+    const app = buildApp(
+      event,
+      accountRepositories({
+        forumRepository: fakeForumRepository({
+          createPost: async (id, authorId, category, body, parent) => {
+            receivedParentId = parent;
+            return fakeForumPost({ eventId: id, category, body, parentId: parent });
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/events/${eventId}/forum/general`,
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { body: 'Oui, je serai là !', parentId }
+    });
+    expect(response.statusCode).toBe(201);
+    expect(receivedParentId).toBe(parentId);
+    expect(response.json().data.parentId).toBe(parentId);
     await app.close();
   });
 
@@ -155,6 +188,77 @@ describe('event forum API', () => {
     expect(received).toEqual({
       postId: '00000000-0000-4000-8000-000000000013',
       authorId: testUser.id
+    });
+    await app.close();
+  });
+
+  it('likes a post', async () => {
+    let received: { postId: string; userId: string } | undefined;
+    const app = buildApp(
+      event,
+      accountRepositories({
+        forumRepository: fakeForumRepository({
+          likePost: async (postId, userId) => {
+            received = { postId, userId };
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/events/${eventId}/forum/posts/00000000-0000-4000-8000-000000000013/like`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(received).toEqual({
+      postId: '00000000-0000-4000-8000-000000000013',
+      userId: testUser.id
+    });
+    await app.close();
+  });
+
+  it('returns 404 when liking a post that does not exist', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        forumRepository: fakeForumRepository({
+          likePost: async () => {
+            throw new ForumPostNotFoundError();
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/events/${eventId}/forum/posts/00000000-0000-4000-8000-000000000013/like`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe('FORUM_POST_NOT_FOUND');
+    await app.close();
+  });
+
+  it('unlikes a post', async () => {
+    let received: { postId: string; userId: string } | undefined;
+    const app = buildApp(
+      event,
+      accountRepositories({
+        forumRepository: fakeForumRepository({
+          unlikePost: async (postId, userId) => {
+            received = { postId, userId };
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/events/${eventId}/forum/posts/00000000-0000-4000-8000-000000000013/like`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(received).toEqual({
+      postId: '00000000-0000-4000-8000-000000000013',
+      userId: testUser.id
     });
     await app.close();
   });

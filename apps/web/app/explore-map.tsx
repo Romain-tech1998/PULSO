@@ -5458,6 +5458,8 @@ function EventForum({
   const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
   const [draft, setDraft] = useState('');
   const [posting, setPosting] = useState(false);
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
 
   const refresh = useCallback(() => {
     if (!authToken) return;
@@ -5477,17 +5479,23 @@ function EventForum({
     refresh();
   }, [refresh]);
 
-  const submitPost = () => {
-    if (!authToken || !draft.trim() || posting) return;
+  const submitPost = (parentId?: string) => {
+    const body = (parentId ? replyDrafts[parentId] : draft)?.trim();
+    if (!authToken || !body || posting) return;
     setPosting(true);
     fetch(`${API_BASE_URL}/events/${eventId}/forum/${category}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ body: draft.trim() })
+      body: JSON.stringify({ body, ...(parentId ? { parentId } : {}) })
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then(() => {
-        setDraft('');
+        if (parentId) {
+          setReplyDrafts((prev) => ({ ...prev, [parentId]: '' }));
+          setExpandedReplies((prev) => new Set(prev).add(parentId));
+        } else {
+          setDraft('');
+        }
         refresh();
       })
       .catch(() => {})
@@ -5501,6 +5509,39 @@ function EventForum({
       headers: { authorization: `Bearer ${authToken}` }
     }).then(() => refresh());
   };
+
+  // Optimistic toggle, resynced from the server on failure - a like is
+  // low-stakes enough not to need a pending/error state of its own.
+  const toggleLike = (post: ForumPost) => {
+    if (!authToken) return;
+    setPosts((prev) =>
+      prev.map((candidate) =>
+        candidate.id === post.id
+          ? {
+              ...candidate,
+              likedByMe: !candidate.likedByMe,
+              likeCount: candidate.likeCount + (candidate.likedByMe ? -1 : 1)
+            }
+          : candidate
+      )
+    );
+    fetch(`${API_BASE_URL}/events/${eventId}/forum/posts/${post.id}/like`, {
+      method: post.likedByMe ? 'DELETE' : 'POST',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).catch(() => refresh());
+  };
+
+  const toggleExpanded = (postId: string) => {
+    setExpandedReplies((prev) => {
+      const next = new Set(prev);
+      if (next.has(postId)) next.delete(postId);
+      else next.add(postId);
+      return next;
+    });
+  };
+
+  const topLevelPosts = posts.filter((post) => !post.parentId);
+  const repliesFor = (postId: string) => posts.filter((post) => post.parentId === postId);
 
   return (
     <div className="event-forum">
@@ -5529,43 +5570,28 @@ function EventForum({
         {state === 'error' && (
           <p className="list-view-empty">Impossible de charger le forum pour le moment.</p>
         )}
-        {state === 'success' && posts.length === 0 && (
+        {state === 'success' && topLevelPosts.length === 0 && (
           <p className="list-view-empty">Aucun message pour l'instant. Soyez le premier.</p>
         )}
         {state === 'success' &&
-          posts.map((post) => (
-            <div className="forum-post" key={post.id}>
-              <span className="friends-row-avatar">
-                {post.author.avatarUrl ? (
-                  <img src={post.author.avatarUrl} alt="" />
-                ) : (
-                  post.author.displayName.slice(0, 1).toUpperCase()
-                )}
-              </span>
-              <div className="forum-post-body">
-                <div className="forum-post-meta">
-                  <strong>{post.author.displayName}</strong>
-                  {post.author.id === userId ? (
-                    <button
-                      type="button"
-                      className="text-btn"
-                      onClick={() => removePost(post.id)}
-                    >
-                      Supprimer
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="text-btn"
-                      onClick={() => reportContent(authToken, 'forum_post', post.id)}
-                    >
-                      Signaler
-                    </button>
-                  )}
-                </div>
-                <p>{post.body}</p>
-              </div>
-            </div>
+          topLevelPosts.map((post) => (
+            <ForumPostRow
+              key={post.id}
+              post={post}
+              userId={userId}
+              authToken={authToken}
+              onLike={toggleLike}
+              onDelete={removePost}
+              replies={repliesFor(post.id)}
+              expanded={expandedReplies.has(post.id)}
+              onToggleExpanded={() => toggleExpanded(post.id)}
+              replyDraft={replyDrafts[post.id] ?? ''}
+              onReplyDraftChange={(value) =>
+                setReplyDrafts((prev) => ({ ...prev, [post.id]: value }))
+              }
+              onSubmitReply={() => submitPost(post.id)}
+              posting={posting}
+            />
           ))}
       </div>
 
@@ -5587,6 +5613,156 @@ function EventForum({
           Publier
         </button>
       </form>
+    </div>
+  );
+}
+
+function ForumPostAuthorRow({
+  post,
+  userId,
+  authToken,
+  onDelete
+}: {
+  post: ForumPost;
+  userId: string;
+  authToken: string | undefined;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="forum-post-meta">
+      <strong>{post.author.displayName}</strong>
+      {post.author.id === userId ? (
+        <button type="button" className="text-btn" onClick={onDelete}>
+          Supprimer
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="text-btn"
+          onClick={() => reportContent(authToken, 'forum_post', post.id)}
+        >
+          Signaler
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ForumPostRow({
+  post,
+  userId,
+  authToken,
+  onLike,
+  onDelete,
+  replies,
+  expanded,
+  onToggleExpanded,
+  replyDraft,
+  onReplyDraftChange,
+  onSubmitReply,
+  posting
+}: {
+  post: ForumPost;
+  userId: string;
+  authToken: string | undefined;
+  onLike: (post: ForumPost) => void;
+  onDelete: (postId: string) => void;
+  replies: ForumPost[];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  replyDraft: string;
+  onReplyDraftChange: (value: string) => void;
+  onSubmitReply: () => void;
+  posting: boolean;
+}) {
+  return (
+    <div className="forum-post">
+      <span className="friends-row-avatar">
+        {post.author.avatarUrl ? (
+          <img src={post.author.avatarUrl} alt="" />
+        ) : (
+          post.author.displayName.slice(0, 1).toUpperCase()
+        )}
+      </span>
+      <div className="forum-post-body">
+        <ForumPostAuthorRow
+          post={post}
+          userId={userId}
+          authToken={authToken}
+          onDelete={() => onDelete(post.id)}
+        />
+        <p>{post.body}</p>
+        <div className="forum-post-actions">
+          <button
+            type="button"
+            className={`forum-like-btn ${post.likedByMe ? 'active' : ''}`}
+            onClick={() => onLike(post)}
+          >
+            <HeartIcon filled={post.likedByMe} />
+            {post.likeCount > 0 && post.likeCount}
+          </button>
+          <button type="button" className="text-btn" onClick={onToggleExpanded}>
+            {post.replyCount === 0
+              ? 'Répondre'
+              : `${post.replyCount} réponse${post.replyCount !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+
+        {expanded && (
+          <div className="forum-replies">
+            {replies.map((reply) => (
+              <div className="forum-post forum-reply" key={reply.id}>
+                <span className="friends-row-avatar">
+                  {reply.author.avatarUrl ? (
+                    <img src={reply.author.avatarUrl} alt="" />
+                  ) : (
+                    reply.author.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <div className="forum-post-body">
+                  <ForumPostAuthorRow
+                    post={reply}
+                    userId={userId}
+                    authToken={authToken}
+                    onDelete={() => onDelete(reply.id)}
+                  />
+                  <p>{reply.body}</p>
+                  <button
+                    type="button"
+                    className={`forum-like-btn ${reply.likedByMe ? 'active' : ''}`}
+                    onClick={() => onLike(reply)}
+                  >
+                    <HeartIcon filled={reply.likedByMe} />
+                    {reply.likeCount > 0 && reply.likeCount}
+                  </button>
+                </div>
+              </div>
+            ))}
+            <form
+              className="forum-composer forum-reply-composer"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onSubmitReply();
+              }}
+            >
+              <textarea
+                value={replyDraft}
+                onChange={(event) => onReplyDraftChange(event.target.value)}
+                placeholder="Répondre…"
+                maxLength={2000}
+                rows={1}
+              />
+              <button
+                type="submit"
+                className="btn-secondary"
+                disabled={posting || !replyDraft.trim()}
+              >
+                Répondre
+              </button>
+            </form>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

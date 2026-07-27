@@ -32,6 +32,7 @@ export {
 } from './attendance-repository.js';
 export {
   PostgresForumRepository,
+  ForumPostNotFoundError,
   type ForumPost,
   type ForumRepository
 } from './forum-repository.js';

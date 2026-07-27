@@ -103,15 +103,21 @@ export function fakeAttendanceRepository(
 export function fakeForumRepository(overrides: Partial<ForumRepository> = {}): ForumRepository {
   return {
     getPosts: async () => [],
-    createPost: async (eventId, authorId, category, body) => ({
+    createPost: async (eventId, authorId, category, body, parentId) => ({
       id: '00000000-0000-4000-8000-000000000012',
       eventId,
       author: { id: authorId, displayName: testUser.displayName },
       category,
       body,
-      createdAt: '2026-01-01T00:00:00.000Z'
+      createdAt: '2026-01-01T00:00:00.000Z',
+      parentId,
+      likeCount: 0,
+      likedByMe: false,
+      replyCount: 0
     }),
     deletePost: async () => undefined,
+    likePost: async () => undefined,
+    unlikePost: async () => undefined,
     ...overrides
   };
 }
@@ -124,6 +130,10 @@ export function fakeForumPost(overrides: Partial<ForumPost> = {}): ForumPost {
     category: 'general',
     body: 'Quelqu\'un vient à cet event ?',
     createdAt: '2026-01-01T00:00:00.000Z',
+    parentId: undefined,
+    likeCount: 0,
+    likedByMe: false,
+    replyCount: 0,
     ...overrides
   };
 }
