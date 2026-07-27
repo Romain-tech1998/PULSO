@@ -183,6 +183,19 @@ export const venueListResponseSchema = z.object({
   data: z.array(publicVenueSchema)
 });
 
+// The account itself - deliberately minimal for Phase 1 (compte + favoris +
+// tendances). No stored preferences beyond what's derived on demand from
+// favorites (see /me/trends) - nothing here is a profile field the user
+// didn't explicitly provide via their Google account.
+export const userSchema = z.object({
+  id: z.uuid(),
+  email: z.email(),
+  displayName: z.string().min(1),
+  avatarUrl: z.url().optional()
+});
+
+export const meResponseSchema = z.object({ data: userSchema });
+
 export const publicEventSchema = z.object({
   id: z.uuid(),
   title: z.string().min(1),
@@ -264,6 +277,8 @@ export type EventIdsQuery = z.infer<typeof eventIdsQuerySchema>;
 export type VenuesQuery = z.infer<typeof venuesQuerySchema>;
 export type PublicVenue = z.infer<typeof publicVenueSchema>;
 export type VenueListResponse = z.infer<typeof venueListResponseSchema>;
+export type User = z.infer<typeof userSchema>;
+export type MeResponse = z.infer<typeof meResponseSchema>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

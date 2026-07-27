@@ -7,13 +7,15 @@ import {
   eventDetailsResponseSchema,
   eventListResponseSchema,
   intelligentSearchResponseSchema,
+  meResponseSchema,
   PRICE_FILTER_OPTIONS,
   VENUE_CATEGORY_FILTER_OPTIONS,
   venueListResponseSchema,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
   type PublicEvent,
-  type PublicVenue
+  type PublicVenue,
+  type User
 } from '@pulso/contracts';
 import {
   DEFAULT_DISCOVERY_FILTERS,
@@ -267,6 +269,48 @@ function useFavoriteVenues() {
   return { favoriteVenues, toggleFavoriteVenue };
 }
 
+const AUTH_TOKEN_KEY = 'pulso-auth-token';
+
+// Compte facultatif (DEC-0007/MVP-0001) : rien ici ne bloque le reste de
+// l'app quand `user` est undefined - c'est l'état par défaut et le seul
+// possible tant que Google OAuth n'est pas configuré côté serveur.
+function useAuth() {
+  const [user, setUser] = useState<User>();
+  const [authToken, setAuthToken] = useState<string>();
+
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!token) return;
+    setAuthToken(token);
+    fetch(`${API_BASE_URL}/me`, { headers: { authorization: `Bearer ${token}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setUser(meResponseSchema.parse(json).data))
+      .catch(() => {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        setAuthToken(undefined);
+      });
+  }, []);
+
+  const login = () => {
+    window.location.href = `${API_BASE_URL}/auth/google`;
+  };
+
+  const logout = () => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (token) {
+      void fetch(`${API_BASE_URL}/auth/logout`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` }
+      });
+    }
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    setAuthToken(undefined);
+    setUser(undefined);
+  };
+
+  return { user, authToken, login, logout };
+}
+
 /**
  * Keeps a conditionally-rendered panel mounted for `durationMs` after it's
  * asked to close, so a CSS transition can play in reverse instead of the
@@ -350,6 +394,7 @@ export function ExploreMap({
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const { favoriteVenues, toggleFavoriteVenue } = useFavoriteVenues();
   const [showFavoriteVenuesOnly, setShowFavoriteVenuesOnly] = useState(false);
+  const { user, login, logout } = useAuth();
   // Set when the user follows "Voir tous les événements" from the nearby
   // carousel, so List shows that same distance-sorted set instead of the
   // map's viewport-bound events - the carousel is deliberately about
@@ -1730,6 +1775,7 @@ export function ExploreMap({
         <div className="nav-actions">
           <CitySelector />
           <LanguageSelector locale={locale} onChange={selectLocale} />
+          <AccountMenu user={user} onLogin={login} onLogout={logout} />
         </div>
       </header>
 
@@ -3581,6 +3627,76 @@ function CitySelector() {
               <span className="city-soon">Bientôt</span>
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccountMenu({
+  user,
+  onLogin,
+  onLogout
+}: {
+  user: User | undefined;
+  onLogin: () => void;
+  onLogout: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  if (!user) {
+    // Le compte reste facultatif (DEC-0007/MVP-0001) - ce bouton est la
+    // seule chose qui change tant qu'on n'est pas connecté.
+    return (
+      <button type="button" className="account-login-btn" onClick={onLogin}>
+        Se connecter
+      </button>
+    );
+  }
+
+  return (
+    <div className="account-menu" ref={wrapperRef}>
+      <button
+        type="button"
+        className="account-menu-trigger"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
+        aria-label={user.displayName}
+      >
+        <span className="account-avatar">
+          {user.avatarUrl ? (
+            <img src={user.avatarUrl} alt="" />
+          ) : (
+            user.displayName.slice(0, 1).toUpperCase()
+          )}
+          <span className="account-online-dot" aria-hidden="true" />
+        </span>
+      </button>
+      {open && (
+        <div className="account-menu-dropdown">
+          <p className="account-menu-name">{user.displayName}</p>
+          <button
+            type="button"
+            className="account-menu-logout"
+            onClick={() => {
+              setOpen(false);
+              onLogout();
+            }}
+          >
+            Se déconnecter
+          </button>
         </div>
       )}
     </div>

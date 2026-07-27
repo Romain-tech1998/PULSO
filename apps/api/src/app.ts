@@ -10,7 +10,7 @@ import {
   venuesQuerySchema
 } from '@pulso/contracts';
 import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
-import type { EventRepository } from '@pulso/database';
+import type { AuthRepository, EventRepository } from '@pulso/database';
 import {
   createFilteredDiscoveryWindow,
   type DiscoveryFilters
@@ -22,13 +22,28 @@ import {
 import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 
+import { registerAuthRoutes, type GoogleAuthConfig } from './auth.js';
+
 const eventParamsSchema = z.object({ id: z.uuid() });
 
 export function buildApp(
   repository: EventRepository,
-  options: { logger?: boolean; now?: () => Date } = {}
+  options: {
+    logger?: boolean;
+    now?: () => Date;
+    // Both absent (the common case in dev/test without Google credentials
+    // configured) simply means the account layer is unavailable - every
+    // other route works identically either way, per DEC-0007/MVP-0001's
+    // "account stays optional" principle.
+    authRepository?: AuthRepository;
+    google?: GoogleAuthConfig;
+  } = {}
 ) {
   const app = Fastify({ logger: options.logger ?? false });
+
+  if (options.authRepository && options.google) {
+    registerAuthRoutes(app, options.authRepository, options.google);
+  }
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
@@ -53,11 +68,16 @@ export function buildApp(
   app.addHook('onSend', async (_request, reply, payload) => {
     reply.header('access-control-allow-origin', '*');
     reply.header('access-control-allow-methods', 'GET, POST, OPTIONS');
-    reply.header('access-control-allow-headers', 'content-type');
+    reply.header('access-control-allow-headers', 'content-type, authorization');
     return payload;
   });
 
   app.options('/search', async (_request, reply) => reply.status(204).send());
+  // A browser preflights any cross-origin request carrying an Authorization
+  // header, regardless of method - a wildcard catch-all covers every
+  // account-scoped route (current and future) instead of one OPTIONS
+  // handler per route.
+  app.options('/*', async (_request, reply) => reply.status(204).send());
 
   app.get('/events', async (request) => {
     const query = mapBoundsQuerySchema.parse(request.query);

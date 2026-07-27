@@ -1,9 +1,24 @@
-import { createPool, PostgresEventRepository } from '@pulso/database';
+import { createPool, PostgresAuthRepository, PostgresEventRepository } from '@pulso/database';
 
 import { buildApp } from './app.js';
 
 const pool = createPool();
-const app = buildApp(new PostgresEventRepository(pool), { logger: true });
+
+const apiBaseUrl = `http://${process.env.API_HOST ?? '127.0.0.1'}:${process.env.API_PORT ?? 3001}`;
+const google =
+  process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+    ? {
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackUri: `${apiBaseUrl}/auth/google/callback`,
+        appCallbackUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/auth/callback`
+      }
+    : undefined;
+
+const app = buildApp(new PostgresEventRepository(pool), {
+  logger: true,
+  ...(google ? { authRepository: new PostgresAuthRepository(pool), google } : {})
+});
 
 const host = process.env.API_HOST ?? '127.0.0.1';
 const port = Number(process.env.API_PORT ?? 3001);

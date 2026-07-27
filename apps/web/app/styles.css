@@ -301,6 +301,96 @@ h6 {
   color: var(--text-secondary);
 }
 
+.account-login-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--brand-border);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  transition: border-color 0.2s, color 0.2s;
+}
+.account-login-btn:hover {
+  border-color: var(--brand-purple);
+  color: var(--text-primary);
+}
+
+.account-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.account-menu-trigger {
+  display: flex;
+  align-items: center;
+}
+.account-avatar {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--brand-purple);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow: hidden;
+}
+.account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.account-online-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 2px solid var(--surface-base);
+}
+.account-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background: var(--surface-raised);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--brand-border);
+  border-radius: 1rem;
+  padding: 0.75rem;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+  z-index: 20;
+}
+.account-menu-name {
+  margin: 0;
+  padding: 0 0.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-menu-logout {
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.6rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  text-align: left;
+}
+.account-menu-logout:hover {
+  background: var(--surface-base);
+  color: var(--text-primary);
+}
+
 .nav-actions {
   display: flex;
   align-items: center;
