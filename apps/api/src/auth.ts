@@ -1,7 +1,13 @@
-import { meResponseSchema } from '@pulso/contracts';
-import type { AuthRepository } from '@pulso/database';
+import {
+  favoriteEventsRequestSchema,
+  favoriteEventsResponseSchema,
+  favoriteVenuesRequestSchema,
+  favoriteVenuesResponseSchema,
+  meResponseSchema
+} from '@pulso/contracts';
+import type { AuthRepository, FavoritesRepository } from '@pulso/database';
 import fastifyOauth2 from '@fastify/oauth2';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export interface GoogleAuthConfig {
   clientId: string;
@@ -28,6 +34,12 @@ async function resolveBearerUser(request: FastifyRequest, authRepository: AuthRe
   return authRepository.findUserBySessionToken(token);
 }
 
+function sendUnauthenticated(reply: FastifyReply) {
+  return reply.status(401).send({
+    error: { code: 'UNAUTHENTICATED', message: 'Sign in to access this resource.' }
+  });
+}
+
 /**
  * Registers Google OAuth + the account-scoped routes it enables. Only
  * called when Google credentials are actually configured (see app.ts) -
@@ -38,6 +50,7 @@ async function resolveBearerUser(request: FastifyRequest, authRepository: AuthRe
 export function registerAuthRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
+  favoritesRepository: FavoritesRepository,
   google: GoogleAuthConfig
 ) {
   app.register(fastifyOauth2, {
@@ -83,12 +96,38 @@ export function registerAuthRoutes(
 
   app.get('/me', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
-    if (!user) {
-      return reply.status(401).send({
-        error: { code: 'UNAUTHENTICATED', message: 'Sign in to access this resource.' }
-      });
-    }
+    if (!user) return sendUnauthenticated(reply);
     return meResponseSchema.parse({ data: user });
+  });
+
+  app.get('/me/favorites', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const eventIds = await favoritesRepository.getFavoriteEventIds(user.id);
+    return favoriteEventsResponseSchema.parse({ data: { eventIds } });
+  });
+
+  app.put('/me/favorites', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const body = favoriteEventsRequestSchema.parse(request.body);
+    const eventIds = await favoritesRepository.setFavoriteEventIds(user.id, body.eventIds);
+    return favoriteEventsResponseSchema.parse({ data: { eventIds } });
+  });
+
+  app.get('/me/favorite-venues', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const venueIds = await favoritesRepository.getFavoriteVenueIds(user.id);
+    return favoriteVenuesResponseSchema.parse({ data: { venueIds } });
+  });
+
+  app.put('/me/favorite-venues', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const body = favoriteVenuesRequestSchema.parse(request.body);
+    const venueIds = await favoritesRepository.setFavoriteVenueIds(user.id, body.venueIds);
+    return favoriteVenuesResponseSchema.parse({ data: { venueIds } });
   });
 
   app.post('/auth/logout', async (request, reply) => {

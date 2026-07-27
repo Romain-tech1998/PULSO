@@ -6,6 +6,8 @@ import {
   DATE_FILTER_OPTIONS,
   eventDetailsResponseSchema,
   eventListResponseSchema,
+  favoriteEventsResponseSchema,
+  favoriteVenuesResponseSchema,
   intelligentSearchResponseSchema,
   meResponseSchema,
   PRICE_FILTER_OPTIONS,
@@ -230,18 +232,63 @@ function useUserLocation() {
   return { status, location };
 }
 
-function useFavorites() {
+// Favorites always live in localStorage first (works signed out, works
+// before the account layer even loads). When `authToken` is set, this also:
+// 1) once per token, fetches the account's stored favorites and unions them
+//    with whatever's local (DEC-0007: a favorite that only exists on one
+//    side must never be silently dropped), then PUTs the merged set back;
+// 2) from then on, mirrors every toggle to the API with a plain replace -
+//    the server has no merge logic of its own, so un-favoriting works
+//    exactly like it does signed out.
+function useFavorites(authToken: string | undefined) {
   const [favorites, setFavorites] = useState<string[]>([]);
+  const syncedTokenRef = useRef<string | undefined>(undefined);
+
   useEffect(() => {
     const stored = localStorage.getItem('pulso-favorites');
     if (stored) {
       try { setFavorites(JSON.parse(stored)); } catch (err) { console.warn('Failed to parse favorites', err); }
     }
   }, []);
+
+  useEffect(() => {
+    if (!authToken || syncedTokenRef.current === authToken) return;
+    syncedTokenRef.current = authToken;
+    let localIds: string[] = [];
+    try {
+      localIds = JSON.parse(localStorage.getItem('pulso-favorites') ?? '[]');
+    } catch {
+      localIds = [];
+    }
+    fetch(`${API_BASE_URL}/me/favorites`, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => favoriteEventsResponseSchema.parse(json).data.eventIds)
+      .then((serverIds) => {
+        const merged = [...new Set([...localIds, ...serverIds])];
+        localStorage.setItem('pulso-favorites', JSON.stringify(merged));
+        setFavorites(merged);
+        if (merged.length !== serverIds.length) {
+          void fetch(`${API_BASE_URL}/me/favorites`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+            body: JSON.stringify({ eventIds: merged })
+          });
+        }
+      })
+      .catch(() => {});
+  }, [authToken]);
+
   const toggleFavorite = (id: string) => {
     setFavorites((prev) => {
       const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
       localStorage.setItem('pulso-favorites', JSON.stringify(next));
+      if (authToken) {
+        void fetch(`${API_BASE_URL}/me/favorites`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+          body: JSON.stringify({ eventIds: next })
+        });
+      }
       return next;
     });
   };
@@ -250,19 +297,57 @@ function useFavorites() {
 
 // A separate favorites list for venues, not events - own localStorage key,
 // own storage/filtering logic, per explicit user request rather than
-// reusing the event favorites list for a different kind of entity.
-function useFavoriteVenues() {
+// reusing the event favorites list for a different kind of entity. Same
+// account-sync behavior as useFavorites above.
+function useFavoriteVenues(authToken: string | undefined) {
   const [favoriteVenues, setFavoriteVenues] = useState<string[]>([]);
+  const syncedTokenRef = useRef<string | undefined>(undefined);
+
   useEffect(() => {
     const stored = localStorage.getItem('pulso-favorite-venues');
     if (stored) {
       try { setFavoriteVenues(JSON.parse(stored)); } catch (err) { console.warn('Failed to parse favorite venues', err); }
     }
   }, []);
+
+  useEffect(() => {
+    if (!authToken || syncedTokenRef.current === authToken) return;
+    syncedTokenRef.current = authToken;
+    let localIds: string[] = [];
+    try {
+      localIds = JSON.parse(localStorage.getItem('pulso-favorite-venues') ?? '[]');
+    } catch {
+      localIds = [];
+    }
+    fetch(`${API_BASE_URL}/me/favorite-venues`, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => favoriteVenuesResponseSchema.parse(json).data.venueIds)
+      .then((serverIds) => {
+        const merged = [...new Set([...localIds, ...serverIds])];
+        localStorage.setItem('pulso-favorite-venues', JSON.stringify(merged));
+        setFavoriteVenues(merged);
+        if (merged.length !== serverIds.length) {
+          void fetch(`${API_BASE_URL}/me/favorite-venues`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+            body: JSON.stringify({ venueIds: merged })
+          });
+        }
+      })
+      .catch(() => {});
+  }, [authToken]);
+
   const toggleFavoriteVenue = (id: string) => {
     setFavoriteVenues((prev) => {
       const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
       localStorage.setItem('pulso-favorite-venues', JSON.stringify(next));
+      if (authToken) {
+        void fetch(`${API_BASE_URL}/me/favorite-venues`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+          body: JSON.stringify({ venueIds: next })
+        });
+      }
       return next;
     });
   };
@@ -390,11 +475,11 @@ export function ExploreMap({
   const [searchProcessing, setSearchProcessing] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [locale, setLocale] = useState(initialLocale);
-  const { favorites, toggleFavorite } = useFavorites();
+  const { user, authToken, login, logout } = useAuth();
+  const { favorites, toggleFavorite } = useFavorites(authToken);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const { favoriteVenues, toggleFavoriteVenue } = useFavoriteVenues();
+  const { favoriteVenues, toggleFavoriteVenue } = useFavoriteVenues(authToken);
   const [showFavoriteVenuesOnly, setShowFavoriteVenuesOnly] = useState(false);
-  const { user, login, logout } = useAuth();
   // Set when the user follows "Voir tous les événements" from the nearby
   // carousel, so List shows that same distance-sorted set instead of the
   // map's viewport-bound events - the carousel is deliberately about

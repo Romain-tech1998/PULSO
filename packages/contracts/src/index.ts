@@ -196,6 +196,26 @@ export const userSchema = z.object({
 
 export const meResponseSchema = z.object({ data: userSchema });
 
+// PUT replaces the stored set with exactly the given ids - a plain
+// declarative write, so toggling a favorite on/off while signed in behaves
+// as expected. DEC-0007's cross-device merge rule (never silently drop a
+// favorite that only exists locally) is the client's job at login time: it
+// fetches the account's current ids, unions them with its local ones, then
+// PUTs the union.
+export const favoriteEventsRequestSchema = z.object({
+  eventIds: z.array(z.uuid())
+});
+export const favoriteEventsResponseSchema = z.object({
+  data: z.object({ eventIds: z.array(z.uuid()) })
+});
+
+export const favoriteVenuesRequestSchema = z.object({
+  venueIds: z.array(z.uuid())
+});
+export const favoriteVenuesResponseSchema = z.object({
+  data: z.object({ venueIds: z.array(z.uuid()) })
+});
+
 export const publicEventSchema = z.object({
   id: z.uuid(),
   title: z.string().min(1),
@@ -279,6 +299,10 @@ export type PublicVenue = z.infer<typeof publicVenueSchema>;
 export type VenueListResponse = z.infer<typeof venueListResponseSchema>;
 export type User = z.infer<typeof userSchema>;
 export type MeResponse = z.infer<typeof meResponseSchema>;
+export type FavoriteEventsRequest = z.infer<typeof favoriteEventsRequestSchema>;
+export type FavoriteEventsResponse = z.infer<typeof favoriteEventsResponseSchema>;
+export type FavoriteVenuesRequest = z.infer<typeof favoriteVenuesRequestSchema>;
+export type FavoriteVenuesResponse = z.infer<typeof favoriteVenuesResponseSchema>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

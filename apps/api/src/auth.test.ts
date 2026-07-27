@@ -1,5 +1,5 @@
 import type { User } from '@pulso/contracts';
-import type { AuthRepository, GoogleProfile } from '@pulso/database';
+import type { AuthRepository, FavoritesRepository, GoogleProfile } from '@pulso/database';
 import type { EventRepository } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
@@ -38,6 +38,18 @@ function fakeAuthRepository(overrides: Partial<AuthRepository> = {}): AuthReposi
   };
 }
 
+function fakeFavoritesRepository(
+  overrides: Partial<FavoritesRepository> = {}
+): FavoritesRepository {
+  return {
+    getFavoriteEventIds: async () => [],
+    setFavoriteEventIds: async (_userId, eventIds) => eventIds,
+    getFavoriteVenueIds: async () => [],
+    setFavoriteVenueIds: async (_userId, venueIds) => venueIds,
+    ...overrides
+  };
+}
+
 describe('account authentication API', () => {
   it('does not register auth routes when Google credentials are absent', async () => {
     const app = buildApp(event);
@@ -47,7 +59,9 @@ describe('account authentication API', () => {
   });
 
   it('rejects /me without a bearer token', async () => {
-    const app = buildApp(event, { authRepository: fakeAuthRepository(), google });
+    const app = buildApp(event, { authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository(),
+      google });
     const response = await app.inject({ method: 'GET', url: '/me' });
     expect(response.statusCode).toBe(401);
     expect(response.json().error.code).toBe('UNAUTHENTICATED');
@@ -55,7 +69,9 @@ describe('account authentication API', () => {
   });
 
   it('rejects /me with an unknown or expired token', async () => {
-    const app = buildApp(event, { authRepository: fakeAuthRepository(), google });
+    const app = buildApp(event, { authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository(),
+      google });
     const response = await app.inject({
       method: 'GET',
       url: '/me',
@@ -66,7 +82,9 @@ describe('account authentication API', () => {
   });
 
   it('returns the account for a valid bearer token', async () => {
-    const app = buildApp(event, { authRepository: fakeAuthRepository(), google });
+    const app = buildApp(event, { authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository(),
+      google });
     const response = await app.inject({
       method: 'GET',
       url: '/me',
@@ -78,7 +96,9 @@ describe('account authentication API', () => {
   });
 
   it('starts the Google OAuth flow with a redirect', async () => {
-    const app = buildApp(event, { authRepository: fakeAuthRepository(), google });
+    const app = buildApp(event, { authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository(),
+      google });
     const response = await app.inject({ method: 'GET', url: '/auth/google' });
     expect(response.statusCode).toBe(302);
     expect(response.headers.location).toContain('accounts.google.com');
@@ -93,6 +113,7 @@ describe('account authentication API', () => {
           deletedToken = token;
         }
       }),
+      favoritesRepository: fakeFavoritesRepository(),
       google
     });
     const response = await app.inject({
@@ -106,10 +127,100 @@ describe('account authentication API', () => {
   });
 
   it('includes authorization in the CORS preflight for any route', async () => {
-    const app = buildApp(event, { authRepository: fakeAuthRepository(), google });
+    const app = buildApp(event, { authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository(),
+      google });
     const response = await app.inject({ method: 'OPTIONS', url: '/me' });
     expect(response.statusCode).toBe(204);
     expect(response.headers['access-control-allow-headers']).toContain('authorization');
+    await app.close();
+  });
+});
+
+describe('account favorites API', () => {
+  it('rejects favorites routes without a bearer token', async () => {
+    const app = buildApp(event, {
+      authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository(),
+      google
+    });
+    const getEvents = await app.inject({ method: 'GET', url: '/me/favorites' });
+    const putEvents = await app.inject({
+      method: 'PUT',
+      url: '/me/favorites',
+      payload: { eventIds: [] }
+    });
+    expect(getEvents.statusCode).toBe(401);
+    expect(putEvents.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns the stored favorite event ids', async () => {
+    const app = buildApp(event, {
+      authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository({
+        getFavoriteEventIds: async () => ['00000000-0000-4000-8000-000000000001']
+      }),
+      google
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/favorites',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual({
+      eventIds: ['00000000-0000-4000-8000-000000000001']
+    });
+    await app.close();
+  });
+
+  it('replaces the stored favorite event ids on PUT, so un-favoriting works', async () => {
+    let setUserId: string | undefined;
+    let setIds: string[] | undefined;
+    const app = buildApp(event, {
+      authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository({
+        setFavoriteEventIds: async (userId, eventIds) => {
+          setUserId = userId;
+          setIds = eventIds;
+          return eventIds;
+        }
+      }),
+      google
+    });
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/me/favorites',
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { eventIds: ['00000000-0000-4000-8000-000000000001'] }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(setUserId).toBe(user.id);
+    expect(setIds).toEqual(['00000000-0000-4000-8000-000000000001']);
+    expect(response.json().data.eventIds).toEqual([
+      '00000000-0000-4000-8000-000000000001'
+    ]);
+    await app.close();
+  });
+
+  it('handles favorite venues the same way as favorite events', async () => {
+    const app = buildApp(event, {
+      authRepository: fakeAuthRepository(),
+      favoritesRepository: fakeFavoritesRepository({
+        getFavoriteVenueIds: async () => ['00000000-0000-4000-8000-000000000003']
+      }),
+      google
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/favorite-venues',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual({
+      venueIds: ['00000000-0000-4000-8000-000000000003']
+    });
     await app.close();
   });
 });

@@ -10,7 +10,7 @@ import {
   venuesQuerySchema
 } from '@pulso/contracts';
 import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
-import type { AuthRepository, EventRepository } from '@pulso/database';
+import type { AuthRepository, EventRepository, FavoritesRepository } from '@pulso/database';
 import {
   createFilteredDiscoveryWindow,
   type DiscoveryFilters
@@ -36,13 +36,19 @@ export function buildApp(
     // other route works identically either way, per DEC-0007/MVP-0001's
     // "account stays optional" principle.
     authRepository?: AuthRepository;
+    favoritesRepository?: FavoritesRepository;
     google?: GoogleAuthConfig;
   } = {}
 ) {
   const app = Fastify({ logger: options.logger ?? false });
 
-  if (options.authRepository && options.google) {
-    registerAuthRoutes(app, options.authRepository, options.google);
+  if (options.authRepository && options.favoritesRepository && options.google) {
+    registerAuthRoutes(
+      app,
+      options.authRepository,
+      options.favoritesRepository,
+      options.google
+    );
   }
 
   app.setErrorHandler((error, request, reply) => {

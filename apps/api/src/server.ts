@@ -1,4 +1,9 @@
-import { createPool, PostgresAuthRepository, PostgresEventRepository } from '@pulso/database';
+import {
+  createPool,
+  PostgresAuthRepository,
+  PostgresEventRepository,
+  PostgresFavoritesRepository
+} from '@pulso/database';
 
 import { buildApp } from './app.js';
 
@@ -17,7 +22,13 @@ const google =
 
 const app = buildApp(new PostgresEventRepository(pool), {
   logger: true,
-  ...(google ? { authRepository: new PostgresAuthRepository(pool), google } : {})
+  ...(google
+    ? {
+        authRepository: new PostgresAuthRepository(pool),
+        favoritesRepository: new PostgresFavoritesRepository(pool),
+        google
+      }
+    : {})
 });
 
 const host = process.env.API_HOST ?? '127.0.0.1';
