@@ -25,6 +25,12 @@ export {
   type FriendsRepository
 } from './friends-repository.js';
 export {
+  PostgresAttendanceRepository,
+  EventNotFoundError,
+  type AttendanceRepository,
+  type AttendanceVisibility
+} from './attendance-repository.js';
+export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';

@@ -266,6 +266,24 @@ export const friendsResponseSchema = z.object({
   data: z.array(publicUserSchema)
 });
 
+// Private by default (DEC-0011): nothing about a user's plans is shared
+// until they explicitly set visibility to "friends" for that event.
+export const attendanceVisibilitySchema = z.enum(['private', 'friends']);
+
+export const setAttendanceRequestSchema = z.object({
+  visibility: attendanceVisibilitySchema
+});
+
+export const myAttendanceResponseSchema = z.object({
+  data: z.array(
+    z.object({ eventId: z.uuid(), visibility: attendanceVisibilitySchema })
+  )
+});
+
+export const friendsAttendingResponseSchema = z.object({
+  data: z.array(publicUserSchema)
+});
+
 export const publicEventSchema = z.object({
   id: z.uuid(),
   title: z.string().min(1),
@@ -361,6 +379,10 @@ export type FriendRequestEntry = z.infer<typeof friendRequestSchema>;
 export type FriendRequestsResponse = z.infer<typeof friendRequestsResponseSchema>;
 export type RespondFriendRequest = z.infer<typeof respondFriendRequestSchema>;
 export type FriendsResponse = z.infer<typeof friendsResponseSchema>;
+export type AttendanceVisibility = z.infer<typeof attendanceVisibilitySchema>;
+export type SetAttendanceRequest = z.infer<typeof setAttendanceRequestSchema>;
+export type MyAttendanceResponse = z.infer<typeof myAttendanceResponseSchema>;
+export type FriendsAttendingResponse = z.infer<typeof friendsAttendingResponseSchema>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

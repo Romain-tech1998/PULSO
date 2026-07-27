@@ -11,6 +11,7 @@ import {
 } from '@pulso/contracts';
 import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
 import type {
+  AttendanceRepository,
   AuthRepository,
   EventRepository,
   FavoritesRepository,
@@ -46,6 +47,7 @@ export function buildApp(
     favoritesRepository?: FavoritesRepository;
     trendsRepository?: TrendsRepository;
     friendsRepository?: FriendsRepository;
+    attendanceRepository?: AttendanceRepository;
     google?: GoogleAuthConfig;
   } = {}
 ) {
@@ -56,6 +58,7 @@ export function buildApp(
     options.favoritesRepository &&
     options.trendsRepository &&
     options.friendsRepository &&
+    options.attendanceRepository &&
     options.google
   ) {
     registerAuthRoutes(
@@ -65,7 +68,12 @@ export function buildApp(
       options.trendsRepository,
       options.google
     );
-    registerSocialRoutes(app, options.authRepository, options.friendsRepository);
+    registerSocialRoutes(
+      app,
+      options.authRepository,
+      options.friendsRepository,
+      options.attendanceRepository
+    );
   }
 
   app.setErrorHandler((error, request, reply) => {

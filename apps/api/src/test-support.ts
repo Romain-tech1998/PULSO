@@ -1,5 +1,6 @@
 import type { PublicUser, User } from '@pulso/contracts';
 import type {
+  AttendanceRepository,
   AuthRepository,
   FavoritesRepository,
   FriendRequest,
@@ -82,7 +83,19 @@ export function fakeFriendRequest(overrides: Partial<FriendRequest> = {}): Frien
   };
 }
 
-// Bundles all four account-layer repositories (+ Google config) so every
+export function fakeAttendanceRepository(
+  overrides: Partial<AttendanceRepository> = {}
+): AttendanceRepository {
+  return {
+    setAttendance: async () => undefined,
+    clearAttendance: async () => undefined,
+    getMyAttendance: async () => [],
+    getFriendsAttending: async () => [],
+    ...overrides
+  };
+}
+
+// Bundles all account-layer repositories (+ Google config) so every
 // buildApp(event, accountRepositories()) call in tests stays a one-liner
 // even as the account layer grows more repositories - override only the
 // one(s) a given test actually cares about.
@@ -92,6 +105,7 @@ export function accountRepositories(
     favoritesRepository?: FavoritesRepository;
     trendsRepository?: TrendsRepository;
     friendsRepository?: FriendsRepository;
+    attendanceRepository?: AttendanceRepository;
   } = {}
 ) {
   return {
@@ -99,6 +113,7 @@ export function accountRepositories(
     favoritesRepository: overrides.favoritesRepository ?? fakeFavoritesRepository(),
     trendsRepository: overrides.trendsRepository ?? fakeTrendsRepository(),
     friendsRepository: overrides.friendsRepository ?? fakeFriendsRepository(),
+    attendanceRepository: overrides.attendanceRepository ?? fakeAttendanceRepository(),
     google: testGoogleConfig
   };
 }

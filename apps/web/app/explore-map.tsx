@@ -10,13 +10,16 @@ import {
   favoriteVenuesResponseSchema,
   friendCodeResponseSchema,
   friendRequestsResponseSchema,
+  friendsAttendingResponseSchema,
   friendsResponseSchema,
   intelligentSearchResponseSchema,
   meResponseSchema,
+  myAttendanceResponseSchema,
   PRICE_FILTER_OPTIONS,
   trendsResponseSchema,
   VENUE_CATEGORY_FILTER_OPTIONS,
   venueListResponseSchema,
+  type AttendanceVisibility,
   type FriendRequestEntry,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
@@ -361,6 +364,55 @@ function useFavoriteVenues(authToken: string | undefined) {
   return { favoriteVenues, toggleFavoriteVenue };
 }
 
+// Unlike favorites, attendance has no local-storage/anonymous mode - it's
+// account-only (DEC-0011: marking "j'y vais" is meaningless without an
+// account to attach visibility to), so this only ever fetches once signed
+// in and is a no-op with `authToken` undefined.
+function useAttendance(authToken: string | undefined) {
+  const [attendance, setAttendanceState] = useState<Record<string, AttendanceVisibility>>({});
+
+  useEffect(() => {
+    if (!authToken) {
+      setAttendanceState({});
+      return;
+    }
+    fetch(`${API_BASE_URL}/me/attendance`, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const entries = myAttendanceResponseSchema.parse(json).data;
+        setAttendanceState(
+          Object.fromEntries(entries.map((entry) => [entry.eventId, entry.visibility]))
+        );
+      })
+      .catch(() => {});
+  }, [authToken]);
+
+  const setAttendance = (eventId: string, visibility: AttendanceVisibility) => {
+    if (!authToken) return;
+    setAttendanceState((prev) => ({ ...prev, [eventId]: visibility }));
+    void fetch(`${API_BASE_URL}/me/attendance/${eventId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ visibility })
+    });
+  };
+
+  const clearAttendance = (eventId: string) => {
+    if (!authToken) return;
+    setAttendanceState((prev) => {
+      const next = { ...prev };
+      delete next[eventId];
+      return next;
+    });
+    void fetch(`${API_BASE_URL}/me/attendance/${eventId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    });
+  };
+
+  return { attendance, setAttendance, clearAttendance };
+}
+
 const AUTH_TOKEN_KEY = 'pulso-auth-token';
 
 // Compte facultatif (DEC-0007/MVP-0001) : rien ici ne bloque le reste de
@@ -487,6 +539,7 @@ export function ExploreMap({
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const { favoriteVenues, toggleFavoriteVenue } = useFavoriteVenues(authToken);
   const [showFavoriteVenuesOnly, setShowFavoriteVenuesOnly] = useState(false);
+  const { attendance, setAttendance, clearAttendance } = useAttendance(authToken);
   // Set when the user follows "Voir tous les événements" from the nearby
   // carousel, so List shows that same distance-sorted set instead of the
   // map's viewport-bound events - the carousel is deliberately about
@@ -2536,6 +2589,11 @@ export function ExploreMap({
                    isFavorite={favorites.includes(shownEvent.id)}
                    onToggleFavorite={() => toggleFavorite(shownEvent.id)}
                    locale={locale}
+                   user={user}
+                   authToken={authToken}
+                   attendanceVisibility={attendance[shownEvent.id]}
+                   onSetAttendance={(visibility) => setAttendance(shownEvent.id, visibility)}
+                   onClearAttendance={() => clearAttendance(shownEvent.id)}
                  />
                );
              })()}
@@ -4875,7 +4933,12 @@ function EventDetails({
   onBack,
   isFavorite,
   onToggleFavorite,
-  locale
+  locale,
+  user,
+  authToken,
+  attendanceVisibility,
+  onSetAttendance,
+  onClearAttendance
 }: {
   event: PublicEvent;
   headingRef: RefObject<HTMLHeadingElement | null>;
@@ -4883,6 +4946,11 @@ function EventDetails({
   isFavorite: boolean;
   onToggleFavorite: () => void;
   locale: SupportedLocale;
+  user: User | undefined;
+  authToken: string | undefined;
+  attendanceVisibility: AttendanceVisibility | undefined;
+  onSetAttendance: (visibility: AttendanceVisibility) => void;
+  onClearAttendance: () => void;
 }) {
   const { presentation } = eventDetailsFields(event, locale);
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
@@ -4912,6 +4980,20 @@ function EventDetails({
       alert(translate(locale, 'details.linkCopied'));
     }
   };
+
+  const [friendsAttending, setFriendsAttending] = useState<PublicUser[]>([]);
+  useEffect(() => {
+    if (!authToken) {
+      setFriendsAttending([]);
+      return;
+    }
+    fetch(`${API_BASE_URL}/events/${event.id}/friends-attending`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setFriendsAttending(friendsAttendingResponseSchema.parse(json).data))
+      .catch(() => setFriendsAttending([]));
+  }, [authToken, event.id]);
 
   return (
     <div
@@ -5020,6 +5102,55 @@ function EventDetails({
           {isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
         </button>
       </div>
+
+      {user && (
+        <div className="details-section">
+          <h3>Participation</h3>
+          <div className="attendance-row">
+            <button
+              type="button"
+              className={`secondary-action-btn ${attendanceVisibility ? 'active' : ''}`}
+              onClick={() =>
+                attendanceVisibility ? onClearAttendance() : onSetAttendance('private')
+              }
+            >
+              {attendanceVisibility ? 'Vous y allez' : "J'y vais"}
+            </button>
+            {attendanceVisibility && (
+              <select
+                className="attendance-visibility-select"
+                value={attendanceVisibility}
+                onChange={(changeEvent) =>
+                  onSetAttendance(changeEvent.target.value as AttendanceVisibility)
+                }
+                aria-label="Visibilité de votre participation"
+              >
+                <option value="private">Visible par vous seul</option>
+                <option value="friends">Visible par vos amis</option>
+              </select>
+            )}
+          </div>
+          {friendsAttending.length > 0 && (
+            <div className="attendance-friends">
+              {friendsAttending.map((attendee) => (
+                <span className="attendance-friend" key={attendee.id}>
+                  <span className="friends-row-avatar">
+                    {attendee.avatarUrl ? (
+                      <img src={attendee.avatarUrl} alt="" />
+                    ) : (
+                      attendee.displayName.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  {attendee.displayName}
+                </span>
+              ))}
+              <span className="attendance-friends-label">
+                {friendsAttending.length === 1 ? 'y va aussi' : 'y vont aussi'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="details-section">
         <h3>À propos</h3>

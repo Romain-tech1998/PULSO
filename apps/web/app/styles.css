@@ -1812,6 +1812,49 @@ h6 {
 .secondary-action-btn:hover {
   border-color: var(--brand-purple);
 }
+.secondary-action-btn.active {
+  background: rgba(91, 63, 224, 0.35);
+  border-color: var(--brand-purple);
+}
+
+.attendance-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.attendance-row .secondary-action-btn {
+  flex-shrink: 0;
+  padding: 0.6rem 1rem;
+}
+.attendance-visibility-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--brand-border);
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+.attendance-friends {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+.attendance-friend {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.attendance-friends-label {
+  color: var(--text-secondary);
+}
 
 .details-section {
   padding: 1.25rem;
