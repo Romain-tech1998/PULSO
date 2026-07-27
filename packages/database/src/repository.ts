@@ -61,6 +61,7 @@ const publicEventSelect = `
     v.name AS venue_name,
     v.address,
     v.category AS venue_category,
+    v.image_url AS venue_image_url,
     ST_X(v.location) AS longitude,
     ST_Y(v.location) AS latitude
 `;
@@ -94,6 +95,7 @@ interface EventRow {
   venue_name: string;
   address: string;
   venue_category: VenueCategory | null;
+  venue_image_url: string | null;
   longitude: number;
   latitude: number;
   distance_meters?: number;
@@ -126,7 +128,8 @@ function toPublicEvent(row: EventRow): PublicEvent {
         longitude: Number(row.longitude),
         latitude: Number(row.latitude)
       },
-      ...(row.venue_category !== null ? { category: row.venue_category } : {})
+      ...(row.venue_category !== null ? { category: row.venue_category } : {}),
+      ...(row.venue_image_url !== null ? { imageUrl: row.venue_image_url } : {})
     },
     source: {
       name: row.source_name,
@@ -302,10 +305,11 @@ export class PostgresEventRepository implements EventRepository {
       name: string;
       address: string;
       category: VenueCategory | null;
+      image_url: string | null;
       longitude: number;
       latitude: number;
     }>(
-      `SELECT v.id, v.name, v.address, v.category,
+      `SELECT v.id, v.name, v.address, v.category, v.image_url,
               ST_X(v.location) AS longitude, ST_Y(v.location) AS latitude
        FROM venues v
        WHERE v.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
@@ -317,8 +321,12 @@ export class PostgresEventRepository implements EventRepository {
       id: row.id,
       name: row.name,
       address: row.address,
-      point: { longitude: Number(row.longitude), latitude: Number(row.latitude) },
-      ...(row.category !== null ? { category: row.category } : {})
+      point: {
+        longitude: Number(row.longitude),
+        latitude: Number(row.latitude)
+      },
+      ...(row.category !== null ? { category: row.category } : {}),
+      ...(row.image_url !== null ? { imageUrl: row.image_url } : {})
     }));
   }
 }

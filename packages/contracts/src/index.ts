@@ -177,7 +177,9 @@ export const publicVenueSchema = z.object({
   point: geographicPointSchema,
   // Absent for almost every ingested venue - see VENUE_CATEGORIES's comment
   // in @pulso/domain. Never inferred, only ever hand-set.
-  category: z.enum(VENUE_CATEGORIES).optional()
+  category: z.enum(VENUE_CATEGORIES).optional(),
+  // A real photo of the venue, when a source actually provides one.
+  imageUrl: z.url().optional()
 });
 
 export const venueListResponseSchema = z.object({
@@ -224,10 +226,16 @@ export const favoriteVenuesResponseSchema = z.object({
 export const trendsResponseSchema = z.object({
   data: z.object({
     eventCategories: z.array(
-      z.object({ category: z.enum(EVENT_CATEGORIES), count: z.number().int().min(1) })
+      z.object({
+        category: z.enum(EVENT_CATEGORIES),
+        count: z.number().int().min(1)
+      })
     ),
     venueCategories: z.array(
-      z.object({ category: z.enum(VENUE_CATEGORIES), count: z.number().int().min(1) })
+      z.object({
+        category: z.enum(VENUE_CATEGORIES),
+        count: z.number().int().min(1)
+      })
     )
   })
 });
@@ -310,6 +318,33 @@ export const forumPostResponseSchema = z.object({
   data: forumPostSchema
 });
 
+// Messages exist only between accepted friends (DEC-0012) - the API
+// enforces that, this schema just describes the shape once sent.
+export const messageSchema = z.object({
+  id: z.uuid(),
+  senderId: z.uuid(),
+  recipientId: z.uuid(),
+  body: z.string().min(1),
+  createdAt: z.iso.datetime(),
+  readAt: z.iso.datetime().optional()
+});
+
+export const sendMessageRequestSchema = z.object({
+  body: z.string().min(1).max(2000)
+});
+
+export const conversationResponseSchema = z.object({
+  data: z.array(messageSchema)
+});
+
+export const messageResponseSchema = z.object({
+  data: messageSchema
+});
+
+export const unreadCountResponseSchema = z.object({
+  data: z.object({ count: z.number().int().min(0) })
+});
+
 export const publicEventSchema = z.object({
   id: z.uuid(),
   title: z.string().min(1),
@@ -339,7 +374,9 @@ export const publicEventSchema = z.object({
     name: z.string().min(1),
     address: z.string().min(1),
     point: geographicPointSchema,
-    category: z.enum(VENUE_CATEGORIES).optional()
+    category: z.enum(VENUE_CATEGORIES).optional(),
+    // A real photo of the venue, when a source actually provides one.
+    imageUrl: z.url().optional()
   }),
   source: z.object({
     name: z.string().min(1),
@@ -394,26 +431,41 @@ export type VenueListResponse = z.infer<typeof venueListResponseSchema>;
 export type User = z.infer<typeof userSchema>;
 export type MeResponse = z.infer<typeof meResponseSchema>;
 export type FavoriteEventsRequest = z.infer<typeof favoriteEventsRequestSchema>;
-export type FavoriteEventsResponse = z.infer<typeof favoriteEventsResponseSchema>;
+export type FavoriteEventsResponse = z.infer<
+  typeof favoriteEventsResponseSchema
+>;
 export type FavoriteVenuesRequest = z.infer<typeof favoriteVenuesRequestSchema>;
-export type FavoriteVenuesResponse = z.infer<typeof favoriteVenuesResponseSchema>;
+export type FavoriteVenuesResponse = z.infer<
+  typeof favoriteVenuesResponseSchema
+>;
 export type TrendsResponse = z.infer<typeof trendsResponseSchema>;
 export type PublicUser = z.infer<typeof publicUserSchema>;
 export type FriendCodeResponse = z.infer<typeof friendCodeResponseSchema>;
 export type SendFriendRequest = z.infer<typeof sendFriendRequestSchema>;
 export type FriendRequestEntry = z.infer<typeof friendRequestSchema>;
-export type FriendRequestsResponse = z.infer<typeof friendRequestsResponseSchema>;
+export type FriendRequestsResponse = z.infer<
+  typeof friendRequestsResponseSchema
+>;
 export type RespondFriendRequest = z.infer<typeof respondFriendRequestSchema>;
 export type FriendsResponse = z.infer<typeof friendsResponseSchema>;
 export type AttendanceVisibility = z.infer<typeof attendanceVisibilitySchema>;
 export type SetAttendanceRequest = z.infer<typeof setAttendanceRequestSchema>;
 export type MyAttendanceResponse = z.infer<typeof myAttendanceResponseSchema>;
-export type FriendsAttendingResponse = z.infer<typeof friendsAttendingResponseSchema>;
+export type FriendsAttendingResponse = z.infer<
+  typeof friendsAttendingResponseSchema
+>;
 export type ForumCategory = z.infer<typeof forumCategorySchema>;
 export type ForumPost = z.infer<typeof forumPostSchema>;
-export type CreateForumPostRequest = z.infer<typeof createForumPostRequestSchema>;
+export type CreateForumPostRequest = z.infer<
+  typeof createForumPostRequestSchema
+>;
 export type ForumPostsResponse = z.infer<typeof forumPostsResponseSchema>;
 export type ForumPostResponse = z.infer<typeof forumPostResponseSchema>;
+export type Message = z.infer<typeof messageSchema>;
+export type SendMessageRequest = z.infer<typeof sendMessageRequestSchema>;
+export type ConversationResponse = z.infer<typeof conversationResponseSchema>;
+export type MessageResponse = z.infer<typeof messageResponseSchema>;
+export type UnreadCountResponse = z.infer<typeof unreadCountResponseSchema>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

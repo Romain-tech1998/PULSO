@@ -184,18 +184,22 @@ async function main(): Promise<void> {
             `venue|${normalizeForKey(venue.name)}|${normalizeForKey(venue.address ?? '')}`
           );
           await pool.query(
-            `INSERT INTO venues (id, name, address, location)
-             VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326))
+            `INSERT INTO venues (id, name, address, location, image_url)
+             VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6)
              ON CONFLICT (id) DO UPDATE SET
                name = EXCLUDED.name,
                address = EXCLUDED.address,
-               location = EXCLUDED.location`,
+               location = EXCLUDED.location,
+               -- Never regress to null on a run that didn't find an image
+               -- for a venue whose photo we already have from a prior run.
+               image_url = COALESCE(EXCLUDED.image_url, venues.image_url)`,
             [
               venueId,
               venue.name,
               venue.address || '',
               point.longitude,
-              point.latitude
+              point.latitude,
+              venue.imageUrl ?? null
             ]
           );
         }

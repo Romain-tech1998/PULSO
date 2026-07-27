@@ -35,7 +35,8 @@ export interface RawIngestedEvent {
    * lower location confidence than 'source', and 'unresolved'/'needs_research'
    * as no usable point at all - see DATA-0003.
    */
-  pointResolution?: 'source' | 'geocoded' | 'unresolved' | 'needs_research' | undefined;
+  pointResolution?:
+    'source' | 'geocoded' | 'unresolved' | 'needs_research' | undefined;
   price?:
     | { kind: 'free' }
     | { kind: 'paid'; minimumAmount?: number | undefined }
@@ -71,7 +72,10 @@ export interface RawIngestedVenue {
   name: string;
   address?: string | undefined;
   point?: { longitude: number; latitude: number } | undefined;
-  pointResolution?: 'source' | 'geocoded' | 'unresolved' | 'needs_research' | undefined;
+  pointResolution?:
+    'source' | 'geocoded' | 'unresolved' | 'needs_research' | undefined;
+  /** A real photo of the venue, when the source actually provides one. */
+  imageUrl?: string | undefined;
   raw?: unknown;
 }
 
