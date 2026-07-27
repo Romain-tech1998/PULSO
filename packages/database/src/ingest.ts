@@ -13,6 +13,7 @@ import {
   fetchInstagramScoutSignals,
   geocodeAddress,
   mapAndDeduplicateRawEvents,
+  normalizeForKey,
   runConnector,
   runVenueConnector,
   type IngestionConnector,
@@ -175,10 +176,12 @@ async function main(): Promise<void> {
           }
 
           // Deterministic id (same "venue|name|address" convention as
-          // to-public-event.ts) so re-running this job updates the same row
-          // instead of inserting a fresh duplicate every time.
+          // to-public-event.ts, normalized the same way as computeDedupeKey)
+          // so re-running this job - or an event elsewhere referencing the
+          // same real venue under a slightly different spelling - converges
+          // on the same row instead of inserting a fresh duplicate.
           const venueId = deriveDeterministicEventId(
-            `venue|${venue.name}|${venue.address ?? ''}`
+            `venue|${normalizeForKey(venue.name)}|${normalizeForKey(venue.address ?? '')}`
           );
           await pool.query(
             `INSERT INTO venues (id, name, address, location)

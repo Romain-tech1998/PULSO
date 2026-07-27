@@ -2,7 +2,7 @@ import type { PublicEvent } from '@pulso/contracts';
 import type { EventCategory, TrustLabel } from '@pulso/domain';
 
 import type { RawIngestedEvent } from '../types.js';
-import { computeDedupeKey } from './dedupe-key.js';
+import { computeDedupeKey, normalizeForKey } from './dedupe-key.js';
 import { deriveDeterministicEventId } from './event-id.js';
 
 /**
@@ -38,7 +38,10 @@ import { deriveDeterministicEventId } from './event-id.js';
  *   as an open item in DATA-0003.
  */
 
-const KNOWN_SOURCE_AUTHORITY: Record<string, 'official' | 'ticketing_platform'> = {
+const KNOWN_SOURCE_AUTHORITY: Record<
+  string,
+  'official' | 'ticketing_platform'
+> = {
   'ville-de-montreal-evenements-publics': 'official',
   ticketmaster: 'ticketing_platform'
 };
@@ -71,10 +74,15 @@ function resolveTrust(
   return 'to_verify';
 }
 
-function resolveFreshness(observedAt: string, now: Date): PublicEvent['trust']['freshness'] {
+function resolveFreshness(
+  observedAt: string,
+  now: Date
+): PublicEvent['trust']['freshness'] {
   const observed = new Date(observedAt);
   if (Number.isNaN(observed.getTime())) return 'unknown';
-  return now.getTime() - observed.getTime() <= FRESHNESS_THRESHOLD_MS ? 'fresh' : 'stale';
+  return now.getTime() - observed.getTime() <= FRESHNESS_THRESHOLD_MS
+    ? 'fresh'
+    : 'stale';
 }
 
 function resolveLocationConfidence(
@@ -86,8 +94,10 @@ function resolveLocationConfidence(
 }
 
 function buildAccessInformation(event: RawIngestedEvent): string {
-  if (event.price?.kind === 'free') return 'Free entry as reported by the source.';
-  if (event.price?.kind === 'paid') return 'Paid entry; exact conditions not confirmed.';
+  if (event.price?.kind === 'free')
+    return 'Free entry as reported by the source.';
+  if (event.price?.kind === 'paid')
+    return 'Paid entry; exact conditions not confirmed.';
   return 'Access conditions are not confirmed.';
 }
 
@@ -123,10 +133,15 @@ export function mapRawEventToPublicEvent(
   // the last one's (correct, per-event) coordinates - observed in practice
   // grouping 600+ distinct real venues onto a single point. event.point is
   // guaranteed defined here (checked above), so prefer it over a constant.
-  const venueKey =
-    event.venueName ??
-    event.address ??
-    `${event.point.latitude.toFixed(5)},${event.point.longitude.toFixed(5)}`;
+  // Normalized the same way as computeDedupeKey so casing/accent/whitespace
+  // variants of the same real venue name across sources (e.g. Parse.bot RA
+  // vs. Ticketmaster) converge on the same id instead of creating duplicate
+  // venue rows.
+  const venueKey = event.venueName
+    ? normalizeForKey(event.venueName)
+    : event.address
+      ? normalizeForKey(event.address)
+      : `${event.point.latitude.toFixed(5)},${event.point.longitude.toFixed(5)}`;
   const venueId = deriveDeterministicEventId(`venue|${venueKey}`);
 
   const price: PublicEvent['price'] =
@@ -205,7 +220,11 @@ export function mapAndDeduplicateRawEvents(
 
   const authorityRank = (event: RawIngestedEvent): number => {
     const authority = KNOWN_SOURCE_AUTHORITY[event.sourceId] ?? 'unknown';
-    return authority === 'official' ? 2 : authority === 'ticketing_platform' ? 1 : 0;
+    return authority === 'official'
+      ? 2
+      : authority === 'ticketing_platform'
+        ? 1
+        : 0;
   };
 
   for (const event of events) {
