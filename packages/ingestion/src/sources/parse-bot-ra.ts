@@ -1,4 +1,9 @@
-import type { IngestionConnector, RawIngestedEvent, VenueConnector, RawIngestedVenue } from '../types.js';
+import type {
+  IngestionConnector,
+  RawIngestedEvent,
+  VenueConnector,
+  RawIngestedVenue
+} from '../types.js';
 
 interface ParseBotRaClub {
   id?: string;
@@ -97,7 +102,7 @@ export function createParseBotRaClubsConnector(
         headers: {
           'X-API-Key': apiKey,
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          Accept: 'application/json'
         },
         body: JSON.stringify({
           endpoint: 'list_clubs',
@@ -107,12 +112,15 @@ export function createParseBotRaClubsConnector(
       });
 
       if (!response.ok) {
-        throw new Error(`Parse.bot API request failed with status ${response.status}`);
+        throw new Error(
+          `Parse.bot API request failed with status ${response.status}`
+        );
       }
 
-      const body = (await response.json()) as ParseBotRaResponse<ParseBotRaClub>;
+      const body =
+        (await response.json()) as ParseBotRaResponse<ParseBotRaClub>;
       const pageClubs = body.data?.clubs ?? [];
-      
+
       venues.push(...pageClubs.map((c) => mapParseBotClub(c, observedAt)));
 
       return venues;
@@ -125,12 +133,19 @@ export function createParseBotRaEventsConnector(
     apiKey?: string;
     areaId?: string;
     fetchImpl?: typeof fetch;
+    pageSize?: number;
+    maxPages?: number;
   } = {}
 ): IngestionConnector {
   const apiKey = options.apiKey ?? process.env.PARSE_BOT_API_KEY;
   // Fallback to Montreal's RA area ID which is 40
   const areaId = options.areaId ?? '40';
   const fetchImpl = options.fetchImpl ?? fetch;
+  const pageSize = options.pageSize ?? 50;
+  // Safety cap, not an expected real volume: Parse.bot's response has no
+  // total-count/next-page field, so pagination below is a heuristic (a full
+  // page implies there may be more) rather than a known page count.
+  const maxPages = options.maxPages ?? 20;
 
   const API_URL = `https://api.parse.bot/v1/scrapers/${SCRAPER_ID}/run`;
 
@@ -143,29 +158,37 @@ export function createParseBotRaEventsConnector(
       const observedAt = new Date().toISOString();
       const events: RawIngestedEvent[] = [];
 
-      const response = await fetchImpl(API_URL, {
-        method: 'POST',
-        headers: {
-          'X-API-Key': apiKey,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          endpoint: 'list_area_events',
-          area_id: areaId,
-          page: 1,
-          page_size: 50
-        })
-      });
+      for (let page = 1; page <= maxPages; page += 1) {
+        const response = await fetchImpl(API_URL, {
+          method: 'POST',
+          headers: {
+            'X-API-Key': apiKey,
+            'Content-Type': 'application/json',
+            Accept: 'application/json'
+          },
+          body: JSON.stringify({
+            endpoint: 'list_area_events',
+            area_id: areaId,
+            page,
+            page_size: pageSize
+          })
+        });
 
-      if (!response.ok) {
-        throw new Error(`Parse.bot API request failed with status ${response.status}`);
+        if (!response.ok) {
+          throw new Error(
+            `Parse.bot API request failed with status ${response.status}`
+          );
+        }
+
+        const body =
+          (await response.json()) as ParseBotRaResponse<ParseBotRaEvent>;
+        const pageEvents = body.data?.events ?? [];
+
+        events.push(...pageEvents.map((e) => mapParseBotEvent(e, observedAt)));
+
+        // A page shorter than requested means this was the last one.
+        if (pageEvents.length < pageSize) break;
       }
-
-      const body = (await response.json()) as ParseBotRaResponse<ParseBotRaEvent>;
-      const pageEvents = body.data?.events ?? [];
-      
-      events.push(...pageEvents.map((e) => mapParseBotEvent(e, observedAt)));
 
       return events;
     }

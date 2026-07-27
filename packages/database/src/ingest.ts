@@ -2,13 +2,16 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import {
+  createMontrealOpenDataConnector,
   createTicketmasterConnector,
   createParseBotRaClubsConnector,
   createParseBotRaEventsConnector,
+  deriveDeterministicEventId,
   enrichMissingAddresses,
   enrichMissingCoordinates,
   extractInstagramWatchlist,
   fetchInstagramScoutSignals,
+  geocodeAddress,
   mapAndDeduplicateRawEvents,
   runConnector,
   runVenueConnector,
@@ -44,9 +47,7 @@ const instagramScoutOutputDirectory = fileURLToPath(
 );
 
 function buildConnectors(): IngestionConnector[] {
-  const connectors: IngestionConnector[] = [
-    createMontrealOpenDataConnector()
-  ];
+  const connectors: IngestionConnector[] = [createMontrealOpenDataConnector()];
 
   if (process.env.TICKETMASTER_API_KEY) {
     connectors.push(createTicketmasterConnector());
@@ -77,6 +78,33 @@ function buildVenueConnectors(): VenueConnector[] {
     );
   }
   return connectors;
+}
+
+// Nominatim's usage policy caps public requests at 1/second (see
+// packages/ingestion/src/lib/geocode-fallback.ts).
+const NOMINATIM_DELAY_MS = 1100;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Venue connectors (e.g. Parse.bot RA clubs) may only return an address, no
+ * coordinates. Unlike the events path, there is no `pointResolution` column
+ * on `venues` to record uncertainty, so a venue whose location cannot be
+ * resolved at all is skipped rather than inserted at a fabricated (0, 0)
+ * point - the same "never invent a coordinate" rule enforced for events in
+ * packages/ingestion/src/mapping/to-public-event.ts.
+ */
+async function resolveVenuePoint(
+  venue: RawIngestedVenue
+): Promise<{ longitude: number; latitude: number } | undefined> {
+  if (venue.point) return venue.point;
+  const queryParts = [venue.address, venue.name].filter(
+    (part): part is string => Boolean(part && part.trim().length > 0)
+  );
+  if (queryParts.length === 0) return undefined;
+  return geocodeAddress(`${queryParts.join(', ')}, Montréal, QC, Canada`);
 }
 
 async function runInstagramScout(): Promise<void> {
@@ -125,24 +153,52 @@ async function main(): Promise<void> {
         for (const error of result.errors) {
           console.warn(`[ingest] ${connector.id} error: ${error}`);
         }
-        console.log(`[ingest] ${connector.id} fetched ${result.venues.length} raw venue(s).`);
-        
-        // Upsert venues directly
+        console.log(
+          `[ingest] ${connector.id} fetched ${result.venues.length} raw venue(s).`
+        );
+
+        let geocoded = 0;
+        let skippedNoPoint = 0;
         for (const venue of result.venues) {
-          // Note: If longitude/latitude is missing, we might want to geocode them, 
-          // but for now we'll just insert what we have.
+          const point = await resolveVenuePoint(venue);
+          if (!point) {
+            skippedNoPoint += 1;
+            console.warn(
+              `[ingest] ${connector.id}: skipping "${venue.name}" - no source coordinates and geocoding found nothing.`
+            );
+            continue;
+          }
+          if (!venue.point) {
+            geocoded += 1;
+            // Respect Nominatim's 1 request/second usage policy between calls.
+            await delay(NOMINATIM_DELAY_MS);
+          }
+
+          // Deterministic id (same "venue|name|address" convention as
+          // to-public-event.ts) so re-running this job updates the same row
+          // instead of inserting a fresh duplicate every time.
+          const venueId = deriveDeterministicEventId(
+            `venue|${venue.name}|${venue.address ?? ''}`
+          );
           await pool.query(
             `INSERT INTO venues (id, name, address, location)
-             VALUES (gen_random_uuid(), $1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326))
-             ON CONFLICT DO NOTHING`, // Since we don't have a stable ID to conflict on yet, we skip if we can't match, or we could match by name.
+             VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326))
+             ON CONFLICT (id) DO UPDATE SET
+               name = EXCLUDED.name,
+               address = EXCLUDED.address,
+               location = EXCLUDED.location`,
             [
+              venueId,
               venue.name,
               venue.address || '',
-              venue.point?.longitude || 0,
-              venue.point?.latitude || 0
+              point.longitude,
+              point.latitude
             ]
           );
         }
+        console.log(
+          `[ingest] ${connector.id}: geocoded ${geocoded}, skipped ${skippedNoPoint} (no resolvable location).`
+        );
       }
       return;
     }
@@ -167,7 +223,9 @@ async function main(): Promise<void> {
     // burning enrichMissingCoordinates/enrichMissingAddresses's rate-limited
     // Nominatim budget (1 req/s) on ~87% of raw volume that gets thrown away
     // anyway (see PROJECT_INDEX.md entry 28).
-    const inScopeEvents = rawEvents.filter((event) => event.category !== 'unmapped');
+    const inScopeEvents = rawEvents.filter(
+      (event) => event.category !== 'unmapped'
+    );
     console.log(
       `[ingest] ${rawEvents.length - inScopeEvents.length} out-of-scope event(s) skipped before enrichment.`
     );
