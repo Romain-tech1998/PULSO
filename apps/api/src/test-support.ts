@@ -8,6 +8,8 @@ import type {
   FriendRequest,
   FriendsRepository,
   GoogleProfile,
+  Message,
+  MessagesRepository,
   Trends,
   TrendsRepository
 } from '@pulso/database';
@@ -125,6 +127,37 @@ export function fakeForumPost(overrides: Partial<ForumPost> = {}): ForumPost {
   };
 }
 
+export function fakeMessagesRepository(
+  overrides: Partial<MessagesRepository> = {}
+): MessagesRepository {
+  return {
+    sendMessage: async (senderId, recipientId, body) => ({
+      id: '00000000-0000-4000-8000-000000000015',
+      senderId,
+      recipientId,
+      body,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      readAt: undefined
+    }),
+    getConversation: async () => [],
+    markConversationRead: async () => undefined,
+    getUnreadCount: async () => 0,
+    ...overrides
+  };
+}
+
+export function fakeMessage(overrides: Partial<Message> = {}): Message {
+  return {
+    id: '00000000-0000-4000-8000-000000000016',
+    senderId: friend.id,
+    recipientId: testUser.id,
+    body: 'On se retrouve devant à 21h ?',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    readAt: undefined,
+    ...overrides
+  };
+}
+
 // Bundles all account-layer repositories (+ Google config) so every
 // buildApp(event, accountRepositories()) call in tests stays a one-liner
 // even as the account layer grows more repositories - override only the
@@ -137,6 +170,7 @@ export function accountRepositories(
     friendsRepository?: FriendsRepository;
     attendanceRepository?: AttendanceRepository;
     forumRepository?: ForumRepository;
+    messagesRepository?: MessagesRepository;
   } = {}
 ) {
   return {
@@ -146,6 +180,7 @@ export function accountRepositories(
     friendsRepository: overrides.friendsRepository ?? fakeFriendsRepository(),
     attendanceRepository: overrides.attendanceRepository ?? fakeAttendanceRepository(),
     forumRepository: overrides.forumRepository ?? fakeForumRepository(),
+    messagesRepository: overrides.messagesRepository ?? fakeMessagesRepository(),
     google: testGoogleConfig
   };
 }

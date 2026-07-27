@@ -3,6 +3,7 @@
 import {
   buildMapEventsQuery,
   CATEGORY_FILTER_OPTIONS,
+  conversationResponseSchema,
   DATE_FILTER_OPTIONS,
   eventDetailsResponseSchema,
   eventListResponseSchema,
@@ -18,6 +19,7 @@ import {
   myAttendanceResponseSchema,
   PRICE_FILTER_OPTIONS,
   trendsResponseSchema,
+  unreadCountResponseSchema,
   VENUE_CATEGORY_FILTER_OPTIONS,
   venueListResponseSchema,
   type AttendanceVisibility,
@@ -26,6 +28,7 @@ import {
   type FriendRequestEntry,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
+  type Message,
   type PublicEvent,
   type PublicUser,
   type PublicVenue,
@@ -418,6 +421,30 @@ function useAttendance(authToken: string | undefined) {
   return { attendance, setAttendance, clearAttendance };
 }
 
+// No real-time/WebSocket in this phase (DEC-0012) - refetched whenever
+// `refreshKey` changes (the caller passes the current header section, so
+// navigating into "Mon compte" - where conversations get marked read - is
+// enough to keep this reasonably fresh without polling).
+function useUnreadMessagesCount(authToken: string | undefined, refreshKey: unknown) {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!authToken) {
+      setCount(0);
+      return;
+    }
+    fetch(`${API_BASE_URL}/me/messages/unread-count`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setCount(unreadCountResponseSchema.parse(json).data.count))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authToken, refreshKey]);
+
+  return count;
+}
+
 const AUTH_TOKEN_KEY = 'pulso-auth-token';
 
 // Compte facultatif (DEC-0007/MVP-0001) : rien ici ne bloque le reste de
@@ -621,6 +648,7 @@ export function ExploreMap({
   const [section, setSection] = useState<
     'evenement' | 'lieu' | 'explorer' | 'favoris' | 'compte'
   >('evenement');
+  const unreadMessagesCount = useUnreadMessagesCount(authToken, section);
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
   const [lieuTab, setLieuTab] = useState<'map' | 'list' | 'calendar'>('list');
   // Reset to 'event' every time Explorer is (re-)entered rather than
@@ -1944,6 +1972,7 @@ export function ExploreMap({
               setAboutOpen(false);
               setSection('compte');
             }}
+            unreadCount={unreadMessagesCount}
           />
         </div>
       </header>
@@ -3870,11 +3899,13 @@ function CitySelector() {
 function AccountMenu({
   user,
   onLogin,
-  onOpenAccount
+  onOpenAccount,
+  unreadCount
 }: {
   user: User | undefined;
   onLogin: () => void;
   onOpenAccount: () => void;
+  unreadCount: number;
 }) {
   if (!user) {
     return (
@@ -3889,7 +3920,11 @@ function AccountMenu({
       type="button"
       className="account-menu-trigger"
       onClick={onOpenAccount}
-      aria-label={`Mon compte (${user.displayName})`}
+      aria-label={
+        unreadCount > 0
+          ? `Mon compte (${user.displayName}) — ${unreadCount} message${unreadCount !== 1 ? 's' : ''} non lu${unreadCount !== 1 ? 's' : ''}`
+          : `Mon compte (${user.displayName})`
+      }
     >
       <span className="account-avatar">
         {user.avatarUrl ? (
@@ -3898,6 +3933,11 @@ function AccountMenu({
           user.displayName.slice(0, 1).toUpperCase()
         )}
         <span className="account-online-dot" aria-hidden="true" />
+        {unreadCount > 0 && (
+          <span className="account-unread-badge" aria-hidden="true">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -4041,6 +4081,7 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
   const [codeInput, setCodeInput] = useState('');
   const [sendError, setSendError] = useState<string>();
   const [copied, setCopied] = useState(false);
+  const [conversationWith, setConversationWith] = useState<PublicUser>();
 
   const refresh = useCallback(() => {
     if (!authToken) return;
@@ -4231,6 +4272,13 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
                 <button
                   type="button"
                   className="text-btn"
+                  onClick={() => setConversationWith(friendUser)}
+                >
+                  Message
+                </button>
+                <button
+                  type="button"
+                  className="text-btn"
                   onClick={() => removeFriend(friendUser.id)}
                 >
                   Retirer
@@ -4240,6 +4288,119 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
           </div>
         </div>
       )}
+      {conversationWith && (
+        <ConversationModal
+          friend={conversationWith}
+          authToken={authToken}
+          onClose={() => setConversationWith(undefined)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ConversationModal({
+  friend,
+  authToken,
+  onClose
+}: {
+  friend: PublicUser;
+  authToken: string | undefined;
+  onClose: () => void;
+}) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setMessages(conversationResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, friend.id]);
+
+  useEffect(() => {
+    refresh();
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages/read`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${authToken}` }
+    });
+  }, [refresh, authToken, friend.id]);
+
+  const sendMessage = () => {
+    if (!authToken || !draft.trim() || sending) return;
+    setSending(true);
+    fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ body: draft.trim() })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => {
+        setDraft('');
+        refresh();
+      })
+      .catch(() => {})
+      .finally(() => setSending(false));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="conversation-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="conversation-modal-header">
+          <strong>{friend.displayName}</strong>
+          <button type="button" className="text-btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        <div className="conversation-messages">
+          {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+          {state === 'error' && (
+            <p className="list-view-empty">Impossible de charger la conversation.</p>
+          )}
+          {state === 'success' && messages.length === 0 && (
+            <p className="list-view-empty">Aucun message pour l'instant.</p>
+          )}
+          {state === 'success' &&
+            messages.map((message) => (
+              <div
+                key={message.id}
+                className={`conversation-message ${
+                  message.senderId === friend.id ? 'incoming' : 'outgoing'
+                }`}
+              >
+                {message.body}
+              </div>
+            ))}
+        </div>
+        <form
+          className="forum-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            sendMessage();
+          }}
+        >
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Écrire un message…"
+            maxLength={2000}
+            rows={2}
+          />
+          <button type="submit" className="btn-secondary" disabled={sending || !draft.trim()}>
+            Envoyer
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

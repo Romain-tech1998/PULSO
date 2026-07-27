@@ -17,6 +17,7 @@ import type {
   FavoritesRepository,
   ForumRepository,
   FriendsRepository,
+  MessagesRepository,
   TrendsRepository
 } from '@pulso/database';
 import {
@@ -32,6 +33,7 @@ import { z, ZodError } from 'zod';
 
 import { registerAuthRoutes, type GoogleAuthConfig } from './auth.js';
 import { registerForumRoutes } from './forum.js';
+import { registerMessagesRoutes } from './messages.js';
 import { registerSocialRoutes } from './social.js';
 
 const eventParamsSchema = z.object({ id: z.uuid() });
@@ -51,6 +53,7 @@ export function buildApp(
     friendsRepository?: FriendsRepository;
     attendanceRepository?: AttendanceRepository;
     forumRepository?: ForumRepository;
+    messagesRepository?: MessagesRepository;
     google?: GoogleAuthConfig;
   } = {}
 ) {
@@ -63,6 +66,7 @@ export function buildApp(
     options.friendsRepository &&
     options.attendanceRepository &&
     options.forumRepository &&
+    options.messagesRepository &&
     options.google
   ) {
     registerAuthRoutes(
@@ -79,6 +83,7 @@ export function buildApp(
       options.attendanceRepository
     );
     registerForumRoutes(app, options.authRepository, options.forumRepository);
+    registerMessagesRoutes(app, options.authRepository, options.messagesRepository);
   }
 
   app.setErrorHandler((error, request, reply) => {

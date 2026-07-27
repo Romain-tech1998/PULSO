@@ -36,6 +36,12 @@ export {
   type ForumRepository
 } from './forum-repository.js';
 export {
+  PostgresMessagesRepository,
+  NotFriendsError,
+  type Message,
+  type MessagesRepository
+} from './messages-repository.js';
+export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';
