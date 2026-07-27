@@ -2651,6 +2651,7 @@ export function ExploreMap({
                    locale={locale}
                    user={user}
                    authToken={authToken}
+                   onLogin={login}
                    attendanceVisibility={attendance[shownEvent.id]}
                    onSetAttendance={(visibility) => setAttendance(shownEvent.id, visibility)}
                    onClearAttendance={() => clearAttendance(shownEvent.id)}
@@ -5135,6 +5136,7 @@ function EventDetails({
   locale,
   user,
   authToken,
+  onLogin,
   attendanceVisibility,
   onSetAttendance,
   onClearAttendance
@@ -5147,10 +5149,12 @@ function EventDetails({
   locale: SupportedLocale;
   user: User | undefined;
   authToken: string | undefined;
+  onLogin: () => void;
   attendanceVisibility: AttendanceVisibility | undefined;
   onSetAttendance: (visibility: AttendanceVisibility) => void;
   onClearAttendance: () => void;
 }) {
+  const [tab, setTab] = useState<'about' | 'participants' | 'forum'>('about');
   const { presentation } = eventDetailsFields(event, locale);
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
@@ -5255,136 +5259,187 @@ function EventDetails({
         )}
       </div>
 
-      <div className="details-info-list">
-        <div className="info-item">
-          <span className="info-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          </span>
-          <div>
-            <strong>Date et heure</strong>
-            <p>{presentation.dateTime}</p>
-          </div>
-        </div>
-        <div className="info-item">
-          <span className="info-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-          </span>
-          <div>
-            <strong>Lieu</strong>
-            <p>{event.venue.name}</p>
-            <p className="info-sub">{event.venue.address}</p>
-          </div>
-        </div>
-        <div className="info-item">
-          <span className="info-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-          </span>
-          <div>
-            <strong>Prix</strong>
-            <p>{presentation.price}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="details-actions-main">
-        {presentation.externalAction ? (
-          <a className="primary-action-btn glow-purple" href={externalHref} target="_blank" rel="noopener noreferrer">
-            {presentation.externalAction}
-          </a>
-        ) : (
-          <button className="primary-action-btn disabled" disabled>
-            {presentation.externalUnavailable}
-          </button>
-        )}
-        <button className="secondary-action-btn" onClick={onToggleFavorite}>
-          <HeartIcon filled={isFavorite} />
-          {isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+      <div className="details-tabs">
+        <button type="button" className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>
+          À propos
+        </button>
+        <button
+          type="button"
+          className={tab === 'participants' ? 'active' : ''}
+          onClick={() => setTab('participants')}
+        >
+          Participants
+        </button>
+        <button type="button" className={tab === 'forum' ? 'active' : ''} onClick={() => setTab('forum')}>
+          Forum
         </button>
       </div>
 
-      {user && (
-        <div className="details-section">
-          <h3>Participation</h3>
-          <div className="attendance-row">
-            <button
-              type="button"
-              className={`secondary-action-btn ${attendanceVisibility ? 'active' : ''}`}
-              onClick={() =>
-                attendanceVisibility ? onClearAttendance() : onSetAttendance('private')
-              }
-            >
-              {attendanceVisibility ? 'Vous y allez' : "J'y vais"}
+      {tab === 'about' && (
+        <>
+          <div className="details-info-list">
+            <div className="info-item">
+              <span className="info-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              </span>
+              <div>
+                <strong>Date et heure</strong>
+                <p>{presentation.dateTime}</p>
+              </div>
+            </div>
+            <div className="info-item">
+              <span className="info-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              </span>
+              <div>
+                <strong>Lieu</strong>
+                <p>{event.venue.name}</p>
+                <p className="info-sub">{event.venue.address}</p>
+              </div>
+            </div>
+            <div className="info-item">
+              <span className="info-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+              </span>
+              <div>
+                <strong>Prix</strong>
+                <p>{presentation.price}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="details-actions-main">
+            {presentation.externalAction ? (
+              <a className="primary-action-btn glow-purple" href={externalHref} target="_blank" rel="noopener noreferrer">
+                {presentation.externalAction}
+              </a>
+            ) : (
+              <button className="primary-action-btn disabled" disabled>
+                {presentation.externalUnavailable}
+              </button>
+            )}
+            <button className="secondary-action-btn" onClick={onToggleFavorite}>
+              <HeartIcon filled={isFavorite} />
+              {isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
             </button>
-            {attendanceVisibility && (
-              <select
-                className="attendance-visibility-select"
-                value={attendanceVisibility}
-                onChange={(changeEvent) =>
-                  onSetAttendance(changeEvent.target.value as AttendanceVisibility)
-                }
-                aria-label="Visibilité de votre participation"
+          </div>
+
+          <div className="details-section">
+            <p className="details-description">{visibleDescription}</p>
+            {descriptionIsLong && (
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => setDescriptionExpanded((prev) => !prev)}
               >
-                <option value="private">Visible par vous seul</option>
-                <option value="friends">Visible par vos amis</option>
-              </select>
+                {descriptionExpanded ? 'Voir moins' : 'Voir plus'}
+              </button>
             )}
           </div>
-          {friendsAttending.length > 0 && (
-            <div className="attendance-friends">
-              {friendsAttending.map((attendee) => (
-                <span className="attendance-friend" key={attendee.id}>
-                  <span className="friends-row-avatar">
-                    {attendee.avatarUrl ? (
-                      <img src={attendee.avatarUrl} alt="" />
-                    ) : (
-                      attendee.displayName.slice(0, 1).toUpperCase()
-                    )}
-                  </span>
-                  {attendee.displayName}
-                </span>
-              ))}
-              <span className="attendance-friends-label">
-                {friendsAttending.length === 1 ? 'y va aussi' : 'y vont aussi'}
+
+          <div className="details-section">
+            <h3>Sources</h3>
+            <div className="source-item">
+              <span className="source-logo">
+                <SourceIcon kind={resolveSourceIconKind(event.source.name)} />
               </span>
+              <span>{event.source.name}</span>
+              <span className="source-trust">{presentation.trust}</span>
             </div>
+            {event.additionalSources?.map((source) => (
+              <div className="source-item" key={source.url}>
+                <span className="source-logo">
+                  <SourceIcon kind={resolveSourceIconKind(source.name)} />
+                </span>
+                <span>{source.name}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {tab === 'participants' && (
+        <div className="details-section">
+          {!user ? (
+            <SignInPrompt
+              message="Connectez-vous pour voir qui de vos amis participe et indiquer votre propre présence."
+              onLogin={onLogin}
+            />
+          ) : (
+            <>
+              <div className="attendance-row">
+                <button
+                  type="button"
+                  className={`secondary-action-btn ${attendanceVisibility ? 'active' : ''}`}
+                  onClick={() =>
+                    attendanceVisibility ? onClearAttendance() : onSetAttendance('private')
+                  }
+                >
+                  {attendanceVisibility ? 'Vous y allez' : "J'y vais"}
+                </button>
+                {attendanceVisibility && (
+                  <select
+                    className="attendance-visibility-select"
+                    value={attendanceVisibility}
+                    onChange={(changeEvent) =>
+                      onSetAttendance(changeEvent.target.value as AttendanceVisibility)
+                    }
+                    aria-label="Visibilité de votre participation"
+                  >
+                    <option value="private">Visible par vous seul</option>
+                    <option value="friends">Visible par vos amis</option>
+                  </select>
+                )}
+              </div>
+              {friendsAttending.length > 0 ? (
+                <div className="attendance-friends">
+                  {friendsAttending.map((attendee) => (
+                    <span className="attendance-friend" key={attendee.id}>
+                      <span className="friends-row-avatar">
+                        {attendee.avatarUrl ? (
+                          <img src={attendee.avatarUrl} alt="" />
+                        ) : (
+                          attendee.displayName.slice(0, 1).toUpperCase()
+                        )}
+                      </span>
+                      {attendee.displayName}
+                    </span>
+                  ))}
+                  <span className="attendance-friends-label">
+                    {friendsAttending.length === 1 ? 'y va aussi' : 'y vont aussi'}
+                  </span>
+                </div>
+              ) : (
+                <p className="list-view-empty">Aucun de vos amis n'a indiqué y participer.</p>
+              )}
+            </>
           )}
         </div>
       )}
 
-      <div className="details-section">
-        <h3>À propos</h3>
-        <p className="details-description">{visibleDescription}</p>
-        {descriptionIsLong && (
-          <button
-            type="button"
-            className="text-btn"
-            onClick={() => setDescriptionExpanded((prev) => !prev)}
-          >
-            {descriptionExpanded ? 'Voir moins' : 'Voir plus'}
-          </button>
-        )}
-      </div>
-
-      <div className="details-section">
-        <h3>Sources</h3>
-        <div className="source-item">
-          <span className="source-logo">
-            <SourceIcon kind={resolveSourceIconKind(event.source.name)} />
-          </span>
-          <span>{event.source.name}</span>
-          <span className="source-trust">{presentation.trust}</span>
+      {tab === 'forum' && (
+        <div className="details-section">
+          {!user ? (
+            <SignInPrompt
+              message="Connectez-vous pour lire et participer au forum de cet événement."
+              onLogin={onLogin}
+            />
+          ) : (
+            <EventForum eventId={event.id} authToken={authToken} userId={user.id} />
+          )}
         </div>
-        {event.additionalSources?.map((source) => (
-          <div className="source-item" key={source.url}>
-            <span className="source-logo">
-              <SourceIcon kind={resolveSourceIconKind(source.name)} />
-            </span>
-            <span>{source.name}</span>
-          </div>
-        ))}
-      </div>
+      )}
+    </div>
+  );
+}
 
-      {user && <EventForum eventId={event.id} authToken={authToken} userId={user.id} />}
+function SignInPrompt({ message, onLogin }: { message: string; onLogin: () => void }) {
+  return (
+    <div className="sign-in-prompt">
+      <p>{message}</p>
+      <button type="button" className="btn-secondary" onClick={onLogin}>
+        Se connecter
+      </button>
     </div>
   );
 }
@@ -5448,8 +5503,7 @@ function EventForum({
   };
 
   return (
-    <div className="details-section">
-      <h3>Forum</h3>
+    <div className="event-forum">
       <div className="forum-tabs">
         {FORUM_CATEGORIES.map((option) => (
           <button

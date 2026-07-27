@@ -1752,6 +1752,50 @@ h6 {
   font-size: 0.95rem;
 }
 
+.details-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--brand-border);
+}
+.details-tabs button {
+  padding: 0.85rem 1rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.9rem;
+  position: relative;
+}
+.details-tabs button:hover {
+  color: var(--text-primary);
+}
+.details-tabs button.active {
+  color: var(--text-primary);
+}
+.details-tabs button.active::after {
+  content: '';
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--brand-purple), var(--brand-pink));
+}
+
+.sign-in-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.9rem;
+  padding: 1.25rem;
+  text-align: left;
+}
+.sign-in-prompt p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .details-info-list {
   display: flex;
   flex-direction: column;
