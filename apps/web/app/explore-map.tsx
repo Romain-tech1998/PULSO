@@ -8,6 +8,7 @@ import {
   eventListResponseSchema,
   favoriteEventsResponseSchema,
   favoriteVenuesResponseSchema,
+  forumPostsResponseSchema,
   friendCodeResponseSchema,
   friendRequestsResponseSchema,
   friendsAttendingResponseSchema,
@@ -20,6 +21,8 @@ import {
   VENUE_CATEGORY_FILTER_OPTIONS,
   venueListResponseSchema,
   type AttendanceVisibility,
+  type ForumCategory,
+  type ForumPost,
   type FriendRequestEntry,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
@@ -31,6 +34,8 @@ import {
 } from '@pulso/contracts';
 import {
   DEFAULT_DISCOVERY_FILTERS,
+  FORUM_CATEGORIES,
+  FORUM_CATEGORY_LABELS,
   getMontrealCalendarDate,
   CATEGORY_COLORS,
   VENUE_CATEGORY_COLORS,
@@ -5184,6 +5189,148 @@ function EventDetails({
           </div>
         ))}
       </div>
+
+      {user && <EventForum eventId={event.id} authToken={authToken} userId={user.id} />}
+    </div>
+  );
+}
+
+function EventForum({
+  eventId,
+  authToken,
+  userId
+}: {
+  eventId: string;
+  authToken: string | undefined;
+  userId: string;
+}) {
+  const [category, setCategory] = useState<ForumCategory>('general');
+  const [posts, setPosts] = useState<ForumPost[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [draft, setDraft] = useState('');
+  const [posting, setPosting] = useState(false);
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/events/${eventId}/forum/${category}`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setPosts(forumPostsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, eventId, category]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const submitPost = () => {
+    if (!authToken || !draft.trim() || posting) return;
+    setPosting(true);
+    fetch(`${API_BASE_URL}/events/${eventId}/forum/${category}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ body: draft.trim() })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => {
+        setDraft('');
+        refresh();
+      })
+      .catch(() => {})
+      .finally(() => setPosting(false));
+  };
+
+  const removePost = (postId: string) => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/events/${eventId}/forum/posts/${postId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).then(() => refresh());
+  };
+
+  return (
+    <div className="details-section">
+      <h3>Forum</h3>
+      <div className="forum-tabs">
+        {FORUM_CATEGORIES.map((option) => (
+          <button
+            type="button"
+            key={option}
+            className={category === option ? 'active' : ''}
+            onClick={() => setCategory(option)}
+          >
+            {FORUM_CATEGORY_LABELS[option]}
+          </button>
+        ))}
+      </div>
+
+      {category === 'ticket_resale' && (
+        <p className="forum-disclaimer">
+          Discussion entre utilisateurs uniquement : Pulso n'intervient pas dans la
+          transaction, aucun paiement ni billet ne transite par la plateforme.
+        </p>
+      )}
+
+      <div className="forum-posts">
+        {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+        {state === 'error' && (
+          <p className="list-view-empty">Impossible de charger le forum pour le moment.</p>
+        )}
+        {state === 'success' && posts.length === 0 && (
+          <p className="list-view-empty">Aucun message pour l'instant. Soyez le premier.</p>
+        )}
+        {state === 'success' &&
+          posts.map((post) => (
+            <div className="forum-post" key={post.id}>
+              <span className="friends-row-avatar">
+                {post.author.avatarUrl ? (
+                  <img src={post.author.avatarUrl} alt="" />
+                ) : (
+                  post.author.displayName.slice(0, 1).toUpperCase()
+                )}
+              </span>
+              <div className="forum-post-body">
+                <div className="forum-post-meta">
+                  <strong>{post.author.displayName}</strong>
+                  {post.author.id === userId && (
+                    <button
+                      type="button"
+                      className="text-btn"
+                      onClick={() => removePost(post.id)}
+                    >
+                      Supprimer
+                    </button>
+                  )}
+                </div>
+                <p>{post.body}</p>
+              </div>
+            </div>
+          ))}
+      </div>
+
+      <form
+        className="forum-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitPost();
+        }}
+      >
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Écrire un message…"
+          maxLength={2000}
+          rows={2}
+        />
+        <button type="submit" className="btn-secondary" disabled={posting || !draft.trim()}>
+          Publier
+        </button>
+      </form>
     </div>
   );
 }

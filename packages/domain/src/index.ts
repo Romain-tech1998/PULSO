@@ -46,8 +46,26 @@ export const VENUE_CATEGORIES = [
   'other'
 ] as const;
 
+// The four per-event forum sub-discussions named explicitly in the
+// original request (DEC-0012) - a fixed, small set of categories, not
+// user-created ones, same pattern as EVENT_CATEGORIES.
+export const FORUM_CATEGORIES = [
+  'find_partners',
+  'general',
+  'ticket_resale',
+  'find_someone'
+] as const;
+
+export const FORUM_CATEGORY_LABELS: Record<(typeof FORUM_CATEGORIES)[number], string> = {
+  find_partners: 'Trouver des partenaires',
+  general: 'Discussion générale',
+  ticket_resale: 'Revente de place',
+  find_someone: 'Retrouver quelqu’un qui était là'
+};
+
 export type EventCategory = (typeof EVENT_CATEGORIES)[number];
 export type VenueCategory = (typeof VENUE_CATEGORIES)[number];
+export type ForumCategory = (typeof FORUM_CATEGORIES)[number];
 export type EventStatus = (typeof EVENT_STATUSES)[number];
 export type FreshnessState = (typeof FRESHNESS_STATES)[number];
 export type LocationConfidence = (typeof LOCATION_CONFIDENCE_STATES)[number];

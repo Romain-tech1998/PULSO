@@ -3,6 +3,8 @@ import type {
   AttendanceRepository,
   AuthRepository,
   FavoritesRepository,
+  ForumPost,
+  ForumRepository,
   FriendRequest,
   FriendsRepository,
   GoogleProfile,
@@ -95,6 +97,34 @@ export function fakeAttendanceRepository(
   };
 }
 
+export function fakeForumRepository(overrides: Partial<ForumRepository> = {}): ForumRepository {
+  return {
+    getPosts: async () => [],
+    createPost: async (eventId, authorId, category, body) => ({
+      id: '00000000-0000-4000-8000-000000000012',
+      eventId,
+      author: { id: authorId, displayName: testUser.displayName },
+      category,
+      body,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }),
+    deletePost: async () => undefined,
+    ...overrides
+  };
+}
+
+export function fakeForumPost(overrides: Partial<ForumPost> = {}): ForumPost {
+  return {
+    id: '00000000-0000-4000-8000-000000000013',
+    eventId: '00000000-0000-4000-8000-000000000014',
+    author: friend,
+    category: 'general',
+    body: 'Quelqu\'un vient à cet event ?',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    ...overrides
+  };
+}
+
 // Bundles all account-layer repositories (+ Google config) so every
 // buildApp(event, accountRepositories()) call in tests stays a one-liner
 // even as the account layer grows more repositories - override only the
@@ -106,6 +136,7 @@ export function accountRepositories(
     trendsRepository?: TrendsRepository;
     friendsRepository?: FriendsRepository;
     attendanceRepository?: AttendanceRepository;
+    forumRepository?: ForumRepository;
   } = {}
 ) {
   return {
@@ -114,6 +145,7 @@ export function accountRepositories(
     trendsRepository: overrides.trendsRepository ?? fakeTrendsRepository(),
     friendsRepository: overrides.friendsRepository ?? fakeFriendsRepository(),
     attendanceRepository: overrides.attendanceRepository ?? fakeAttendanceRepository(),
+    forumRepository: overrides.forumRepository ?? fakeForumRepository(),
     google: testGoogleConfig
   };
 }

@@ -31,6 +31,11 @@ export {
   type AttendanceVisibility
 } from './attendance-repository.js';
 export {
+  PostgresForumRepository,
+  type ForumPost,
+  type ForumRepository
+} from './forum-repository.js';
+export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';

@@ -3,6 +3,7 @@ import {
   DEFAULT_DISCOVERY_FILTERS,
   EVENT_CATEGORIES,
   EVENT_STATUSES,
+  FORUM_CATEGORIES,
   FRESHNESS_STATES,
   LOCATION_CONFIDENCE_STATES,
   PRICE_FILTER_VALUES,
@@ -284,6 +285,31 @@ export const friendsAttendingResponseSchema = z.object({
   data: z.array(publicUserSchema)
 });
 
+// DEC-0012: user-generated content, deliberately kept flat (no nested
+// replies) and not editable after posting - only deletable by its author.
+export const forumCategorySchema = z.enum(FORUM_CATEGORIES);
+
+export const forumPostSchema = z.object({
+  id: z.uuid(),
+  eventId: z.uuid(),
+  author: publicUserSchema,
+  category: forumCategorySchema,
+  body: z.string().min(1),
+  createdAt: z.iso.datetime()
+});
+
+export const createForumPostRequestSchema = z.object({
+  body: z.string().min(1).max(2000)
+});
+
+export const forumPostsResponseSchema = z.object({
+  data: z.array(forumPostSchema)
+});
+
+export const forumPostResponseSchema = z.object({
+  data: forumPostSchema
+});
+
 export const publicEventSchema = z.object({
   id: z.uuid(),
   title: z.string().min(1),
@@ -383,6 +409,11 @@ export type AttendanceVisibility = z.infer<typeof attendanceVisibilitySchema>;
 export type SetAttendanceRequest = z.infer<typeof setAttendanceRequestSchema>;
 export type MyAttendanceResponse = z.infer<typeof myAttendanceResponseSchema>;
 export type FriendsAttendingResponse = z.infer<typeof friendsAttendingResponseSchema>;
+export type ForumCategory = z.infer<typeof forumCategorySchema>;
+export type ForumPost = z.infer<typeof forumPostSchema>;
+export type CreateForumPostRequest = z.infer<typeof createForumPostRequestSchema>;
+export type ForumPostsResponse = z.infer<typeof forumPostsResponseSchema>;
+export type ForumPostResponse = z.infer<typeof forumPostResponseSchema>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

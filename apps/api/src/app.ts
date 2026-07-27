@@ -15,6 +15,7 @@ import type {
   AuthRepository,
   EventRepository,
   FavoritesRepository,
+  ForumRepository,
   FriendsRepository,
   TrendsRepository
 } from '@pulso/database';
@@ -30,6 +31,7 @@ import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 
 import { registerAuthRoutes, type GoogleAuthConfig } from './auth.js';
+import { registerForumRoutes } from './forum.js';
 import { registerSocialRoutes } from './social.js';
 
 const eventParamsSchema = z.object({ id: z.uuid() });
@@ -48,6 +50,7 @@ export function buildApp(
     trendsRepository?: TrendsRepository;
     friendsRepository?: FriendsRepository;
     attendanceRepository?: AttendanceRepository;
+    forumRepository?: ForumRepository;
     google?: GoogleAuthConfig;
   } = {}
 ) {
@@ -59,6 +62,7 @@ export function buildApp(
     options.trendsRepository &&
     options.friendsRepository &&
     options.attendanceRepository &&
+    options.forumRepository &&
     options.google
   ) {
     registerAuthRoutes(
@@ -74,6 +78,7 @@ export function buildApp(
       options.friendsRepository,
       options.attendanceRepository
     );
+    registerForumRoutes(app, options.authRepository, options.forumRepository);
   }
 
   app.setErrorHandler((error, request, reply) => {
