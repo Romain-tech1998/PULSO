@@ -20,7 +20,7 @@ export {
 
 export {
   createEventbriteConnector,
-  mapEventbriteEvent
+  mapEventbriteApifyEvent
 } from './sources/eventbrite.js';
 
 export {

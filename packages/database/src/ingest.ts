@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import {
+  createEventbriteConnector,
   createMontrealOpenDataConnector,
   createTicketmasterConnector,
   createParseBotRaClubsConnector,
@@ -119,6 +120,62 @@ async function resolveVenuePoint(
   return undefined;
 }
 
+async function runEventsPipeline(
+  pool: ReturnType<typeof createPool>,
+  connectors: IngestionConnector[]
+): Promise<void> {
+  const rawEvents: RawIngestedEvent[] = [];
+  for (const connector of connectors) {
+    const result = await runConnector(connector);
+    for (const error of result.errors) {
+      console.warn(`[ingest] ${connector.id} error: ${error}`);
+    }
+    console.log(
+      `[ingest] ${connector.id} fetched ${result.events.length} raw event(s).`
+    );
+    rawEvents.push(...result.events);
+  }
+
+  // Category is already resolved per-connector (or 'unmapped') before this
+  // point, and out-of-scope events are discarded later in
+  // mapAndDeduplicateRawEvents regardless - filtering them out now avoids
+  // burning enrichMissingCoordinates/enrichMissingAddresses's rate-limited
+  // Nominatim budget (1 req/s) on ~87% of raw volume that gets thrown away
+  // anyway (see PROJECT_INDEX.md entry 28).
+  const inScopeEvents = rawEvents.filter(
+    (event) => event.category !== 'unmapped'
+  );
+  console.log(
+    `[ingest] ${rawEvents.length - inScopeEvents.length} out-of-scope event(s) skipped before enrichment.`
+  );
+
+  const withPoints = await enrichMissingCoordinates(inScopeEvents);
+  const enriched = await enrichMissingAddresses(withPoints);
+  const { events, skipped } = mapAndDeduplicateRawEvents(enriched);
+
+  await upsertPublicEvents(pool, events);
+
+  const skipCounts = skipped.reduce<Record<string, number>>((acc, skip) => {
+    acc[skip.reason] = (acc[skip.reason] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  console.log(
+    `[ingest] Upserted ${events.length} event(s). Skipped ${skipped.length}: ${JSON.stringify(skipCounts)}`
+  );
+}
+
+function buildEventbriteConnectors(): IngestionConnector[] {
+  if (!process.env.APIFY_API_TOKEN) {
+    console.warn('[ingest] Skipping Eventbrite: APIFY_API_TOKEN is not set.');
+    return [];
+  }
+  // Billed per result ($0.02/event on the free tier) - only meant to run on
+  // a slow cadence (weekly, see .github/workflows/ingest.yml), never on the
+  // twice-daily default events run.
+  return [createEventbriteConnector()];
+}
+
 async function runInstagramScout(): Promise<void> {
   const accountId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
   const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
@@ -223,48 +280,17 @@ async function main(): Promise<void> {
       return;
     }
 
-    console.log('[ingest] Running Events ingestion...');
-    const connectors = buildConnectors();
-    const rawEvents: RawIngestedEvent[] = [];
-    for (const connector of connectors) {
-      const result = await runConnector(connector);
-      for (const error of result.errors) {
-        console.warn(`[ingest] ${connector.id} error: ${error}`);
-      }
-      console.log(
-        `[ingest] ${connector.id} fetched ${result.events.length} raw event(s).`
-      );
-      rawEvents.push(...result.events);
+    if (args.includes('--eventbrite')) {
+      // Separate, slow-cadence path: billed per result, meant to run
+      // weekly (see .github/workflows/ingest.yml), never on the twice-daily
+      // default events run alongside the free connectors.
+      console.log('[ingest] Running Eventbrite ingestion...');
+      await runEventsPipeline(pool, buildEventbriteConnectors());
+      return;
     }
 
-    // Category is already resolved per-connector (or 'unmapped') before this
-    // point, and out-of-scope events are discarded later in
-    // mapAndDeduplicateRawEvents regardless - filtering them out now avoids
-    // burning enrichMissingCoordinates/enrichMissingAddresses's rate-limited
-    // Nominatim budget (1 req/s) on ~87% of raw volume that gets thrown away
-    // anyway (see PROJECT_INDEX.md entry 28).
-    const inScopeEvents = rawEvents.filter(
-      (event) => event.category !== 'unmapped'
-    );
-    console.log(
-      `[ingest] ${rawEvents.length - inScopeEvents.length} out-of-scope event(s) skipped before enrichment.`
-    );
-
-    const withPoints = await enrichMissingCoordinates(inScopeEvents);
-    const enriched = await enrichMissingAddresses(withPoints);
-    const { events, skipped } = mapAndDeduplicateRawEvents(enriched);
-
-    await upsertPublicEvents(pool, events);
-
-    const skipCounts = skipped.reduce<Record<string, number>>((acc, skip) => {
-      acc[skip.reason] = (acc[skip.reason] ?? 0) + 1;
-      return acc;
-    }, {});
-
-    console.log(
-      `[ingest] Upserted ${events.length} event(s). Skipped ${skipped.length}: ${JSON.stringify(skipCounts)}`
-    );
-
+    console.log('[ingest] Running Events ingestion...');
+    await runEventsPipeline(pool, buildConnectors());
     await runInstagramScout();
   } finally {
     await pool.end();
