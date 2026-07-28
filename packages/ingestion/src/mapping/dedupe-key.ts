@@ -20,7 +20,11 @@ export function normalizeForKey(value: string): string {
 export function computeDedupeKey(event: RawIngestedEvent): string {
   const parts = [
     normalizeForKey(event.title),
-    normalizeForKey(event.venueName ?? ''),
+    // identitySeed (when a connector sets it) replaces venueName here
+    // specifically because it's known to be more stable across separate
+    // fetches of the same real occurrence - see its doc comment on
+    // RawIngestedEvent.
+    event.identitySeed ?? normalizeForKey(event.venueName ?? ''),
     event.startsAt.slice(0, 16), // minute precision, ignores source-specific seconds jitter
     normalizeForKey(event.organizer ?? '')
   ];

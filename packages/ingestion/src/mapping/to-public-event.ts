@@ -137,11 +137,15 @@ export function mapRawEventToPublicEvent(
   // variants of the same real venue name across sources (e.g. Parse.bot RA
   // vs. Ticketmaster) converge on the same id instead of creating duplicate
   // venue rows.
-  const venueKey = event.venueName
-    ? normalizeForKey(event.venueName)
-    : event.address
-      ? normalizeForKey(event.address)
-      : `${event.point.latitude.toFixed(5)},${event.point.longitude.toFixed(5)}`;
+  // identitySeed takes priority for the same reason it does in
+  // computeDedupeKey - see RawIngestedEvent's doc comment.
+  const venueKey =
+    event.identitySeed ??
+    (event.venueName
+      ? normalizeForKey(event.venueName)
+      : event.address
+        ? normalizeForKey(event.address)
+        : `${event.point.latitude.toFixed(5)},${event.point.longitude.toFixed(5)}`);
   const venueId = deriveDeterministicEventId(`venue|${venueKey}`);
 
   const price: PublicEvent['price'] =

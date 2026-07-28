@@ -46,6 +46,17 @@ export interface RawIngestedEvent {
   /** A real photo for the event, when the source actually provides one. */
   imageUrl?: string | undefined;
   organizer?: string | undefined;
+  /**
+   * Overrides the venue-name component computeDedupeKey/venueKey would
+   * otherwise derive from `venueName`/`address`. Only set this when a
+   * source's own venue-name field is known to vary across separate fetches
+   * of the exact same real occurrence while a different field on the same
+   * row is stable (see montreal-open-data.ts, whose free-text `titre_adresse`
+   * column has been observed to differ across CSV exports for what is
+   * unambiguously the same event+address+time). Left unset, identity
+   * computation is unchanged for every other connector.
+   */
+  identitySeed?: string | undefined;
   /** Original payload fragment, kept for audit/debugging only. */
   raw?: unknown;
 }

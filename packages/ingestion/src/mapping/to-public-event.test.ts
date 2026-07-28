@@ -40,6 +40,16 @@ describe('normalizeForKey / computeDedupeKey', () => {
     );
     expect(a).toBe(b);
   });
+
+  it('uses identitySeed instead of venueName when set, even if venueName differs', () => {
+    const a = computeDedupeKey(
+      ticketmasterEvent({ venueName: 'Parc de la Savane', identitySeed: 'stable-seed' })
+    );
+    const b = computeDedupeKey(
+      ticketmasterEvent({ venueName: 'Place De La Savane', identitySeed: 'stable-seed' })
+    );
+    expect(a).toBe(b);
+  });
 });
 
 describe('deriveDeterministicEventId', () => {
@@ -154,6 +164,23 @@ describe('mapRawEventToPublicEvent', () => {
     if (!('event' in eventA) || !('event' in eventB)) throw new Error('expected events');
 
     expect(eventA.event.venue.id).not.toBe(eventB.event.venue.id);
+  });
+
+  it('uses identitySeed instead of venueName for the venue id when set', () => {
+    const withDriftingName = mapRawEventToPublicEvent(
+      ticketmasterEvent({ venueName: 'Parc de la Savane', identitySeed: 'place de la savane' }),
+      { now }
+    );
+    const withDifferentDriftingName = mapRawEventToPublicEvent(
+      ticketmasterEvent({ venueName: 'Place De La Savane', identitySeed: 'place de la savane' }),
+      { now }
+    );
+    if (!('event' in withDriftingName) || !('event' in withDifferentDriftingName)) {
+      throw new Error('expected events');
+    }
+    expect(withDriftingName.event.venue.id).toBe(withDifferentDriftingName.event.venue.id);
+    // Display name still reflects the connector's own (prettier) venueName.
+    expect(withDriftingName.event.venue.name).toBe('Parc de la Savane');
   });
 
   it('skips events with an invalid start date', () => {

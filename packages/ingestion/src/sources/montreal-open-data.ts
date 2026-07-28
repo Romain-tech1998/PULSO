@@ -1,5 +1,6 @@
 import type { IngestionConnector, RawIngestedEvent } from '../types.js';
 import { parseCsv } from '../lib/csv.js';
+import { normalizeForKey } from '../mapping/dedupe-key.js';
 
 /**
  * City of Montréal open-data "Événements publics" dataset.
@@ -63,6 +64,27 @@ function parsePrice(cout: string): RawIngestedEvent['price'] {
   return { kind: 'unknown' };
 }
 
+// MVP-0001 scopes Pulso to festive/musical/nightlife events - children's/
+// family civic programming (library film afternoons, park puppet shows)
+// is real, well-formed data but out of that scope, same principle as the
+// unmapped-category exclusion below. No structured "audience" column exists
+// in this dataset, so this is a best-effort text match on title/description
+// rather than a fabricated category.
+const FAMILY_AUDIENCE_KEYWORDS = [
+  'enfant',
+  'jeune public',
+  'en famille',
+  'tout-petit',
+  'tout petit',
+  'bébé',
+  'pour petits et grands'
+];
+
+function looksLikeFamilyOrKidsEvent(title: string, description: string | undefined): boolean {
+  const haystack = `${title} ${description ?? ''}`.toLowerCase();
+  return FAMILY_AUDIENCE_KEYWORDS.some((keyword) => haystack.includes(keyword));
+}
+
 export function mapMontrealOpenDataRow(
   row: Record<string, string>,
   observedAt: string
@@ -73,6 +95,8 @@ export function mapMontrealOpenDataRow(
   const longitude = Number(row.long);
   const latitude = Number(row.lat);
   const hasPoint = Number.isFinite(longitude) && Number.isFinite(latitude);
+  const description = cleanField(row.description);
+  const address = cleanField(row.adresse_principale);
 
   return {
     sourceId: 'ville-de-montreal-evenements-publics',
@@ -80,15 +104,26 @@ export function mapMontrealOpenDataRow(
     sourceUrl: row.url_fiche || 'https://montreal.ca/calendrier',
     observedAt,
     title: row.titre,
-    description: cleanField(row.description),
-    category: TYPE_TO_CATEGORY[row.type_evenement?.toLowerCase() ?? ''] ?? 'unmapped',
+    description,
+    category: looksLikeFamilyOrKidsEvent(row.titre, description)
+      ? 'unmapped'
+      : (TYPE_TO_CATEGORY[row.type_evenement?.toLowerCase() ?? ''] ?? 'unmapped'),
     startsAt,
     endsAt: toIsoOrUndefined(row.date_fin ?? ''),
     venueName: cleanField(row.titre_adresse),
-    address: cleanField(row.adresse_principale),
+    address,
     point: hasPoint ? { longitude, latitude } : undefined,
     price: parsePrice(row.cout ?? ''),
     organizer: cleanField(row.arrondissement),
+    // This dataset's free-text venue-name column (titre_adresse) has been
+    // observed to vary across separate CSV exports for the exact same
+    // calendar entry (same url_fiche, same address, same date) - identical
+    // real occurrences were getting re-inserted as new event/venue rows on
+    // every ingestion run instead of updating the existing ones. The civic
+    // address column has not shown that instability, so it anchors identity
+    // here instead; titre_adresse is still used above for the prettier
+    // display name shown to users.
+    identitySeed: address ? normalizeForKey(address) : undefined,
     // Not a ticket purchase, but per product decision this still counts as
     // an actionable external destination: the montreal.ca page is real and
     // useful even for free events, and redirect click-throughs are data
