@@ -30,8 +30,8 @@ import { createPool } from './client.js';
  *    "nightclub" - that classification is trusted over OSM's often-generic
  *    bar/pub/restaurant tagging for the bar/nightclub distinction
  *    specifically. Several likely real registry entries were excluded for
- *    a bad or ambiguous OSM match: "Place Bell" only matched an unrelated
- *    Bell phone shop, "Mila" a daycare, "La Shop" an electronics store,
+ *    a bad or ambiguous OSM match: "Mila" matched a daycare, "La Shop" an
+ *    electronics store,
  *    "Club 649" a street name, and "Pangea" only a plain restaurant tag
  *    with no bar/nightclub signal either way. The remaining ~32 tier-1
  *    venue/nightclub/bar registry rows with no reliable OSM match at all,
@@ -147,7 +147,7 @@ const curatedVenues: CuratedVenue[] = [
   },
   {
     id: '00000000-0000-4000-8000-000000000031',
-    name: 'Théâtre de Quat\'Sous',
+    name: "Théâtre de Quat'Sous",
     address: '100 Avenue des Pins, Montréal, QC H2W 1N7',
     longitude: -73.5740437,
     latitude: 45.5160175,
@@ -227,7 +227,7 @@ const curatedVenues: CuratedVenue[] = [
   },
   {
     id: '00000000-0000-4000-8000-000000000041',
-    name: 'Cabaret Lion d\'Or',
+    name: "Cabaret Lion d'Or",
     address: '1676 Rue Ontario Est, Montréal, QC H2L 1S7',
     longitude: -73.5575456,
     latitude: 45.5242415,
@@ -347,7 +347,7 @@ const curatedVenues: CuratedVenue[] = [
   },
   {
     id: '00000000-0000-4000-8000-000000000056',
-    name: 'Bord\'Elle',
+    name: "Bord'Elle",
     address: '390 Rue Saint-Jacques, Montréal, QC H2Y 1S1',
     longitude: -73.5597306,
     latitude: 45.5019151,
@@ -368,6 +368,27 @@ const curatedVenues: CuratedVenue[] = [
     longitude: -73.5565931,
     latitude: 45.5182366,
     category: 'nightclub'
+  },
+  {
+    // Added after a dedicated verification rather than the earlier ambiguous
+    // name-only lookup: Place Bell's own site confirms the civic address,
+    // while the mapped arena entity independently provides the coordinate.
+    id: '00000000-0000-4000-8000-000000000059',
+    name: 'Place Bell',
+    address: '1950 Rue Claude-Gagné, Laval, QC H7N 0E4',
+    longitude: -73.7218,
+    latitude: 45.5558,
+    category: 'concert_hall'
+  },
+  {
+    // The official venue site confirms this civic address, while the named
+    // OpenStreetMap bar entity independently supplies the map coordinate.
+    id: '00000000-0000-4000-8000-000000000060',
+    name: 'Rouge Gorge',
+    address: '1234 Avenue du Mont-Royal Est, Montréal, QC H2J 1Y1',
+    longitude: -73.5779547,
+    latitude: 45.5291292,
+    category: 'bar'
   }
 ];
 
@@ -381,7 +402,14 @@ try {
          address = EXCLUDED.address,
          location = EXCLUDED.location,
          category = EXCLUDED.category`,
-      [venue.id, venue.name, venue.address, venue.longitude, venue.latitude, venue.category]
+      [
+        venue.id,
+        venue.name,
+        venue.address,
+        venue.longitude,
+        venue.latitude,
+        venue.category
+      ]
     );
   }
   console.log(`Seeded ${curatedVenues.length} curated venues.`);

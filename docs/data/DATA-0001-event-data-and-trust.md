@@ -130,7 +130,7 @@ Les éléments suivants doivent être étudiés et résolus avant toute impléme
 | --- | --- | --- |
 | Ville de Montréal (données ouvertes) | Connecteur implémenté, validé en conditions réelles | Gratuit, sans clé, mais valeurs manquantes encodées en `"nan"` littéral (corrigé) ; couverture à dominante civique/culturelle, complémentaire au nightlife |
 | Ticketmaster Discovery API | Connecteur implémenté, validé en conditions réelles | Clé gratuite, quota 5000/jour et 5 req/s ; coordonnées `(0,0)` en lieu d'absence (corrigé) ; ~29 % des événements bruts non classables faute de segment Ticketmaster exploitable |
-| Instagram Scout | Connecteur implémenté, jamais publié sans revue humaine (DEC-0006) | Nécessite une app Meta + compte Instagram professionnel lié ; non validé en conditions réelles |
+| Instagram Scout | Connecteur Graph API v25 validé sur cinq sources avec un token utilisateur étendu, jamais publié sans revue humaine (DEC-0006) | 50 éléments `needs_review`, 45 Feed et 5 Reels, liens et timestamps complets; le token utilisateur système reste bloqué (`API access blocked`) |
 | Calendriers ICS génériques | Connecteur générique implémenté, aucune source réelle branchée | Aucun lieu montréalais individuel identifié publiant un flux ICS après recherche (voir entrée 31) |
 | Eventbrite | Écarté | Recherche publique par ville supprimée depuis février 2020 ; API restante limitée aux événements de sa propre organisation |
 | Shotgun | Écarté | Aucune API de découverte publique trouvée, accès organisateur seulement |

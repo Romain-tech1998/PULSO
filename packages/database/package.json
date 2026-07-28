@@ -13,14 +13,24 @@
     "db:ingest": "tsx src/ingest.ts",
     "db:cleanup-vdm-duplicates": "tsx src/cleanup-vdm-duplicates.ts",
     "instagram:scout": "tsx src/instagram-scout-pilot.ts",
+    "instagram:scout:apply-decisions": "tsx src/instagram-scout-apply-decisions.ts",
+    "instagram:scout:crosscheck": "tsx src/instagram-scout-crosscheck.ts",
+    "instagram:scout:link-venues": "tsx src/instagram-scout-link-venues.ts",
+    "instagram:scout:import-verified-pilot": "tsx src/instagram-scout-import-verified-pilot.ts",
+    "instagram:scout:review": "tsx src/instagram-scout-review-ui.ts",
+    "instagram:scout:visual": "tsx src/instagram-scout-pilot.ts --visual",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@pulso/contracts": "workspace:*",
     "@pulso/domain": "workspace:*",
     "@pulso/ingestion": "workspace:*",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/fra": "^1.0.0",
     "drizzle-orm": "0.45.2",
-    "pg": "8.22.0"
+    "pg": "8.22.0",
+    "sharp": "^0.35.3",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/pg": "8.20.0",

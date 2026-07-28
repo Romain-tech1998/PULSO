@@ -14,8 +14,9 @@
  *    (https://developers.facebook.com/apps).
  * 2. Your own Instagram professional (Business or Creator) account, linked to
  *    a Facebook Page you manage, used as the querying identity.
- * 3. A user or system access token with `instagram_basic` permission for that
- *    linked account.
+ * 3. A user or system access token with `instagram_basic`,
+ *    `instagram_manage_insights`, `pages_read_engagement`, and
+ *    `pages_show_list` permissions for that linked account.
  * 4. For anything beyond a handful of test accounts in Development mode, Meta
  *    App Review (Business Verification + Instagram Public Content Access) is
  *    required. Do not assume production-scale access without it.
@@ -36,17 +37,37 @@ export interface InstagramScoutSignal {
   mediaId: string;
   caption?: string | undefined;
   mediaType?: string | undefined;
+  mediaProductType?: string | undefined;
   permalink?: string | undefined;
   timestamp?: string | undefined;
+  mediaAssets?: InstagramScoutMediaAsset[] | undefined;
   observedAt: string;
+}
+
+export interface InstagramScoutMediaAsset {
+  mediaId: string;
+  mediaType?: string | undefined;
+  mediaUrl?: string | undefined;
+  thumbnailUrl?: string | undefined;
 }
 
 interface BusinessDiscoveryMedia {
   id: string;
   caption?: string;
   media_type?: string;
+  media_product_type?: string;
   permalink?: string;
   timestamp?: string;
+  media_url?: string;
+  thumbnail_url?: string;
+  children?: {
+    data?: Array<{
+      id: string;
+      media_type?: string;
+      media_url?: string;
+      thumbnail_url?: string;
+    }>;
+  };
 }
 
 interface BusinessDiscoveryResponse {
@@ -56,7 +77,7 @@ interface BusinessDiscoveryResponse {
   error?: { message: string };
 }
 
-const GRAPH_API_VERSION = 'v21.0';
+const GRAPH_API_VERSION = 'v25.0';
 
 export async function fetchInstagramScoutSignals(
   targets: InstagramScoutTarget[],
@@ -65,10 +86,12 @@ export async function fetchInstagramScoutSignals(
     accessToken?: string;
     fetchImpl?: typeof fetch;
     mediaFieldsLimit?: number;
+    onTargetError?: (target: InstagramScoutTarget, message: string) => void;
   } = {}
 ): Promise<InstagramScoutSignal[]> {
   const queryingInstagramUserId =
-    options.queryingInstagramUserId ?? process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
+    options.queryingInstagramUserId ??
+    process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
   const accessToken = options.accessToken ?? process.env.INSTAGRAM_ACCESS_TOKEN;
   const fetchImpl = options.fetchImpl ?? fetch;
   const mediaLimit = options.mediaFieldsLimit ?? 10;
@@ -89,7 +112,7 @@ export async function fetchInstagramScoutSignals(
     );
     url.searchParams.set(
       'fields',
-      `business_discovery.username(${target.handle}){media.limit(${mediaLimit}){id,caption,media_type,permalink,timestamp}}`
+      `business_discovery.username(${target.handle}){media.limit(${mediaLimit}){id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,children{id,media_type,media_url,thumbnail_url}}}`
     );
     url.searchParams.set('access_token', accessToken);
 
@@ -98,18 +121,41 @@ export async function fetchInstagramScoutSignals(
     if (!response.ok || body.error) {
       // A single unreachable/private/renamed account must not abort the whole
       // watchlist run; record nothing for it and continue.
+      options.onTargetError?.(
+        target,
+        body.error?.message ?? `Meta Graph API returned HTTP ${response.status}`
+      );
       continue;
     }
     const media = body.business_discovery?.media?.data ?? [];
     for (const item of media) {
+      const childAssets = item.children?.data ?? [];
+      const mediaAssets =
+        childAssets.length > 0
+          ? childAssets.map((child) => ({
+              mediaId: child.id,
+              mediaType: child.media_type,
+              mediaUrl: child.media_url,
+              thumbnailUrl: child.thumbnail_url
+            }))
+          : [
+              {
+                mediaId: item.id,
+                mediaType: item.media_type,
+                mediaUrl: item.media_url,
+                thumbnailUrl: item.thumbnail_url
+              }
+            ];
       signals.push({
         sourceId: target.sourceId,
         handle: target.handle,
         mediaId: item.id,
         caption: item.caption,
         mediaType: item.media_type,
+        mediaProductType: item.media_product_type,
         permalink: item.permalink,
         timestamp: item.timestamp,
+        mediaAssets,
         observedAt
       });
     }

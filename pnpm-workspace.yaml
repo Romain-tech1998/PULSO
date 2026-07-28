@@ -8,6 +8,7 @@ virtualStoreDirMaxLength: 30
 allowBuilds:
   esbuild: true
   sharp: true
+  tesseract.js: false
 
 minimumReleaseAgeExclude:
   - '@expo/cli@57.0.8'

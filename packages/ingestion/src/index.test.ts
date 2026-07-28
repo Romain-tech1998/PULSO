@@ -7,6 +7,13 @@ import {
 } from './lib/geocode-fallback.js';
 import { parseIcs } from './sources/ics-calendar.js';
 import { fetchInstagramScoutSignals } from './sources/instagram-scout.js';
+import { crosscheckInstagramScoutVenueCandidates } from './instagram-scout-official-crosscheck.js';
+import { reconcileInstagramScoutDecisions } from './instagram-scout-decision-reconciliation.js';
+import { prepareInstagramScoutMappingDraft } from './instagram-scout-mapping-draft.js';
+import {
+  evaluateInstagramScoutGeographicEligibility,
+  linkInstagramScoutSourcesToKnownVenues
+} from './instagram-scout-venue-linking.js';
 import { buildInstagramScoutReviewQueue } from './instagram-scout-review.js';
 import { triageInstagramScoutItem } from './instagram-scout-triage.js';
 import { extractInstagramScoutFacts } from './instagram-scout-extraction.js';
@@ -28,7 +35,9 @@ describe('parseCsv', () => {
   });
 
   it('handles quoted fields with embedded commas and escaped quotes', () => {
-    const rows = parseCsv('title,description\n"Show, live","She said ""hi"""\n');
+    const rows = parseCsv(
+      'title,description\n"Show, live","She said ""hi"""\n'
+    );
     expect(rows).toEqual([
       { title: 'Show, live', description: 'She said "hi"' }
     ]);
@@ -181,7 +190,11 @@ describe('mapTicketmasterEvent', () => {
           { ratio: '16_9', url: 'https://example.com/tiny.jpg', width: 100 },
           { ratio: '16_9', url: 'https://example.com/good.jpg', width: 1024 },
           { ratio: '16_9', url: 'https://example.com/huge.jpg', width: 2426 },
-          { ratio: '3_2', url: 'https://example.com/wrong-ratio.jpg', width: 700 }
+          {
+            ratio: '3_2',
+            url: 'https://example.com/wrong-ratio.jpg',
+            width: 700
+          }
         ]
       },
       '2026-07-21T00:00:00.000Z'
@@ -374,7 +387,10 @@ describe('enrichMissingAddresses', () => {
       .fn()
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('network blip'))
-      .mockResolvedValueOnce({ venueName: 'Bibliothèque Robert-Bourassa', address: '41 Avenue Saint-Just' });
+      .mockResolvedValueOnce({
+        venueName: 'Bibliothèque Robert-Bourassa',
+        address: '41 Avenue Saint-Just'
+      });
     const [result] = await enrichMissingAddresses([pointedNoAddress], {
       delayMs: 0,
       reverseGeocodeImpl
@@ -414,9 +430,14 @@ describe('enrichMissingAddresses', () => {
       reverseGeocodeImpl,
       nearbyPlaceImpl
     });
-    expect(nearbyPlaceImpl).toHaveBeenCalledWith(pointedNoAddress.point, expect.anything());
+    expect(nearbyPlaceImpl).toHaveBeenCalledWith(
+      pointedNoAddress.point,
+      expect.anything()
+    );
     expect(result?.venueName).toBe('Piscine Médéric-Martin');
-    expect(result?.address).toBe('2329, Avenue Gascon, Montréal, QC, Canada, H2K 2V6');
+    expect(result?.address).toBe(
+      '2329, Avenue Gascon, Montréal, QC, Canada, H2K 2V6'
+    );
   });
 
   it('falls back to a short road label as the venue name when OSM has no named POI at that point or nearby', async () => {
@@ -438,7 +459,9 @@ describe('enrichMissingAddresses', () => {
       nearbyPlaceImpl
     });
     expect(result?.venueName).toBe('4120 Rue Ontario Est');
-    expect(result?.address).toBe('4120, Rue Ontario Est, Montréal, QC, Canada, H1V 1J9');
+    expect(result?.address).toBe(
+      '4120, Rue Ontario Est, Montréal, QC, Canada, H1V 1J9'
+    );
   });
 
   it('falls back to venueName undefined when even the road is unavailable', async () => {
@@ -504,6 +527,7 @@ describe('fetchInstagramScoutSignals', () => {
                   id: 'media-1',
                   media_type: 'VIDEO',
                   media_product_type: 'REELS',
+                  thumbnail_url: 'https://example.com/reel.jpg',
                   permalink: 'https://www.instagram.com/reel/example/',
                   timestamp: '2026-07-09T20:00:20+0000'
                 }
@@ -529,12 +553,333 @@ describe('fetchInstagramScoutSignals', () => {
     expect(requestedUrl.searchParams.get('fields')).toContain(
       'media_product_type'
     );
+    expect(requestedUrl.searchParams.get('fields')).toContain('thumbnail_url');
     expect(signals[0]).toMatchObject({
       sourceId: 'new-city-gas',
       handle: 'newcitygas',
       mediaType: 'VIDEO',
-      mediaProductType: 'REELS'
+      mediaProductType: 'REELS',
+      mediaAssets: [
+        {
+          mediaId: 'media-1',
+          mediaType: 'VIDEO',
+          thumbnailUrl: 'https://example.com/reel.jpg'
+        }
+      ]
     });
+  });
+});
+
+describe('crosscheckInstagramScoutVenueCandidates', () => {
+  it('requires a matching date and a distinctive term from the official venue account', () => {
+    const [result] = crosscheckInstagramScoutVenueCandidates(
+      [
+        {
+          reviewId: 'evenko:1',
+          venueSourceId: 'place-bell',
+          venueName: 'Place Bell',
+          evidenceText: 'Trivium à Place Bell le 17 novembre',
+          dateMentions: ['17 novembre', 'November 17']
+        }
+      ],
+      [
+        {
+          sourceId: 'place-bell',
+          handle: 'placebell',
+          mediaId: 'official-1',
+          caption: 'Trivium — November 17 at Place Bell',
+          permalink: 'https://www.instagram.com/p/official/',
+          observedAt: '2026-07-26T00:00:00.000Z'
+        }
+      ]
+    );
+
+    expect(result).toMatchObject({
+      status: 'confirmed_by_official_venue_account',
+      matchedMediaId: 'official-1',
+      sharedDates: ['11-17'],
+      sharedDistinctiveTerms: ['trivium'],
+      publicationAuthorized: false
+    });
+  });
+
+  it('does not confirm from a venue name alone', () => {
+    const [result] = crosscheckInstagramScoutVenueCandidates(
+      [
+        {
+          reviewId: 'evenko:2',
+          venueSourceId: 'centre-bell',
+          venueName: 'Centre Bell',
+          evidenceText: 'The Aces — 16 juillet — Centre Bell',
+          dateMentions: ['16 juillet']
+        }
+      ],
+      [
+        {
+          sourceId: 'centre-bell',
+          handle: 'centrebell',
+          mediaId: 'official-2',
+          caption: 'Une autre soirée au Centre Bell le 20 juillet',
+          observedAt: '2026-07-26T00:00:00.000Z'
+        }
+      ]
+    );
+
+    expect(result?.status).toBe('no_official_match');
+  });
+});
+
+describe('reconcileInstagramScoutDecisions', () => {
+  it('keeps an accepted Laval event outside the Montréal MVP', () => {
+    expect(
+      reconcileInstagramScoutDecisions(
+        [
+          {
+            reviewId: 'evenko:1',
+            outcome: 'accepted',
+            reviewerNotes: ''
+          }
+        ],
+        [
+          {
+            reviewId: 'evenko:1',
+            dateMentions: ['17 novembre'],
+            timeMentions: ['18 h 35'],
+            possibleVenueMentions: ['Place Bell']
+          }
+        ],
+        { 'Place Bell': 'Laval' }
+      )
+    ).toEqual([
+      {
+        reviewId: 'evenko:1',
+        humanOutcome: 'accepted',
+        resolution: 'blocked_outside_mvp',
+        venueName: 'Place Bell',
+        venueCity: 'Laval',
+        missingFacts: [],
+        publicationAuthorized: false
+      }
+    ]);
+  });
+
+  it('preserves a rejected aggregate post without mapping it', () => {
+    expect(
+      reconcileInstagramScoutDecisions(
+        [
+          {
+            reviewId: 'evenko:2',
+            outcome: 'not_an_event',
+            reviewerNotes: 'Aggregate poster'
+          }
+        ],
+        [
+          {
+            reviewId: 'evenko:2',
+            dateMentions: ['16 juillet'],
+            timeMentions: [],
+            possibleVenueMentions: ['Centre Bell']
+          }
+        ],
+        { 'Centre Bell': 'Montréal' }
+      )[0]
+    ).toMatchObject({
+      humanOutcome: 'not_an_event',
+      resolution: 'excluded_by_review',
+      publicationAuthorized: false
+    });
+  });
+});
+
+describe('prepareInstagramScoutMappingDraft', () => {
+  const facts = {
+    title: 'Concert test',
+    category: 'music' as const,
+    startsAt: '2026-08-14T20:00:00-04:00',
+    venue: {
+      name: 'MTELUS',
+      address: '59 Rue Sainte-Catherine Est',
+      city: 'Montréal',
+      point: { longitude: -73.5633, latitude: 45.5105 }
+    },
+    source: {
+      sourceId: 'instagram-scout:mtelus',
+      sourceName: 'Instagram · MTELUS',
+      sourceUrl: 'https://www.instagram.com/p/example/',
+      observedAt: '2026-07-26T12:00:00.000Z'
+    }
+  };
+
+  it('prepares a normalized draft without authorizing a database write', () => {
+    const result = prepareInstagramScoutMappingDraft(
+      {
+        reviewId: 'mtelus:media-1',
+        humanOutcome: 'accepted',
+        resolution: 'ready_for_mapping',
+        venueName: 'MTELUS',
+        venueCity: 'Montréal',
+        missingFacts: [],
+        publicationAuthorized: false
+      },
+      facts
+    );
+
+    expect(result).toMatchObject({
+      status: 'mapping_draft_ready',
+      databaseWriteAuthorized: false,
+      publicationAuthorized: false,
+      rawEvent: {
+        title: 'Concert test',
+        startsAt: '2026-08-15T00:00:00.000Z',
+        venueName: 'MTELUS',
+        pointResolution: 'source'
+      }
+    });
+  });
+
+  it('cannot bypass a geographic or review block', () => {
+    const result = prepareInstagramScoutMappingDraft(
+      {
+        reviewId: 'evenko:media-2',
+        humanOutcome: 'accepted',
+        resolution: 'blocked_outside_mvp',
+        venueName: 'Place Bell',
+        venueCity: 'Laval',
+        missingFacts: [],
+        publicationAuthorized: false
+      },
+      facts
+    );
+    expect(result).toMatchObject({
+      status: 'blocked_by_reconciliation',
+      databaseWriteAuthorized: false,
+      publicationAuthorized: false
+    });
+    expect(result).not.toHaveProperty('rawEvent');
+  });
+
+  it('blocks incomplete validated facts instead of inventing them', () => {
+    const result = prepareInstagramScoutMappingDraft(
+      {
+        reviewId: 'mtelus:media-3',
+        humanOutcome: 'accepted',
+        resolution: 'ready_for_mapping',
+        venueName: 'MTELUS',
+        venueCity: 'Montréal',
+        missingFacts: [],
+        publicationAuthorized: false
+      },
+      {
+        ...facts,
+        startsAt: 'unknown',
+        venue: {
+          ...facts.venue,
+          address: '',
+          point: { longitude: Number.NaN, latitude: Number.NaN }
+        }
+      }
+    );
+
+    expect(result).toMatchObject({
+      status: 'blocked_incomplete_validated_facts',
+      missingValidatedFacts: ['start', 'venue_address', 'venue_point'],
+      databaseWriteAuthorized: false,
+      publicationAuthorized: false
+    });
+    expect(result).not.toHaveProperty('rawEvent');
+  });
+});
+
+describe('linkInstagramScoutSourcesToKnownVenues', () => {
+  it('links an Instagram account only to one exact normalized venue name', () => {
+    const result = linkInstagramScoutSourcesToKnownVenues(
+      [
+        {
+          sourceId: 'theatre-beanfield',
+          displayName: 'Théâtre Beanfield',
+          normalizedName: 'Theatre Beanfield',
+          instagramHandle: 'theatrebeanfield'
+        },
+        {
+          sourceId: 'unknown',
+          displayName: 'Unknown Place',
+          normalizedName: 'Unknown Place',
+          instagramHandle: 'unknown'
+        }
+      ],
+      [
+        {
+          id: 'venue-1',
+          name: 'Théâtre Beanfield',
+          address: '2490 Rue Notre-Dame Ouest, Montréal',
+          point: { longitude: -73.575, latitude: 45.482 }
+        }
+      ]
+    );
+
+    expect(result.linked).toHaveLength(1);
+    expect(result.linked[0]).toMatchObject({
+      sourceId: 'theatre-beanfield',
+      instagramHandle: 'theatrebeanfield',
+      venue: { id: 'venue-1' },
+      matchMethod: 'exact_normalized_name'
+    });
+    expect(result.unmatchedSourceIds).toEqual(['unknown']);
+  });
+});
+
+describe('evaluateInstagramScoutGeographicEligibility', () => {
+  it('keeps Montréal venues eligible without a density exception', () => {
+    expect(
+      evaluateInstagramScoutGeographicEligibility({
+        venueId: 'mtelus',
+        venueCity: 'Montréal',
+        venuePoint: { longitude: -73.563, latitude: 45.51 },
+        calendarMonth: '2026-08',
+        validatedEventCount: 1
+      })
+    ).toMatchObject({
+      eligible: true,
+      reason: 'inside_mvp_city',
+      maximumDistanceKm: 30
+    });
+  });
+
+  it('accepts an out-of-city venue within 30 km without a density rule', () => {
+    expect(
+      evaluateInstagramScoutGeographicEligibility({
+        venueId: 'place-bell',
+        venueCity: 'Laval',
+        venuePoint: { longitude: -73.7218, latitude: 45.5558 },
+        calendarMonth: '2026-12',
+        validatedEventCount: 6
+      })
+    ).toMatchObject({
+      eligible: true,
+      reason: 'inside_maximum_distance',
+      maximumDistanceKm: 30
+    });
+  });
+
+  it('accepts even one nearby event and blocks a venue beyond 30 km', () => {
+    expect(
+      evaluateInstagramScoutGeographicEligibility({
+        venueId: 'place-bell',
+        venueCity: 'Laval',
+        venuePoint: { longitude: -73.7218, latitude: 45.5558 },
+        calendarMonth: '2026-12',
+        validatedEventCount: 1
+      }).reason
+    ).toBe('inside_maximum_distance');
+    expect(
+      evaluateInstagramScoutGeographicEligibility({
+        venueId: 'far-away',
+        venueCity: 'Trois-Rivières',
+        venuePoint: { longitude: -72.542, latitude: 46.343 },
+        calendarMonth: '2026-12',
+        validatedEventCount: 12
+      }).reason
+    ).toBe('outside_maximum_distance');
   });
 });
 

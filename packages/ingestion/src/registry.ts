@@ -25,3 +25,27 @@ export function extractInstagramWatchlist(
 
   return targets;
 }
+
+/**
+ * Resolves an explicit pilot subset from the DATA-0002 registry. Unknown ids
+ * are rejected instead of silently widening or changing the requested pilot.
+ */
+export function selectInstagramPilotTargets(
+  registryCsvText: string,
+  sourceIds: string[]
+): InstagramScoutTarget[] {
+  const watchlist = extractInstagramWatchlist(registryCsvText);
+  const targetsById = new Map(
+    watchlist.map((target) => [target.sourceId, target])
+  );
+  const uniqueIds = [...new Set(sourceIds)];
+  const missingIds = uniqueIds.filter((sourceId) => !targetsById.has(sourceId));
+
+  if (missingIds.length > 0) {
+    throw new Error(
+      `Instagram pilot source id(s) absent from DATA-0002: ${missingIds.join(', ')}`
+    );
+  }
+
+  return uniqueIds.map((sourceId) => targetsById.get(sourceId)!);
+}
