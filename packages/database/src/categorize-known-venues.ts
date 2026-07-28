@@ -129,7 +129,39 @@ const knownVenues: KnownVenue[] = [
   { name: "Parc d'Escale", category: 'outdoor_festival_site' }, // Parc Noël-Spinelli (formerly Parc de la Marina d'Escale) - waterfront park with an open-air amphitheatre
   { name: 'Salle Émile-Legault', category: 'theater' }, // Cégep de Saint-Laurent's professional performance hall
   { name: 'Bibliothèque de Pierrefonds', category: 'community_space' },
-  { name: 'Maison Symphonique de Montréal', category: 'concert_hall' } // capitalization variant of the already-categorized "Maison symphonique de Montréal"
+  { name: 'Maison Symphonique de Montréal', category: 'concert_hall' }, // capitalization variant of the already-categorized "Maison symphonique de Montréal"
+
+  // Third batch, same method and same exclusions as the second. Skipped this
+  // round for the same reason (no confident single-venue match, or a
+  // category that doesn't fit anything in VENUE_CATEGORIES - restaurants,
+  // schools, a highway, generic/ambiguous park or trail descriptions):
+  // Café Bistro 20 93, Chez Chili, École Les Enfants du Monde, École Saint
+  // Anthony, Autoroute Ville-Marie, Terrain Yvon-Lussier, Piste du parc,
+  // Parc bord l'eau, Parc à chiens du parc Gouin, ESC, Promenade
+  // Jean-Brillant. New City Gas is deliberately excluded too, same reason as
+  // the top-of-file note - already categorized by seed-curated-venues.ts.
+  { name: 'Vino Disco', category: 'bar', secondaryCategories: ['nightclub'] }, // wine bar with a nightly DJ dance floor, Quartier des Spectacles
+  { name: 'Sans Soleil', category: 'bar' }, // vinyl-only listening bar, Chinatown
+  { name: 'Piranha Bar', category: 'bar', secondaryCategories: ['concert_hall'] }, // dive bar with an upstairs live-music stage
+  { name: 'Église Notre-Dame-des-Sept-Douleurs', category: 'concert_hall' }, // Verdun church, regular ticketed concert series (Candlelight, Musical Wednesdays)
+  { name: 'La Salle Désilets', category: 'concert_hall' }, // 700-seat performance hall, Cégep Marie-Victorin - largest in Eastern Montreal
+  { name: 'Espace Projet', category: 'gallery_museum' }, // Mile-End gallery for emerging design/art
+  { name: "Centre d'exposition Lethbridge", category: 'gallery_museum' },
+  { name: 'Maison de la culture Janine-Sutto', category: 'community_space' },
+  { name: 'Bibliothèque de La Petite-Patrie', category: 'community_space' },
+  { name: 'Bibliothèque Jean-Corbeil', category: 'community_space' },
+  { name: 'Chalet François-Perrault', category: 'community_space' }, // municipal park chalet/community facility
+  { name: 'Champ-De-Mars', category: 'outdoor_festival_site' }, // public square, Fête nationale and other festival programming
+  { name: 'Esplanade du Parc olympique', category: 'outdoor_festival_site' },
+  { name: 'Parc de la Savane', category: 'outdoor_festival_site' },
+  { name: 'Parc Marcel-Léger', category: 'outdoor_festival_site' },
+  { name: "Parc de l'esplanade de la Pointe-Nord", category: 'outdoor_festival_site' }, // Old Port
+  { name: 'Parc Martin-Luther-King', category: 'outdoor_festival_site' },
+  { name: "Parc Nature de l'Ile-de-la-Visitation", category: 'outdoor_festival_site' },
+  { name: 'Complexe Sportif Claude-Robillard', category: 'other' }, // large multi-sport complex, no sports-venue category
+  { name: 'Théâtre Maisonneuve', category: 'theater' }, // Place des Arts
+  { name: 'Maison Etienne Nivard de Saint-Dizier', category: 'gallery_museum' }, // Lachine historic house museum
+  { name: 'Fab Labs', category: 'community_space' } // maker/fabrication-lab community space
 ];
 
 try {
