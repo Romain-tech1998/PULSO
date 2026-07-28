@@ -371,6 +371,18 @@ export const unreadCountResponseSchema = z.object({
   data: z.object({ count: z.number().int().min(0) })
 });
 
+// One row per accepted friend (not just ones with an existing message
+// history) - powers the Messages page's conversation list.
+export const conversationSummarySchema = z.object({
+  friend: publicUserSchema,
+  lastMessage: messageSchema.optional(),
+  unreadCount: z.number().int().min(0)
+});
+
+export const conversationsResponseSchema = z.object({
+  data: z.array(conversationSummarySchema)
+});
+
 // Captures a report only (DEC-0012) - no moderation queue or automated
 // action exists yet, this is a minimal safety net.
 export const reportTargetTypeSchema = z.enum(['forum_post', 'message', 'group_post']);
@@ -558,6 +570,8 @@ export type SendMessageRequest = z.infer<typeof sendMessageRequestSchema>;
 export type ConversationResponse = z.infer<typeof conversationResponseSchema>;
 export type MessageResponse = z.infer<typeof messageResponseSchema>;
 export type UnreadCountResponse = z.infer<typeof unreadCountResponseSchema>;
+export type ConversationSummary = z.infer<typeof conversationSummarySchema>;
+export type ConversationsResponse = z.infer<typeof conversationsResponseSchema>;
 export type ReportTargetType = z.infer<typeof reportTargetTypeSchema>;
 export type CreateReportRequest = z.infer<typeof createReportRequestSchema>;
 export type Group = z.infer<typeof groupSchema>;

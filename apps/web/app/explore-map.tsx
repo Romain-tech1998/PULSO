@@ -5,6 +5,7 @@ import {
   buildMapEventsQuery,
   CATEGORY_FILTER_OPTIONS,
   conversationResponseSchema,
+  conversationsResponseSchema,
   DATE_FILTER_OPTIONS,
   eventDetailsResponseSchema,
   eventListResponseSchema,
@@ -28,6 +29,7 @@ import {
   venueListResponseSchema,
   type ActiveForum,
   type AttendanceVisibility,
+  type ConversationSummary,
   type ForumCategory,
   type ForumPost,
   type FriendRequestEntry,
@@ -1977,6 +1979,12 @@ export function ExploreMap({
             setSection(nextSection);
           }}
           authToken={authToken}
+          user={user}
+          unreadMessagesCount={unreadMessagesCount}
+          onOpenAccount={() => {
+            setAboutOpen(false);
+            setSection('compte');
+          }}
         />
       )}
       <ContentColumn {...(user ? { className: 'connected-content-column' } : {})}>
@@ -1997,6 +2005,10 @@ export function ExploreMap({
           onOpenAccount={() => {
             setAboutOpen(false);
             setSection('compte');
+          }}
+          onOpenMessages={() => {
+            setAboutOpen(false);
+            setSection('messages');
           }}
           onOpenAbout={() => setAboutOpen((prev) => !prev)}
           aboutOpen={aboutOpen}
@@ -2119,6 +2131,28 @@ export function ExploreMap({
         <ActiveForumsPage authToken={authToken} onOpenDetails={openDetails} />
       ) : user && section === 'groupes' ? (
         <GroupsPage authToken={authToken} />
+      ) : user && section === 'messages' ? (
+        <MessagesPage authToken={authToken} />
+      ) : user && section === 'amis' ? (
+        <AmisPage authToken={authToken} />
+      ) : user && section === 'mes-evenements' ? (
+        <AttendanceEventsPage
+          title="Mes événements"
+          emptyMessage="Aucun événement à venir pour l'instant. Marquez votre présence sur un événement pour le voir apparaître ici."
+          mode="upcoming"
+          attendance={attendance}
+          onOpenDetails={openDetails}
+          locale={locale}
+        />
+      ) : user && section === 'historique' ? (
+        <AttendanceEventsPage
+          title="Historique"
+          emptyMessage="Aucun événement passé pour l'instant."
+          mode="past"
+          attendance={attendance}
+          onOpenDetails={openDetails}
+          locale={locale}
+        />
       ) : (
       <Fragment>
       <div className="dashboard-main">
@@ -3040,6 +3074,24 @@ function BellIcon() {
     >
       <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
       <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  );
+}
+
+function MessageIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
 }
@@ -4024,7 +4076,11 @@ type ConnectedSection =
   | 'explorer'
   | 'favoris'
   | 'forums'
-  | 'groupes';
+  | 'groupes'
+  | 'messages'
+  | 'amis'
+  | 'mes-evenements'
+  | 'historique';
 
 const SIDEBAR_NAV_ITEMS: Array<{ section: ConnectedSection; label: string; icon: string }> = [
   { section: 'decouvrir', label: 'Découvrir', icon: '✨' },
@@ -4032,8 +4088,17 @@ const SIDEBAR_NAV_ITEMS: Array<{ section: ConnectedSection; label: string; icon:
   { section: 'evenement', label: 'Événements', icon: '🎟️' },
   { section: 'lieu', label: 'Lieux', icon: '📍' },
   { section: 'forums', label: 'Forums', icon: '💬' },
-  { section: 'favoris', label: 'Favoris', icon: '❤️' },
-  { section: 'groupes', label: 'Mes groupes', icon: '👥' }
+  { section: 'messages', label: 'Messages', icon: '✉️' },
+  { section: 'amis', label: 'Amis', icon: '🧑‍🤝‍🧑' },
+  { section: 'favoris', label: 'Favoris', icon: '❤️' }
+];
+
+// "Événements suivis" points at the existing Favoris section (same data,
+// already hydrated there via /events/by-ids) rather than duplicating it.
+const SIDEBAR_SHORTCUT_ITEMS: Array<{ section: ConnectedSection; label: string; icon: string }> = [
+  { section: 'mes-evenements', label: 'Mes événements', icon: '🎟️' },
+  { section: 'favoris', label: 'Événements suivis', icon: '🔖' },
+  { section: 'historique', label: 'Historique', icon: '🕘' }
 ];
 
 // Primary navigation rail for the connected experience (Phase 4). Only
@@ -4043,14 +4108,22 @@ const SIDEBAR_NAV_ITEMS: Array<{ section: ConnectedSection; label: string; icon:
 function Sidebar({
   activeSection,
   onNavigate,
-  authToken
+  authToken,
+  user,
+  unreadMessagesCount,
+  onOpenAccount
 }: {
   activeSection: ConnectedSection;
   onNavigate: (section: ConnectedSection) => void;
   authToken: string | undefined;
+  user: User;
+  unreadMessagesCount: number;
+  onOpenAccount: () => void;
 }) {
   const [friendCode, setFriendCode] = useState<string>();
   const [copied, setCopied] = useState(false);
+  const [myGroups, setMyGroups] = useState<Group[]>([]);
+  const [openGroup, setOpenGroup] = useState<Group>();
 
   useEffect(() => {
     if (!authToken) return;
@@ -4059,6 +4132,18 @@ function Sidebar({
       .then((json) => setFriendCode(friendCodeResponseSchema.parse(json).data.friendCode))
       .catch(() => {});
   }, [authToken]);
+
+  const refreshGroups = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/groups`, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setMyGroups(groupsResponseSchema.parse(json).data))
+      .catch(() => {});
+  }, [authToken]);
+
+  useEffect(() => {
+    refreshGroups();
+  }, [refreshGroups]);
 
   return (
     <aside className="primary-sidebar">
@@ -4083,9 +4168,84 @@ function Sidebar({
               {item.icon}
             </span>
             {item.label}
+            {item.section === 'messages' && unreadMessagesCount > 0 && (
+              <span className="primary-sidebar-nav-badge">
+                {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+              </span>
+            )}
           </button>
         ))}
       </nav>
+
+      <div className="primary-sidebar-group">
+        <h3 className="primary-sidebar-group-title">Raccourcis</h3>
+        {SIDEBAR_SHORTCUT_ITEMS.map((item) => (
+          <button
+            type="button"
+            key={item.section}
+            className={`primary-sidebar-nav-item ${activeSection === item.section ? 'active' : ''}`}
+            onClick={() => onNavigate(item.section)}
+          >
+            <span className="primary-sidebar-nav-icon" aria-hidden="true">
+              {item.icon}
+            </span>
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="primary-sidebar-group">
+        <h3 className="primary-sidebar-group-title">Mes groupes</h3>
+        {myGroups.map((group) => (
+          <button
+            type="button"
+            key={group.id}
+            className="primary-sidebar-nav-item"
+            onClick={() => setOpenGroup(group)}
+          >
+            <span className="primary-sidebar-nav-icon" aria-hidden="true">
+              🔥
+            </span>
+            {group.name}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="primary-sidebar-nav-item primary-sidebar-nav-item-muted"
+          onClick={() => onNavigate('groupes')}
+        >
+          <span className="primary-sidebar-nav-icon" aria-hidden="true">
+            +
+          </span>
+          Créer un groupe
+        </button>
+      </div>
+
+      {openGroup && (
+        <GroupModal
+          group={openGroup}
+          authToken={authToken}
+          onClose={() => setOpenGroup(undefined)}
+          onLeft={() => {
+            setOpenGroup(undefined);
+            refreshGroups();
+          }}
+        />
+      )}
+
+      <button type="button" className="primary-sidebar-profile" onClick={onOpenAccount}>
+        <span className="account-avatar">
+          {user.avatarUrl ? (
+            <img src={user.avatarUrl} alt="" />
+          ) : (
+            user.displayName.slice(0, 1).toUpperCase()
+          )}
+        </span>
+        <span className="primary-sidebar-profile-info">
+          <strong>{user.displayName}</strong>
+          <span>{user.email}</span>
+        </span>
+      </button>
 
       {friendCode && (
         <div className="primary-sidebar-invite">
@@ -4130,6 +4290,7 @@ function TopBar({
   user,
   unreadMessagesCount,
   onOpenAccount,
+  onOpenMessages,
   onOpenAbout,
   aboutOpen
 }: {
@@ -4146,6 +4307,7 @@ function TopBar({
   user: User;
   unreadMessagesCount: number;
   onOpenAccount: () => void;
+  onOpenMessages: () => void;
   onOpenAbout: () => void;
   aboutOpen: boolean;
 }) {
@@ -4178,18 +4340,29 @@ function TopBar({
         <button
           type="button"
           className="nav-icon-btn"
+          onClick={onOpenMessages}
+          aria-label={
+            unreadMessagesCount > 0 ? `Messages — ${unreadMessagesCount} non lus` : 'Messages'
+          }
+          title="Messages"
+        >
+          <MessageIcon />
+          {unreadMessagesCount > 0 && (
+            <span className="nav-icon-badge">
+              {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          className="nav-icon-btn"
           disabled
           aria-label="Notifications (bientôt disponible)"
           title="Bientôt disponible"
         >
           <BellIcon />
         </button>
-        <AccountMenu
-          user={user}
-          onLogin={() => {}}
-          onOpenAccount={onOpenAccount}
-          unreadCount={unreadMessagesCount}
-        />
+        <AccountMenu user={user} onLogin={() => {}} onOpenAccount={onOpenAccount} unreadCount={0} />
       </div>
     </header>
   );
@@ -4385,6 +4558,200 @@ function GroupsPage({ authToken }: { authToken: string | undefined }) {
   );
 }
 
+// Full-page conversations list (Phase 4.5) - one row per accepted friend
+// (GET /me/conversations), opening the same ConversationModal built for
+// the per-friend "Message" button in FriendsBlock, unmodified.
+function MessagesPage({ authToken }: { authToken: string | undefined }) {
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [openWith, setOpenWith] = useState<PublicUser>();
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/conversations`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setConversations(conversationsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return (
+    <div className="dashboard-home">
+      <h1>Messages</h1>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger vos messages pour le moment.</p>
+      )}
+      {state === 'success' && conversations.length === 0 && (
+        <p className="list-view-empty">
+          Aucune conversation pour l'instant. Ajoutez des amis pour commencer à discuter.
+        </p>
+      )}
+      <div className="conversation-list">
+        {conversations.map((conversation) => (
+          <button
+            type="button"
+            className="conversation-list-row"
+            key={conversation.friend.id}
+            onClick={() => setOpenWith(conversation.friend)}
+          >
+            <span className="friends-row-avatar">
+              {conversation.friend.avatarUrl ? (
+                <img src={conversation.friend.avatarUrl} alt="" />
+              ) : (
+                conversation.friend.displayName.slice(0, 1).toUpperCase()
+              )}
+            </span>
+            <span className="conversation-list-info">
+              <strong>{conversation.friend.displayName}</strong>
+              <span>{conversation.lastMessage?.body ?? 'Dites bonjour !'}</span>
+            </span>
+            {conversation.unreadCount > 0 && (
+              <span className="conversation-list-badge">{conversation.unreadCount}</span>
+            )}
+          </button>
+        ))}
+      </div>
+      {openWith && (
+        <ConversationModal
+          friend={openWith}
+          authToken={authToken}
+          onClose={() => {
+            setOpenWith(undefined);
+            refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Full-page version of the friends block already built in Phase 2 - no
+// change to FriendsBlock itself, just a dedicated home for it instead of
+// living inside Mon compte.
+function AmisPage({ authToken }: { authToken: string | undefined }) {
+  return (
+    <div className="dashboard-home">
+      <h1>Amis</h1>
+      <FriendsBlock authToken={authToken} />
+    </div>
+  );
+}
+
+// Shared by the "Mes événements" and "Historique" Raccourcis - same
+// attendance data (GET /me/attendance, already built in Phase 2.2),
+// hydrated via the existing /events/by-ids endpoint, split by date rather
+// than duplicating the fetch for two near-identical pages.
+function AttendanceEventsPage({
+  title,
+  emptyMessage,
+  mode,
+  attendance,
+  onOpenDetails,
+  locale
+}: {
+  title: string;
+  emptyMessage: string;
+  mode: 'upcoming' | 'past';
+  attendance: Record<string, AttendanceVisibility>;
+  onOpenDetails: (eventId: string) => void;
+  locale: SupportedLocale;
+}) {
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const eventIds = Object.keys(attendance);
+  // Stable dependency: the array reference from Object.keys changes every
+  // render even when the ids themselves don't, which would otherwise
+  // refetch on every render.
+  const eventIdsKey = eventIds.join(',');
+
+  useEffect(() => {
+    if (eventIdsKey === '') {
+      setEvents([]);
+      setState('success');
+      return;
+    }
+    setState('loading');
+    fetch(`${API_BASE_URL}/events/by-ids?ids=${eventIdsKey}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setEvents(eventListResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventIdsKey]);
+
+  const now = Date.now();
+  const filtered = events
+    .filter((event) => (mode === 'upcoming' ? new Date(event.startsAt).getTime() >= now : new Date(event.startsAt).getTime() < now))
+    .sort((a, b) =>
+      mode === 'upcoming'
+        ? new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+        : new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()
+    );
+
+  return (
+    <div className="dashboard-home">
+      <h1>{title}</h1>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger vos événements pour le moment.</p>
+      )}
+      {state === 'success' && filtered.length === 0 && (
+        <p className="list-view-empty">{emptyMessage}</p>
+      )}
+      <div className="event-carousel">
+        {filtered.map((evt) => (
+          <div
+            className="event-card"
+            key={evt.id}
+            onClick={() => onOpenDetails(evt.id)}
+            style={{ cursor: 'pointer' }}
+          >
+            <div
+              className="event-card-img"
+              style={
+                evt.imageUrl
+                  ? {
+                      backgroundImage: `url(${evt.imageUrl})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center'
+                    }
+                  : undefined
+              }
+            >
+              {!evt.imageUrl && <EventImageFallback category={evt.category} />}
+              <div
+                className="card-badge"
+                style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
+              >
+                {getCategoryLabel(locale, evt.category)}
+              </div>
+            </div>
+            <div className="event-card-content">
+              <h3>{evt.title}</h3>
+              <p>{evt.venue?.name}</p>
+              <p className="card-price">
+                {evt.startsAt ? new Date(evt.startsAt).toLocaleDateString() : ''}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CompteSection({
   user,
   authToken,
@@ -4494,10 +4861,6 @@ function CompteSection({
           </div>
         )}
       </div>
-
-      <FriendsBlock authToken={authToken} />
-
-      <GroupsBlock authToken={authToken} />
 
       <div className="compte-block compte-block-language">
         <h3>Langue</h3>

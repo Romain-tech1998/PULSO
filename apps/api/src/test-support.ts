@@ -157,6 +157,7 @@ export function fakeMessagesRepository(
     getConversation: async () => [],
     markConversationRead: async () => undefined,
     getUnreadCount: async () => 0,
+    getConversations: async () => [],
     ...overrides
   };
 }

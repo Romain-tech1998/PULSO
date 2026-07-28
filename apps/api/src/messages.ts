@@ -1,5 +1,6 @@
 import {
   conversationResponseSchema,
+  conversationsResponseSchema,
   messageResponseSchema,
   sendMessageRequestSchema,
   unreadCountResponseSchema
@@ -63,5 +64,12 @@ export function registerMessagesRoutes(
     if (!user) return sendUnauthenticated(reply);
     const count = await messagesRepository.getUnreadCount(user.id);
     return unreadCountResponseSchema.parse({ data: { count } });
+  });
+
+  app.get('/me/conversations', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const conversations = await messagesRepository.getConversations(user.id);
+    return conversationsResponseSchema.parse({ data: conversations });
   });
 }

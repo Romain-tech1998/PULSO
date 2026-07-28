@@ -142,4 +142,35 @@ describe('direct messages API', () => {
     expect(response.json().data).toEqual({ count: 3 });
     await app.close();
   });
+
+  it('rejects the conversations list without a bearer token', async () => {
+    const app = buildApp(event, accountRepositories());
+    const response = await app.inject({ method: 'GET', url: '/me/conversations' });
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns the conversation summaries list', async () => {
+    const summary = {
+      friend,
+      lastMessage: fakeMessage(),
+      unreadCount: 2
+    };
+    const app = buildApp(
+      event,
+      accountRepositories({
+        messagesRepository: fakeMessagesRepository({
+          getConversations: async () => [summary]
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/conversations',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([summary]);
+    await app.close();
+  });
 });
