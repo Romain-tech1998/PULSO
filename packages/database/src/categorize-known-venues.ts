@@ -100,7 +100,36 @@ const knownVenues: KnownVenue[] = [
     category: 'gallery_museum',
     secondaryCategories: ['nightclub']
   },
-  { name: 'Fairmount Theatre', category: 'theater' }
+  { name: 'Fairmount Theatre', category: 'theater' },
+
+  // Second batch, same method: taken from the top of the "no category yet"
+  // list by event volume, after excluding rows the Lieux UI already hides as
+  // not-a-real-venue (bare street/address names, `name === address`,
+  // "Unknown venue" - see looksLikeBareStreetName/groupEventsByVenue in
+  // explore-map.tsx). A few real named places were still skipped here
+  // because research didn't turn up a confident, unambiguous match to a
+  // single physical venue (Habitations Ahuntsic, Piste cyclable des Berges,
+  // La Bolduc, Circuit électrique - the last one is an EV charging network
+  // brand name, not a venue at all, despite appearing as one in the data).
+  { name: 'Rogers Court', category: 'other' }, // IGA Stadium tennis court (National Bank Open) - no sports-venue category, same as Centre Court
+  { name: 'Salle Paul-Desmarais', category: 'concert_hall' }, // Centre Canadien d'Architecture - chamber/classical concert hall
+  { name: 'Bibliothèque du Plateau-Mont-Royal', category: 'community_space' },
+  { name: "Mairie d'arrondissement Anjou", category: 'community_space' },
+  { name: 'Stereo', category: 'nightclub' }, // long-running Montreal after-hours club
+  { name: 'Aréna Martin-Lapointe', category: 'other' }, // Lachine ice arena, no sports-venue category
+  { name: 'Cafe PEYO', category: 'community_space' }, // Parc-Extension community org's cafeteria, rentable for events, not a nightlife cafe
+  { name: 'Wilfrid-Pelletier', category: 'concert_hall' }, // Salle Wilfrid-Pelletier, Place des Arts' main hall
+  // Underground electronic-music bar/club in Quartier Latin (RA lists it as
+  // a club; the venue itself and Quartier des Spectacles describe it as a bar).
+  { name: 'Le Red Room', category: 'bar', secondaryCategories: ['nightclub'] },
+  { name: 'Piscine Jarry', category: 'other' }, // outdoor public pool in Parc Jarry, occasional aquatic-activity events
+  { name: 'Bibliothèque Robert-Bourassa', category: 'community_space' },
+  { name: 'Esplanade Tranquille', category: 'outdoor_festival_site' }, // Quartier des Spectacles outdoor plaza
+  { name: 'Théâtre Mirella et Lino Saputo', category: 'theater' }, // 526-seat theater, Leonardo da Vinci Centre, Saint-Léonard
+  { name: "Parc d'Escale", category: 'outdoor_festival_site' }, // Parc Noël-Spinelli (formerly Parc de la Marina d'Escale) - waterfront park with an open-air amphitheatre
+  { name: 'Salle Émile-Legault', category: 'theater' }, // Cégep de Saint-Laurent's professional performance hall
+  { name: 'Bibliothèque de Pierrefonds', category: 'community_space' },
+  { name: 'Maison Symphonique de Montréal', category: 'concert_hall' } // capitalization variant of the already-categorized "Maison symphonique de Montréal"
 ];
 
 try {
