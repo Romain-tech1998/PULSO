@@ -178,6 +178,11 @@ export const publicVenueSchema = z.object({
   // Absent for almost every ingested venue - see VENUE_CATEGORIES's comment
   // in @pulso/domain. Never inferred, only ever hand-set.
   category: z.enum(VENUE_CATEGORIES).optional(),
+  // Additional real characteristics beyond the one shown as the primary
+  // badge (e.g. a dancing bar is `category: 'bar'` with
+  // `secondaryCategories: ['nightclub']`) - same "never inferred, only
+  // hand-set" rule as `category`.
+  secondaryCategories: z.array(z.enum(VENUE_CATEGORIES)).optional(),
   // A real photo of the venue, when a source actually provides one.
   imageUrl: z.url().optional()
 });
@@ -459,6 +464,7 @@ export const publicEventSchema = z.object({
     address: z.string().min(1),
     point: geographicPointSchema,
     category: z.enum(VENUE_CATEGORIES).optional(),
+    secondaryCategories: z.array(z.enum(VENUE_CATEGORIES)).optional(),
     // A real photo of the venue, when a source actually provides one.
     imageUrl: z.url().optional()
   }),

@@ -1186,6 +1186,10 @@ h6 {
   color: var(--text-secondary);
   font-size: 0.68rem;
 }
+.venue-card-type-badge-secondary {
+  background: transparent;
+  font-weight: 600;
+}
 .venue-card-address {
   color: var(--text-secondary);
   font-size: 0.78rem;

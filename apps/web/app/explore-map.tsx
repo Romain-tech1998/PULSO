@@ -1431,7 +1431,10 @@ export function ExploreMap({
         point: venue.point,
         events: [],
         categories: [],
-        ...(venue.category !== undefined ? { venueCategory: venue.category } : {})
+        ...(venue.category !== undefined ? { venueCategory: venue.category } : {}),
+        ...(venue.secondaryCategories !== undefined
+          ? { venueSecondaryCategories: venue.secondaryCategories }
+          : {})
       })
     )
   ];
@@ -1442,7 +1445,8 @@ export function ExploreMap({
     .filter(
       (group) =>
         venueCategoryFilter.length === 0 ||
-        (group.venueCategory !== undefined && venueCategoryFilter.includes(group.venueCategory))
+        (group.venueCategory !== undefined && venueCategoryFilter.includes(group.venueCategory)) ||
+        group.venueSecondaryCategories?.some((category) => venueCategoryFilter.includes(category))
     )
     .filter((group) => !showFavoriteVenuesOnly || favoriteVenues.includes(group.id));
 
@@ -3430,22 +3434,49 @@ interface VenueGroup {
   events: PublicEvent[];
   categories: EventCategory[];
   venueCategory?: VenueCategory;
+  venueSecondaryCategories?: VenueCategory[];
   priceTier?: VenuePriceTier;
   imageUrl?: string;
+}
+
+// A bare street segment ("Rue Dorion", "Avenue du Parc-La Fontaine") isn't a
+// real, referenceable place any more than the full-address fallback below
+// is - same reverse-geocode-found-no-POI signature, just shorter text. A
+// short allowlist keeps real proper nouns that happen to start with a
+// French street-type word (an actual arena/plaza) from being hidden.
+const KNOWN_PROPER_NOUN_VENUE_NAMES = new Set(['Place Bell', 'Place des Arts']);
+// Optional leading house number ("5290 Chemin de la Côte-des-Neiges") before
+// the street-type word - a numbered civic address is exactly as bare as one
+// without a number.
+const BARE_STREET_NAME_PATTERN =
+  /^(\d+[a-z]?\s+)?(rue|avenue|boulevard|chemin|montee|côte|cote|impasse|carré|carre|place)\s/i;
+
+function looksLikeBareStreetName(name: string): boolean {
+  return (
+    !KNOWN_PROPER_NOUN_VENUE_NAMES.has(name) &&
+    !name.includes(',') &&
+    BARE_STREET_NAME_PATTERN.test(name)
+  );
 }
 
 // Groups the currently-loaded events (same source-filtered set the List view
 // uses) by venue.id rather than fetching a separate venues endpoint - venue
 // grouping is a client-side view over data already on screen, not new data.
-// Two kinds of rows are excluded as not being a real, referenceable place to
-// browse: "Unknown venue" is the mapper's placeholder (to-public-event.ts)
-// for events with no name/address at all, and name === address is the
-// signature of a reverse-geocode fallback that had no real venue name to
-// find (a park, a street corner) - see geocode-fallback.ts's shortLabel.
+// Rows excluded as not being a real, referenceable place to browse (never
+// deleted, just not shown here - the underlying events stay visible in
+// Événement): "Unknown venue" is the mapper's placeholder (to-public-event.ts)
+// for events with no name/address at all; name === address and a bare
+// street segment are both the signature of a reverse-geocode fallback that
+// had no real venue name to find (a park, a street corner) - see
+// geocode-fallback.ts's shortLabel.
 function groupEventsByVenue(events: PublicEvent[]): VenueGroup[] {
   const byId = new Map<string, VenueGroup>();
   for (const event of events) {
-    if (event.venue.name === 'Unknown venue' || event.venue.name === event.venue.address) {
+    if (
+      event.venue.name === 'Unknown venue' ||
+      event.venue.name === event.venue.address ||
+      looksLikeBareStreetName(event.venue.name)
+    ) {
       continue;
     }
     let group = byId.get(event.venue.id);
@@ -3457,7 +3488,10 @@ function groupEventsByVenue(events: PublicEvent[]): VenueGroup[] {
         point: event.venue.point,
         events: [],
         categories: [],
-        ...(event.venue.category !== undefined ? { venueCategory: event.venue.category } : {})
+        ...(event.venue.category !== undefined ? { venueCategory: event.venue.category } : {}),
+        ...(event.venue.secondaryCategories !== undefined
+          ? { venueSecondaryCategories: event.venue.secondaryCategories }
+          : {})
       };
       byId.set(event.venue.id, group);
     }
@@ -3557,6 +3591,18 @@ function VenueListView({
                     {VENUE_CATEGORY_LABELS[locale][group.venueCategory]}
                   </span>
                 )}
+                {group.venueSecondaryCategories?.map((category) => (
+                  <span
+                    key={category}
+                    className="venue-card-type-badge venue-card-type-badge-secondary"
+                    style={{
+                      borderColor: VENUE_CATEGORY_COLORS[category],
+                      color: VENUE_CATEGORY_COLORS[category]
+                    }}
+                  >
+                    {VENUE_CATEGORY_LABELS[locale][category]}
+                  </span>
+                ))}
                 {group.categories.slice(0, 3).map((category) => (
                   <span
                     key={category}
