@@ -353,12 +353,65 @@ export const unreadCountResponseSchema = z.object({
 
 // Captures a report only (DEC-0012) - no moderation queue or automated
 // action exists yet, this is a minimal safety net.
-export const reportTargetTypeSchema = z.enum(['forum_post', 'message']);
+export const reportTargetTypeSchema = z.enum(['forum_post', 'message', 'group_post']);
 
 export const createReportRequestSchema = z.object({
   targetType: reportTargetTypeSchema,
   targetId: z.uuid(),
   reason: z.string().max(500).optional()
+});
+
+// DEC-0013: open membership (join/leave freely, no invitation or approval
+// step), no group-level moderation role beyond the same author-only post
+// delete already used by the event forum.
+export const groupSchema = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  description: z.string().min(1).optional(),
+  createdBy: z.uuid(),
+  createdAt: z.iso.datetime(),
+  memberCount: z.number().int().min(0),
+  isMember: z.boolean()
+});
+
+export const createGroupRequestSchema = z.object({
+  name: z.string().min(1).max(80),
+  description: z.string().min(1).max(500).optional()
+});
+
+export const groupsResponseSchema = z.object({
+  data: z.array(groupSchema)
+});
+
+export const groupResponseSchema = z.object({
+  data: groupSchema
+});
+
+// Same content model as the event forum (DEC-0012 v1.1): one level of
+// nested replies, one like per user per post, author-only delete.
+export const groupPostSchema = z.object({
+  id: z.uuid(),
+  groupId: z.uuid(),
+  author: publicUserSchema,
+  body: z.string().min(1),
+  createdAt: z.iso.datetime(),
+  parentId: z.uuid().optional(),
+  likeCount: z.number().int().min(0),
+  likedByMe: z.boolean(),
+  replyCount: z.number().int().min(0)
+});
+
+export const createGroupPostRequestSchema = z.object({
+  body: z.string().min(1).max(2000),
+  parentId: z.uuid().optional()
+});
+
+export const groupPostsResponseSchema = z.object({
+  data: z.array(groupPostSchema)
+});
+
+export const groupPostResponseSchema = z.object({
+  data: groupPostSchema
 });
 
 export const publicEventSchema = z.object({
@@ -484,6 +537,14 @@ export type MessageResponse = z.infer<typeof messageResponseSchema>;
 export type UnreadCountResponse = z.infer<typeof unreadCountResponseSchema>;
 export type ReportTargetType = z.infer<typeof reportTargetTypeSchema>;
 export type CreateReportRequest = z.infer<typeof createReportRequestSchema>;
+export type Group = z.infer<typeof groupSchema>;
+export type CreateGroupRequest = z.infer<typeof createGroupRequestSchema>;
+export type GroupsResponse = z.infer<typeof groupsResponseSchema>;
+export type GroupResponse = z.infer<typeof groupResponseSchema>;
+export type GroupPost = z.infer<typeof groupPostSchema>;
+export type CreateGroupPostRequest = z.infer<typeof createGroupPostRequestSchema>;
+export type GroupPostsResponse = z.infer<typeof groupPostsResponseSchema>;
+export type GroupPostResponse = z.infer<typeof groupPostResponseSchema>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

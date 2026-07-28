@@ -1,13 +1,15 @@
 # DEC-0012 — Forum and Messaging Phase 3: Per-Event Forum, Direct Messages, and Reporting
 
 **Identifier:** DEC-0012
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Accepted
 **Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DEC-0007, DEC-0010, DEC-0011, UX-0001, PRD-0001, RFC-0001
 
 ## Decision
 
-Pulso authorizes user-generated content for the first time: a per-event forum and direct messages between friends. Each event has four fixed sub-discussions — finding partners to attend with, general discussion, ticket resale, and finding someone who was there — as a flat, chronological message board per category. A post cannot be edited after publication, only deleted by its own author. Direct messages are restricted to accounts with an accepted friendship (DEC-0011); there is no open inbox and no way to message a stranger.
+Pulso authorizes user-generated content for the first time: a per-event forum and direct messages between friends. Each event has four fixed sub-discussions — finding partners to attend with, general discussion, ticket resale, and finding someone who was there — as a chronological message board per category. A post cannot be edited after publication, only deleted by its own author. Direct messages are restricted to accounts with an accepted friendship (DEC-0011); there is no open inbox and no way to message a stranger.
+
+**v1.1 addendum:** a post can now be liked (one like per user per post, toggleable) and can carry one level of nested replies (a reply is a post with a `parentId` pointing at a top-level post in the same category; a reply cannot itself be replied to — no recursive threads). This was requested as part of the Phase 4 connected-experience redesign, driven by a reference mockup showing a livelier, social-network-style discussion feed. The original v1.0 scope (fixed categories, no edit, author-only delete, account-only read/write) is otherwise unchanged.
 
 Unlike the rest of Pulso, the forum and messaging require a signed-in account even to read, not only to post. Sourced event data carries an explicit trust framework (DATA-0001: freshness, confirmation, location confidence); user-generated content has no equivalent, and mixing it into anonymous browsing would blur that distinction for a visitor who has not chosen to engage with the account layer.
 
@@ -24,11 +26,12 @@ PRD-0001 excludes "social features" from the MVP; DEC-0011 already narrowed that
 - The ticket resale sub-forum is peer-to-peer discussion only. Pulso is not a party to, and does not facilitate, process, or guarantee any transaction, payment, or ticket transfer discussed there — a disclaimer to this effect is shown directly in that sub-discussion.
 - Messaging eligibility is derived entirely from the existing friendship state; there is no separate block list. Removing a friend (already possible per DEC-0011) stops future messages between the two accounts; past message history is not deleted.
 - Forum posts and messages are plain text with a length cap; no attachments, images, or rich formatting are supported.
+- Reactions are limited to a single like per post (v1.1); no reaction picker, no like on messages, no like on replies beyond the same single mechanic. Nesting is capped at one level — a reply cannot be replied to — to avoid building a recursive thread UI for a feature explicitly scoped as a lightweight discussion board, not a full forum engine.
 
 ## Non-goals
 
-Does not authorize group conversations, message search, push or email notifications for new posts or messages, a public or searchable forum/message archive, or any moderator tooling. Each remains a distinct future decision.
+Does not authorize message search, push or email notifications for new posts or messages, a public or searchable forum/message archive, or any moderator tooling. Each remains a distinct future decision. Group conversations were also excluded here in v1.0; DEC-0013 now authorizes them separately, as their own feature with their own membership model rather than an extension of this one.
 
 ## Supersession
 
-DEC-0012 narrows PRD-0001 §4's exclusion of social features only to the extent described above (a fixed-category event forum and friend-only direct messages). It does not alter DEC-0007, DEC-0010, or DEC-0011's behavior, and does not alter any other Accepted MVP scope or boundary.
+DEC-0012 narrows PRD-0001 §4's exclusion of social features only to the extent described above (a fixed-category event forum and friend-only direct messages, extended by v1.1 to add likes and one level of replies). It does not alter DEC-0007, DEC-0010, or DEC-0011's behavior, and does not alter any other Accepted MVP scope or boundary.

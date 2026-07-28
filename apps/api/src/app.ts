@@ -17,6 +17,7 @@ import type {
   FavoritesRepository,
   ForumRepository,
   FriendsRepository,
+  GroupsRepository,
   MessagesRepository,
   ReportsRepository,
   TrendsRepository
@@ -34,6 +35,7 @@ import { z, ZodError } from 'zod';
 
 import { registerAuthRoutes, type GoogleAuthConfig } from './auth.js';
 import { registerForumRoutes } from './forum.js';
+import { registerGroupsRoutes } from './groups.js';
 import { registerMessagesRoutes } from './messages.js';
 import { registerReportsRoutes } from './reports.js';
 import { registerSocialRoutes } from './social.js';
@@ -57,6 +59,7 @@ export function buildApp(
     forumRepository?: ForumRepository;
     messagesRepository?: MessagesRepository;
     reportsRepository?: ReportsRepository;
+    groupsRepository?: GroupsRepository;
     google?: GoogleAuthConfig;
   } = {}
 ) {
@@ -71,6 +74,7 @@ export function buildApp(
     options.forumRepository &&
     options.messagesRepository &&
     options.reportsRepository &&
+    options.groupsRepository &&
     options.google
   ) {
     registerAuthRoutes(
@@ -89,6 +93,7 @@ export function buildApp(
     registerForumRoutes(app, options.authRepository, options.forumRepository);
     registerMessagesRoutes(app, options.authRepository, options.messagesRepository);
     registerReportsRoutes(app, options.authRepository, options.reportsRepository);
+    registerGroupsRoutes(app, options.authRepository, options.groupsRepository);
   }
 
   app.setErrorHandler((error, request, reply) => {

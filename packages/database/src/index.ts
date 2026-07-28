@@ -48,6 +48,14 @@ export {
   type ReportsRepository
 } from './reports-repository.js';
 export {
+  PostgresGroupsRepository,
+  GroupNotFoundError,
+  NotGroupMemberError,
+  type Group,
+  type GroupPost,
+  type GroupsRepository
+} from './groups-repository.js';
+export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';

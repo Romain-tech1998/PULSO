@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
-export type ReportTargetType = 'forum_post' | 'message';
+export type ReportTargetType = 'forum_post' | 'message' | 'group_post';
 
 export interface ReportsRepository {
   // Captures the report only - no automated action, no moderation queue.

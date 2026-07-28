@@ -6,6 +6,7 @@ import {
   PostgresFavoritesRepository,
   PostgresForumRepository,
   PostgresFriendsRepository,
+  PostgresGroupsRepository,
   PostgresMessagesRepository,
   PostgresReportsRepository,
   PostgresTrendsRepository
@@ -38,6 +39,7 @@ const app = buildApp(new PostgresEventRepository(pool), {
         forumRepository: new PostgresForumRepository(pool),
         messagesRepository: new PostgresMessagesRepository(pool),
         reportsRepository: new PostgresReportsRepository(pool),
+        groupsRepository: new PostgresGroupsRepository(pool),
         google
       }
     : {})

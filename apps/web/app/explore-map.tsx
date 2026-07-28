@@ -14,6 +14,9 @@ import {
   friendRequestsResponseSchema,
   friendsAttendingResponseSchema,
   friendsResponseSchema,
+  groupPostsResponseSchema,
+  groupResponseSchema,
+  groupsResponseSchema,
   intelligentSearchResponseSchema,
   meResponseSchema,
   myAttendanceResponseSchema,
@@ -26,6 +29,8 @@ import {
   type ForumCategory,
   type ForumPost,
   type FriendRequestEntry,
+  type Group,
+  type GroupPost,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
   type Message,
@@ -4082,6 +4087,8 @@ function CompteSection({
 
       <FriendsBlock authToken={authToken} />
 
+      <GroupsBlock authToken={authToken} />
+
       <div className="compte-block compte-block-language">
         <h3>Langue</h3>
         <LanguageSelector locale={locale} onChange={onChangeLocale} />
@@ -4434,6 +4441,406 @@ function ConversationModal({
             Envoyer
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Own block for the same reason as FriendsBlock above: its own
+// fetch/mutate cycle, only renders once signed in. Group membership here
+// is always self-service (DEC-0013) - no invite/approval step to model.
+function GroupsBlock({ authToken }: { authToken: string | undefined }) {
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [openGroup, setOpenGroup] = useState<Group>();
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setLoadState('loading');
+    fetch(`${API_BASE_URL}/me/groups`, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setGroups(groupsResponseSchema.parse(json).data);
+        setLoadState('success');
+      })
+      .catch(() => setLoadState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const createGroup = () => {
+    if (!authToken || !name.trim() || creating) return;
+    setCreating(true);
+    fetch(`${API_BASE_URL}/me/groups`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ name: name.trim(), ...(description.trim() ? { description: description.trim() } : {}) })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => {
+        setName('');
+        setDescription('');
+        refresh();
+      })
+      .catch(() => {})
+      .finally(() => setCreating(false));
+  };
+
+  return (
+    <div className="compte-block">
+      <h3>Mes groupes</h3>
+      {loadState === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {loadState === 'error' && (
+        <p className="list-view-empty">Impossible de charger vos groupes pour le moment.</p>
+      )}
+      {loadState === 'success' && (
+        <div className="friends-block">
+          <form
+            className="friends-add-form groups-create-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              createGroup();
+            }}
+          >
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Nom du groupe"
+              maxLength={80}
+            />
+            <input
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Description (optionnel)"
+              maxLength={500}
+            />
+            <button type="submit" className="btn-secondary" disabled={creating || !name.trim()}>
+              Créer
+            </button>
+          </form>
+
+          <div className="friends-list">
+            {groups.length === 0 && (
+              <p className="list-view-empty">Aucun groupe pour le moment.</p>
+            )}
+            {groups.map((group) => (
+              <div className="friends-row" key={group.id}>
+                <span className="friends-row-name">
+                  {group.name}
+                  <span className="compte-trends-count">{group.memberCount}</span>
+                </span>
+                <button type="button" className="text-btn" onClick={() => setOpenGroup(group)}>
+                  Ouvrir
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {openGroup && (
+        <GroupModal
+          group={openGroup}
+          authToken={authToken}
+          onClose={() => setOpenGroup(undefined)}
+          onLeft={() => {
+            setOpenGroup(undefined);
+            refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function GroupModal({
+  group,
+  authToken,
+  onClose,
+  onLeft
+}: {
+  group: Group;
+  authToken: string | undefined;
+  onClose: () => void;
+  onLeft: () => void;
+}) {
+  const [posts, setPosts] = useState<GroupPost[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [draft, setDraft] = useState('');
+  const [posting, setPosting] = useState(false);
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/groups/${group.id}/posts`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setPosts(groupPostsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, group.id]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const submitPost = (parentId?: string) => {
+    const body = (parentId ? replyDrafts[parentId] : draft)?.trim();
+    if (!authToken || !body || posting) return;
+    setPosting(true);
+    fetch(`${API_BASE_URL}/groups/${group.id}/posts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ body, ...(parentId ? { parentId } : {}) })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => {
+        if (parentId) {
+          setReplyDrafts((prev) => ({ ...prev, [parentId]: '' }));
+          setExpandedReplies((prev) => new Set(prev).add(parentId));
+        } else {
+          setDraft('');
+        }
+        refresh();
+      })
+      .catch(() => {})
+      .finally(() => setPosting(false));
+  };
+
+  const removePost = (postId: string) => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/groups/${group.id}/posts/${postId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).then(() => refresh());
+  };
+
+  const toggleLike = (post: GroupPost) => {
+    if (!authToken) return;
+    setPosts((prev) =>
+      prev.map((candidate) =>
+        candidate.id === post.id
+          ? {
+              ...candidate,
+              likedByMe: !candidate.likedByMe,
+              likeCount: candidate.likeCount + (candidate.likedByMe ? -1 : 1)
+            }
+          : candidate
+      )
+    );
+    fetch(`${API_BASE_URL}/groups/${group.id}/posts/${post.id}/like`, {
+      method: post.likedByMe ? 'DELETE' : 'POST',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).catch(() => refresh());
+  };
+
+  const toggleExpanded = (postId: string) => {
+    setExpandedReplies((prev) => {
+      const next = new Set(prev);
+      if (next.has(postId)) next.delete(postId);
+      else next.add(postId);
+      return next;
+    });
+  };
+
+  const leaveGroup = () => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).then(() => onLeft());
+  };
+
+  const topLevelPosts = posts.filter((post) => !post.parentId);
+  const repliesFor = (postId: string) => posts.filter((post) => post.parentId === postId);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="conversation-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="conversation-modal-header">
+          <strong>{group.name}</strong>
+          <button type="button" className="text-btn" onClick={leaveGroup}>
+            Quitter
+          </button>
+          <button type="button" className="text-btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        {group.description && <p className="forum-disclaimer">{group.description}</p>}
+
+        <div className="forum-posts">
+          {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+          {state === 'error' && (
+            <p className="list-view-empty">Impossible de charger le fil pour le moment.</p>
+          )}
+          {state === 'success' && topLevelPosts.length === 0 && (
+            <p className="list-view-empty">Aucun message pour l'instant. Soyez le premier.</p>
+          )}
+          {state === 'success' &&
+            topLevelPosts.map((post) => (
+              <GroupPostRow
+                key={post.id}
+                post={post}
+                authToken={authToken}
+                onLike={toggleLike}
+                onDelete={removePost}
+                replies={repliesFor(post.id)}
+                expanded={expandedReplies.has(post.id)}
+                onToggleExpanded={() => toggleExpanded(post.id)}
+                replyDraft={replyDrafts[post.id] ?? ''}
+                onReplyDraftChange={(value) =>
+                  setReplyDrafts((prev) => ({ ...prev, [post.id]: value }))
+                }
+                onSubmitReply={() => submitPost(post.id)}
+                posting={posting}
+              />
+            ))}
+        </div>
+
+        <form
+          className="forum-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitPost();
+          }}
+        >
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Écrire un message…"
+            maxLength={2000}
+            rows={2}
+          />
+          <button type="submit" className="btn-secondary" disabled={posting || !draft.trim()}>
+            Publier
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function GroupPostRow({
+  post,
+  authToken,
+  onLike,
+  onDelete,
+  replies,
+  expanded,
+  onToggleExpanded,
+  replyDraft,
+  onReplyDraftChange,
+  onSubmitReply,
+  posting
+}: {
+  post: GroupPost;
+  authToken: string | undefined;
+  onLike: (post: GroupPost) => void;
+  onDelete: (postId: string) => void;
+  replies: GroupPost[];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  replyDraft: string;
+  onReplyDraftChange: (value: string) => void;
+  onSubmitReply: () => void;
+  posting: boolean;
+}) {
+  return (
+    <div className="forum-post">
+      <span className="friends-row-avatar">
+        {post.author.avatarUrl ? (
+          <img src={post.author.avatarUrl} alt="" />
+        ) : (
+          post.author.displayName.slice(0, 1).toUpperCase()
+        )}
+      </span>
+      <div className="forum-post-body">
+        <div className="forum-post-meta">
+          <strong>{post.author.displayName}</strong>
+          <button type="button" className="text-btn" onClick={() => onDelete(post.id)}>
+            Supprimer
+          </button>
+        </div>
+        <p>{post.body}</p>
+        <div className="forum-post-actions">
+          <button
+            type="button"
+            className={`forum-like-btn ${post.likedByMe ? 'active' : ''}`}
+            onClick={() => onLike(post)}
+          >
+            <HeartIcon filled={post.likedByMe} />
+            {post.likeCount > 0 && post.likeCount}
+          </button>
+          <button type="button" className="text-btn" onClick={onToggleExpanded}>
+            {post.replyCount === 0
+              ? 'Répondre'
+              : `${post.replyCount} réponse${post.replyCount !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+
+        {expanded && (
+          <div className="forum-replies">
+            {replies.map((reply) => (
+              <div className="forum-post forum-reply" key={reply.id}>
+                <span className="friends-row-avatar">
+                  {reply.author.avatarUrl ? (
+                    <img src={reply.author.avatarUrl} alt="" />
+                  ) : (
+                    reply.author.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <div className="forum-post-body">
+                  <div className="forum-post-meta">
+                    <strong>{reply.author.displayName}</strong>
+                    <button type="button" className="text-btn" onClick={() => onDelete(reply.id)}>
+                      Supprimer
+                    </button>
+                  </div>
+                  <p>{reply.body}</p>
+                  <button
+                    type="button"
+                    className={`forum-like-btn ${reply.likedByMe ? 'active' : ''}`}
+                    onClick={() => onLike(reply)}
+                  >
+                    <HeartIcon filled={reply.likedByMe} />
+                    {reply.likeCount > 0 && reply.likeCount}
+                  </button>
+                </div>
+              </div>
+            ))}
+            <form
+              className="forum-composer forum-reply-composer"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onSubmitReply();
+              }}
+            >
+              <textarea
+                value={replyDraft}
+                onChange={(event) => onReplyDraftChange(event.target.value)}
+                placeholder="Répondre…"
+                maxLength={2000}
+                rows={1}
+              />
+              <button
+                type="submit"
+                className="btn-secondary"
+                disabled={posting || !replyDraft.trim()}
+              >
+                Répondre
+              </button>
+            </form>
+          </div>
+        )}
       </div>
     </div>
   );

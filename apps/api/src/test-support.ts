@@ -8,6 +8,9 @@ import type {
   FriendRequest,
   FriendsRepository,
   GoogleProfile,
+  Group,
+  GroupPost,
+  GroupsRepository,
   Message,
   MessagesRepository,
   ReportsRepository,
@@ -178,6 +181,59 @@ export function fakeReportsRepository(
   };
 }
 
+export function fakeGroup(overrides: Partial<Group> = {}): Group {
+  return {
+    id: '00000000-0000-4000-8000-000000000017',
+    name: 'Groupe test',
+    description: undefined,
+    createdBy: testUser.id,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    memberCount: 1,
+    isMember: true,
+    ...overrides
+  };
+}
+
+export function fakeGroupPost(overrides: Partial<GroupPost> = {}): GroupPost {
+  return {
+    id: '00000000-0000-4000-8000-000000000018',
+    groupId: '00000000-0000-4000-8000-000000000017',
+    author: friend,
+    body: 'Quelqu\'un a un plan pour ce soir ?',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    parentId: undefined,
+    likeCount: 0,
+    likedByMe: false,
+    replyCount: 0,
+    ...overrides
+  };
+}
+
+export function fakeGroupsRepository(
+  overrides: Partial<GroupsRepository> = {}
+): GroupsRepository {
+  return {
+    createGroup: async (creatorId, name, description) =>
+      fakeGroup({ createdBy: creatorId, name, description }),
+    listMyGroups: async () => [],
+    getGroup: async () => fakeGroup(),
+    joinGroup: async () => undefined,
+    leaveGroup: async () => undefined,
+    getPosts: async () => [],
+    createPost: async (groupId, authorId, body, parentId) =>
+      fakeGroupPost({
+        groupId,
+        author: { id: authorId, displayName: testUser.displayName },
+        body,
+        parentId
+      }),
+    deletePost: async () => undefined,
+    likePost: async () => undefined,
+    unlikePost: async () => undefined,
+    ...overrides
+  };
+}
+
 // Bundles all account-layer repositories (+ Google config) so every
 // buildApp(event, accountRepositories()) call in tests stays a one-liner
 // even as the account layer grows more repositories - override only the
@@ -192,6 +248,7 @@ export function accountRepositories(
     forumRepository?: ForumRepository;
     messagesRepository?: MessagesRepository;
     reportsRepository?: ReportsRepository;
+    groupsRepository?: GroupsRepository;
   } = {}
 ) {
   return {
@@ -203,6 +260,7 @@ export function accountRepositories(
     forumRepository: overrides.forumRepository ?? fakeForumRepository(),
     messagesRepository: overrides.messagesRepository ?? fakeMessagesRepository(),
     reportsRepository: overrides.reportsRepository ?? fakeReportsRepository(),
+    groupsRepository: overrides.groupsRepository ?? fakeGroupsRepository(),
     google: testGoogleConfig
   };
 }
