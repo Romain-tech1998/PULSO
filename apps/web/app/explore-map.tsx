@@ -662,13 +662,8 @@ export function ExploreMap({
     { title: string; events: PublicEvent[] } | undefined
   >();
   // Client-side only: filters the already-fetched events by source.name.
-  // Empty = no restriction. Not sent to the API since every currently wired
-  // source (Ticketmaster, Ville de Montréal) is already fetched together;
-  // this only narrows what's shown on the map/list, same pattern as
-  // showFavoritesOnly below.
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
-    () => new Set(['filtres', 'categories', 'prix', 'distance', 'ambiance', 'source'])
+    () => new Set(['filtres', 'categories', 'prix', 'distance', 'ambiance'])
   );
   const toggleSection = (key: string) =>
     setCollapsedSections((prev) => {
@@ -1312,11 +1307,8 @@ export function ExploreMap({
     const evs = pendingDataRef.current;
     const favs = favoritesRef.current;
     const showFavs = showFavoritesOnlyRef.current;
-    const sources = selectedSourcesRef.current;
     const sel = selectedRef.current;
-    const visibleEvents = evs
-      .filter((e) => (showFavs ? favs.includes(e.id) : true))
-      .filter((e) => (sources.length === 0 ? true : sources.includes(e.source.name)));
+    const visibleEvents = evs.filter((e) => (showFavs ? favs.includes(e.id) : true));
     source.setData({
       type: 'FeatureCollection',
       features: visibleEvents.map(event => ({
@@ -1349,12 +1341,10 @@ export function ExploreMap({
   // Refs pour éviter les closures périmées dans pushEventsToMap
   const favoritesRef = useRef(favorites);
   const showFavoritesOnlyRef = useRef(showFavoritesOnly);
-  const selectedSourcesRef = useRef(selectedSources);
   const selectedRef = useRef(selected);
   const detailsRef = useRef(details);
   useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
   useEffect(() => { showFavoritesOnlyRef.current = showFavoritesOnly; }, [showFavoritesOnly]);
-  useEffect(() => { selectedSourcesRef.current = selectedSources; }, [selectedSources]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { detailsRef.current = details; }, [details]);
   useEffect(() => { distanceKmRef.current = distanceKm; }, [distanceKm]);
@@ -1365,7 +1355,7 @@ export function ExploreMap({
   // Synchronisation des données vers la carte (se déclenche aussi quand on revient à la carte)
   useEffect(() => {
     if (map.current) pushEventsToMap(map.current);
-  }, [events, favorites, showFavoritesOnly, selectedSources, selected, pushEventsToMap]);
+  }, [events, favorites, showFavoritesOnly, selected, pushEventsToMap]);
 
   // keepPickerList: when an event is opened from a picker list (cluster,
   // venue, or calendar day), leave that list in state instead of discarding
@@ -1426,17 +1416,13 @@ export function ExploreMap({
         ? ({ kind: 'picker', list: pickerList } as const)
         : ({ kind: 'venue-picker', list: venuePickerList! } as const)
     : lastRightPanelContentRef.current;
-  const sourceFilteredEvents =
-    selectedSources.length === 0
-      ? events
-      : events.filter((event) => selectedSources.includes(event.source.name));
   // noEventVenues (fixed reference points like Clébard, La Rockette - real
   // venues seeded ahead of any event ever being recorded there, see
   // seed-curated-venues.ts) can never share an id with an event-derived
   // group: findVenuesWithoutUpcomingEvents only returns venues with zero
   // event rows, ever.
   const venueGroups: VenueGroup[] = [
-    ...groupEventsByVenue(sourceFilteredEvents),
+    ...groupEventsByVenue(events),
     ...noEventVenues.map(
       (venue): VenueGroup => ({
         id: venue.id,
@@ -2530,7 +2516,7 @@ export function ExploreMap({
 
           {viewMode === 'list' && (
             <ListView
-              events={listOverride?.events ?? sourceFilteredEvents}
+              events={listOverride?.events ?? events}
               favorites={favorites}
               showFavoritesOnly={showFavoritesOnly}
               onToggleFavorite={toggleFavorite}
@@ -3124,82 +3110,6 @@ function ViewModeIcon({ kind }: { kind: 'map' | 'list' | 'venues' | 'calendar' }
         <line x1="16" y1="2" x2="16" y2="6" />
         <line x1="8" y1="2" x2="8" y2="6" />
         <line x1="3" y1="10" x2="21" y2="10" />
-      </>
-    )
-  };
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {paths[kind]}
-    </svg>
-  );
-}
-
-/**
- * Known event sources for the sidebar "Source" filter. `matchName` must be
- * the exact `PublicEvent.source.name` string produced by the corresponding
- * ingestion connector - Instagram (Pulso Scout, DEC-0006) has no live
- * connector yet, so it's shown disabled rather than implying a working
- * filter for data that doesn't exist.
- */
-const KNOWN_EVENT_SOURCES: Array<{
-  matchName: string;
-  label: string;
-  icon: 'ticket' | 'city' | 'instagram';
-  available: boolean;
-}> = [
-  { matchName: 'Ticketmaster', label: 'Ticketmaster', icon: 'ticket', available: true },
-  {
-    matchName: 'Ville de Montréal — Événements publics',
-    label: 'Ville de Montréal',
-    icon: 'city',
-    available: true
-  },
-  { matchName: 'Instagram', label: 'Instagram', icon: 'instagram', available: false }
-];
-
-function resolveSourceIconKind(
-  sourceName: string
-): 'ticket' | 'city' | 'instagram' | 'generic' {
-  return (
-    KNOWN_EVENT_SOURCES.find((source) => source.matchName === sourceName)?.icon ??
-    'generic'
-  );
-}
-
-function SourceIcon({ kind }: { kind: 'ticket' | 'city' | 'instagram' | 'generic' }) {
-  const paths: Record<typeof kind, ReactNode> = {
-    ticket: (
-      <path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V8z" />
-    ),
-    city: (
-      <>
-        <path d="M4 21V9l6-4 6 4v12" />
-        <path d="M16 21v-8l4 2v6" />
-        <line x1="9" y1="13" x2="9" y2="13.01" />
-        <line x1="9" y1="17" x2="9" y2="17.01" />
-      </>
-    ),
-    instagram: (
-      <>
-        <rect x="3" y="3" width="18" height="18" rx="5" />
-        <circle cx="12" cy="12" r="4" />
-        <line x1="17.5" y1="6.5" x2="17.5" y2="6.5" />
-      </>
-    ),
-    generic: (
-      <>
-        <circle cx="12" cy="12" r="10" />
-        <path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" />
       </>
     )
   };
@@ -6196,24 +6106,6 @@ function EventDetails({
                 {descriptionExpanded ? 'Voir moins' : 'Voir plus'}
               </button>
             )}
-          </div>
-
-          <div className="details-section">
-            <h3>Sources</h3>
-            <div className="source-item">
-              <span className="source-logo">
-                <SourceIcon kind={resolveSourceIconKind(event.source.name)} />
-              </span>
-              <span>{event.source.name}</span>
-            </div>
-            {event.additionalSources?.map((source) => (
-              <div className="source-item" key={source.url}>
-                <span className="source-logo">
-                  <SourceIcon kind={resolveSourceIconKind(source.name)} />
-                </span>
-                <span>{source.name}</span>
-              </div>
-            ))}
           </div>
         </>
       )}
