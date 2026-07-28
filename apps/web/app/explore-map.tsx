@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  activeForumsResponseSchema,
   buildMapEventsQuery,
   CATEGORY_FILTER_OPTIONS,
   conversationResponseSchema,
@@ -25,6 +26,7 @@ import {
   unreadCountResponseSchema,
   VENUE_CATEGORY_FILTER_OPTIONS,
   venueListResponseSchema,
+  type ActiveForum,
   type AttendanceVisibility,
   type ForumCategory,
   type ForumPost,
@@ -64,6 +66,7 @@ import {
 } from '@pulso/domain/localization';
 import maplibregl from 'maplibre-gl';
 import {
+  Fragment,
   useCallback,
   useEffect,
   useRef,
@@ -144,18 +147,36 @@ function buildPinImageData(color: string): ImageData {
   if (!ctx) throw new Error('2D canvas context unavailable.');
   ctx.scale(PIN_SCALE, PIN_SCALE);
 
-  ctx.beginPath();
-  ctx.moveTo(17, 0);
-  ctx.bezierCurveTo(7.611, 0, 0, 7.611, 0, 17);
-  ctx.bezierCurveTo(0, 29.75, 17, 44, 17, 44);
-  ctx.bezierCurveTo(17, 44, 34, 29.75, 34, 17);
-  ctx.bezierCurveTo(34, 7.611, 26.389, 0, 17, 0);
-  ctx.closePath();
+  const teardrop = new Path2D();
+  teardrop.moveTo(17, 0);
+  teardrop.bezierCurveTo(7.611, 0, 0, 7.611, 0, 17);
+  teardrop.bezierCurveTo(0, 29.75, 17, 44, 17, 44);
+  teardrop.bezierCurveTo(17, 44, 34, 29.75, 34, 17);
+  teardrop.bezierCurveTo(34, 7.611, 26.389, 0, 17, 0);
+  teardrop.closePath();
+
+  // A soft drop shadow gives the pin a lifted-off-the-map feel rather than
+  // sitting flush on the surface - drawn as a separate pass so the shadow
+  // doesn't also darken the white ring/dot drawn afterwards.
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetY = 2;
   ctx.fillStyle = color;
-  ctx.fill();
+  ctx.fill(teardrop);
+  ctx.restore();
+
+  // A subtle top-to-bottom gradient over the flat category color reads as
+  // a rounded, glossy surface rather than a flat sticker.
+  const sheen = ctx.createLinearGradient(0, 0, 0, 44);
+  sheen.addColorStop(0, 'rgba(255, 255, 255, 0.22)');
+  sheen.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = sheen;
+  ctx.fill(teardrop);
+
   ctx.lineWidth = 2;
   ctx.strokeStyle = '#ffffff';
-  ctx.stroke();
+  ctx.stroke(teardrop);
 
   ctx.beginPath();
   ctx.arc(17, 17, 6.5, 0, Math.PI * 2);
@@ -451,6 +472,34 @@ function useUnreadMessagesCount(authToken: string | undefined, refreshKey: unkno
   return count;
 }
 
+// Scoped to the caller's own favorited/attended events (see /me/forums/active)
+// - shared by the dashboard widget and the full "Forums" page so both read
+// from a single fetch/refresh cycle rather than duplicating it.
+function useActiveForums(authToken: string | undefined) {
+  const [forums, setForums] = useState<ActiveForum[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/forums/active`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setForums(activeForumsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { forums, state };
+}
+
 // Minimal safety net (DEC-0012): captures the report only, no moderation
 // queue or automated action exists yet - the acknowledgment says exactly
 // that rather than implying a review will happen.
@@ -633,7 +682,7 @@ export function ExploreMap({
   // moving markers out from under someone who hasn't touched the slider yet
   // is disorienting. It only takes effect once the user releases the slider
   // themselves.
-  const [distanceKm, setDistanceKm] = useState(15);
+  const [distanceKm, setDistanceKm] = useState(30);
   const distanceKmRef = useRef(distanceKm);
   const [distanceFilterActive, setDistanceFilterActive] = useState(false);
   const distanceFilterActiveRef = useRef(distanceFilterActive);
@@ -676,9 +725,18 @@ export function ExploreMap({
     };
   }, [userLocation]);
 
-  const [section, setSection] = useState<
-    'evenement' | 'lieu' | 'explorer' | 'favoris' | 'compte'
-  >('evenement');
+  const [section, setSection] = useState<ConnectedSection | 'compte'>('evenement');
+  // One-time redirect: an anonymous session always starts on 'evenement'
+  // (the map), but once a session resolves to a signed-in user it should
+  // land on the connected dashboard instead - only while the visitor
+  // hasn't already navigated elsewhere themselves.
+  const hasRedirectedToDashboard = useRef(false);
+  useEffect(() => {
+    if (user && section === 'evenement' && !hasRedirectedToDashboard.current) {
+      hasRedirectedToDashboard.current = true;
+      setSection('decouvrir');
+    }
+  }, [user, section]);
   const unreadMessagesCount = useUnreadMessagesCount(authToken, section);
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
   const [lieuTab, setLieuTab] = useState<'map' | 'list' | 'calendar'>('list');
@@ -687,7 +745,6 @@ export function ExploreMap({
   // plan.
   const [explorerPinKind, setExplorerPinKind] = useState<'event' | 'venue'>('event');
   const [venueCategoryFilter, setVenueCategoryFilter] = useState<VenueCategory[]>([]);
-  const [lieuPriceFilter, setLieuPriceFilter] = useState<VenuePriceTier[]>([]);
   const [noEventVenues, setNoEventVenues] = useState<PublicVenue[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const aboutPanelMount = useTransitionedMount(aboutOpen);
@@ -1401,11 +1458,6 @@ export function ExploreMap({
         venueCategoryFilter.length === 0 ||
         (group.venueCategory !== undefined && venueCategoryFilter.includes(group.venueCategory))
     )
-    .filter(
-      (group) =>
-        lieuPriceFilter.length === 0 ||
-        (group.priceTier !== undefined && lieuPriceFilter.includes(group.priceTier))
-    )
     .filter((group) => !showFavoriteVenuesOnly || favoriteVenues.includes(group.id));
 
   // Lieu's own map: a genuinely separate MapLibre instance (own container,
@@ -1586,6 +1638,23 @@ export function ExploreMap({
   useEffect(() => {
     if (lieuMap.current) pushVenuesToMap(lieuMap.current);
   }, [filteredVenueGroups, pushVenuesToMap]);
+
+  // Initial view for the Événement/Lieu maps (not Explorer, which is
+  // deliberately a wider, global view): centered on the visitor's own
+  // location once geolocation resolves, falling back to the Montréal
+  // center if it's denied/unavailable - a tight ~1km-radius view either
+  // way rather than the default city-wide zoom. Fires at most once so it
+  // never fights a pan/zoom the visitor makes themselves afterwards.
+  const hasAppliedInitialCenter = useRef(false);
+  useEffect(() => {
+    if (geoStatus === 'pending' || hasAppliedInitialCenter.current) return;
+    hasAppliedInitialCenter.current = true;
+    const center: [number, number] = userLocation
+      ? [userLocation.longitude, userLocation.latitude]
+      : MONTREAL_CENTER;
+    map.current?.jumpTo({ center, zoom: 14 });
+    lieuMap.current?.jumpTo({ center, zoom: 14 });
+  }, [geoStatus, userLocation]);
 
   // Explorer: a third, genuinely independent MapLibre instance - no sidebar,
   // just the map and a floating toggle switching which of two always-loaded
@@ -1906,8 +1975,43 @@ export function ExploreMap({
       ? nearbyEvents.length === 0
       : events.length === 0;
 
+  const ContentColumn = user ? 'div' : Fragment;
+
   return (
-    <div className="app-container">
+    <div className={`app-container${user ? ' app-container-connected' : ''}`}>
+      {user && (
+        <Sidebar
+          activeSection={(section === 'compte' ? 'decouvrir' : section) as ConnectedSection}
+          onNavigate={(nextSection) => {
+            setAboutOpen(false);
+            setSection(nextSection);
+          }}
+          authToken={authToken}
+        />
+      )}
+      <ContentColumn {...(user ? { className: 'connected-content-column' } : {})}>
+      {user ? (
+        <TopBar
+          query={queryInput}
+          result={searchResult}
+          processing={searchProcessing}
+          error={searchError}
+          onQueryChange={setQueryInput}
+          onSubmit={submitSearch}
+          onClear={clearSearch}
+          onClearConstraint={clearDerivedConstraint}
+          onPreview={setSelected}
+          locale={locale}
+          user={user}
+          unreadMessagesCount={unreadMessagesCount}
+          onOpenAccount={() => {
+            setAboutOpen(false);
+            setSection('compte');
+          }}
+          onOpenAbout={() => setAboutOpen((prev) => !prev)}
+          aboutOpen={aboutOpen}
+        />
+      ) : (
       <header className="top-navbar">
         <div className="nav-left">
           <button type="button" className="nav-logo" onClick={goHome} aria-label={translate(locale, 'app.title')}>
@@ -2007,7 +2111,26 @@ export function ExploreMap({
           />
         </div>
       </header>
+      )}
 
+      {user && section === 'decouvrir' ? (
+        <DashboardHome
+          user={user}
+          carouselEvents={carouselEvents}
+          carouselEmpty={carouselEmpty}
+          favorites={favorites}
+          onToggleFavorite={toggleFavorite}
+          onOpenDetails={openDetails}
+          locale={locale}
+          authToken={authToken}
+          onNavigate={setSection}
+        />
+      ) : user && section === 'forums' ? (
+        <ActiveForumsPage authToken={authToken} onOpenDetails={openDetails} />
+      ) : user && section === 'groupes' ? (
+        <GroupsPage authToken={authToken} />
+      ) : (
+      <Fragment>
       <div className="dashboard-main">
         {(section === 'evenement' || section === 'lieu') && (
         /* Left Sidebar */
@@ -2193,7 +2316,7 @@ export function ExploreMap({
               <input
                 type="range"
                 min="1"
-                max="15"
+                max="30"
                 value={distanceKm}
                 onChange={(event) => setDistanceKm(Number(event.target.value))}
                 onMouseUp={applyDistanceFilter}
@@ -2203,9 +2326,9 @@ export function ExploreMap({
               />
               <div className="distance-labels">
                 <span>1km</span>
-                <span>5km</span>
                 <span>10km</span>
-                <span>15km</span>
+                <span>20km</span>
+                <span>30km</span>
               </div>
               <p className="distance-value">
                 {distanceFilterActive
@@ -2231,36 +2354,6 @@ export function ExploreMap({
               <button className="filter-pill" disabled>☕ Chill</button>
               <button className="filter-pill" disabled>🥂 Romantique</button>
               <button className="filter-pill" disabled>🎉 Festif</button>
-            </div>
-          </CollapsibleFilterGroup>
-
-          <CollapsibleFilterGroup
-            title="Source"
-            collapsed={collapsedSections.has('source')}
-            onToggle={() => toggleSection('source')}
-          >
-            <div className="source-filter-grid">
-              {KNOWN_EVENT_SOURCES.map((source) => (
-                <button
-                  type="button"
-                  key={source.matchName}
-                  className={`source-filter-item ${selectedSources.includes(source.matchName) ? 'active' : ''} ${!source.available ? 'disabled' : ''}`}
-                  disabled={!source.available}
-                  onClick={() =>
-                    setSelectedSources((prev) =>
-                      prev.includes(source.matchName)
-                        ? prev.filter((name) => name !== source.matchName)
-                        : [...prev, source.matchName]
-                    )
-                  }
-                >
-                  <span className="source-filter-logo">
-                    <SourceIcon kind={source.icon} />
-                  </span>
-                  <span>{source.label}</span>
-                  {!source.available && <span className="source-soon">Bientôt</span>}
-                </button>
-              ))}
             </div>
           </CollapsibleFilterGroup>
           </>
@@ -2309,29 +2402,6 @@ export function ExploreMap({
           </CollapsibleFilterGroup>
 
           <CollapsibleFilterGroup
-            title="Prix"
-            collapsed={collapsedSections.has('lieu-prix')}
-            onToggle={() => toggleSection('lieu-prix')}
-          >
-            <div className="pill-list">
-              {(['$', '$$', '$$$'] as const).map((tier) => (
-                <button
-                  type="button"
-                  key={tier}
-                  className={`filter-pill ${lieuPriceFilter.includes(tier) ? 'active' : ''}`}
-                  onClick={() =>
-                    setLieuPriceFilter((prev) =>
-                      prev.includes(tier) ? prev.filter((value) => value !== tier) : [...prev, tier]
-                    )
-                  }
-                >
-                  {tier}
-                </button>
-              ))}
-            </div>
-          </CollapsibleFilterGroup>
-
-          <CollapsibleFilterGroup
             title="Distance"
             collapsed={collapsedSections.has('distance')}
             onToggle={() => toggleSection('distance')}
@@ -2340,7 +2410,7 @@ export function ExploreMap({
               <input
                 type="range"
                 min="1"
-                max="15"
+                max="30"
                 value={distanceKm}
                 onChange={(event) => setDistanceKm(Number(event.target.value))}
                 onMouseUp={applyDistanceFilter}
@@ -2350,9 +2420,9 @@ export function ExploreMap({
               />
               <div className="distance-labels">
                 <span>1km</span>
-                <span>5km</span>
                 <span>10km</span>
-                <span>15km</span>
+                <span>20km</span>
+                <span>30km</span>
               </div>
               <p className="distance-value">
                 {distanceFilterActive
@@ -2532,10 +2602,14 @@ export function ExploreMap({
                   // visible details panel.
                   setDetails({ kind: 'closed' });
                   setVenuePickerList(undefined);
-                  setPickerList({
-                    title: `${group.name} — ${group.address}`,
-                    events: group.events
-                  });
+                  if (group.events.length === 1) {
+                    void openDetails(group.events[0]!.id);
+                  } else {
+                    setPickerList({
+                      title: `${group.name} — ${group.address}`,
+                      events: group.events
+                    });
+                  }
                 }}
                 favoriteVenues={favoriteVenues}
                 onToggleFavoriteVenue={toggleFavoriteVenue}
@@ -2620,8 +2694,12 @@ export function ExploreMap({
             onSelectVenue={(group) => {
               setDetails({ kind: 'closed' });
               setVenuePickerList(undefined);
-              setPickerList({ title: `${group.name} — ${group.address}`, events: group.events });
-              setSection('lieu');
+              if (group.events.length === 1) {
+                void openDetails(group.events[0]!.id);
+              } else {
+                setPickerList({ title: `${group.name} — ${group.address}`, events: group.events });
+                setSection('lieu');
+              }
             }}
             locale={locale}
           />
@@ -2694,10 +2772,15 @@ export function ExploreMap({
                  onClose={() => setVenuePickerList(undefined)}
                  onSelectVenue={(group) => {
                    setDetails({ kind: 'closed' });
-                   setPickerList({
-                     title: `${group.name} — ${group.address}`,
-                     events: group.events
-                   });
+                   if (group.events.length === 1) {
+                     setVenuePickerList(undefined);
+                     void openDetails(group.events[0]!.id);
+                   } else {
+                     setPickerList({
+                       title: `${group.name} — ${group.address}`,
+                       events: group.events
+                     });
+                   }
                  }}
                />
              )}
@@ -2821,6 +2904,9 @@ export function ExploreMap({
             </div>
          </div>
       </div>
+      </Fragment>
+      )}
+      </ContentColumn>
     </div>
   );
 }
@@ -3972,6 +4058,374 @@ function AccountMenu({
         )}
       </span>
     </button>
+  );
+}
+
+type ConnectedSection =
+  | 'decouvrir'
+  | 'evenement'
+  | 'lieu'
+  | 'explorer'
+  | 'favoris'
+  | 'forums'
+  | 'groupes';
+
+const SIDEBAR_NAV_ITEMS: Array<{ section: ConnectedSection; label: string; icon: string }> = [
+  { section: 'decouvrir', label: 'Découvrir', icon: '✨' },
+  { section: 'explorer', label: 'Carte', icon: '🗺️' },
+  { section: 'evenement', label: 'Événements', icon: '🎟️' },
+  { section: 'lieu', label: 'Lieux', icon: '📍' },
+  { section: 'forums', label: 'Forums', icon: '💬' },
+  { section: 'favoris', label: 'Favoris', icon: '❤️' },
+  { section: 'groupes', label: 'Mes groupes', icon: '👥' }
+];
+
+// Primary navigation rail for the connected experience (Phase 4). Only
+// rendered when signed in - the anonymous map/explore experience keeps its
+// own unchanged top-navbar rather than sharing this component, per the
+// explicit "deux espaces totalement distincts" split.
+function Sidebar({
+  activeSection,
+  onNavigate,
+  authToken
+}: {
+  activeSection: ConnectedSection;
+  onNavigate: (section: ConnectedSection) => void;
+  authToken: string | undefined;
+}) {
+  const [friendCode, setFriendCode] = useState<string>();
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/friend-code`, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setFriendCode(friendCodeResponseSchema.parse(json).data.friendCode))
+      .catch(() => {});
+  }, [authToken]);
+
+  return (
+    <aside className="primary-sidebar">
+      <button
+        type="button"
+        className="nav-logo primary-sidebar-logo"
+        onClick={() => onNavigate('decouvrir')}
+        aria-label="Pulso"
+      >
+        <img src="/brand/pulso-logo-horizontal-dark.svg" alt="Pulso" />
+      </button>
+
+      <nav className="primary-sidebar-nav">
+        {SIDEBAR_NAV_ITEMS.map((item) => (
+          <button
+            type="button"
+            key={item.section}
+            className={`primary-sidebar-nav-item ${activeSection === item.section ? 'active' : ''}`}
+            onClick={() => onNavigate(item.section)}
+          >
+            <span className="primary-sidebar-nav-icon" aria-hidden="true">
+              {item.icon}
+            </span>
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      {friendCode && (
+        <div className="primary-sidebar-invite">
+          <p>Invite tes amis</p>
+          <div className="friends-code-row">
+            <span>
+              <strong>{friendCode}</strong>
+            </span>
+            <button
+              type="button"
+              className="text-btn"
+              onClick={() => {
+                void navigator.clipboard.writeText(friendCode);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+            >
+              {copied ? 'Copié !' : 'Copier'}
+            </button>
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+// Top bar for the connected experience - same search/city/notification
+// building blocks as the anonymous top-navbar, minus the Événement/Lieu/
+// Explorer text nav (now in Sidebar) since the account layer moves
+// wayfinding into a persistent rail rather than a row of header tabs.
+function TopBar({
+  query,
+  result,
+  processing,
+  error,
+  onQueryChange,
+  onSubmit,
+  onClear,
+  onClearConstraint,
+  onPreview,
+  locale,
+  user,
+  unreadMessagesCount,
+  onOpenAccount,
+  onOpenAbout,
+  aboutOpen
+}: {
+  query: string;
+  result: IntelligentSearchResponse | undefined;
+  processing: boolean;
+  error: boolean;
+  onQueryChange: (value: string) => void;
+  onSubmit: () => void;
+  onClear: () => void;
+  onClearConstraint: (key: SearchConstraintKey) => void;
+  onPreview: (event: PublicEvent) => void;
+  locale: SupportedLocale;
+  user: User;
+  unreadMessagesCount: number;
+  onOpenAccount: () => void;
+  onOpenAbout: () => void;
+  aboutOpen: boolean;
+}) {
+  return (
+    <header className="top-navbar connected-topbar">
+      <div className="nav-search">
+        <SearchPanel
+          query={query}
+          result={result}
+          processing={processing}
+          error={error}
+          onQueryChange={onQueryChange}
+          onSubmit={onSubmit}
+          onClear={onClear}
+          onClearConstraint={onClearConstraint}
+          onPreview={onPreview}
+          locale={locale}
+        />
+      </div>
+      <div className="nav-actions">
+        <button
+          type="button"
+          className={`nav-icon-btn ${aboutOpen ? 'active' : ''}`}
+          onClick={onOpenAbout}
+          aria-label="À propos"
+          title="À propos"
+        >
+          <InfoIcon />
+        </button>
+        <button
+          type="button"
+          className="nav-icon-btn"
+          disabled
+          aria-label="Notifications (bientôt disponible)"
+          title="Bientôt disponible"
+        >
+          <BellIcon />
+        </button>
+        <AccountMenu
+          user={user}
+          onLogin={() => {}}
+          onOpenAccount={onOpenAccount}
+          unreadCount={unreadMessagesCount}
+        />
+      </div>
+    </header>
+  );
+}
+
+// Landing view for connected users (Phase 4.4) - reuses the same nearby-
+// events data already computed for the anonymous carousel and the same
+// active-forums signal as the dedicated "Forums" page, rather than
+// building a second data source for what is the same information.
+function DashboardHome({
+  user,
+  carouselEvents,
+  carouselEmpty,
+  favorites,
+  onToggleFavorite,
+  onOpenDetails,
+  locale,
+  authToken,
+  onNavigate
+}: {
+  user: User;
+  carouselEvents: PublicEvent[];
+  carouselEmpty: boolean;
+  favorites: string[];
+  onToggleFavorite: (eventId: string) => void;
+  onOpenDetails: (eventId: string) => void;
+  locale: SupportedLocale;
+  authToken: string | undefined;
+  onNavigate: (section: ConnectedSection) => void;
+}) {
+  const { forums, state: forumsState } = useActiveForums(authToken);
+
+  return (
+    <div className="dashboard-home">
+      <h1>Bonjour {user.displayName.split(' ')[0]}</h1>
+
+      <button type="button" className="dashboard-home-map-card" onClick={() => onNavigate('explorer')}>
+        <span className="dashboard-home-map-card-icon" aria-hidden="true">
+          🗺️
+        </span>
+        <span>
+          <strong>Explorer la carte</strong>
+          <span>Voir les événements et lieux autour de vous</span>
+        </span>
+      </button>
+
+      <div className="dashboard-home-section">
+        <div className="section-header">
+          <h2>Événements autour de vous</h2>
+          <button type="button" className="view-all" onClick={() => onNavigate('evenement')}>
+            Voir tous les événements
+          </button>
+        </div>
+        <div className="event-carousel">
+          {carouselEvents.slice(0, 10).map((evt) => (
+            <div
+              className="event-card"
+              key={evt.id}
+              onClick={() => onOpenDetails(evt.id)}
+              style={{ cursor: 'pointer' }}
+            >
+              <div
+                className="event-card-img"
+                style={
+                  evt.imageUrl
+                    ? {
+                        backgroundImage: `url(${evt.imageUrl})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }
+                    : undefined
+                }
+              >
+                {!evt.imageUrl && <EventImageFallback category={evt.category} />}
+                <div
+                  className="card-badge"
+                  style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
+                >
+                  {getCategoryLabel(locale, evt.category)}
+                </div>
+                <button
+                  className="card-fav"
+                  onClick={(clickEvent) => {
+                    clickEvent.stopPropagation();
+                    onToggleFavorite(evt.id);
+                  }}
+                >
+                  {favorites.includes(evt.id) ? '❤️' : '🤍'}
+                </button>
+              </div>
+              <div className="event-card-content">
+                <h3>{evt.title}</h3>
+                <p>{evt.venue?.name}</p>
+                <p className="card-price">
+                  {evt.startsAt ? new Date(evt.startsAt).toLocaleDateString() : ''}
+                </p>
+              </div>
+            </div>
+          ))}
+          {carouselEmpty && <p>Aucun événement trouvé.</p>}
+        </div>
+      </div>
+
+      <div className="dashboard-home-section">
+        <div className="section-header">
+          <h2>Forums actifs</h2>
+          <button type="button" className="view-all" onClick={() => onNavigate('forums')}>
+            Voir tous les forums
+          </button>
+        </div>
+        {forumsState === 'loading' && <p className="list-view-empty">Chargement…</p>}
+        {forumsState === 'success' && forums.length === 0 && (
+          <p className="list-view-empty">
+            Aucune activité récente dans vos forums. Ajoutez des favoris ou marquez votre
+            participation à un événement pour en voir apparaître ici.
+          </p>
+        )}
+        <div className="active-forums-list">
+          {forums.slice(0, 5).map((forum) => (
+            <button
+              type="button"
+              className="active-forum-row"
+              key={`${forum.eventId}-${forum.category}`}
+              onClick={() => onOpenDetails(forum.eventId)}
+            >
+              <span className="active-forum-row-title">{forum.eventTitle}</span>
+              <span className="active-forum-row-excerpt">{forum.lastPostExcerpt}</span>
+              <span className="active-forum-row-meta">
+                {FORUM_CATEGORY_LABELS[forum.category]} · {forum.postCount} message
+                {forum.postCount !== 1 ? 's' : ''}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Full-page version of the "Forums actifs" widget above - same data (Sidebar
+// "Forums" nav item), just without the top-5 cap.
+function ActiveForumsPage({
+  authToken,
+  onOpenDetails
+}: {
+  authToken: string | undefined;
+  onOpenDetails: (eventId: string) => void;
+}) {
+  const { forums, state } = useActiveForums(authToken);
+
+  return (
+    <div className="dashboard-home">
+      <h1>Forums actifs</h1>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger vos forums pour le moment.</p>
+      )}
+      {state === 'success' && forums.length === 0 && (
+        <p className="list-view-empty">
+          Aucune activité récente. Les forums de vos événements favoris ou auxquels vous
+          participez apparaîtront ici.
+        </p>
+      )}
+      <div className="active-forums-list">
+        {forums.map((forum) => (
+          <button
+            type="button"
+            className="active-forum-row"
+            key={`${forum.eventId}-${forum.category}`}
+            onClick={() => onOpenDetails(forum.eventId)}
+          >
+            <span className="active-forum-row-title">{forum.eventTitle}</span>
+            <span className="active-forum-row-excerpt">{forum.lastPostExcerpt}</span>
+            <span className="active-forum-row-meta">
+              {FORUM_CATEGORY_LABELS[forum.category]} · {forum.postCount} message
+              {forum.postCount !== 1 ? 's' : ''}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Full-page home for "Mes groupes" (Sidebar nav item) - wraps the same
+// GroupsBlock built in Phase 4.3 rather than duplicating its logic.
+function GroupsPage({ authToken }: { authToken: string | undefined }) {
+  return (
+    <div className="dashboard-home">
+      <h1>Mes groupes</h1>
+      <GroupsBlock authToken={authToken} />
+    </div>
   );
 }
 
@@ -5751,7 +6205,6 @@ function EventDetails({
                 <SourceIcon kind={resolveSourceIconKind(event.source.name)} />
               </span>
               <span>{event.source.name}</span>
-              <span className="source-trust">{presentation.trust}</span>
             </div>
             {event.additionalSources?.map((source) => (
               <div className="source-item" key={source.url}>
@@ -5843,8 +6296,15 @@ function EventDetails({
 function SignInPrompt({ message, onLogin }: { message: string; onLogin: () => void }) {
   return (
     <div className="sign-in-prompt">
+      <span className="sign-in-prompt-icon" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
+          <circle cx="10" cy="7" r="4" />
+          <path d="M22 8v6M19 11h6" />
+        </svg>
+      </span>
       <p>{message}</p>
-      <button type="button" className="btn-secondary" onClick={onLogin}>
+      <button type="button" className="sign-in-prompt-btn" onClick={onLogin}>
         Se connecter
       </button>
     </div>

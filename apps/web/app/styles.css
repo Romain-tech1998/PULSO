@@ -1784,16 +1784,45 @@ h6 {
 .sign-in-prompt {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.9rem;
-  padding: 1.25rem;
-  text-align: left;
+  align-items: center;
+  gap: 1rem;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  border-radius: 1rem;
+  background: var(--surface-base);
+  border: 1px solid var(--brand-border);
+}
+.sign-in-prompt-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  color: #fff;
 }
 .sign-in-prompt p {
   margin: 0;
+  max-width: 26ch;
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   line-height: 1.5;
+}
+.sign-in-prompt-btn {
+  padding: 0.75rem 1.75rem;
+  border-radius: 999px;
+  border: none;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.sign-in-prompt-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(167, 62, 232, 0.35);
 }
 
 .details-info-list {
@@ -1957,12 +1986,6 @@ h6 {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-.source-trust {
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: capitalize;
 }
 
 .forum-tabs {
@@ -2208,12 +2231,12 @@ h6 {
 /* "You are here" marker */
 .user-location-marker {
   position: relative;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: #4285f4;
+  background: var(--gradient-primary);
   border: 3px solid #fff;
-  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.4), 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 2px rgba(167, 62, 232, 0.35), 0 4px 14px rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2224,9 +2247,9 @@ h6 {
 }
 .user-location-marker-pulse {
   position: absolute;
-  inset: -12px;
+  inset: -14px;
   border-radius: 50%;
-  background: rgba(66, 133, 244, 0.35);
+  background: rgba(167, 62, 232, 0.3);
   animation: user-location-pulse 2s ease-out infinite;
 }
 @keyframes user-location-pulse {
@@ -2647,6 +2670,195 @@ h6 {
   font-weight: 600;
 }
 
+/* Connected shell (Phase 4.4) - primary nav rail + top bar + dashboard,
+   only rendered when signed in. The anonymous top-navbar/dashboard-main
+   above are untouched by any of this. */
+.app-container-connected {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.connected-content-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.primary-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  padding: 1.5rem 1rem;
+  background: var(--background);
+  border-right: 1px solid var(--brand-border);
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  overflow-y: auto;
+}
+
+.primary-sidebar-logo {
+  display: flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.primary-sidebar-logo img {
+  height: 36px;
+}
+
+.primary-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.primary-sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 0.75rem;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: left;
+  transition: background 0.2s, color 0.2s;
+}
+
+.primary-sidebar-nav-item:hover {
+  background: var(--surface-base);
+  color: var(--text-primary);
+}
+
+.primary-sidebar-nav-item.active {
+  background: rgba(91, 63, 224, 0.25);
+  color: var(--text-primary);
+}
+
+.primary-sidebar-nav-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.primary-sidebar-invite {
+  margin-top: auto;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: var(--surface-base);
+  border: 1px solid var(--brand-border);
+}
+
+.primary-sidebar-invite p {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.connected-topbar {
+  padding-left: 2rem;
+}
+
+.dashboard-home {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.dashboard-home h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.dashboard-home-map-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: 1rem;
+  background: var(--gradient-primary);
+  border: none;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashboard-home-map-card-icon {
+  font-size: 1.8rem;
+}
+
+.dashboard-home-map-card strong {
+  display: block;
+  font-size: 1.05rem;
+}
+
+.dashboard-home-map-card span span {
+  display: block;
+  font-size: 0.85rem;
+  opacity: 0.85;
+  font-weight: 400;
+}
+
+.dashboard-home-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.active-forums-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.active-forum-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--surface-base);
+  border: 1px solid var(--brand-border);
+  text-align: left;
+  transition: border-color 0.2s;
+}
+
+.active-forum-row:hover {
+  border-color: var(--brand-purple);
+}
+
+.active-forum-row-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.active-forum-row-excerpt {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-forum-row-meta {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
 @media (max-width: 1024px) {
   .dashboard-main {
     flex-direction: column;
@@ -2660,5 +2872,25 @@ h6 {
 
   .map-container-wrapper {
     height: 50vh;
+  }
+
+  .app-container-connected {
+    flex-direction: column;
+  }
+
+  .primary-sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .primary-sidebar-nav {
+    flex-direction: row;
+  }
+
+  .primary-sidebar-invite {
+    display: none;
   }
 }

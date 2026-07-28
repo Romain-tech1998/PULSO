@@ -1,10 +1,17 @@
 import {
+  activeForumsResponseSchema,
   createForumPostRequestSchema,
   forumCategorySchema,
   forumPostResponseSchema,
   forumPostsResponseSchema
 } from '@pulso/contracts';
-import type { AuthRepository, ForumRepository } from '@pulso/database';
+import type {
+  AttendanceRepository,
+  AuthRepository,
+  EventRepository,
+  FavoritesRepository,
+  ForumRepository
+} from '@pulso/database';
 import { EventNotFoundError, ForumPostNotFoundError } from '@pulso/database';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -24,7 +31,10 @@ const postParamsSchema = z.object({ postId: z.uuid() });
 export function registerForumRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
-  forumRepository: ForumRepository
+  forumRepository: ForumRepository,
+  favoritesRepository: FavoritesRepository,
+  attendanceRepository: AttendanceRepository,
+  eventRepository: EventRepository
 ) {
   app.get('/events/:eventId/forum/:category', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -83,5 +93,26 @@ export function registerForumRoutes(
     const { postId } = postParamsSchema.parse(request.params);
     await forumRepository.unlikePost(postId, user.id);
     return reply.status(204).send();
+  });
+
+  // Dashboard "Forums actifs" widget: scoped to the caller's own
+  // favorited/attended events, never a public/global feed of every forum.
+  app.get('/me/forums/active', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const [favoriteEventIds, attendance] = await Promise.all([
+      favoritesRepository.getFavoriteEventIds(user.id),
+      attendanceRepository.getMyAttendance(user.id)
+    ]);
+    const eventIds = Array.from(
+      new Set([...favoriteEventIds, ...attendance.map((entry) => entry.eventId)])
+    );
+    const activity = await forumRepository.getRecentActivityForEvents(eventIds);
+    const events = await eventRepository.findByIds(activity.map((entry) => entry.eventId));
+    const eventTitleById = new Map(events.map((event) => [event.id, event.title]));
+    const data = activity
+      .filter((entry) => eventTitleById.has(entry.eventId))
+      .map((entry) => ({ ...entry, eventTitle: eventTitleById.get(entry.eventId)! }));
+    return activeForumsResponseSchema.parse({ data });
   });
 }

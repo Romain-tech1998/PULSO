@@ -121,6 +121,7 @@ export function fakeForumRepository(overrides: Partial<ForumRepository> = {}): F
     deletePost: async () => undefined,
     likePost: async () => undefined,
     unlikePost: async () => undefined,
+    getRecentActivityForEvents: async () => [],
     ...overrides
   };
 }

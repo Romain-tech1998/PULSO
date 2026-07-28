@@ -324,6 +324,21 @@ export const forumPostResponseSchema = z.object({
   data: forumPostSchema
 });
 
+// Powers the dashboard's "Forums actifs" widget - scoped to the caller's
+// own favorited/attended events, never a public/global feed.
+export const activeForumSchema = z.object({
+  eventId: z.uuid(),
+  eventTitle: z.string().min(1),
+  category: forumCategorySchema,
+  lastPostAt: z.iso.datetime(),
+  lastPostExcerpt: z.string().min(1),
+  postCount: z.number().int().min(0)
+});
+
+export const activeForumsResponseSchema = z.object({
+  data: z.array(activeForumSchema)
+});
+
 // Messages exist only between accepted friends (DEC-0012) - the API
 // enforces that, this schema just describes the shape once sent.
 export const messageSchema = z.object({
@@ -530,6 +545,8 @@ export type CreateForumPostRequest = z.infer<
 >;
 export type ForumPostsResponse = z.infer<typeof forumPostsResponseSchema>;
 export type ForumPostResponse = z.infer<typeof forumPostResponseSchema>;
+export type ActiveForum = z.infer<typeof activeForumSchema>;
+export type ActiveForumsResponse = z.infer<typeof activeForumsResponseSchema>;
 export type Message = z.infer<typeof messageSchema>;
 export type SendMessageRequest = z.infer<typeof sendMessageRequestSchema>;
 export type ConversationResponse = z.infer<typeof conversationResponseSchema>;
@@ -830,14 +847,12 @@ export function presentEvent(
             : event.trust.locationConfidence === 'uncertain'
               ? translate(locale, 'event.warning.location')
               : undefined;
+  // Always the generic "See tickets" wording regardless of destination kind
+  // - the connector-provided label (e.g. an internal scraper/tool name) is
+  // never appropriate to show verbatim to an end user.
   const externalAvailable =
-    event.status !== 'cancelled' &&
-    event.externalDestination?.status === 'available'
-      ? event.externalDestination.kind === 'ticketing'
-        ? translate(locale, 'event.external.viewTickets')
-        : translate(locale, 'event.external.open', {
-            destination: event.externalDestination.label
-          })
+    event.status !== 'cancelled' && event.externalDestination?.status === 'available'
+      ? translate(locale, 'event.external.viewTickets')
       : undefined;
 
   return {

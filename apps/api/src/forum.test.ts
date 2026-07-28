@@ -1,3 +1,4 @@
+import type { PublicEvent } from '@pulso/contracts';
 import type { EventRepository } from '@pulso/database';
 import { EventNotFoundError, ForumPostNotFoundError } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
@@ -5,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { buildApp } from './app.js';
 import {
   accountRepositories,
+  fakeFavoritesRepository,
   fakeForumPost,
   fakeForumRepository,
   testUser
@@ -260,6 +262,55 @@ describe('event forum API', () => {
       postId: '00000000-0000-4000-8000-000000000013',
       userId: testUser.id
     });
+    await app.close();
+  });
+
+  it('lists recently active forums scoped to my favorited and attended events, with titles hydrated', async () => {
+    const eventWithForum: EventRepository = {
+      ...event,
+      findByIds: async (ids) =>
+        ids.includes(eventId)
+          ? [{ id: eventId, title: 'Concert au parc' } as unknown as PublicEvent]
+          : []
+    };
+    const app = buildApp(
+      eventWithForum,
+      accountRepositories({
+        favoritesRepository: fakeFavoritesRepository({
+          getFavoriteEventIds: async () => [eventId]
+        }),
+        forumRepository: fakeForumRepository({
+          getRecentActivityForEvents: async (eventIds) => {
+            expect(eventIds).toEqual([eventId]);
+            return [
+              {
+                eventId,
+                category: 'general',
+                lastPostAt: '2026-01-01T00:00:00.000Z',
+                lastPostExcerpt: 'Quelqu\'un vient ce soir ?',
+                postCount: 3
+              }
+            ];
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/forums/active',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([
+      {
+        eventId,
+        eventTitle: 'Concert au parc',
+        category: 'general',
+        lastPostAt: '2026-01-01T00:00:00.000Z',
+        lastPostExcerpt: 'Quelqu\'un vient ce soir ?',
+        postCount: 3
+      }
+    ]);
     await app.close();
   });
 });

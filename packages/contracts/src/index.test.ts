@@ -308,7 +308,7 @@ describe('public event contract', () => {
     expect(presentEvent(event, 'fr').externalAction).toBe('Voir les billets');
   });
 
-  it('keeps the generic "open {destination}" action for a non-ticketing source', () => {
+  it('shows the generic "see tickets" action for a non-ticketing external destination too', () => {
     const event = publicEventSchema.parse({
       id: '00000000-0000-4000-8000-000000000001',
       title: 'Synthetic source-linked event',
@@ -341,12 +341,11 @@ describe('public event contract', () => {
       }
     });
 
-    expect(presentEvent(event, 'en').externalAction).toBe(
-      'Open Ville de Montréal'
-    );
-    expect(presentEvent(event, 'fr').externalAction).toBe(
-      'Ouvrir Ville de Montréal'
-    );
+    // The connector-provided label is never shown verbatim - even for a
+    // non-ticketing destination, the wording stays the same generic "see
+    // tickets" action as every other destination.
+    expect(presentEvent(event, 'en').externalAction).toBe('See tickets');
+    expect(presentEvent(event, 'fr').externalAction).toBe('Voir les billets');
   });
 
   it('localizes Pulso labels while preserving external event content', () => {

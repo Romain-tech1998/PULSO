@@ -39,6 +39,14 @@ export interface ForumPost {
   replyCount: number;
 }
 
+export interface ActiveForum {
+  eventId: string;
+  category: ForumCategory;
+  lastPostAt: string;
+  lastPostExcerpt: string;
+  postCount: number;
+}
+
 export interface ForumRepository {
   getPosts(eventId: string, category: ForumCategory, viewerId: string): Promise<ForumPost[]>;
   createPost(
@@ -53,6 +61,10 @@ export interface ForumRepository {
   deletePost(postId: string, authorId: string): Promise<void>;
   likePost(postId: string, userId: string): Promise<void>;
   unlikePost(postId: string, userId: string): Promise<void>;
+  // Powers the dashboard's "Forums actifs" widget: the most recently
+  // active thread per event, restricted to events the caller already
+  // cares about (favorited or attended) - never a public/global feed.
+  getRecentActivityForEvents(eventIds: string[]): Promise<ActiveForum[]>;
 }
 
 interface PostRow {
@@ -172,5 +184,36 @@ export class PostgresForumRepository implements ForumRepository {
       postId,
       userId
     ]);
+  }
+
+  async getRecentActivityForEvents(eventIds: string[]): Promise<ActiveForum[]> {
+    if (eventIds.length === 0) return [];
+    const result = await this.pool.query<{
+      event_id: string;
+      category: ForumCategory;
+      body: string;
+      created_at: string;
+      post_count: string;
+    }>(
+      `SELECT event_id, category, body, created_at, post_count
+       FROM (
+         SELECT event_id, category, body, created_at,
+                COUNT(*) OVER (PARTITION BY event_id) AS post_count,
+                ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY created_at DESC) AS rn
+         FROM forum_posts
+         WHERE event_id = ANY($1::uuid[])
+       ) latest
+       WHERE rn = 1
+       ORDER BY created_at DESC
+       LIMIT 10`,
+      [eventIds]
+    );
+    return result.rows.map((row) => ({
+      eventId: row.event_id,
+      category: row.category,
+      lastPostAt: new Date(row.created_at).toISOString(),
+      lastPostExcerpt: row.body,
+      postCount: Number(row.post_count)
+    }));
   }
 }

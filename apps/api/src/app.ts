@@ -90,7 +90,14 @@ export function buildApp(
       options.friendsRepository,
       options.attendanceRepository
     );
-    registerForumRoutes(app, options.authRepository, options.forumRepository);
+    registerForumRoutes(
+      app,
+      options.authRepository,
+      options.forumRepository,
+      options.favoritesRepository,
+      options.attendanceRepository,
+      repository
+    );
     registerMessagesRoutes(app, options.authRepository, options.messagesRepository);
     registerReportsRoutes(app, options.authRepository, options.reportsRepository);
     registerGroupsRoutes(app, options.authRepository, options.groupsRepository);
