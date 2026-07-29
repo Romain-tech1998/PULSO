@@ -5109,25 +5109,27 @@ function ProfilHeader({
   return (
     <div className="profil-header">
       <div className="profil-cover" style={{ background: coverGradient }} />
-      <div className="profil-header-content">
+      {/* Only the avatar + name overlap the banner, inside the scrim
+          (.profil-cover's ::after) that fades to the solid background -
+          that's what keeps the name legible regardless of which bright
+          gradient preset is picked. Location/memberSince/bio/stats live in
+          .profil-header-details below, always fully on the solid
+          background, never over the banner. */}
+      <div className="profil-header-overlap">
         <span className="profil-avatar">{renderUserAvatarContent(user)}</span>
-        <div className="profil-header-main">
-          <div className="profil-header-top">
-            <div>
-              <h1>{user.displayName}</h1>
-              <p className="profil-location">📍 Montréal, QC</p>
-              <p className="profil-member-since">Membre depuis {formatMemberSince(user.createdAt)}</p>
-            </div>
-            <button type="button" className="profil-edit-btn" onClick={onEdit}>
-              ✏️ Modifier mon profil
-            </button>
-          </div>
-          {user.bio && <p className="profil-bio">{user.bio}</p>}
-          <div className="profil-stats-row">
-            <span>
-              <strong>{friendsCount}</strong> Ami{friendsCount !== 1 ? 's' : ''}
-            </span>
-          </div>
+        <h1>{user.displayName}</h1>
+        <button type="button" className="profil-edit-btn" onClick={onEdit}>
+          ✏️ Modifier mon profil
+        </button>
+      </div>
+      <div className="profil-header-details">
+        <p className="profil-location">📍 Montréal, QC</p>
+        <p className="profil-member-since">Membre depuis {formatMemberSince(user.createdAt)}</p>
+        {user.bio && <p className="profil-bio">{user.bio}</p>}
+        <div className="profil-stats-row">
+          <span>
+            <strong>{friendsCount}</strong> Ami{friendsCount !== 1 ? 's' : ''}
+          </span>
         </div>
       </div>
     </div>
