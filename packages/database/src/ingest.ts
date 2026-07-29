@@ -170,9 +170,12 @@ function buildEventbriteConnectors(): IngestionConnector[] {
     console.warn('[ingest] Skipping Eventbrite: APIFY_API_TOKEN is not set.');
     return [];
   }
-  // Billed per result ($0.02/event on the free tier) - only meant to run on
-  // a slow cadence (weekly, see .github/workflows/ingest.yml), never on the
-  // twice-daily default events run.
+  // Billed per result ($0.02/event on the free tier) - runs on its own
+  // dedicated job/cadence (see .github/workflows/ingest.yml), never folded
+  // into the twice-daily default events run. Trial: daily while validating
+  // relevance/cost; createEventbriteConnector() defaults to an explicit
+  // today->+7-days window since the actor's own default (dates left blank)
+  // verified live to return almost only same-day events.
   return [createEventbriteConnector()];
 }
 

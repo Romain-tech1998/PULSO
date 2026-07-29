@@ -177,12 +177,21 @@ export function mapEventbriteApifyEvent(
   };
 }
 
+function defaultDateRange(): { startDate: string; endDate: string } {
+  const toDateOnly = (date: Date) => date.toISOString().slice(0, 10);
+  const now = new Date();
+  const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return { startDate: toDateOnly(now), endDate: toDateOnly(in7Days) };
+}
+
 export function createEventbriteConnector(
   options: {
     apiToken?: string;
     city?: string;
     country?: string;
     maxResults?: number;
+    startDate?: string;
+    endDate?: string;
     fetchImpl?: typeof fetch;
   } = {}
 ): IngestionConnector {
@@ -191,6 +200,13 @@ export function createEventbriteConnector(
   const country = options.country ?? 'canada';
   const maxResults = options.maxResults ?? 100;
   const fetchImpl = options.fetchImpl ?? fetch;
+  // Verified live: leaving startDate/endDate blank does NOT give the 7-day
+  // window the actor's own input schema describes as the default - it
+  // returns almost exclusively events starting today. Passing an explicit
+  // range is required to actually cover the coming week.
+  const fallbackRange = defaultDateRange();
+  const startDate = options.startDate ?? fallbackRange.startDate;
+  const endDate = options.endDate ?? fallbackRange.endDate;
 
   return {
     id: 'eventbrite',
@@ -209,7 +225,7 @@ export function createEventbriteConnector(
       const response = await fetchImpl(url.toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ country, city, maxResults })
+        body: JSON.stringify({ country, city, maxResults, startDate, endDate })
       });
       if (!response.ok) {
         throw new Error(

@@ -134,7 +134,9 @@ describe('createEventbriteConnector', () => {
     const connector = createEventbriteConnector({
       apiToken: 'test-token',
       fetchImpl,
-      maxResults: 5
+      maxResults: 5,
+      startDate: '2026-08-01',
+      endDate: '2026-08-08'
     });
     const events = await connector.fetch();
 
@@ -147,10 +149,32 @@ describe('createEventbriteConnector', () => {
     expect(JSON.parse((calledInit as RequestInit).body as string)).toEqual({
       country: 'canada',
       city: 'montreal',
-      maxResults: 5
+      maxResults: 5,
+      startDate: '2026-08-01',
+      endDate: '2026-08-08'
     });
     expect(events).toHaveLength(1);
     expect(events[0]?.title).toBe('KARNEEF + MAFUBA live at ESCOGRIFFE');
+  });
+
+  it('defaults to an explicit today->+7-days range instead of leaving dates blank', async () => {
+    // Verified live: leaving startDate/endDate blank returns almost only
+    // today's events despite the actor's documented 7-day default, so this
+    // connector always sends an explicit range.
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse([]));
+    const connector = createEventbriteConnector({
+      apiToken: 'test-token',
+      fetchImpl
+    });
+    await connector.fetch();
+
+    const [, calledInit] = fetchImpl.mock.calls[0]!;
+    const body = JSON.parse((calledInit as RequestInit).body as string);
+    expect(body.startDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(body.endDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(new Date(body.endDate).getTime()).toBeGreaterThan(
+      new Date(body.startDate).getTime()
+    );
   });
 
   it('throws when APIFY_API_TOKEN is not set', async () => {

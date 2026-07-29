@@ -6,10 +6,13 @@ on:
     - cron: '0 10,20 * * *'
     # Run at 00:00 every Monday (Venues)
     - cron: '0 0 * * 1'
-    # Run at 01:00 every Monday (Eventbrite - billed per result, kept on its
-    # own slow cadence and job so it never runs alongside the free
-    # connectors in the twice-daily events job)
-    - cron: '0 1 * * 1'
+    # Run at 01:00 every day (Eventbrite - billed per result, kept on its
+    # own job so it never runs alongside the free connectors in the
+    # twice-daily events job). Trial period: daily while validating
+    # relevance/coverage, since a weekly cadence with this actor's
+    # unreliable default date window missed most of the week - see
+    # DATA-0003. Revisit cadence and cost once real signal exists.
+    - cron: '0 1 * * *'
   workflow_dispatch:
     inputs:
       job_type:
@@ -32,9 +35,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v5
         with:
-          version: 9
+          version: 11.7.0
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -59,9 +62,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v5
         with:
-          version: 9
+          version: 11.7.0
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -80,15 +83,15 @@ jobs:
   ingest-eventbrite:
     name: Run Eventbrite Ingestion
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 1 * * 1' || github.event.inputs.job_type == 'eventbrite'
+    if: github.event_name == 'schedule' && github.event.schedule == '0 1 * * *' || github.event.inputs.job_type == 'eventbrite'
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v5
         with:
-          version: 9
+          version: 11.7.0
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
