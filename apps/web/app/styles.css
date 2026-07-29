@@ -2445,13 +2445,18 @@ h6 {
   gap: 0.25rem;
   padding: 0 1.25rem;
   border-bottom: 1px solid var(--brand-border);
+  /* 5 tabs since Phase 4.8 (was 3) - scrolls horizontally on narrow panels
+     instead of wrapping/overflowing. */
+  overflow-x: auto;
 }
 .details-tabs button {
-  padding: 0.85rem 1rem;
+  padding: 0.85rem 0.85rem;
   color: var(--text-secondary);
   font-weight: 600;
   font-size: 0.9rem;
   position: relative;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .details-tabs button:hover {
   color: var(--text-primary);
@@ -3643,6 +3648,124 @@ h6 {
 .active-forum-row-meta {
   color: var(--text-muted);
   font-size: 0.75rem;
+}
+
+/* Forums discovery grid (Phase 4.8) - the real "Forums" page, distinct
+   from the .active-forum-row digest above (that one stays as-is, still
+   powers the DashboardHome "Forums actifs" widget). */
+.forum-discover-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.forum-discover-filters button {
+  padding: 0.5rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--brand-border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.forum-discover-filters button:hover {
+  border-color: var(--brand-purple);
+  color: var(--text-primary);
+}
+.forum-discover-filters button.active {
+  background: var(--gradient-primary);
+  border-color: transparent;
+  color: #fff;
+}
+
+.forum-discover-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+.forum-discover-card {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  border-radius: 1rem;
+  overflow: hidden;
+  transition: transform 0.2s, border-color 0.2s;
+}
+.forum-discover-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--brand-purple);
+}
+.forum-discover-card-cover {
+  position: relative;
+  height: 140px;
+  background: var(--surface-overlay);
+}
+.forum-discover-card-body {
+  padding: 0.9rem 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.forum-discover-card-title {
+  font-size: 1rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.forum-discover-card-venue {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+.forum-discover-card-members {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.forum-discover-card-last {
+  margin-top: 0.2rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--brand-border);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.forum-discover-card-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* "Rencontrer avant l'événement" (Phase 4.8, reuses Groups/DEC-0013) */
+.details-meetup-row {
+  padding: 1rem 1.25rem 0;
+}
+.meetup-btn {
+  padding: 0.65rem 1.25rem;
+  border-radius: 999px;
+  border: none;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.88rem;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+.meetup-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(167, 62, 232, 0.35);
+}
+.meetup-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.forum-members-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 @media (max-width: 1024px) {

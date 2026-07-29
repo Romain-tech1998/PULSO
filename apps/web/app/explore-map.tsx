@@ -8,10 +8,12 @@ import {
   conversationResponseSchema,
   conversationsResponseSchema,
   DATE_FILTER_OPTIONS,
+  discoverForumsResponseSchema,
   eventDetailsResponseSchema,
   eventListResponseSchema,
   favoriteEventsResponseSchema,
   favoriteVenuesResponseSchema,
+  forumMembersResponseSchema,
   forumPostsResponseSchema,
   friendCodeResponseSchema,
   friendRequestsResponseSchema,
@@ -33,6 +35,7 @@ import {
   venueListResponseSchema,
   type ActiveForum,
   type ActivityEntry,
+  type DiscoverForumEntry,
   type AttendanceVisibility,
   type ConversationSummary,
   type ForumCategory,
@@ -53,6 +56,7 @@ import {
 } from '@pulso/contracts';
 import {
   DEFAULT_DISCOVERY_FILTERS,
+  EVENT_CATEGORIES,
   FORUM_CATEGORIES,
   FORUM_CATEGORY_LABELS,
   getMontrealCalendarDate,
@@ -236,6 +240,12 @@ type DetailsState =
   | { kind: 'loading'; eventId: string }
   | { kind: 'success'; event: PublicEvent }
   | { kind: 'error'; eventId: string };
+
+// Phase 4.8: 'about'/'participants'/'forum' became 'evenement' (about +
+// participants merged - both describe the event itself)/'membres' (new -
+// distinct forum authors)/'discussion' (unchanged forum content)/'fichiers'
+// (new, empty - no file storage exists)/'apropos' (new, static forum rules).
+type EventDetailsTab = 'evenement' | 'membres' | 'discussion' | 'fichiers' | 'apropos';
 
 interface ActiveSearch {
   query: string;
@@ -639,6 +649,11 @@ export function ExploreMap({
   const [state, setState] = useState<LoadState>('loading');
   const [basemapState, setBasemapState] = useState<BasemapState>('loading');
   const [details, setDetails] = useState<DetailsState>({ kind: 'closed' });
+  // Set when an event is opened from a context that implies which tab
+  // matters (the Forums discovery grid always means "discussion") - a
+  // separate piece of state rather than folded into DetailsState so a plain
+  // openDetails() call elsewhere doesn't have to think about it.
+  const [detailsInitialTab, setDetailsInitialTab] = useState<EventDetailsTab>();
   const [pickerList, setPickerList] = useState<
     { title: string; events: PublicEvent[] } | undefined
   >();
@@ -1371,8 +1386,12 @@ export function ExploreMap({
   // reappears automatically instead of the whole panel closing. A fresh
   // direct open (map pin, deep link, carousel) has no list to return to, so
   // it keeps the old clear-on-open behavior.
-  async function openDetails(eventId: string, options: { keepPickerList?: boolean } = {}) {
+  async function openDetails(
+    eventId: string,
+    options: { keepPickerList?: boolean; initialTab?: EventDetailsTab } = {}
+  ) {
     if (!options.keepPickerList) setPickerList(undefined);
+    setDetailsInitialTab(options.initialTab);
     setDetails({ kind: 'loading', eventId });
     try {
       const response = await fetch(`${API_BASE_URL}/events/${eventId}`);
@@ -2134,7 +2153,11 @@ export function ExploreMap({
           onNavigate={setSection}
         />
       ) : user && section === 'forums' ? (
-        <ActiveForumsPage authToken={authToken} onOpenDetails={openDetails} />
+        <ActiveForumsPage
+          authToken={authToken}
+          onOpenDetails={(eventId) => openDetails(eventId, { initialTab: 'discussion' })}
+          locale={locale}
+        />
       ) : user && section === 'groupes' ? (
         <GroupsPage authToken={authToken} />
       ) : user && section === 'messages' ? (
@@ -2785,6 +2808,7 @@ export function ExploreMap({
                    attendanceVisibility={attendance[shownEvent.id]}
                    onSetAttendance={(visibility) => setAttendance(shownEvent.id, visibility)}
                    onClearAttendance={() => clearAttendance(shownEvent.id)}
+                   initialTab={detailsInitialTab}
                  />
                );
              })()}
@@ -4527,43 +4551,141 @@ function DashboardHome({
 
 // Full-page version of the "Forums actifs" widget above - same data (Sidebar
 // "Forums" nav item), just without the top-5 cap.
+type ForumDiscoverFilter = 'all' | 'popular' | EventCategory;
+
+// Forums discovery grid (Phase 4.8) - every upcoming event is a forum entry
+// point, not just the caller's own favorited/attended ones (that narrower
+// scope is what the "Forums actifs" DashboardHome widget/useActiveForums
+// above is still for - untouched by this pass, different purpose).
+function useDiscoverForums(authToken: string | undefined, filter: ForumDiscoverFilter) {
+  const [entries, setEntries] = useState<DiscoverForumEntry[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+
+  useEffect(() => {
+    if (!authToken) return;
+    setState('loading');
+    const params = new URLSearchParams();
+    if (filter === 'popular') params.set('sort', 'popular');
+    else if (filter !== 'all') params.set('category', filter);
+    fetch(`${API_BASE_URL}/me/forums/discover?${params.toString()}`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setEntries(discoverForumsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, filter]);
+
+  return { entries, state };
+}
+
+function ForumDiscoverCard({
+  entry,
+  locale,
+  onOpen
+}: {
+  entry: DiscoverForumEntry;
+  locale: SupportedLocale;
+  onOpen: () => void;
+}) {
+  const { event, memberCount, lastPostAt, lastPostExcerpt } = entry;
+  return (
+    <div className="forum-discover-card" onClick={onOpen} style={{ cursor: 'pointer' }}>
+      <div
+        className="forum-discover-card-cover"
+        style={
+          event.imageUrl
+            ? {
+                backgroundImage: `url(${event.imageUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }
+            : undefined
+        }
+      >
+        {!event.imageUrl && <EventImageFallback category={event.category} />}
+        <div
+          className="card-badge"
+          style={{ background: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'] }}
+        >
+          {getCategoryLabel(locale, event.category)}
+        </div>
+      </div>
+      <div className="forum-discover-card-body">
+        <strong className="forum-discover-card-title">{event.title}</strong>
+        <span className="forum-discover-card-venue">{event.venue.name}</span>
+        <span className="forum-discover-card-members">
+          {memberCount} membre{memberCount !== 1 ? 's' : ''}
+        </span>
+        {lastPostExcerpt ? (
+          <span className="forum-discover-card-last">
+            {lastPostExcerpt}
+            {lastPostAt ? ` · ${formatRelativeTime(lastPostAt)}` : ''}
+          </span>
+        ) : (
+          <span className="forum-discover-card-last forum-discover-card-empty">
+            Sois le premier à écrire ici
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ActiveForumsPage({
   authToken,
-  onOpenDetails
+  onOpenDetails,
+  locale
 }: {
   authToken: string | undefined;
   onOpenDetails: (eventId: string) => void;
+  locale: SupportedLocale;
 }) {
-  const { forums, state } = useActiveForums(authToken);
+  const [filter, setFilter] = useState<ForumDiscoverFilter>('all');
+  const { entries, state } = useDiscoverForums(authToken, filter);
 
   return (
     <div className="dashboard-home">
-      <h1>Forums actifs</h1>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger vos forums pour le moment.</p>
-      )}
-      {state === 'success' && forums.length === 0 && (
-        <p className="list-view-empty">
-          Aucune activité récente. Les forums de vos événements favoris ou auxquels vous
-          participez apparaîtront ici.
-        </p>
-      )}
-      <div className="active-forums-list">
-        {forums.map((forum) => (
+      <h1>Forums</h1>
+      <div className="forum-discover-filters">
+        <button type="button" className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>
+          Tous
+        </button>
+        <button
+          type="button"
+          className={filter === 'popular' ? 'active' : ''}
+          onClick={() => setFilter('popular')}
+        >
+          Les plus populaires
+        </button>
+        {EVENT_CATEGORIES.filter((category) => category !== 'other').map((category) => (
           <button
             type="button"
-            className="active-forum-row"
-            key={`${forum.eventId}-${forum.category}`}
-            onClick={() => onOpenDetails(forum.eventId)}
+            key={category}
+            className={filter === category ? 'active' : ''}
+            onClick={() => setFilter(category)}
           >
-            <span className="active-forum-row-title">{forum.eventTitle}</span>
-            <span className="active-forum-row-excerpt">{forum.lastPostExcerpt}</span>
-            <span className="active-forum-row-meta">
-              {FORUM_CATEGORY_LABELS[forum.category]} · {forum.postCount} message
-              {forum.postCount !== 1 ? 's' : ''}
-            </span>
+            {getCategoryLabel(locale, category)}
           </button>
+        ))}
+      </div>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger les forums pour le moment.</p>
+      )}
+      {state === 'success' && entries.length === 0 && (
+        <p className="list-view-empty">Aucun événement à venir pour le moment.</p>
+      )}
+      <div className="forum-discover-grid">
+        {entries.map((entry) => (
+          <ForumDiscoverCard
+            key={entry.event.id}
+            entry={entry}
+            locale={locale}
+            onOpen={() => onOpenDetails(entry.event.id)}
+          />
         ))}
       </div>
     </div>
@@ -7050,7 +7172,8 @@ function EventDetails({
   onLogin,
   attendanceVisibility,
   onSetAttendance,
-  onClearAttendance
+  onClearAttendance,
+  initialTab
 }: {
   event: PublicEvent;
   headingRef: RefObject<HTMLHeadingElement | null>;
@@ -7064,8 +7187,32 @@ function EventDetails({
   attendanceVisibility: AttendanceVisibility | undefined;
   onSetAttendance: (visibility: AttendanceVisibility) => void;
   onClearAttendance: () => void;
+  initialTab: EventDetailsTab | undefined;
 }) {
-  const [tab, setTab] = useState<'about' | 'participants' | 'forum'>('about');
+  const [tab, setTab] = useState<EventDetailsTab>(initialTab ?? 'evenement');
+  // EventDetails stays mounted across different events (see rightPanelMount)
+  // rather than remounting per open, so the tab has to be reset explicitly
+  // whenever a new event is opened - a plain useState initializer alone
+  // would only apply on the very first mount.
+  useEffect(() => {
+    setTab(initialTab ?? 'evenement');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id, initialTab]);
+  const [meetupGroup, setMeetupGroup] = useState<Group>();
+  const [meetupLoading, setMeetupLoading] = useState(false);
+
+  const openMeetupGroup = () => {
+    if (!authToken || meetupLoading) return;
+    setMeetupLoading(true);
+    fetch(`${API_BASE_URL}/events/${event.id}/meetup-group`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setMeetupGroup(groupResponseSchema.parse(json).data))
+      .catch(() => {})
+      .finally(() => setMeetupLoading(false));
+  };
   const { presentation } = eventDetailsFields(event, locale);
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
@@ -7170,23 +7317,42 @@ function EventDetails({
         )}
       </div>
 
+      {user && (
+        <div className="details-meetup-row">
+          <button
+            type="button"
+            className="meetup-btn"
+            onClick={openMeetupGroup}
+            disabled={meetupLoading}
+          >
+            🤝 {meetupLoading ? 'Un instant…' : "Rencontrer avant l'événement"}
+          </button>
+        </div>
+      )}
+
       <div className="details-tabs">
-        <button type="button" className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>
-          À propos
+        <button type="button" className={tab === 'evenement' ? 'active' : ''} onClick={() => setTab('evenement')}>
+          Événement
         </button>
         <button
           type="button"
-          className={tab === 'participants' ? 'active' : ''}
-          onClick={() => setTab('participants')}
+          className={tab === 'membres' ? 'active' : ''}
+          onClick={() => setTab('membres')}
         >
-          Participants
+          Membres
         </button>
-        <button type="button" className={tab === 'forum' ? 'active' : ''} onClick={() => setTab('forum')}>
-          Forum
+        <button type="button" className={tab === 'discussion' ? 'active' : ''} onClick={() => setTab('discussion')}>
+          Discussion
+        </button>
+        <button type="button" className={tab === 'fichiers' ? 'active' : ''} onClick={() => setTab('fichiers')}>
+          Fichiers
+        </button>
+        <button type="button" className={tab === 'apropos' ? 'active' : ''} onClick={() => setTab('apropos')}>
+          À propos
         </button>
       </div>
 
-      {tab === 'about' && (
+      {tab === 'evenement' && (
         <>
           <div className="details-info-list">
             <div className="info-item">
@@ -7247,69 +7413,80 @@ function EventDetails({
               </button>
             )}
           </div>
+
+          <div className="details-section">
+            {!user ? (
+              <SignInPrompt
+                message="Connectez-vous pour voir qui de vos amis participe et indiquer votre propre présence."
+                onLogin={onLogin}
+              />
+            ) : (
+              <>
+                <div className="attendance-row">
+                  <button
+                    type="button"
+                    className={`secondary-action-btn ${attendanceVisibility ? 'active' : ''}`}
+                    onClick={() =>
+                      attendanceVisibility ? onClearAttendance() : onSetAttendance('private')
+                    }
+                  >
+                    {attendanceVisibility ? 'Vous y allez' : "J'y vais"}
+                  </button>
+                  {attendanceVisibility && (
+                    <select
+                      className="attendance-visibility-select"
+                      value={attendanceVisibility}
+                      onChange={(changeEvent) =>
+                        onSetAttendance(changeEvent.target.value as AttendanceVisibility)
+                      }
+                      aria-label="Visibilité de votre participation"
+                    >
+                      <option value="private">Visible par vous seul</option>
+                      <option value="friends">Visible par vos amis</option>
+                    </select>
+                  )}
+                </div>
+                {friendsAttending.length > 0 ? (
+                  <div className="attendance-friends">
+                    {friendsAttending.map((attendee) => (
+                      <span className="attendance-friend" key={attendee.id}>
+                        <span className="friends-row-avatar">
+                          {attendee.avatarUrl ? (
+                            <img src={attendee.avatarUrl} alt="" />
+                          ) : (
+                            attendee.displayName.slice(0, 1).toUpperCase()
+                          )}
+                        </span>
+                        {attendee.displayName}
+                      </span>
+                    ))}
+                    <span className="attendance-friends-label">
+                      {friendsAttending.length === 1 ? 'y va aussi' : 'y vont aussi'}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="list-view-empty">Aucun de vos amis n'a indiqué y participer.</p>
+                )}
+              </>
+            )}
+          </div>
         </>
       )}
 
-      {tab === 'participants' && (
+      {tab === 'membres' && (
         <div className="details-section">
           {!user ? (
             <SignInPrompt
-              message="Connectez-vous pour voir qui de vos amis participe et indiquer votre propre présence."
+              message="Connectez-vous pour voir qui participe à la discussion de cet événement."
               onLogin={onLogin}
             />
           ) : (
-            <>
-              <div className="attendance-row">
-                <button
-                  type="button"
-                  className={`secondary-action-btn ${attendanceVisibility ? 'active' : ''}`}
-                  onClick={() =>
-                    attendanceVisibility ? onClearAttendance() : onSetAttendance('private')
-                  }
-                >
-                  {attendanceVisibility ? 'Vous y allez' : "J'y vais"}
-                </button>
-                {attendanceVisibility && (
-                  <select
-                    className="attendance-visibility-select"
-                    value={attendanceVisibility}
-                    onChange={(changeEvent) =>
-                      onSetAttendance(changeEvent.target.value as AttendanceVisibility)
-                    }
-                    aria-label="Visibilité de votre participation"
-                  >
-                    <option value="private">Visible par vous seul</option>
-                    <option value="friends">Visible par vos amis</option>
-                  </select>
-                )}
-              </div>
-              {friendsAttending.length > 0 ? (
-                <div className="attendance-friends">
-                  {friendsAttending.map((attendee) => (
-                    <span className="attendance-friend" key={attendee.id}>
-                      <span className="friends-row-avatar">
-                        {attendee.avatarUrl ? (
-                          <img src={attendee.avatarUrl} alt="" />
-                        ) : (
-                          attendee.displayName.slice(0, 1).toUpperCase()
-                        )}
-                      </span>
-                      {attendee.displayName}
-                    </span>
-                  ))}
-                  <span className="attendance-friends-label">
-                    {friendsAttending.length === 1 ? 'y va aussi' : 'y vont aussi'}
-                  </span>
-                </div>
-              ) : (
-                <p className="list-view-empty">Aucun de vos amis n'a indiqué y participer.</p>
-              )}
-            </>
+            <ForumMembersTab eventId={event.id} authToken={authToken} />
           )}
         </div>
       )}
 
-      {tab === 'forum' && (
+      {tab === 'discussion' && (
         <div className="details-section">
           {!user ? (
             <SignInPrompt
@@ -7321,7 +7498,93 @@ function EventDetails({
           )}
         </div>
       )}
+
+      {tab === 'fichiers' && (
+        <div className="details-section">
+          <ComingSoonTab
+            icon="📎"
+            message="Le partage de fichiers arrive dans une prochaine mise à jour."
+          />
+        </div>
+      )}
+
+      {tab === 'apropos' && (
+        <div className="details-section">
+          <p className="details-description">
+            Cette discussion accompagne l'événement « {event.title} ». Reste courtois·e : un seul
+            message n'est pas modifiable après publication, seulement supprimable par son auteur.
+            La revente de billets entre participants reste entièrement pair-à-pair — Pulso n'y est
+            jamais partie prenante.
+          </p>
+        </div>
+      )}
+
+      {meetupGroup && (
+        <GroupModal
+          group={meetupGroup}
+          authToken={authToken}
+          onClose={() => setMeetupGroup(undefined)}
+          onLeft={() => setMeetupGroup(undefined)}
+        />
+      )}
     </div>
+  );
+}
+
+// Distinct authors across an event's forum (Phase 4.8's "Membres" tab) -
+// real, derived from actual posts, never a membership list.
+function ForumMembersTab({
+  eventId,
+  authToken
+}: {
+  eventId: string;
+  authToken: string | undefined;
+}) {
+  const [members, setMembers] = useState<PublicUser[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+
+  useEffect(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/events/${eventId}/forum/members`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setMembers(forumMembersResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, eventId]);
+
+  return (
+    <>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger les membres pour le moment.</p>
+      )}
+      {state === 'success' && members.length === 0 && (
+        <p className="list-view-empty">
+          Personne n'a encore écrit ici. Lance la discussion dans l'onglet Discussion !
+        </p>
+      )}
+      {state === 'success' && members.length > 0 && (
+        <div className="forum-members-list">
+          {members.map((member) => (
+            <div className="friends-row" key={member.id}>
+              <span className="friends-row-avatar">
+                {member.avatarUrl ? (
+                  <img src={member.avatarUrl} alt="" />
+                ) : (
+                  member.displayName.slice(0, 1).toUpperCase()
+                )}
+              </span>
+              <span className="friends-row-name">{member.displayName}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

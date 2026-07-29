@@ -104,7 +104,7 @@ export function buildApp(
     );
     registerMessagesRoutes(app, options.authRepository, options.messagesRepository);
     registerReportsRoutes(app, options.authRepository, options.reportsRepository);
-    registerGroupsRoutes(app, options.authRepository, options.groupsRepository);
+    registerGroupsRoutes(app, options.authRepository, options.groupsRepository, repository);
     registerProfileRoutes(app, options.authRepository, options.profileRepository);
   }
 

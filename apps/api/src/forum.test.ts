@@ -313,4 +313,79 @@ describe('event forum API', () => {
     ]);
     await app.close();
   });
+
+  it('rejects the forum members list and the discover grid without a bearer token', async () => {
+    const app = buildApp(event, accountRepositories());
+    const members = await app.inject({ method: 'GET', url: `/events/${eventId}/forum/members` });
+    const discover = await app.inject({ method: 'GET', url: '/me/forums/discover' });
+    expect(members.statusCode).toBe(401);
+    expect(discover.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('lists the distinct authors who posted in an event forum', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        forumRepository: fakeForumRepository({
+          getForumMembers: async () => [{ id: '00000000-0000-4000-8000-000000000030', displayName: 'Alex' }]
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/events/${eventId}/forum/members`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([
+      { id: '00000000-0000-4000-8000-000000000030', displayName: 'Alex' }
+    ]);
+    await app.close();
+  });
+
+  it('discovers upcoming events as forum entries, defaulting stats to zero when nobody has posted yet', async () => {
+    const fakePublicEvent = {
+      id: eventId,
+      title: 'Charlotte Cardin',
+      category: 'music',
+      status: 'scheduled',
+      startsAt: '2026-08-01T23:00:00.000Z',
+      timezone: 'America/Toronto',
+      price: { kind: 'unknown', currency: 'CAD' },
+      accessInformation: 'Billets en vente sur le site officiel.',
+      venue: {
+        id: '00000000-0000-4000-8000-000000000031',
+        name: 'MTELUS',
+        address: '59 Rue Sainte-Catherine E, Montréal',
+        point: { longitude: -73.5605, latitude: 45.5088 }
+      },
+      source: {
+        name: 'ticketmaster',
+        url: 'https://example.com/event',
+        observedAt: '2026-07-01T00:00:00.000Z'
+      },
+      trust: { label: 'confirmed', freshness: 'fresh', locationConfidence: 'confirmed' }
+    };
+    const eventWithForum: EventRepository = {
+      ...event,
+      findInBounds: async () => [fakePublicEvent as unknown as PublicEvent]
+    };
+    const app = buildApp(
+      eventWithForum,
+      accountRepositories({
+        forumRepository: fakeForumRepository({ getForumStatsForEvents: async () => new Map() })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/forums/discover',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([
+      { event: fakePublicEvent, postCount: 0, memberCount: 0 }
+    ]);
+    await app.close();
+  });
 });

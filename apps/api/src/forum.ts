@@ -1,7 +1,9 @@
 import {
   activeForumsResponseSchema,
+  discoverForumsResponseSchema,
   createForumPostRequestSchema,
   forumCategorySchema,
+  forumMembersResponseSchema,
   forumPostResponseSchema,
   forumPostsResponseSchema
 } from '@pulso/contracts';
@@ -13,6 +15,11 @@ import type {
   ForumRepository
 } from '@pulso/database';
 import { EventNotFoundError, ForumPostNotFoundError } from '@pulso/database';
+import {
+  createFilteredDiscoveryWindow,
+  EVENT_CATEGORIES,
+  getMontrealCalendarDate
+} from '@pulso/domain';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -20,6 +27,18 @@ import { resolveBearerUser, sendUnauthenticated } from './auth.js';
 
 const categoryParamsSchema = z.object({ eventId: z.uuid(), category: forumCategorySchema });
 const postParamsSchema = z.object({ postId: z.uuid() });
+const eventParamsSchema = z.object({ eventId: z.uuid() });
+const discoverQuerySchema = z.object({
+  category: z.enum(EVENT_CATEGORIES).optional(),
+  sort: z.enum(['recent', 'popular']).optional().default('recent')
+});
+
+// Broad Montréal-wide bounds (same city-wide default used on the web side's
+// initial map load) - the discovery grid isn't map-viewport-driven, it just
+// needs "every upcoming event in the one city Pulso covers today."
+const MONTREAL_WIDE_BOUNDS = { west: -73.75, south: 45.4, east: -73.4, north: 45.7 };
+const DISCOVER_WINDOW_DAYS = 45;
+const DISCOVER_LIMIT = 30;
 
 /**
  * Registers the per-event forum. Only called when the account layer is
@@ -114,5 +133,59 @@ export function registerForumRoutes(
       .filter((entry) => eventTitleById.has(entry.eventId))
       .map((entry) => ({ ...entry, eventTitle: eventTitleById.get(entry.eventId)! }));
     return activeForumsResponseSchema.parse({ data });
+  });
+
+  // Distinct authors across an event's forum (Phase 4.8's "Membres" tab) -
+  // real, derived from actual posts, never a membership list (no join
+  // concept exists, DEC-0012 unchanged).
+  app.get('/events/:eventId/forum/members', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { eventId } = eventParamsSchema.parse(request.params);
+    const members = await forumRepository.getForumMembers(eventId);
+    return forumMembersResponseSchema.parse({ data: members });
+  });
+
+  // Forums discovery grid (Phase 4.8) - every upcoming event is a forum
+  // entry point, not just the caller's own favorited/attended ones (that
+  // narrower scope is what /me/forums/active above is for). Still behind
+  // the account gate like the rest of the forum (DEC-0012), even though
+  // the underlying events are public data.
+  app.get('/me/forums/discover', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { category, sort } = discoverQuerySchema.parse(request.query);
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + DISCOVER_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const events = await eventRepository.findInBounds(
+      {
+        ...MONTREAL_WIDE_BOUNDS,
+        date: 'custom',
+        categories: category ? [category] : [],
+        price: 'all',
+        dateStart: getMontrealCalendarDate(now),
+        dateEnd: getMontrealCalendarDate(windowEnd)
+      },
+      createFilteredDiscoveryWindow(now, {
+        date: 'custom',
+        customStartDate: getMontrealCalendarDate(now),
+        customEndDate: getMontrealCalendarDate(windowEnd)
+      })
+    );
+    const stats = await forumRepository.getForumStatsForEvents(events.map((event) => event.id));
+    const entries = events.map((event) => {
+      const eventStats = stats.get(event.id);
+      return {
+        event,
+        postCount: eventStats?.postCount ?? 0,
+        memberCount: eventStats?.memberCount ?? 0,
+        ...(eventStats ? { lastPostAt: eventStats.lastPostAt, lastPostExcerpt: eventStats.lastPostExcerpt } : {})
+      };
+    });
+    const sorted =
+      sort === 'popular'
+        ? entries.sort((a, b) => b.postCount - a.postCount)
+        : entries.sort((a, b) => new Date(a.event.startsAt).getTime() - new Date(b.event.startsAt).getTime());
+    return discoverForumsResponseSchema.parse({ data: sorted.slice(0, DISCOVER_LIMIT) });
   });
 }

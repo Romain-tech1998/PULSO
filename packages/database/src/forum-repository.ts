@@ -47,6 +47,19 @@ export interface ActiveForum {
   postCount: number;
 }
 
+// Aggregated across all four categories for one event - unlike ActiveForum
+// (per-category, used by the "Forums actifs" personal digest), this backs
+// the Forums discovery grid (Phase 4.8): one card per event, so it needs
+// the event's forum as a whole. memberCount is a real count of distinct
+// authors who have posted - there is no membership/join concept (DEC-0012
+// unchanged), so this is the only honest "members" number available.
+export interface ForumStats {
+  postCount: number;
+  memberCount: number;
+  lastPostAt: string;
+  lastPostExcerpt: string;
+}
+
 export interface ForumRepository {
   getPosts(eventId: string, category: ForumCategory, viewerId: string): Promise<ForumPost[]>;
   createPost(
@@ -65,6 +78,13 @@ export interface ForumRepository {
   // active thread per event, restricted to events the caller already
   // cares about (favorited or attended) - never a public/global feed.
   getRecentActivityForEvents(eventIds: string[]): Promise<ActiveForum[]>;
+  // Powers the Forums discovery grid (Phase 4.8) - events with no posts
+  // yet simply have no entry in the returned map, left for the caller to
+  // default to zero rather than this repository inventing a row.
+  getForumStatsForEvents(eventIds: string[]): Promise<Map<string, ForumStats>>;
+  // Distinct authors across all categories for one event's forum - backs
+  // the "Membres" tab (Phase 4.8).
+  getForumMembers(eventId: string): Promise<PublicUser[]>;
 }
 
 interface PostRow {
@@ -214,6 +234,59 @@ export class PostgresForumRepository implements ForumRepository {
       lastPostAt: new Date(row.created_at).toISOString(),
       lastPostExcerpt: row.body,
       postCount: Number(row.post_count)
+    }));
+  }
+
+  async getForumStatsForEvents(eventIds: string[]): Promise<Map<string, ForumStats>> {
+    if (eventIds.length === 0) return new Map();
+    const result = await this.pool.query<{
+      event_id: string;
+      body: string;
+      created_at: string;
+      post_count: string;
+      member_count: string;
+    }>(
+      `SELECT event_id, body, created_at, post_count, member_count
+       FROM (
+         SELECT event_id, body, created_at,
+                COUNT(*) OVER (PARTITION BY event_id) AS post_count,
+                COUNT(DISTINCT author_id) OVER (PARTITION BY event_id) AS member_count,
+                ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY created_at DESC) AS rn
+         FROM forum_posts
+         WHERE event_id = ANY($1::uuid[])
+       ) latest
+       WHERE rn = 1`,
+      [eventIds]
+    );
+    const stats = new Map<string, ForumStats>();
+    for (const row of result.rows) {
+      stats.set(row.event_id, {
+        postCount: Number(row.post_count),
+        memberCount: Number(row.member_count),
+        lastPostAt: new Date(row.created_at).toISOString(),
+        lastPostExcerpt: row.body
+      });
+    }
+    return stats;
+  }
+
+  async getForumMembers(eventId: string): Promise<PublicUser[]> {
+    const result = await this.pool.query<{
+      id: string;
+      display_name: string;
+      avatar_url: string | null;
+    }>(
+      `SELECT DISTINCT u.id, u.display_name, u.avatar_url
+       FROM forum_posts p
+       JOIN users u ON u.id = p.author_id
+       WHERE p.event_id = $1
+       ORDER BY u.display_name ASC`,
+      [eventId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      displayName: row.display_name,
+      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
     }));
   }
 }

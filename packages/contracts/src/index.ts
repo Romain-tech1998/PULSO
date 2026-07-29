@@ -468,7 +468,10 @@ export const createReportRequestSchema = z.object({
 
 // DEC-0013: open membership (join/leave freely, no invitation or approval
 // step), no group-level moderation role beyond the same author-only post
-// delete already used by the event forum.
+// delete already used by the event forum. `eventId` (Phase 4.8) is set only
+// for the one meetup group findOrCreateEventGroup creates/finds per event
+// ("Rencontrer avant l'événement") - undefined for every group created the
+// normal way.
 export const groupSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
@@ -476,7 +479,8 @@ export const groupSchema = z.object({
   createdBy: z.uuid(),
   createdAt: z.iso.datetime(),
   memberCount: z.number().int().min(0),
-  isMember: z.boolean()
+  isMember: z.boolean(),
+  eventId: z.uuid().optional()
 });
 
 export const createGroupRequestSchema = z.object({
@@ -589,6 +593,29 @@ export const publicEventSchema = z.object({
 export const eventListResponseSchema = z.object({
   data: z.array(publicEventSchema)
 });
+
+// Forums discovery grid (Phase 4.8) - one entry per upcoming event, not
+// scoped to the caller's own favorites/attendance (unlike activeForumSchema
+// above). memberCount is a real count of distinct forum authors - there is
+// no membership/join concept (DEC-0012 unchanged), so this is the only
+// honest "members" number. postCount/lastPostAt/lastPostExcerpt are absent
+// for an event nobody has posted in yet, rather than zero/fabricated
+// placeholders.
+export const discoverForumEntrySchema = z.object({
+  event: publicEventSchema,
+  postCount: z.number().int().min(0),
+  memberCount: z.number().int().min(0),
+  lastPostAt: z.iso.datetime().optional(),
+  lastPostExcerpt: z.string().optional()
+});
+export const discoverForumsResponseSchema = z.object({
+  data: z.array(discoverForumEntrySchema)
+});
+
+// "Membres" tab (Phase 4.8) - distinct authors across an event's forum.
+export const forumMembersResponseSchema = z.object({
+  data: z.array(publicUserSchema)
+});
 export const eventDetailsResponseSchema = z.object({ data: publicEventSchema });
 export const errorResponseSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() })
@@ -596,6 +623,9 @@ export const errorResponseSchema = z.object({
 
 export type PublicEvent = z.infer<typeof publicEventSchema>;
 export type EventListResponse = z.infer<typeof eventListResponseSchema>;
+export type DiscoverForumEntry = z.infer<typeof discoverForumEntrySchema>;
+export type DiscoverForumsResponse = z.infer<typeof discoverForumsResponseSchema>;
+export type ForumMembersResponse = z.infer<typeof forumMembersResponseSchema>;
 export type EventDetailsResponse = z.infer<typeof eventDetailsResponseSchema>;
 export type MapBoundsQuery = z.infer<typeof mapBoundsQuerySchema>;
 export type DirectDistanceQuery = z.infer<typeof directDistanceQuerySchema>;

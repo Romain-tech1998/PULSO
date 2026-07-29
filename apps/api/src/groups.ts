@@ -6,8 +6,8 @@ import {
   groupResponseSchema,
   groupsResponseSchema
 } from '@pulso/contracts';
-import type { AuthRepository, GroupsRepository } from '@pulso/database';
-import { GroupNotFoundError, NotGroupMemberError } from '@pulso/database';
+import type { AuthRepository, EventRepository, GroupsRepository } from '@pulso/database';
+import { EventNotFoundError, GroupNotFoundError, NotGroupMemberError } from '@pulso/database';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -15,6 +15,7 @@ import { resolveBearerUser, sendUnauthenticated } from './auth.js';
 
 const groupParamsSchema = z.object({ id: z.uuid() });
 const postParamsSchema = z.object({ postId: z.uuid() });
+const eventParamsSchema = z.object({ eventId: z.uuid() });
 
 /**
  * Registers groups (DEC-0013). Only called when the account layer is
@@ -25,7 +26,8 @@ const postParamsSchema = z.object({ postId: z.uuid() });
 export function registerGroupsRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
-  groupsRepository: GroupsRepository
+  groupsRepository: GroupsRepository,
+  eventRepository: EventRepository
 ) {
   app.post('/me/groups', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -144,5 +146,32 @@ export function registerGroupsRoutes(
     const { postId } = postParamsSchema.parse(request.params);
     await groupsRepository.unlikePost(postId, user.id);
     return reply.status(204).send();
+  });
+
+  // "Rencontrer avant l'événement" (Phase 4.8) - reuses Groups (DEC-0013)
+  // rather than a new meetup-point concept: find-or-create so everyone
+  // clicking this for the same event lands in the same group instead of
+  // each spawning their own.
+  app.post('/events/:eventId/meetup-group', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { eventId } = eventParamsSchema.parse(request.params);
+    const event = await eventRepository.findById(eventId);
+    if (!event) {
+      return reply.status(404).send({
+        error: { code: 'EVENT_NOT_FOUND', message: 'This event does not exist.' }
+      });
+    }
+    try {
+      const group = await groupsRepository.findOrCreateEventGroup(eventId, event.title, user.id);
+      return groupResponseSchema.parse({ data: group });
+    } catch (error) {
+      if (error instanceof EventNotFoundError) {
+        return reply.status(404).send({
+          error: { code: 'EVENT_NOT_FOUND', message: error.message }
+        });
+      }
+      throw error;
+    }
   });
 }

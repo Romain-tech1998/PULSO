@@ -312,4 +312,60 @@ describe('groups API', () => {
     ]);
     await app.close();
   });
+
+  it('rejects the meetup-group route without a bearer token', async () => {
+    const app = buildApp(event, accountRepositories());
+    const response = await app.inject({
+      method: 'POST',
+      url: '/events/00000000-0000-4000-8000-000000000020/meetup-group'
+    });
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns 404 for the meetup-group route on an event that does not exist', async () => {
+    const app = buildApp(event, accountRepositories());
+    const response = await app.inject({
+      method: 'POST',
+      url: '/events/00000000-0000-4000-8000-000000000020/meetup-group',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe('EVENT_NOT_FOUND');
+    await app.close();
+  });
+
+  it('finds or creates the one meetup group for an event, named after it', async () => {
+    const eventId = '00000000-0000-4000-8000-000000000020';
+    const eventWithMatch: EventRepository = {
+      ...event,
+      findById: async (id) =>
+        id === eventId
+          ? ({ id: eventId, title: 'Charlotte Cardin' } as unknown as Awaited<
+              ReturnType<EventRepository['findById']>
+            >)
+          : undefined
+    };
+    let received: { eventId: string; eventTitle: string; userId: string } | undefined;
+    const app = buildApp(
+      eventWithMatch,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          findOrCreateEventGroup: async (id, title, userId) => {
+            received = { eventId: id, eventTitle: title, userId };
+            return fakeGroup({ eventId: id, name: `Rencontre – ${title}`, createdBy: userId });
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/events/${eventId}/meetup-group`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.name).toBe('Rencontre – Charlotte Cardin');
+    expect(received).toEqual({ eventId, eventTitle: 'Charlotte Cardin', userId: testUser.id });
+    await app.close();
+  });
 });

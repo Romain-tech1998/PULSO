@@ -2,6 +2,8 @@ import type { PublicUser } from '@pulso/contracts';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
+import { EventNotFoundError } from './attendance-repository.js';
+
 const FOREIGN_KEY_VIOLATION = '23503';
 
 function isForeignKeyViolation(error: unknown): boolean {
@@ -33,6 +35,10 @@ export interface Group {
   createdAt: string;
   memberCount: number;
   isMember: boolean;
+  // Set only for the one meetup group findOrCreateEventGroup creates/finds
+  // per event (Phase 4.8's "Rencontrer avant l'événement") - undefined for
+  // every group created the normal way (DEC-0013, no event tie-in).
+  eventId: string | undefined;
 }
 
 export interface GroupPost {
@@ -53,6 +59,14 @@ export interface GroupsRepository {
   getGroup(groupId: string, viewerId: string): Promise<Group | undefined>;
   joinGroup(groupId: string, userId: string): Promise<void>;
   leaveGroup(groupId: string, userId: string): Promise<void>;
+  // "Rencontrer avant l'événement" (Phase 4.8): find-or-create so everyone
+  // clicking this button for the same event lands in the same group rather
+  // than each spawning their own - the first caller creates it (and is
+  // auto-joined as its first member, same as createGroup), every
+  // subsequent caller for that event id just gets joined to the existing
+  // one. Relies on a unique index on groups.event_id (migration 0022) to
+  // stay race-safe under concurrent first clicks.
+  findOrCreateEventGroup(eventId: string, eventTitle: string, userId: string): Promise<Group>;
   getPosts(groupId: string, viewerId: string): Promise<GroupPost[]>;
   createPost(
     groupId: string,
@@ -73,6 +87,7 @@ interface GroupRow {
   created_at: string;
   member_count: string;
   is_member: boolean;
+  event_id: string | null;
 }
 
 function toGroup(row: GroupRow): Group {
@@ -83,7 +98,8 @@ function toGroup(row: GroupRow): Group {
     createdBy: row.created_by,
     createdAt: new Date(row.created_at).toISOString(),
     memberCount: Number(row.member_count),
-    isMember: row.is_member
+    isMember: row.is_member,
+    eventId: row.event_id ?? undefined
   };
 }
 
@@ -131,10 +147,10 @@ export class PostgresGroupsRepository implements GroupsRepository {
     try {
       await client.query('BEGIN');
       const id = randomUUID();
-      const inserted = await client.query<{ id: string; name: string; description: string | null; created_by: string; created_at: string }>(
+      const inserted = await client.query<{ id: string; name: string; description: string | null; created_by: string; created_at: string; event_id: string | null }>(
         `INSERT INTO groups (id, name, description, created_by)
          VALUES ($1, $2, $3, $4)
-         RETURNING id, name, description, created_by, created_at`,
+         RETURNING id, name, description, created_by, created_at, event_id`,
         [id, name, description ?? null, creatorId]
       );
       await client.query(
@@ -154,7 +170,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
 
   async listMyGroups(userId: string): Promise<Group[]> {
     const result = await this.pool.query<GroupRow>(
-      `SELECT g.id, g.name, g.description, g.created_by, g.created_at,
+      `SELECT g.id, g.name, g.description, g.created_by, g.created_at, g.event_id,
               (SELECT COUNT(*) FROM group_memberships gm2 WHERE gm2.group_id = g.id) AS member_count,
               true AS is_member
        FROM groups g
@@ -167,7 +183,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
 
   async getGroup(groupId: string, viewerId: string): Promise<Group | undefined> {
     const result = await this.pool.query<GroupRow>(
-      `SELECT g.id, g.name, g.description, g.created_by, g.created_at,
+      `SELECT g.id, g.name, g.description, g.created_by, g.created_at, g.event_id,
               (SELECT COUNT(*) FROM group_memberships gm WHERE gm.group_id = g.id) AS member_count,
               EXISTS(
                 SELECT 1 FROM group_memberships gm
@@ -178,6 +194,42 @@ export class PostgresGroupsRepository implements GroupsRepository {
       [groupId, viewerId]
     );
     return result.rows[0] ? toGroup(result.rows[0]) : undefined;
+  }
+
+  async findOrCreateEventGroup(eventId: string, eventTitle: string, userId: string): Promise<Group> {
+    const client = await this.pool.connect();
+    let groupId: string;
+    try {
+      await client.query('BEGIN');
+      // ON CONFLICT DO NOTHING makes this a no-op if another caller already
+      // created the group for this event (concurrent first click) - either
+      // way, the SELECT below then finds the single row that actually won.
+      await client.query(
+        `INSERT INTO groups (id, name, description, created_by, event_id)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (event_id) WHERE event_id IS NOT NULL DO NOTHING`,
+        [randomUUID(), `Rencontre – ${eventTitle}`, null, userId, eventId]
+      );
+      const existing = await client.query<{ id: string }>(
+        `SELECT id FROM groups WHERE event_id = $1`,
+        [eventId]
+      );
+      groupId = existing.rows[0]!.id;
+      await client.query(
+        `INSERT INTO group_memberships (group_id, user_id) VALUES ($1, $2)
+         ON CONFLICT (group_id, user_id) DO NOTHING`,
+        [groupId, userId]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (isForeignKeyViolation(error)) throw new EventNotFoundError();
+      throw error;
+    } finally {
+      client.release();
+    }
+    const group = await this.getGroup(groupId, userId);
+    return group!;
   }
 
   async joinGroup(groupId: string, userId: string): Promise<void> {

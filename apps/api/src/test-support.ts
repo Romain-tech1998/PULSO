@@ -125,6 +125,8 @@ export function fakeForumRepository(overrides: Partial<ForumRepository> = {}): F
     likePost: async () => undefined,
     unlikePost: async () => undefined,
     getRecentActivityForEvents: async () => [],
+    getForumStatsForEvents: async () => new Map(),
+    getForumMembers: async () => [],
     ...overrides
   };
 }
@@ -195,6 +197,7 @@ export function fakeGroup(overrides: Partial<Group> = {}): Group {
     createdAt: '2026-01-01T00:00:00.000Z',
     memberCount: 1,
     isMember: true,
+    eventId: undefined,
     ...overrides
   };
 }
@@ -235,6 +238,8 @@ export function fakeGroupsRepository(
     deletePost: async () => undefined,
     likePost: async () => undefined,
     unlikePost: async () => undefined,
+    findOrCreateEventGroup: async (eventId, eventTitle, userId) =>
+      fakeGroup({ eventId, name: `Rencontre – ${eventTitle}`, createdBy: userId }),
     ...overrides
   };
 }
