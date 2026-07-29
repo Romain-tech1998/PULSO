@@ -14,12 +14,11 @@ on:
     # Instagram scraper workstream. Revisit cadence/cost once real signal
     # exists - see DATA-0003.
     - cron: '0 1 * * 2,4,6'
-    # Run at 02:00 on Tuesday, Thursday, and Saturday (Instagram Scout -
-    # free Meta Graph API quota, but kept on the same reduced cadence as
-    # Eventbrite for now since the pipeline is still a supervised pilot,
-    # not a proven high-frequency job; see DEC-0006). Produces a
+    # Run at 02:00 every day (Instagram Scout - free Meta Graph API quota,
+    # not billed per-call like Eventbrite/Apify, so no budget reason to
+    # throttle it. Still a supervised pilot per DEC-0006: produces a
     # human-review HTML artifact, never publishes on its own.
-    - cron: '0 2 * * 2,4,6'
+    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       job_type:
@@ -118,7 +117,7 @@ jobs:
   ingest-instagram-scout:
     name: Run Instagram Scout Pipeline
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 2 * * 2,4,6' || github.event.inputs.job_type == 'instagram-scout'
+    if: github.event_name == 'schedule' && github.event.schedule == '0 2 * * *' || github.event.inputs.job_type == 'instagram-scout'
 
     steps:
       - name: Check out repository
