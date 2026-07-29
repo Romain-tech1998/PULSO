@@ -19,6 +19,7 @@
     "instagram:scout:import-verified-pilot": "tsx src/instagram-scout-import-verified-pilot.ts",
     "instagram:scout:review": "tsx src/instagram-scout-review-ui.ts",
     "instagram:scout:visual": "tsx src/instagram-scout-pilot.ts --visual",
+    "instagram:scout:pipeline": "tsx src/instagram-scout-pilot.ts --visual && tsx src/instagram-scout-crosscheck.ts && tsx src/instagram-scout-review-ui.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

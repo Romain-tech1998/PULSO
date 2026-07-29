@@ -18,6 +18,7 @@
     "instagram:scout:import-verified-pilot": "pnpm --filter @pulso/database instagram:scout:import-verified-pilot",
     "instagram:scout:review": "pnpm --filter @pulso/database instagram:scout:review",
     "instagram:scout:visual": "pnpm --filter @pulso/database instagram:scout:visual",
+    "instagram:scout:pipeline": "pnpm --filter @pulso/database instagram:scout:pipeline",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

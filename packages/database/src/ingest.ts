@@ -1,6 +1,3 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-
 import {
   createEventbriteConnector,
   createMontrealOpenDataConnector,
@@ -10,8 +7,6 @@ import {
   deriveDeterministicEventId,
   enrichMissingAddresses,
   enrichMissingCoordinates,
-  extractInstagramWatchlist,
-  fetchInstagramScoutSignals,
   geocodeAddressWithFrenchFallback,
   mapAndDeduplicateRawEvents,
   normalizeForKey,
@@ -35,18 +30,17 @@ import { upsertPublicEvents } from './upsert-public-events.js';
  * ICS calendar sources are wired in @pulso/ingestion but not run here: there is
  * no registry of per-venue ICS URLs yet (montreal-source-registry.csv has no
  * such column) to configure createIcsCalendarConnector with.
+ *
+ * Instagram Scout is NOT run from this file: it previously fetched the full
+ * ~248-account watchlist here and wrote an unprocessed raw JSON dump that
+ * nothing ever read (and the required credentials were never even added as
+ * GitHub secrets, so it silently did nothing in CI). It's been replaced by
+ * the properly-scoped pilot pipeline (instagram-scout-pilot.ts ->
+ * instagram-scout-crosscheck.ts -> instagram-scout-review-ui.ts, wired into
+ * its own job in .github/workflows/ingest.yml) that actually produces a
+ * human-reviewable page, matching DEC-0006's curated-pilot scope rather
+ * than the full future-scale watchlist.
  */
-
-const registryCsvPath = fileURLToPath(
-  new URL(
-    '../../../docs/data/research/montreal-source-registry.csv',
-    import.meta.url
-  )
-);
-
-const instagramScoutOutputDirectory = fileURLToPath(
-  new URL('../ingestion-output/', import.meta.url)
-);
 
 function buildConnectors(): IngestionConnector[] {
   const connectors: IngestionConnector[] = [createMontrealOpenDataConnector()];
@@ -180,38 +174,6 @@ function buildEventbriteConnectors(): IngestionConnector[] {
   return [createEventbriteConnector()];
 }
 
-async function runInstagramScout(): Promise<void> {
-  const accountId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
-  const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
-  if (!accountId || !accessToken) {
-    console.warn(
-      '[ingest] Skipping Instagram Scout: INSTAGRAM_BUSINESS_ACCOUNT_ID/INSTAGRAM_ACCESS_TOKEN not set.'
-    );
-    return;
-  }
-
-  const registryCsv = await readFile(registryCsvPath, 'utf8');
-  const targets = extractInstagramWatchlist(registryCsv);
-  const signals = await fetchInstagramScoutSignals(targets);
-
-  // Per DEC-0006, Instagram Scout output is a lead, not an event: it must go
-  // through human review before ever becoming a Pulso event. Signals are
-  // written to a timestamped local file for that review rather than inserted
-  // into the database or left only in ephemeral console output.
-  await mkdir(instagramScoutOutputDirectory, { recursive: true });
-  const outputPath = fileURLToPath(
-    new URL(
-      `instagram-scout-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
-      new URL('../ingestion-output/', import.meta.url)
-    )
-  );
-  await writeFile(outputPath, JSON.stringify(signals, null, 2), 'utf8');
-
-  console.log(
-    `[ingest] Instagram Scout found ${signals.length} signal(s) across ${targets.length} watched account(s) - written to ${outputPath} for manual review, none inserted.`
-  );
-}
-
 async function main(): Promise<void> {
   const pool = createPool();
   const args = process.argv.slice(2);
@@ -295,7 +257,6 @@ async function main(): Promise<void> {
 
     console.log('[ingest] Running Events ingestion...');
     await runEventsPipeline(pool, buildConnectors());
-    await runInstagramScout();
   } finally {
     await pool.end();
   }
