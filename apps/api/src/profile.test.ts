@@ -34,7 +34,7 @@ describe('profile API', () => {
     await app.close();
   });
 
-  it('updates the bio/coverStyle and returns the updated user', async () => {
+  it('updates the bio/coverStyle/avatarStyle and returns the updated user', async () => {
     let received: { userId: string; update: unknown } | undefined;
     const app = buildApp(
       event,
@@ -42,7 +42,12 @@ describe('profile API', () => {
         authRepository: fakeAuthRepository({
           updateProfile: async (userId, update) => {
             received = { userId, update };
-            return { ...testUser, bio: update.bio, coverStyle: update.coverStyle };
+            return {
+              ...testUser,
+              bio: update.bio,
+              coverStyle: update.coverStyle,
+              avatarStyle: update.avatarStyle
+            };
           }
         })
       })
@@ -51,14 +56,47 @@ describe('profile API', () => {
       method: 'PUT',
       url: '/me/profile',
       headers: { authorization: 'Bearer valid-token' },
-      payload: { bio: 'Toujours à la recherche de la prochaine bonne vibe', coverStyle: 'aurora' }
+      payload: {
+        bio: 'Toujours à la recherche de la prochaine bonne vibe',
+        coverStyle: 'aurora',
+        avatarStyle: 'disco'
+      }
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().data.bio).toBe('Toujours à la recherche de la prochaine bonne vibe');
+    expect(response.json().data.avatarStyle).toBe('disco');
     expect(received).toEqual({
       userId: testUser.id,
-      update: { bio: 'Toujours à la recherche de la prochaine bonne vibe', coverStyle: 'aurora' }
+      update: {
+        bio: 'Toujours à la recherche de la prochaine bonne vibe',
+        coverStyle: 'aurora',
+        avatarStyle: 'disco'
+      }
     });
+    await app.close();
+  });
+
+  it('accepts an empty avatarStyle as the explicit "clear it" signal', async () => {
+    let received: { userId: string; update: unknown } | undefined;
+    const app = buildApp(
+      event,
+      accountRepositories({
+        authRepository: fakeAuthRepository({
+          updateProfile: async (userId, update) => {
+            received = { userId, update };
+            return testUser;
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/me/profile',
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { avatarStyle: '' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(received).toEqual({ userId: testUser.id, update: { avatarStyle: '' } });
     await app.close();
   });
 

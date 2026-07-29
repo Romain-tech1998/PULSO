@@ -191,13 +191,13 @@ export const venueListResponseSchema = z.object({
   data: z.array(publicVenueSchema)
 });
 
-// The account itself. `bio`/`coverStyle` (Phase 4.7) are the only
-// user-authored profile fields - everything else is either provided by
+// The account itself. `bio`/`coverStyle`/`avatarStyle` (Phase 4.7) are the
+// only user-authored profile fields - everything else is either provided by
 // Google or derived on demand (see /me/trends), never a stored preference
-// invented beyond what the user actually gave Pulso. `coverStyle` is a key
-// into a small fixed set of brand-gradient presets (see PROFILE_COVER_STYLES
-// on the web side), not a photo upload - Pulso doesn't store user images
-// beyond the Google avatar.
+// invented beyond what the user actually gave Pulso. `coverStyle`/
+// `avatarStyle` are keys into small fixed preset sets (see
+// PROFILE_COVER_STYLES/PROFILE_AVATAR_STYLES on the web side), never a photo
+// upload - Pulso doesn't store user images beyond the Google avatar.
 export const userSchema = z.object({
   id: z.uuid(),
   email: z.email(),
@@ -205,7 +205,8 @@ export const userSchema = z.object({
   avatarUrl: z.url().optional(),
   createdAt: z.iso.datetime(),
   bio: z.string().max(280).optional(),
-  coverStyle: z.string().optional()
+  coverStyle: z.string().optional(),
+  avatarStyle: z.string().optional()
 });
 
 export const meResponseSchema = z.object({ data: userSchema });
@@ -216,9 +217,18 @@ export const meResponseSchema = z.object({ data: userSchema });
 // (rendering each key to its actual gradient).
 export const PROFILE_COVER_STYLES = ['aurora', 'sunset', 'midnight', 'nebula'] as const;
 
+// Fixed set of preset avatars (emoji + gradient, defined on the web side) -
+// picking one overrides the Google avatar photo everywhere the user's own
+// avatar appears. Same "no upload" rationale as PROFILE_COVER_STYLES.
+export const PROFILE_AVATAR_STYLES = ['note', 'disco', 'moon', 'star', 'flame', 'heart'] as const;
+
 export const updateProfileRequestSchema = z.object({
   bio: z.string().max(280).optional(),
-  coverStyle: z.enum(PROFILE_COVER_STYLES).optional()
+  coverStyle: z.enum(PROFILE_COVER_STYLES).optional(),
+  // An empty string is the explicit "clear it, go back to the Google photo"
+  // signal - `undefined` means "leave whatever is stored today untouched"
+  // (see PostgresAuthRepository.updateProfile's COALESCE-based update).
+  avatarStyle: z.union([z.enum(PROFILE_AVATAR_STYLES), z.literal('')]).optional()
 });
 
 // Real, derived counts only - deliberately not the mockup's "heures passées

@@ -14,6 +14,12 @@ export interface GoogleProfile {
 export interface ProfileUpdate {
   bio?: string | undefined;
   coverStyle?: string | undefined;
+  // An empty string clears it (falls back to the Google photo everywhere);
+  // undefined leaves whatever is stored today untouched. See the CASE
+  // expression in updateProfile - this can't reuse the plain COALESCE
+  // pattern bio/coverStyle use, since there's no way to distinguish "leave
+  // it" from "clear it" with only one falsy value (undefined) to work with.
+  avatarStyle?: string | undefined;
 }
 
 export interface AuthRepository {
@@ -32,6 +38,7 @@ interface UserRow {
   created_at: Date;
   bio: string | null;
   cover_style: string | null;
+  avatar_style: string | null;
 }
 
 function toUser(row: UserRow): User {
@@ -42,7 +49,8 @@ function toUser(row: UserRow): User {
     createdAt: row.created_at.toISOString(),
     ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {}),
     ...(row.bio !== null ? { bio: row.bio } : {}),
-    ...(row.cover_style !== null ? { coverStyle: row.cover_style } : {})
+    ...(row.cover_style !== null ? { coverStyle: row.cover_style } : {}),
+    ...(row.avatar_style !== null ? { avatarStyle: row.avatar_style } : {})
   };
 }
 
@@ -65,7 +73,7 @@ export class PostgresAuthRepository implements AuthRepository {
          email = EXCLUDED.email,
          display_name = EXCLUDED.display_name,
          avatar_url = EXCLUDED.avatar_url
-       RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style`,
+       RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style, avatar_style`,
       [
         randomUUID(),
         profile.email,
@@ -90,7 +98,7 @@ export class PostgresAuthRepository implements AuthRepository {
 
   async findUserBySessionToken(token: string): Promise<User | undefined> {
     const result = await this.pool.query<UserRow>(
-      `SELECT u.id, u.email, u.display_name, u.avatar_url, u.created_at, u.bio, u.cover_style
+      `SELECT u.id, u.email, u.display_name, u.avatar_url, u.created_at, u.bio, u.cover_style, u.avatar_style
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token = $1 AND s.expires_at > now()`,
@@ -104,19 +112,28 @@ export class PostgresAuthRepository implements AuthRepository {
     await this.pool.query(`DELETE FROM sessions WHERE token = $1`, [token]);
   }
 
-  // Only bio/coverStyle are user-editable (Phase 4.7) - display name and
-  // avatar stay Google-sourced to avoid a Pulso identity drifting from the
-  // account it's authenticated against. `undefined` in the update leaves the
-  // existing column untouched (COALESCE), rather than a PUT-style full
-  // replace - each field is independently optional here, not one atomic form.
+  // Only bio/coverStyle/avatarStyle are user-editable (Phase 4.7) - display
+  // name and the underlying Google avatar photo stay Google-sourced, to
+  // avoid a Pulso identity drifting from the account it's authenticated
+  // against (avatarStyle is a preset override shown instead of that photo,
+  // not a replacement for it). `undefined` in the update leaves the existing
+  // column untouched - each field is independently optional here, not one
+  // atomic PUT-style form. avatarStyle additionally accepts an empty string
+  // to explicitly clear it (fall back to the Google photo), which COALESCE
+  // alone can't express - see ProfileUpdate's comment.
   async updateProfile(userId: string, update: ProfileUpdate): Promise<User> {
     const result = await this.pool.query<UserRow>(
       `UPDATE users SET
          bio = COALESCE($2, bio),
-         cover_style = COALESCE($3, cover_style)
+         cover_style = COALESCE($3, cover_style),
+         avatar_style = CASE
+           WHEN $4 = '' THEN NULL
+           WHEN $4 IS NOT NULL THEN $4
+           ELSE avatar_style
+         END
        WHERE id = $1
-       RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style`,
-      [userId, update.bio ?? null, update.coverStyle ?? null]
+       RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style, avatar_style`,
+      [userId, update.bio ?? null, update.coverStyle ?? null, update.avatarStyle ?? null]
     );
     return toUser(result.rows[0]!);
   }

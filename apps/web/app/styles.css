@@ -347,6 +347,20 @@ h6 {
   height: 100%;
   object-fit: cover;
 }
+
+/* Preset avatar (Phase 4.7) - fills whichever avatar circle it's placed in
+   (.account-avatar/.profil-avatar), sized via inherited font-size rather
+   than a fixed value so it scales with the parent like the initial-letter
+   fallback already does. */
+.user-avatar-preset {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: inherit;
+  line-height: 1;
+}
 .account-online-dot {
   position: absolute;
   bottom: 0;
@@ -856,7 +870,6 @@ h6 {
   align-items: flex-end;
   gap: 1.25rem;
   padding: 0 2rem;
-  margin-top: -48px;
 }
 
 .profil-avatar {
@@ -870,6 +883,11 @@ h6 {
   justify-content: center;
   font-weight: 700;
   font-size: 2.4rem;
+  /* Only the avatar overlaps the banner - the negative margin used to sit
+     on .profil-header-content instead, which pulled the whole text column
+     (name/location/bio) up into the banner too whenever that column was
+     taller than the avatar, making the location line unreadable. */
+  margin-top: -56px;
   border: 4px solid var(--surface-base);
   overflow: hidden;
   flex-shrink: 0;
@@ -958,11 +976,11 @@ h6 {
 .profil-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 0.5rem;
   border-bottom: 1px solid var(--brand-border);
 }
 .profil-tabs button {
-  padding: 0.7rem 1rem;
+  padding: 0.7rem 1.15rem;
   border: none;
   background: none;
   color: var(--text-secondary);
@@ -1167,6 +1185,35 @@ h6 {
 .profil-cover-swatch.active {
   border-color: #fff;
 }
+
+.profil-avatar-swatch {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s;
+  background: var(--surface-base);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 600;
+  overflow: hidden;
+}
+.profil-avatar-swatch img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profil-avatar-swatch:hover {
+  transform: translateY(-1px);
+}
+.profil-avatar-swatch.active {
+  border-color: #fff;
+}
+
 .profil-edit-footer {
   padding: 1rem 1.25rem;
   border-top: 1px solid var(--brand-border);

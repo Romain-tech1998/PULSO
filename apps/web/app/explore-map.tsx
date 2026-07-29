@@ -24,6 +24,7 @@ import {
   meResponseSchema,
   myAttendanceResponseSchema,
   PRICE_FILTER_OPTIONS,
+  PROFILE_AVATAR_STYLES,
   PROFILE_COVER_STYLES,
   profileStatsResponseSchema,
   trendsResponseSchema,
@@ -4084,11 +4085,7 @@ function AccountMenu({
       }
     >
       <span className="account-avatar">
-        {user.avatarUrl ? (
-          <img src={user.avatarUrl} alt="" />
-        ) : (
-          user.displayName.slice(0, 1).toUpperCase()
-        )}
+        {renderUserAvatarContent(user)}
         <span className="account-online-dot" aria-hidden="true" />
         {unreadCount > 0 && (
           <span className="account-unread-badge" aria-hidden="true">
@@ -4266,13 +4263,7 @@ function Sidebar({
 
       <div className="primary-sidebar-divider" />
       <button type="button" className="primary-sidebar-profile" onClick={onOpenAccount}>
-        <span className="account-avatar">
-          {user.avatarUrl ? (
-            <img src={user.avatarUrl} alt="" />
-          ) : (
-            user.displayName.slice(0, 1).toUpperCase()
-          )}
-        </span>
+        <span className="account-avatar">{renderUserAvatarContent(user)}</span>
         <span className="primary-sidebar-profile-info">
           <strong>{user.displayName}</strong>
           <span>{user.email}</span>
@@ -4846,6 +4837,42 @@ const PROFILE_COVER_GRADIENTS: Record<string, string> = {
 };
 const DEFAULT_PROFILE_COVER = 'aurora';
 
+// Preset avatars (Phase 4.7) - picking one overrides the Google avatar photo
+// everywhere the user's own avatar appears (Sidebar profile card, TopBar
+// account menu, profile header), same "no upload" rationale as the cover
+// presets. Reuses the same brand gradients rather than inventing a second
+// palette.
+const PROFILE_AVATAR_PRESETS: Record<string, { emoji: string; gradient: string }> = {
+  note: { emoji: '🎧', gradient: PROFILE_COVER_GRADIENTS['aurora']! },
+  disco: { emoji: '🪩', gradient: PROFILE_COVER_GRADIENTS['midnight']! },
+  moon: { emoji: '🌙', gradient: PROFILE_COVER_GRADIENTS['nebula']! },
+  star: { emoji: '⭐', gradient: PROFILE_COVER_GRADIENTS['sunset']! },
+  flame: { emoji: '🔥', gradient: PROFILE_COVER_GRADIENTS['aurora']! },
+  heart: { emoji: '💜', gradient: PROFILE_COVER_GRADIENTS['midnight']! }
+};
+
+// Shared by every spot the user's own avatar appears (AccountMenu, Sidebar
+// profile card, ProfilHeader) - a chosen preset always wins over the Google
+// photo; falls back to the initial only when neither exists.
+function renderUserAvatarContent(user: User): ReactNode {
+  const preset = user.avatarStyle ? PROFILE_AVATAR_PRESETS[user.avatarStyle] : undefined;
+  if (preset) {
+    return (
+      <span
+        className="user-avatar-preset"
+        style={{ background: preset.gradient }}
+        aria-hidden="true"
+      >
+        {preset.emoji}
+      </span>
+    );
+  }
+  if (user.avatarUrl) {
+    return <img src={user.avatarUrl} alt="" />;
+  }
+  return user.displayName.slice(0, 1).toUpperCase();
+}
+
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diffMs / 60000);
@@ -4968,6 +4995,9 @@ function EditProfileModal({
 }) {
   const [bio, setBio] = useState(user.bio ?? '');
   const [coverStyle, setCoverStyle] = useState(user.coverStyle ?? DEFAULT_PROFILE_COVER);
+  // '' means "use the Google photo" - the explicit clear signal
+  // updateProfileRequestSchema accepts (see auth-repository.ts).
+  const [avatarStyle, setAvatarStyle] = useState(user.avatarStyle ?? '');
   const [saving, setSaving] = useState(false);
 
   const save = () => {
@@ -4976,7 +5006,7 @@ function EditProfileModal({
     fetch(`${API_BASE_URL}/me/profile`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ bio: bio.trim(), coverStyle })
+      body: JSON.stringify({ bio: bio.trim(), coverStyle, avatarStyle })
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
@@ -5009,6 +5039,36 @@ function EditProfileModal({
             placeholder="Quelques mots sur toi…"
           />
           <span className="profil-edit-counter">{bio.length}/280</span>
+
+          <span className="profil-edit-label">Photo de profil</span>
+          <div className="profil-cover-picker">
+            <button
+              type="button"
+              className={`profil-avatar-swatch ${avatarStyle === '' ? 'active' : ''}`}
+              onClick={() => setAvatarStyle('')}
+              aria-label="Photo Google"
+              title="Photo Google"
+            >
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="" />
+              ) : (
+                user.displayName.slice(0, 1).toUpperCase()
+              )}
+            </button>
+            {PROFILE_AVATAR_STYLES.map((style) => (
+              <button
+                type="button"
+                key={style}
+                className={`profil-avatar-swatch ${avatarStyle === style ? 'active' : ''}`}
+                style={{ background: PROFILE_AVATAR_PRESETS[style]!.gradient }}
+                onClick={() => setAvatarStyle(style)}
+                aria-label={style}
+                title={style}
+              >
+                {PROFILE_AVATAR_PRESETS[style]!.emoji}
+              </button>
+            ))}
+          </div>
 
           <span className="profil-edit-label">Bannière</span>
           <div className="profil-cover-picker">
@@ -5050,13 +5110,7 @@ function ProfilHeader({
     <div className="profil-header">
       <div className="profil-cover" style={{ background: coverGradient }} />
       <div className="profil-header-content">
-        <span className="profil-avatar">
-          {user.avatarUrl ? (
-            <img src={user.avatarUrl} alt="" />
-          ) : (
-            user.displayName.slice(0, 1).toUpperCase()
-          )}
-        </span>
+        <span className="profil-avatar">{renderUserAvatarContent(user)}</span>
         <div className="profil-header-main">
           <div className="profil-header-top">
             <div>
@@ -5071,7 +5125,7 @@ function ProfilHeader({
           {user.bio && <p className="profil-bio">{user.bio}</p>}
           <div className="profil-stats-row">
             <span>
-              <strong>{friendsCount}</strong> Amis
+              <strong>{friendsCount}</strong> Ami{friendsCount !== 1 ? 's' : ''}
             </span>
           </div>
         </div>
