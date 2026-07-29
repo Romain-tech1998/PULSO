@@ -4203,8 +4203,8 @@ function Sidebar({
             className="primary-sidebar-nav-item"
             onClick={() => setOpenGroup(group)}
           >
-            <span className="primary-sidebar-nav-icon" aria-hidden="true">
-              🔥
+            <span className="primary-sidebar-group-avatar" aria-hidden="true">
+              {group.name.slice(0, 1).toUpperCase()}
             </span>
             {group.name}
           </button>
@@ -4233,6 +4233,7 @@ function Sidebar({
         />
       )}
 
+      <div className="primary-sidebar-divider" />
       <button type="button" className="primary-sidebar-profile" onClick={onOpenAccount}>
         <span className="account-avatar">
           {user.avatarUrl ? (
@@ -4592,19 +4593,23 @@ function MessagesPage({ authToken }: { authToken: string | undefined }) {
         <p className="list-view-empty">Impossible de charger vos messages pour le moment.</p>
       )}
       {state === 'success' && conversations.length === 0 && (
-        <p className="list-view-empty">
-          Aucune conversation pour l'instant. Ajoutez des amis pour commencer à discuter.
-        </p>
+        <div className="empty-state-card">
+          <span className="empty-state-icon" aria-hidden="true">
+            💬
+          </span>
+          <p>Aucune conversation pour l'instant</p>
+          <p>Ajoute des amis pour commencer à discuter avec eux.</p>
+        </div>
       )}
       <div className="conversation-list">
         {conversations.map((conversation) => (
           <button
             type="button"
-            className="conversation-list-row"
+            className={`conversation-list-row ${conversation.unreadCount > 0 ? 'unread' : ''}`}
             key={conversation.friend.id}
             onClick={() => setOpenWith(conversation.friend)}
           >
-            <span className="friends-row-avatar">
+            <span className="friends-row-avatar friends-row-avatar-lg">
               {conversation.friend.avatarUrl ? (
                 <img src={conversation.friend.avatarUrl} alt="" />
               ) : (
@@ -4964,22 +4969,25 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
   const outgoing = pendingRequests.filter((request) => request.direction === 'outgoing');
 
   return (
-    <div className="compte-block">
-      <h3>Vos amis</h3>
+    <div className="amis-page">
       {loadState === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {loadState === 'error' && (
         <p className="list-view-empty">Impossible de charger vos amis pour le moment.</p>
       )}
       {loadState === 'success' && (
-        <div className="friends-block">
+        <>
           {friendCode && (
-            <div className="friends-code-row">
-              <span>
-                Votre code : <strong>{friendCode}</strong>
+            <div className="amis-code-card">
+              <span className="amis-code-icon" aria-hidden="true">
+                🔗
               </span>
+              <div className="amis-code-info">
+                <p>Ton code ami</p>
+                <strong>{friendCode}</strong>
+              </div>
               <button
                 type="button"
-                className="text-btn"
+                className="amis-code-copy"
                 onClick={() => {
                   void navigator.clipboard.writeText(friendCode);
                   setCopied(true);
@@ -4992,7 +5000,7 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
           )}
 
           <form
-            className="friends-add-form"
+            className="amis-add-form"
             onSubmit={(event) => {
               event.preventDefault();
               sendRequest();
@@ -5001,99 +5009,116 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
             <input
               value={codeInput}
               onChange={(event) => setCodeInput(event.target.value)}
-              placeholder="Coller le code d'un ami"
+              placeholder="Coller le code d'un ami pour l'ajouter"
               maxLength={32}
             />
-            <button type="submit" className="btn-secondary">
+            <button type="submit" className="amis-add-btn" disabled={!codeInput.trim()}>
               Ajouter
             </button>
           </form>
           {sendError && <p className="friends-error">{sendError}</p>}
 
           {incoming.length > 0 && (
-            <div className="friends-list">
-              <h4>Demandes reçues</h4>
-              {incoming.map((request) => (
-                <div className="friends-row" key={request.id}>
-                  <span className="friends-row-avatar">
-                    {request.user.avatarUrl ? (
-                      <img src={request.user.avatarUrl} alt="" />
-                    ) : (
-                      request.user.displayName.slice(0, 1).toUpperCase()
-                    )}
-                  </span>
-                  <span className="friends-row-name">{request.user.displayName}</span>
-                  <button
-                    type="button"
-                    className="text-btn"
-                    onClick={() => respond(request.id, 'accept')}
-                  >
-                    Accepter
-                  </button>
-                  <button
-                    type="button"
-                    className="text-btn"
-                    onClick={() => respond(request.id, 'decline')}
-                  >
-                    Refuser
-                  </button>
-                </div>
-              ))}
+            <div className="amis-section">
+              <h3 className="amis-section-title">Demandes reçues</h3>
+              <div className="amis-list">
+                {incoming.map((request) => (
+                  <div className="amis-row" key={request.id}>
+                    <span className="friends-row-avatar friends-row-avatar-lg">
+                      {request.user.avatarUrl ? (
+                        <img src={request.user.avatarUrl} alt="" />
+                      ) : (
+                        request.user.displayName.slice(0, 1).toUpperCase()
+                      )}
+                    </span>
+                    <span className="amis-row-name">{request.user.displayName}</span>
+                    <div className="amis-row-actions">
+                      <button
+                        type="button"
+                        className="amis-btn-accept"
+                        onClick={() => respond(request.id, 'accept')}
+                      >
+                        Accepter
+                      </button>
+                      <button
+                        type="button"
+                        className="amis-btn-ghost"
+                        onClick={() => respond(request.id, 'decline')}
+                      >
+                        Refuser
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
           {outgoing.length > 0 && (
-            <div className="friends-list">
-              <h4>Demandes envoyées</h4>
-              {outgoing.map((request) => (
-                <div className="friends-row" key={request.id}>
-                  <span className="friends-row-avatar">
-                    {request.user.avatarUrl ? (
-                      <img src={request.user.avatarUrl} alt="" />
-                    ) : (
-                      request.user.displayName.slice(0, 1).toUpperCase()
-                    )}
-                  </span>
-                  <span className="friends-row-name">{request.user.displayName}</span>
-                  <span className="friends-row-status">En attente</span>
-                </div>
-              ))}
+            <div className="amis-section">
+              <h3 className="amis-section-title">Demandes envoyées</h3>
+              <div className="amis-list">
+                {outgoing.map((request) => (
+                  <div className="amis-row" key={request.id}>
+                    <span className="friends-row-avatar friends-row-avatar-lg">
+                      {request.user.avatarUrl ? (
+                        <img src={request.user.avatarUrl} alt="" />
+                      ) : (
+                        request.user.displayName.slice(0, 1).toUpperCase()
+                      )}
+                    </span>
+                    <span className="amis-row-name">{request.user.displayName}</span>
+                    <span className="amis-row-pending">En attente</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          <div className="friends-list">
-            <h4>Amis ({friends.length})</h4>
-            {friends.length === 0 && (
-              <p className="list-view-empty">Aucun ami pour le moment.</p>
-            )}
-            {friends.map((friendUser) => (
-              <div className="friends-row" key={friendUser.id}>
-                <span className="friends-row-avatar">
-                  {friendUser.avatarUrl ? (
-                    <img src={friendUser.avatarUrl} alt="" />
-                  ) : (
-                    friendUser.displayName.slice(0, 1).toUpperCase()
-                  )}
+          <div className="amis-section">
+            <h3 className="amis-section-title">Amis ({friends.length})</h3>
+            {friends.length === 0 ? (
+              <div className="empty-state-card">
+                <span className="empty-state-icon" aria-hidden="true">
+                  🧑‍🤝‍🧑
                 </span>
-                <span className="friends-row-name">{friendUser.displayName}</span>
-                <button
-                  type="button"
-                  className="text-btn"
-                  onClick={() => setConversationWith(friendUser)}
-                >
-                  Message
-                </button>
-                <button
-                  type="button"
-                  className="text-btn"
-                  onClick={() => removeFriend(friendUser.id)}
-                >
-                  Retirer
-                </button>
+                <p>Aucun ami pour le moment</p>
+                <p>Partage ton code ci-dessus pour commencer à te connecter.</p>
               </div>
-            ))}
+            ) : (
+              <div className="amis-list">
+                {friends.map((friendUser) => (
+                  <div className="amis-row" key={friendUser.id}>
+                    <span className="friends-row-avatar friends-row-avatar-lg">
+                      {friendUser.avatarUrl ? (
+                        <img src={friendUser.avatarUrl} alt="" />
+                      ) : (
+                        friendUser.displayName.slice(0, 1).toUpperCase()
+                      )}
+                    </span>
+                    <span className="amis-row-name">{friendUser.displayName}</span>
+                    <div className="amis-row-actions">
+                      <button
+                        type="button"
+                        className="amis-btn-message"
+                        onClick={() => setConversationWith(friendUser)}
+                      >
+                        Message
+                      </button>
+                      <button
+                        type="button"
+                        className="amis-btn-ghost-muted"
+                        onClick={() => removeFriend(friendUser.id)}
+                      >
+                        Retirer
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
+        </>
       )}
       {conversationWith && (
         <ConversationModal
@@ -5164,7 +5189,16 @@ function ConversationModal({
     <div className="modal-overlay" onClick={onClose}>
       <div className="conversation-modal" onClick={(event) => event.stopPropagation()}>
         <div className="conversation-modal-header">
-          <strong>{friend.displayName}</strong>
+          <span className="conversation-modal-friend">
+            <span className="friends-row-avatar friends-row-avatar-md">
+              {friend.avatarUrl ? (
+                <img src={friend.avatarUrl} alt="" />
+              ) : (
+                friend.displayName.slice(0, 1).toUpperCase()
+              )}
+            </span>
+            <strong>{friend.displayName}</strong>
+          </span>
           <button type="button" className="text-btn" onClick={onClose}>
             Fermer
           </button>

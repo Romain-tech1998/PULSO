@@ -559,6 +559,16 @@ h6 {
   height: 100%;
   object-fit: cover;
 }
+.friends-row-avatar-md {
+  width: 36px;
+  height: 36px;
+  font-size: 0.9rem;
+}
+.friends-row-avatar-lg {
+  width: 44px;
+  height: 44px;
+  font-size: 1rem;
+}
 .friends-row-name {
   flex: 1;
   min-width: 0;
@@ -572,6 +582,252 @@ h6 {
   color: var(--text-secondary);
   font-size: 0.8rem;
   font-style: italic;
+}
+
+/* Amis page (Phase 4.5+) - a full dedicated page, not a cramped card inside
+   Mon compte, so it gets its own richer treatment rather than reusing
+   .compte-block/.friends-row (still used as-is by GroupsBlock and the
+   sidebar's invite card). */
+.amis-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.amis-code-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: 1rem;
+  background: var(--surface-base);
+  border: 1px solid var(--brand-border);
+}
+.amis-code-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+.amis-code-info {
+  flex: 1;
+  min-width: 0;
+}
+.amis-code-info p {
+  margin: 0 0 0.2rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.amis-code-info strong {
+  color: var(--text-primary);
+  font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+.amis-code-copy {
+  padding: 0.6rem 1.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--brand-border);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: border-color 0.2s, background 0.2s;
+  flex-shrink: 0;
+}
+.amis-code-copy:hover {
+  border-color: var(--brand-purple);
+  background: var(--surface-base);
+}
+
+.amis-add-form {
+  display: flex;
+  gap: 0.6rem;
+}
+.amis-add-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.75rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--brand-border);
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+.amis-add-form input:focus {
+  outline: none;
+  border-color: var(--brand-purple);
+}
+.amis-add-btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: 999px;
+  border: none;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+.amis-add-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(167, 62, 232, 0.35);
+}
+.amis-add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.amis-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.amis-section-title {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.amis-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.amis-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.9rem;
+  background: var(--surface-base);
+  border: 1px solid transparent;
+  transition: border-color 0.2s, background 0.2s;
+}
+.amis-row:hover {
+  border-color: var(--brand-border);
+  background: var(--surface-raised);
+}
+.amis-row-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.amis-row-pending {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+  flex-shrink: 0;
+}
+.amis-row-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.amis-btn-accept {
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  border: none;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.8rem;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.amis-btn-accept:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(167, 62, 232, 0.35);
+}
+.amis-btn-ghost {
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--brand-border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.8rem;
+  transition: border-color 0.2s, color 0.2s;
+}
+.amis-btn-ghost:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+.amis-btn-message {
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--brand-purple);
+  background: rgba(91, 63, 224, 0.12);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.8rem;
+  transition: background 0.2s, border-color 0.2s;
+}
+.amis-btn-message:hover {
+  background: rgba(91, 63, 224, 0.24);
+}
+.amis-btn-ghost-muted {
+  padding: 0.45rem 0.9rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+  transition: color 0.2s;
+}
+.amis-btn-ghost-muted:hover {
+  color: #f87171;
+}
+
+/* Reusable "nothing here yet" card - Messages/Amis empty states, same
+   visual language as .sign-in-prompt but for empty-list rather than
+   logged-out states. */
+.empty-state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  border-radius: 1rem;
+  background: var(--surface-base);
+  border: 1px dashed var(--brand-border);
+}
+.empty-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  font-size: 1.5rem;
+  margin-bottom: 0.4rem;
+}
+.empty-state-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  max-width: 32ch;
+}
+.empty-state-card p:first-of-type {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.95rem;
 }
 
 .conversation-list {
@@ -595,6 +851,15 @@ h6 {
 .conversation-list-row:hover {
   border-color: var(--brand-border);
   background: var(--surface-raised);
+}
+
+.conversation-list-row.unread {
+  background: rgba(91, 63, 224, 0.12);
+  border-color: rgba(91, 63, 224, 0.3);
+}
+
+.conversation-list-row.unread .conversation-list-info span {
+  color: var(--text-primary);
 }
 
 .conversation-list-info {
@@ -2139,6 +2404,12 @@ h6 {
 .conversation-modal-header .text-btn {
   margin-top: 0;
 }
+.conversation-modal-friend {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
 .conversation-messages {
   flex: 1;
   min-height: 200px;
@@ -2724,8 +2995,9 @@ h6 {
 }
 
 .primary-sidebar-nav-item.active {
-  background: rgba(91, 63, 224, 0.25);
+  background: linear-gradient(90deg, rgba(167, 62, 232, 0.22), rgba(255, 42, 122, 0.1));
   color: var(--text-primary);
+  box-shadow: inset 3px 0 0 var(--brand-pink);
 }
 
 .primary-sidebar-nav-icon {
@@ -2779,8 +3051,29 @@ h6 {
   color: var(--text-muted);
 }
 
+.primary-sidebar-group-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.primary-sidebar-divider {
+  height: 1px;
+  background: var(--brand-border);
+  margin: auto 0.5rem 0;
+  flex-shrink: 0;
+}
+
 .primary-sidebar-profile {
-  margin-top: auto;
+  margin-top: 0.5rem;
   display: flex;
   align-items: center;
   gap: 0.6rem;
