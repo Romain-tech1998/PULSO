@@ -19,6 +19,7 @@ import type {
   FriendsRepository,
   GroupsRepository,
   MessagesRepository,
+  ProfileRepository,
   ReportsRepository,
   TrendsRepository
 } from '@pulso/database';
@@ -37,6 +38,7 @@ import { registerAuthRoutes, type GoogleAuthConfig } from './auth.js';
 import { registerForumRoutes } from './forum.js';
 import { registerGroupsRoutes } from './groups.js';
 import { registerMessagesRoutes } from './messages.js';
+import { registerProfileRoutes } from './profile.js';
 import { registerReportsRoutes } from './reports.js';
 import { registerSocialRoutes } from './social.js';
 
@@ -60,6 +62,7 @@ export function buildApp(
     messagesRepository?: MessagesRepository;
     reportsRepository?: ReportsRepository;
     groupsRepository?: GroupsRepository;
+    profileRepository?: ProfileRepository;
     google?: GoogleAuthConfig;
   } = {}
 ) {
@@ -75,6 +78,7 @@ export function buildApp(
     options.messagesRepository &&
     options.reportsRepository &&
     options.groupsRepository &&
+    options.profileRepository &&
     options.google
   ) {
     registerAuthRoutes(
@@ -101,6 +105,7 @@ export function buildApp(
     registerMessagesRoutes(app, options.authRepository, options.messagesRepository);
     registerReportsRoutes(app, options.authRepository, options.reportsRepository);
     registerGroupsRoutes(app, options.authRepository, options.groupsRepository);
+    registerProfileRoutes(app, options.authRepository, options.profileRepository);
   }
 
   app.setErrorHandler((error, request, reply) => {

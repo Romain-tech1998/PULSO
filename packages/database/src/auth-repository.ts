@@ -11,11 +11,17 @@ export interface GoogleProfile {
   avatarUrl?: string;
 }
 
+export interface ProfileUpdate {
+  bio?: string | undefined;
+  coverStyle?: string | undefined;
+}
+
 export interface AuthRepository {
   upsertUserFromGoogle(profile: GoogleProfile): Promise<User>;
   createSession(userId: string): Promise<{ token: string; expiresAt: Date }>;
   findUserBySessionToken(token: string): Promise<User | undefined>;
   deleteSession(token: string): Promise<void>;
+  updateProfile(userId: string, update: ProfileUpdate): Promise<User>;
 }
 
 interface UserRow {
@@ -23,6 +29,9 @@ interface UserRow {
   email: string;
   display_name: string;
   avatar_url: string | null;
+  created_at: Date;
+  bio: string | null;
+  cover_style: string | null;
 }
 
 function toUser(row: UserRow): User {
@@ -30,7 +39,10 @@ function toUser(row: UserRow): User {
     id: row.id,
     email: row.email,
     displayName: row.display_name,
-    ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
+    createdAt: row.created_at.toISOString(),
+    ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {}),
+    ...(row.bio !== null ? { bio: row.bio } : {}),
+    ...(row.cover_style !== null ? { coverStyle: row.cover_style } : {})
   };
 }
 
@@ -53,7 +65,7 @@ export class PostgresAuthRepository implements AuthRepository {
          email = EXCLUDED.email,
          display_name = EXCLUDED.display_name,
          avatar_url = EXCLUDED.avatar_url
-       RETURNING id, email, display_name, avatar_url`,
+       RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style`,
       [
         randomUUID(),
         profile.email,
@@ -78,7 +90,7 @@ export class PostgresAuthRepository implements AuthRepository {
 
   async findUserBySessionToken(token: string): Promise<User | undefined> {
     const result = await this.pool.query<UserRow>(
-      `SELECT u.id, u.email, u.display_name, u.avatar_url
+      `SELECT u.id, u.email, u.display_name, u.avatar_url, u.created_at, u.bio, u.cover_style
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token = $1 AND s.expires_at > now()`,
@@ -90,5 +102,22 @@ export class PostgresAuthRepository implements AuthRepository {
 
   async deleteSession(token: string): Promise<void> {
     await this.pool.query(`DELETE FROM sessions WHERE token = $1`, [token]);
+  }
+
+  // Only bio/coverStyle are user-editable (Phase 4.7) - display name and
+  // avatar stay Google-sourced to avoid a Pulso identity drifting from the
+  // account it's authenticated against. `undefined` in the update leaves the
+  // existing column untouched (COALESCE), rather than a PUT-style full
+  // replace - each field is independently optional here, not one atomic form.
+  async updateProfile(userId: string, update: ProfileUpdate): Promise<User> {
+    const result = await this.pool.query<UserRow>(
+      `UPDATE users SET
+         bio = COALESCE($2, bio),
+         cover_style = COALESCE($3, cover_style)
+       WHERE id = $1
+       RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style`,
+      [userId, update.bio ?? null, update.coverStyle ?? null]
+    );
+    return toUser(result.rows[0]!);
   }
 }

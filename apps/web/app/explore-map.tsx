@@ -2,6 +2,7 @@
 
 import {
   activeForumsResponseSchema,
+  activityResponseSchema,
   buildMapEventsQuery,
   CATEGORY_FILTER_OPTIONS,
   conversationResponseSchema,
@@ -23,11 +24,14 @@ import {
   meResponseSchema,
   myAttendanceResponseSchema,
   PRICE_FILTER_OPTIONS,
+  PROFILE_COVER_STYLES,
+  profileStatsResponseSchema,
   trendsResponseSchema,
   unreadCountResponseSchema,
   VENUE_CATEGORY_FILTER_OPTIONS,
   venueListResponseSchema,
   type ActiveForum,
+  type ActivityEntry,
   type AttendanceVisibility,
   type ConversationSummary,
   type ForumCategory,
@@ -41,6 +45,7 @@ import {
   type PublicEvent,
   type PublicUser,
   type PublicVenue,
+  type ProfileStatsResponse,
   type ReportTargetType,
   type TrendsResponse,
   type User
@@ -566,7 +571,7 @@ function useAuth() {
     setUser(undefined);
   };
 
-  return { user, authToken, login, logout };
+  return { user, setUser, authToken, login, logout };
 }
 
 /**
@@ -648,7 +653,7 @@ export function ExploreMap({
   const [searchProcessing, setSearchProcessing] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [locale, setLocale] = useState(initialLocale);
-  const { user, authToken, login, logout } = useAuth();
+  const { user, setUser, authToken, login, logout } = useAuth();
   const { favorites, toggleFavorite } = useFavorites(authToken);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const { favoriteVenues, toggleFavoriteVenue } = useFavoriteVenues(authToken);
@@ -2233,11 +2238,12 @@ export function ExploreMap({
               <button
                 type="button"
                 className={`view-toggle-fav ${showFavoriteVenuesOnly ? 'active' : ''}`}
-                aria-label={showFavoriteVenuesOnly ? 'Afficher tous les lieux' : 'Afficher uniquement mes lieux favoris'}
+                aria-label={showFavoriteVenuesOnly ? 'Afficher tous les lieux' : 'Afficher uniquement mes lieux suivis'}
+                title={showFavoriteVenuesOnly ? 'Afficher tous les lieux' : 'Lieux suivis'}
                 aria-pressed={showFavoriteVenuesOnly}
                 onClick={() => setShowFavoriteVenuesOnly((prev) => !prev)}
               >
-                <HeartIcon filled={showFavoriteVenuesOnly} />
+                <BellIcon />
               </button>
             )}
           </div>
@@ -2733,12 +2739,28 @@ export function ExploreMap({
           <CompteSection
             user={user}
             authToken={authToken}
-            favoritesCount={favorites.length}
-            favoriteVenuesCount={favoriteVenues.length}
-            onViewFavorites={() => setSection('favoris')}
+            onUserUpdated={setUser}
             onLogout={logout}
             locale={locale}
             onChangeLocale={selectLocale}
+            attendance={attendance}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
+            onOpenDetails={openDetails}
+            favoriteVenueGroups={venueGroups.filter((group) => favoriteVenues.includes(group.id))}
+            favoriteVenues={favoriteVenues}
+            onToggleFavoriteVenue={toggleFavoriteVenue}
+            onSelectVenue={(group) => {
+              setDetails({ kind: 'closed' });
+              setVenuePickerList(undefined);
+              if (group.events.length === 1) {
+                void openDetails(group.events[0]!.id);
+              } else {
+                setPickerList({ title: `${group.name} — ${group.address}`, events: group.events });
+                setSection('lieu');
+              }
+            }}
+            onOpenAmis={() => setSection('amis')}
           />
         )}
 
@@ -3292,7 +3314,11 @@ function VenuePickerList({
             <span className="list-view-price">
               {group.events.length} événement{group.events.length > 1 ? 's' : ''}
             </span>
-            {favoriteVenues.includes(group.id) && <span aria-hidden="true">❤️</span>}
+            {favoriteVenues.includes(group.id) && (
+              <span aria-hidden="true" title="Suivi" className="list-view-following-dot">
+                🔔
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -3358,7 +3384,7 @@ function FavorisSection({
           Événements
         </button>
         <button type="button" className={kind === 'venue' ? 'active' : ''} onClick={() => setKind('venue')}>
-          Lieux
+          Lieux suivis
         </button>
       </div>
       {kind === 'event' && (
@@ -3613,13 +3639,18 @@ function VenueListView({
               )}
               <button
                 type="button"
-                className="card-fav"
+                className={`card-fav ${favoriteVenues.includes(group.id) ? 'card-fav-following' : ''}`}
+                aria-pressed={favoriteVenues.includes(group.id)}
+                aria-label={
+                  favoriteVenues.includes(group.id) ? 'Ne plus suivre ce lieu' : 'Suivre ce lieu'
+                }
+                title={favoriteVenues.includes(group.id) ? 'Suivi' : 'Suivre ce lieu'}
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleFavoriteVenue(group.id);
                 }}
               >
-                {favoriteVenues.includes(group.id) ? '❤️' : '🤍'}
+                <BellIcon />
               </button>
             </div>
             <div className="venue-card-body">
@@ -4656,21 +4687,13 @@ function AmisPage({ authToken }: { authToken: string | undefined }) {
 // attendance data (GET /me/attendance, already built in Phase 2.2),
 // hydrated via the existing /events/by-ids endpoint, split by date rather
 // than duplicating the fetch for two near-identical pages.
-function AttendanceEventsPage({
-  title,
-  emptyMessage,
-  mode,
-  attendance,
-  onOpenDetails,
-  locale
-}: {
-  title: string;
-  emptyMessage: string;
-  mode: 'upcoming' | 'past';
-  attendance: Record<string, AttendanceVisibility>;
-  onOpenDetails: (eventId: string) => void;
-  locale: SupportedLocale;
-}) {
+// Shared by AttendanceEventsPage (Raccourcis: Mes événements/Historique)
+// and the profile page's Aperçu/Mes événements tabs (Phase 4.7) - one fetch
+// implementation rather than three copies of the same by-ids hydration.
+function useAttendanceEvents(
+  attendance: Record<string, AttendanceVisibility>,
+  mode: 'upcoming' | 'past'
+) {
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
   const eventIds = Object.keys(attendance);
@@ -4705,6 +4728,77 @@ function AttendanceEventsPage({
         : new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()
     );
 
+  return { events: filtered, state };
+}
+
+function EventCarouselRow({
+  events,
+  onOpenDetails,
+  locale
+}: {
+  events: PublicEvent[];
+  onOpenDetails: (eventId: string) => void;
+  locale: SupportedLocale;
+}) {
+  return (
+    <div className="event-carousel">
+      {events.map((evt) => (
+        <div
+          className="event-card"
+          key={evt.id}
+          onClick={() => onOpenDetails(evt.id)}
+          style={{ cursor: 'pointer' }}
+        >
+          <div
+            className="event-card-img"
+            style={
+              evt.imageUrl
+                ? {
+                    backgroundImage: `url(${evt.imageUrl})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center'
+                  }
+                : undefined
+            }
+          >
+            {!evt.imageUrl && <EventImageFallback category={evt.category} />}
+            <div
+              className="card-badge"
+              style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
+            >
+              {getCategoryLabel(locale, evt.category)}
+            </div>
+          </div>
+          <div className="event-card-content">
+            <h3>{evt.title}</h3>
+            <p>{evt.venue?.name}</p>
+            <p className="card-price">
+              {evt.startsAt ? new Date(evt.startsAt).toLocaleDateString() : ''}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AttendanceEventsPage({
+  title,
+  emptyMessage,
+  mode,
+  attendance,
+  onOpenDetails,
+  locale
+}: {
+  title: string;
+  emptyMessage: string;
+  mode: 'upcoming' | 'past';
+  attendance: Record<string, AttendanceVisibility>;
+  onOpenDetails: (eventId: string) => void;
+  locale: SupportedLocale;
+}) {
+  const { events, state } = useAttendanceEvents(attendance, mode);
+
   return (
     <div className="dashboard-home">
       <h1>{title}</h1>
@@ -4712,47 +4806,565 @@ function AttendanceEventsPage({
       {state === 'error' && (
         <p className="list-view-empty">Impossible de charger vos événements pour le moment.</p>
       )}
-      {state === 'success' && filtered.length === 0 && (
+      {state === 'success' && events.length === 0 && (
         <p className="list-view-empty">{emptyMessage}</p>
       )}
-      <div className="event-carousel">
-        {filtered.map((evt) => (
-          <div
-            className="event-card"
-            key={evt.id}
-            onClick={() => onOpenDetails(evt.id)}
-            style={{ cursor: 'pointer' }}
-          >
-            <div
-              className="event-card-img"
-              style={
-                evt.imageUrl
-                  ? {
-                      backgroundImage: `url(${evt.imageUrl})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center'
-                    }
-                  : undefined
-              }
-            >
-              {!evt.imageUrl && <EventImageFallback category={evt.category} />}
-              <div
-                className="card-badge"
-                style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
-              >
-                {getCategoryLabel(locale, evt.category)}
-              </div>
-            </div>
-            <div className="event-card-content">
-              <h3>{evt.title}</h3>
-              <p>{evt.venue?.name}</p>
-              <p className="card-price">
-                {evt.startsAt ? new Date(evt.startsAt).toLocaleDateString() : ''}
-              </p>
-            </div>
+      <EventCarouselRow events={events} onOpenDetails={onOpenDetails} locale={locale} />
+    </div>
+  );
+}
+
+type ProfilTab =
+  | 'apercu'
+  | 'mes-evenements'
+  | 'favoris'
+  | 'groupes'
+  | 'avis'
+  | 'photos'
+  | 'badges'
+  | 'activite';
+
+const PROFIL_TABS: Array<{ id: ProfilTab; label: string }> = [
+  { id: 'apercu', label: 'Aperçu' },
+  { id: 'mes-evenements', label: 'Mes événements' },
+  { id: 'favoris', label: 'Favoris' },
+  { id: 'groupes', label: 'Groupes' },
+  { id: 'avis', label: 'Avis' },
+  { id: 'photos', label: 'Photos' },
+  { id: 'badges', label: 'Badges' },
+  { id: 'activite', label: 'Activité' }
+];
+
+// Brand-gradient banner presets (Phase 4.7) - never a photo upload, Pulso
+// stores no user images beyond the Google avatar. Keys match
+// PROFILE_COVER_STYLES in @pulso/contracts.
+const PROFILE_COVER_GRADIENTS: Record<string, string> = {
+  aurora: 'linear-gradient(135deg, #a73ee8, #ff2a7a)',
+  sunset: 'linear-gradient(135deg, #ff8a3d, #ff2a7a)',
+  midnight: 'linear-gradient(135deg, #1c192b, #5b3fe0)',
+  nebula: 'linear-gradient(135deg, #5b3fe0, #00c2a8)'
+};
+const DEFAULT_PROFILE_COVER = 'aurora';
+
+function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "à l'instant";
+  if (minutes < 60) return `il y a ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `il y a ${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `il y a ${days}j`;
+  return new Date(iso).toLocaleDateString('fr-CA');
+}
+
+function formatMemberSince(iso: string): string {
+  const formatted = new Date(iso).toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' });
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+}
+
+function activityEntryKey(entry: ActivityEntry): string {
+  switch (entry.kind) {
+    case 'favorited_event':
+      return `fe-${entry.eventId}`;
+    case 'favorited_venue':
+      return `fv-${entry.venueId}`;
+    case 'attended_event':
+      return `ae-${entry.eventId}`;
+    case 'joined_group':
+      return `jg-${entry.groupId}`;
+  }
+}
+
+function activityEntryDisplay(entry: ActivityEntry): { icon: string; text: string } {
+  switch (entry.kind) {
+    case 'favorited_event':
+      return { icon: '❤️', text: `A ajouté ${entry.eventTitle} à ses favoris` };
+    case 'favorited_venue':
+      return { icon: '🔔', text: `Suit maintenant ${entry.venueName}` };
+    case 'attended_event':
+      return { icon: '🎟️', text: `A participé à ${entry.eventTitle}` };
+    case 'joined_group':
+      return { icon: '🧑‍🤝‍🧑', text: `A rejoint le groupe ${entry.groupName}` };
+  }
+}
+
+function useProfileStats(authToken: string | undefined) {
+  const [stats, setStats] = useState<ProfileStatsResponse['data']>();
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  useEffect(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/profile-stats`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setStats(profileStatsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+  return { stats, state };
+}
+
+function useActivity(authToken: string | undefined, limit: number) {
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  useEffect(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/activity?limit=${limit}`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setActivity(activityResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, limit]);
+  return { activity, state };
+}
+
+function ActivityList({
+  entries,
+  emptyMessage
+}: {
+  entries: ActivityEntry[];
+  emptyMessage: string;
+}) {
+  if (entries.length === 0) {
+    return <p className="list-view-empty">{emptyMessage}</p>;
+  }
+  return (
+    <ul className="profil-activity-list">
+      {entries.map((entry) => {
+        const { icon, text } = activityEntryDisplay(entry);
+        return (
+          <li key={activityEntryKey(entry)} className="profil-activity-row">
+            <span className="profil-activity-icon" aria-hidden="true">
+              {icon}
+            </span>
+            <span className="profil-activity-text">{text}</span>
+            <span className="profil-activity-time">{formatRelativeTime(entry.occurredAt)}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function EditProfileModal({
+  user,
+  authToken,
+  onClose,
+  onSaved
+}: {
+  user: User;
+  authToken: string | undefined;
+  onClose: () => void;
+  onSaved: (user: User) => void;
+}) {
+  const [bio, setBio] = useState(user.bio ?? '');
+  const [coverStyle, setCoverStyle] = useState(user.coverStyle ?? DEFAULT_PROFILE_COVER);
+  const [saving, setSaving] = useState(false);
+
+  const save = () => {
+    if (!authToken || saving) return;
+    setSaving(true);
+    fetch(`${API_BASE_URL}/me/profile`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ bio: bio.trim(), coverStyle })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        onSaved(meResponseSchema.parse(json).data);
+        onClose();
+      })
+      .catch(() => {})
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="profil-edit-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="conversation-modal-header">
+          <strong>Modifier mon profil</strong>
+          <button type="button" className="text-btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        <div className="profil-edit-body">
+          <label className="profil-edit-label" htmlFor="profil-bio-input">
+            Bio
+          </label>
+          <textarea
+            id="profil-bio-input"
+            value={bio}
+            onChange={(event) => setBio(event.target.value)}
+            maxLength={280}
+            rows={3}
+            placeholder="Quelques mots sur toi…"
+          />
+          <span className="profil-edit-counter">{bio.length}/280</span>
+
+          <span className="profil-edit-label">Bannière</span>
+          <div className="profil-cover-picker">
+            {PROFILE_COVER_STYLES.map((style) => (
+              <button
+                type="button"
+                key={style}
+                className={`profil-cover-swatch ${coverStyle === style ? 'active' : ''}`}
+                style={{ background: PROFILE_COVER_GRADIENTS[style] }}
+                onClick={() => setCoverStyle(style)}
+                aria-label={style}
+              />
+            ))}
           </div>
-        ))}
+        </div>
+        <div className="profil-edit-footer">
+          <button type="button" className="btn-secondary" onClick={save} disabled={saving}>
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function ProfilHeader({
+  user,
+  friendsCount,
+  onEdit
+}: {
+  user: User;
+  friendsCount: number;
+  onEdit: () => void;
+}) {
+  const coverGradient =
+    PROFILE_COVER_GRADIENTS[user.coverStyle ?? DEFAULT_PROFILE_COVER] ??
+    PROFILE_COVER_GRADIENTS[DEFAULT_PROFILE_COVER];
+  return (
+    <div className="profil-header">
+      <div className="profil-cover" style={{ background: coverGradient }} />
+      <div className="profil-header-content">
+        <span className="profil-avatar">
+          {user.avatarUrl ? (
+            <img src={user.avatarUrl} alt="" />
+          ) : (
+            user.displayName.slice(0, 1).toUpperCase()
+          )}
+        </span>
+        <div className="profil-header-main">
+          <div className="profil-header-top">
+            <div>
+              <h1>{user.displayName}</h1>
+              <p className="profil-location">📍 Montréal, QC</p>
+              <p className="profil-member-since">Membre depuis {formatMemberSince(user.createdAt)}</p>
+            </div>
+            <button type="button" className="profil-edit-btn" onClick={onEdit}>
+              ✏️ Modifier mon profil
+            </button>
+          </div>
+          {user.bio && <p className="profil-bio">{user.bio}</p>}
+          <div className="profil-stats-row">
+            <span>
+              <strong>{friendsCount}</strong> Amis
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfilStatsCard({ authToken }: { authToken: string | undefined }) {
+  const { stats, state } = useProfileStats(authToken);
+  return (
+    <div className="profil-side-card">
+      <h3>Stats</h3>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger vos stats pour le moment.</p>
+      )}
+      {state === 'success' && stats && (
+        <div className="profil-stats-grid">
+          <div className="profil-stat-tile">
+            <strong>{stats.eventsAttended}</strong>
+            <span>Événements assistés</span>
+          </div>
+          <div className="profil-stat-tile">
+            <strong>{stats.venuesDiscovered}</strong>
+            <span>Lieux découverts</span>
+          </div>
+          <div className="profil-stat-tile">
+            <strong>{stats.groupsJoined}</strong>
+            <span>Groupes rejoints</span>
+          </div>
+          <div className="profil-stat-tile">
+            <strong>{stats.favoritesCount}</strong>
+            <span>Favoris</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Badges don't exist yet - the card keeps its place in the layout (matches
+// the reference mockup) but shows an honest "not built" state rather than
+// simulated badge data.
+function ProfilBadgesCard() {
+  return (
+    <div className="profil-side-card">
+      <h3>Badges</h3>
+      <div className="empty-state-card">
+        <span className="empty-state-icon" aria-hidden="true">
+          🏅
+        </span>
+        <p>Bientôt disponible</p>
+        <p>Les badges arrivent dans une prochaine mise à jour.</p>
+      </div>
+    </div>
+  );
+}
+
+// Pre-existing feature (Phase 1.3), just relocated from the old flat "Mon
+// compte" card into its own side card - a real aggregation of the account's
+// own favorites, not simulated data.
+function ProfilTrendsCard({ authToken }: { authToken: string | undefined }) {
+  const [trends, setTrends] = useState<TrendsResponse['data']>();
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+
+  useEffect(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/trends`, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setTrends(trendsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  const hasTrends =
+    trends && (trends.eventCategories.length > 0 || trends.venueCategories.length > 0);
+
+  return (
+    <div className="profil-side-card">
+      <h3>Vos tendances</h3>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger vos tendances pour le moment.</p>
+      )}
+      {state === 'success' && !hasTrends && (
+        <p className="list-view-empty">
+          Ajoutez des favoris pour voir vos tendances apparaître ici.
+        </p>
+      )}
+      {state === 'success' && hasTrends && trends && (
+        <div className="compte-trends-lists">
+          {trends.eventCategories.length > 0 && (
+            <div className="compte-trends-group">
+              <h4>Catégories d'événements</h4>
+              <ul>
+                {trends.eventCategories.map((entry) => (
+                  <li key={entry.category}>
+                    <span>{getCategoryLabel('fr', entry.category)}</span>
+                    <span className="compte-trends-count">{entry.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {trends.venueCategories.length > 0 && (
+            <div className="compte-trends-group">
+              <h4>Types de lieux</h4>
+              <ul>
+                {trends.venueCategories.map((entry) => (
+                  <li key={entry.category}>
+                    <span>{VENUE_CATEGORY_LABELS.fr[entry.category]}</span>
+                    <span className="compte-trends-count">{entry.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProfilAmisCard({
+  friends,
+  onOpenAmis
+}: {
+  friends: PublicUser[];
+  onOpenAmis: () => void;
+}) {
+  return (
+    <div className="profil-side-card">
+      <div className="profil-side-card-header">
+        <h3>Amis ({friends.length})</h3>
+        <button type="button" className="text-btn" onClick={onOpenAmis}>
+          Voir tous mes amis
+        </button>
+      </div>
+      {friends.length === 0 && <p className="list-view-empty">Aucun ami pour le moment.</p>}
+      {friends.length > 0 && (
+        <div className="profil-friends-avatars">
+          {friends.slice(0, 6).map((friend) => (
+            <span
+              className="friends-row-avatar friends-row-avatar-md"
+              key={friend.id}
+              title={friend.displayName}
+            >
+              {friend.avatarUrl ? (
+                <img src={friend.avatarUrl} alt="" />
+              ) : (
+                friend.displayName.slice(0, 1).toUpperCase()
+              )}
+            </span>
+          ))}
+          {friends.length > 6 && (
+            <span className="profil-friends-more">+{friends.length - 6}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProfilActivityRecentCard({
+  authToken,
+  onSeeAll
+}: {
+  authToken: string | undefined;
+  onSeeAll: () => void;
+}) {
+  const { activity, state } = useActivity(authToken, 4);
+  return (
+    <div className="profil-side-card">
+      <h3>Activité récente</h3>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger votre activité.</p>
+      )}
+      {state === 'success' && (
+        <ActivityList entries={activity} emptyMessage="Aucune activité pour le moment." />
+      )}
+      <button type="button" className="text-btn" onClick={onSeeAll}>
+        Voir toute mon activité
+      </button>
+    </div>
+  );
+}
+
+function ApercuTab({
+  attendance,
+  onOpenDetails,
+  locale,
+  onSeeMoreUpcoming,
+  onSeeMorePast
+}: {
+  attendance: Record<string, AttendanceVisibility>;
+  onOpenDetails: (eventId: string) => void;
+  locale: SupportedLocale;
+  onSeeMoreUpcoming: () => void;
+  onSeeMorePast: () => void;
+}) {
+  const upcoming = useAttendanceEvents(attendance, 'upcoming');
+  const past = useAttendanceEvents(attendance, 'past');
+  return (
+    <div className="profil-tab-content">
+      <div className="dashboard-home-section">
+        <div className="list-view-heading">
+          <h3>Événements à venir</h3>
+          {upcoming.events.length > 0 && (
+            <button type="button" className="text-btn" onClick={onSeeMoreUpcoming}>
+              Voir tout
+            </button>
+          )}
+        </div>
+        {upcoming.state === 'success' && upcoming.events.length === 0 && (
+          <p className="list-view-empty">Aucun événement à venir pour le moment.</p>
+        )}
+        <EventCarouselRow
+          events={upcoming.events.slice(0, 4)}
+          onOpenDetails={onOpenDetails}
+          locale={locale}
+        />
+      </div>
+      <div className="dashboard-home-section">
+        <div className="list-view-heading">
+          <h3>Mes événements passés</h3>
+          {past.events.length > 0 && (
+            <button type="button" className="text-btn" onClick={onSeeMorePast}>
+              Voir tout
+            </button>
+          )}
+        </div>
+        {past.state === 'success' && past.events.length === 0 && (
+          <p className="list-view-empty">Aucun événement passé pour le moment.</p>
+        )}
+        <EventCarouselRow
+          events={past.events.slice(0, 5)}
+          onOpenDetails={onOpenDetails}
+          locale={locale}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MesEvenementsTab({
+  attendance,
+  onOpenDetails,
+  locale
+}: {
+  attendance: Record<string, AttendanceVisibility>;
+  onOpenDetails: (eventId: string) => void;
+  locale: SupportedLocale;
+}) {
+  const { events, state } = useAttendanceEvents(attendance, 'upcoming');
+  return (
+    <div className="profil-tab-content">
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'success' && events.length === 0 && (
+        <p className="list-view-empty">Vous n'avez pas encore d'événement à venir.</p>
+      )}
+      <EventCarouselRow events={events} onOpenDetails={onOpenDetails} locale={locale} />
+    </div>
+  );
+}
+
+function ActiviteTab({ authToken }: { authToken: string | undefined }) {
+  const { activity, state } = useActivity(authToken, 50);
+  return (
+    <div className="profil-tab-content">
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger votre activité.</p>
+      )}
+      {state === 'success' && (
+        <ActivityList entries={activity} emptyMessage="Aucune activité pour le moment." />
+      )}
+    </div>
+  );
+}
+
+function ComingSoonTab({ icon, message }: { icon: string; message: string }) {
+  return (
+    <div className="empty-state-card">
+      <span className="empty-state-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <p>Bientôt disponible</p>
+      <p>{message}</p>
     </div>
   );
 }
@@ -4760,117 +5372,146 @@ function AttendanceEventsPage({
 function CompteSection({
   user,
   authToken,
-  favoritesCount,
-  favoriteVenuesCount,
-  onViewFavorites,
+  onUserUpdated,
   onLogout,
   locale,
-  onChangeLocale
+  onChangeLocale,
+  attendance,
+  favorites,
+  onToggleFavorite,
+  onOpenDetails,
+  favoriteVenueGroups,
+  favoriteVenues,
+  onToggleFavoriteVenue,
+  onSelectVenue,
+  onOpenAmis
 }: {
   user: User;
   authToken: string | undefined;
-  favoritesCount: number;
-  favoriteVenuesCount: number;
-  onViewFavorites: () => void;
+  onUserUpdated: (user: User) => void;
   onLogout: () => void;
   locale: SupportedLocale;
   onChangeLocale: (locale: SupportedLocale) => void;
+  attendance: Record<string, AttendanceVisibility>;
+  favorites: string[];
+  onToggleFavorite: (id: string) => void;
+  onOpenDetails: (id: string) => void;
+  favoriteVenueGroups: VenueGroup[];
+  favoriteVenues: string[];
+  onToggleFavoriteVenue: (id: string) => void;
+  onSelectVenue: (group: VenueGroup) => void;
+  onOpenAmis: () => void;
 }) {
-  const [trends, setTrends] = useState<TrendsResponse['data']>();
-  const [trendsState, setTrendsState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [tab, setTab] = useState<ProfilTab>('apercu');
+  const [editing, setEditing] = useState(false);
+  const [friends, setFriends] = useState<PublicUser[]>([]);
 
   useEffect(() => {
     if (!authToken) return;
-    setTrendsState('loading');
-    fetch(`${API_BASE_URL}/me/trends`, { headers: { authorization: `Bearer ${authToken}` } })
+    fetch(`${API_BASE_URL}/me/friends`, { headers: { authorization: `Bearer ${authToken}` } })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setTrends(trendsResponseSchema.parse(json).data);
-        setTrendsState('success');
-      })
-      .catch(() => setTrendsState('error'));
+      .then((json) => setFriends(friendsResponseSchema.parse(json).data))
+      .catch(() => {});
   }, [authToken]);
 
-  const hasTrends =
-    trends && (trends.eventCategories.length > 0 || trends.venueCategories.length > 0);
-
   return (
-    <section className="map-container-wrapper compte-section">
-      <div className="compte-profile">
-        <span className="compte-avatar">
-          {user.avatarUrl ? (
-            <img src={user.avatarUrl} alt="" />
-          ) : (
-            user.displayName.slice(0, 1).toUpperCase()
+    <section className="map-container-wrapper profil-page">
+      <ProfilHeader user={user} friendsCount={friends.length} onEdit={() => setEditing(true)} />
+
+      <div className="profil-body">
+        <div className="profil-main">
+          <nav className="profil-tabs">
+            {PROFIL_TABS.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={tab === item.id ? 'active' : ''}
+                onClick={() => setTab(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+
+          {tab === 'apercu' && (
+            <ApercuTab
+              attendance={attendance}
+              onOpenDetails={onOpenDetails}
+              locale={locale}
+              onSeeMoreUpcoming={() => setTab('mes-evenements')}
+              onSeeMorePast={() => setTab('mes-evenements')}
+            />
           )}
-        </span>
-        <div className="compte-profile-info">
-          <h2>{user.displayName}</h2>
-          <p>{user.email}</p>
+          {tab === 'mes-evenements' && (
+            <MesEvenementsTab attendance={attendance} onOpenDetails={onOpenDetails} locale={locale} />
+          )}
+          {tab === 'favoris' && (
+            <div className="profil-tab-content">
+              <FavorisSection
+                favorites={favorites}
+                onToggleFavorite={onToggleFavorite}
+                onOpenDetails={onOpenDetails}
+                favoriteVenueGroups={favoriteVenueGroups}
+                favoriteVenues={favoriteVenues}
+                onToggleFavoriteVenue={onToggleFavoriteVenue}
+                onSelectVenue={onSelectVenue}
+                locale={locale}
+              />
+            </div>
+          )}
+          {tab === 'groupes' && (
+            <div className="profil-tab-content">
+              <GroupsBlock authToken={authToken} />
+            </div>
+          )}
+          {tab === 'avis' && (
+            <ComingSoonTab
+              icon="⭐"
+              message="Les avis sur les lieux arrivent dans une prochaine mise à jour."
+            />
+          )}
+          {tab === 'photos' && (
+            <ComingSoonTab
+              icon="📷"
+              message="Le partage de photos arrive dans une prochaine mise à jour."
+            />
+          )}
+          {tab === 'badges' && (
+            <ComingSoonTab
+              icon="🏅"
+              message="Les badges arrivent dans une prochaine mise à jour."
+            />
+          )}
+          {tab === 'activite' && <ActiviteTab authToken={authToken} />}
         </div>
-        <button type="button" className="btn-secondary" onClick={onLogout}>
-          Se déconnecter
-        </button>
-      </div>
 
-      <div className="compte-block">
-        <h3>Vos favoris</h3>
-        <p>
-          {favoritesCount} événement{favoritesCount !== 1 ? 's' : ''} et {favoriteVenuesCount}{' '}
-          lieu{favoriteVenuesCount !== 1 ? 'x' : ''} sauvegardés.
-        </p>
-        <button type="button" className="text-btn" onClick={onViewFavorites}>
-          Voir mes favoris
-        </button>
-      </div>
-
-      <div className="compte-block">
-        <h3>Vos tendances</h3>
-        {trendsState === 'loading' && <p className="list-view-empty">Chargement…</p>}
-        {trendsState === 'error' && (
-          <p className="list-view-empty">Impossible de charger vos tendances pour le moment.</p>
-        )}
-        {trendsState === 'success' && !hasTrends && (
-          <p className="list-view-empty">
-            Ajoutez des favoris pour voir vos tendances apparaître ici.
-          </p>
-        )}
-        {trendsState === 'success' && hasTrends && trends && (
-          <div className="compte-trends-lists">
-            {trends.eventCategories.length > 0 && (
-              <div className="compte-trends-group">
-                <h4>Catégories d'événements</h4>
-                <ul>
-                  {trends.eventCategories.map((entry) => (
-                    <li key={entry.category}>
-                      <span>{getCategoryLabel('fr', entry.category)}</span>
-                      <span className="compte-trends-count">{entry.count}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {trends.venueCategories.length > 0 && (
-              <div className="compte-trends-group">
-                <h4>Types de lieux</h4>
-                <ul>
-                  {trends.venueCategories.map((entry) => (
-                    <li key={entry.category}>
-                      <span>{VENUE_CATEGORY_LABELS.fr[entry.category]}</span>
-                      <span className="compte-trends-count">{entry.count}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+        <div className="profil-side">
+          <ProfilStatsCard authToken={authToken} />
+          <ProfilBadgesCard />
+          <ProfilActivityRecentCard authToken={authToken} onSeeAll={() => setTab('activite')} />
+          <ProfilAmisCard friends={friends} onOpenAmis={onOpenAmis} />
+          <ProfilTrendsCard authToken={authToken} />
+          <div className="profil-side-card">
+            <h3>Paramètres</h3>
+            <div className="profil-settings-row">
+              <span>Langue</span>
+              <LanguageSelector locale={locale} onChange={onChangeLocale} />
+            </div>
+            <button type="button" className="btn-secondary" onClick={onLogout}>
+              Se déconnecter
+            </button>
           </div>
-        )}
+        </div>
       </div>
 
-      <div className="compte-block compte-block-language">
-        <h3>Langue</h3>
-        <LanguageSelector locale={locale} onChange={onChangeLocale} />
-      </div>
+      {editing && (
+        <EditProfileModal
+          user={user}
+          authToken={authToken}
+          onClose={() => setEditing(false)}
+          onSaved={onUserUpdated}
+        />
+      )}
     </section>
   );
 }

@@ -3,7 +3,8 @@ export { PostgresEventRepository, type EventRepository } from './repository.js';
 export {
   PostgresAuthRepository,
   type AuthRepository,
-  type GoogleProfile
+  type GoogleProfile,
+  type ProfileUpdate
 } from './auth-repository.js';
 export {
   PostgresFavoritesRepository,
@@ -55,6 +56,11 @@ export {
   type GroupPost,
   type GroupsRepository
 } from './groups-repository.js';
+export {
+  PostgresProfileRepository,
+  type ProfileRepository,
+  type ProfileStats
+} from './profile-repository.js';
 export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes

@@ -191,18 +191,81 @@ export const venueListResponseSchema = z.object({
   data: z.array(publicVenueSchema)
 });
 
-// The account itself - deliberately minimal for Phase 1 (compte + favoris +
-// tendances). No stored preferences beyond what's derived on demand from
-// favorites (see /me/trends) - nothing here is a profile field the user
-// didn't explicitly provide via their Google account.
+// The account itself. `bio`/`coverStyle` (Phase 4.7) are the only
+// user-authored profile fields - everything else is either provided by
+// Google or derived on demand (see /me/trends), never a stored preference
+// invented beyond what the user actually gave Pulso. `coverStyle` is a key
+// into a small fixed set of brand-gradient presets (see PROFILE_COVER_STYLES
+// on the web side), not a photo upload - Pulso doesn't store user images
+// beyond the Google avatar.
 export const userSchema = z.object({
   id: z.uuid(),
   email: z.email(),
   displayName: z.string().min(1),
-  avatarUrl: z.url().optional()
+  avatarUrl: z.url().optional(),
+  createdAt: z.iso.datetime(),
+  bio: z.string().max(280).optional(),
+  coverStyle: z.string().optional()
 });
 
 export const meResponseSchema = z.object({ data: userSchema });
+
+// Fixed set of brand-gradient banner presets for the profile page (Phase
+// 4.7) - never a photo upload, since Pulso stores no user images beyond the
+// Google avatar. Shared between contracts (validation) and the web app
+// (rendering each key to its actual gradient).
+export const PROFILE_COVER_STYLES = ['aurora', 'sunset', 'midnight', 'nebula'] as const;
+
+export const updateProfileRequestSchema = z.object({
+  bio: z.string().max(280).optional(),
+  coverStyle: z.enum(PROFILE_COVER_STYLES).optional()
+});
+
+// Real, derived counts only - deliberately not the mockup's "heures passées
+// en soirée"/"amis rencontrés" (no duration or in-person-confirmation data
+// exists anywhere in Pulso, and won't be invented to fill a stat tile).
+export const profileStatsResponseSchema = z.object({
+  data: z.object({
+    eventsAttended: z.number().int().min(0),
+    venuesDiscovered: z.number().int().min(0),
+    groupsJoined: z.number().int().min(0),
+    favoritesCount: z.number().int().min(0)
+  })
+});
+
+// A real, chronological account-activity feed - each entry is something the
+// user actually did (favorited/attended/joined), assembled from timestamps
+// that already existed in the database but were never surfaced together.
+// No "avis" (review) entry kind exists yet since reviews aren't built.
+export const activityEntrySchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('favorited_event'),
+    occurredAt: z.iso.datetime(),
+    eventId: z.uuid(),
+    eventTitle: z.string()
+  }),
+  z.object({
+    kind: z.literal('favorited_venue'),
+    occurredAt: z.iso.datetime(),
+    venueId: z.uuid(),
+    venueName: z.string()
+  }),
+  z.object({
+    kind: z.literal('attended_event'),
+    occurredAt: z.iso.datetime(),
+    eventId: z.uuid(),
+    eventTitle: z.string()
+  }),
+  z.object({
+    kind: z.literal('joined_group'),
+    occurredAt: z.iso.datetime(),
+    groupId: z.uuid(),
+    groupName: z.string()
+  })
+]);
+export const activityResponseSchema = z.object({
+  data: z.array(activityEntrySchema)
+});
 
 // PUT replaces the stored set with exactly the given ids - a plain
 // declarative write, so toggling a favorite on/off while signed in behaves
@@ -542,6 +605,10 @@ export type FavoriteVenuesResponse = z.infer<
 >;
 export type TrendsResponse = z.infer<typeof trendsResponseSchema>;
 export type PublicUser = z.infer<typeof publicUserSchema>;
+export type UpdateProfileRequest = z.infer<typeof updateProfileRequestSchema>;
+export type ProfileStatsResponse = z.infer<typeof profileStatsResponseSchema>;
+export type ActivityEntry = z.infer<typeof activityEntrySchema>;
+export type ActivityResponse = z.infer<typeof activityResponseSchema>;
 export type FriendCodeResponse = z.infer<typeof friendCodeResponseSchema>;
 export type SendFriendRequest = z.infer<typeof sendFriendRequestSchema>;
 export type FriendRequestEntry = z.infer<typeof friendRequestSchema>;

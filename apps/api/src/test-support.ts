@@ -13,6 +13,7 @@ import type {
   GroupsRepository,
   Message,
   MessagesRepository,
+  ProfileRepository,
   ReportsRepository,
   Trends,
   TrendsRepository
@@ -23,7 +24,8 @@ import type { GoogleAuthConfig } from './auth.js';
 export const testUser: User = {
   id: '00000000-0000-4000-8000-000000000009',
   email: 'test@example.com',
-  displayName: 'Test User'
+  displayName: 'Test User',
+  createdAt: '2024-01-01T00:00:00.000Z'
 };
 
 export const testGoogleConfig: GoogleAuthConfig = {
@@ -40,6 +42,7 @@ export function fakeAuthRepository(overrides: Partial<AuthRepository> = {}): Aut
     findUserBySessionToken: async (token: string) =>
       token === 'valid-token' ? testUser : undefined,
     deleteSession: async () => undefined,
+    updateProfile: async () => testUser,
     ...overrides
   };
 }
@@ -236,6 +239,21 @@ export function fakeGroupsRepository(
   };
 }
 
+export function fakeProfileRepository(
+  overrides: Partial<ProfileRepository> = {}
+): ProfileRepository {
+  return {
+    getStats: async () => ({
+      eventsAttended: 0,
+      venuesDiscovered: 0,
+      groupsJoined: 0,
+      favoritesCount: 0
+    }),
+    getRecentActivity: async () => [],
+    ...overrides
+  };
+}
+
 // Bundles all account-layer repositories (+ Google config) so every
 // buildApp(event, accountRepositories()) call in tests stays a one-liner
 // even as the account layer grows more repositories - override only the
@@ -251,6 +269,7 @@ export function accountRepositories(
     messagesRepository?: MessagesRepository;
     reportsRepository?: ReportsRepository;
     groupsRepository?: GroupsRepository;
+    profileRepository?: ProfileRepository;
   } = {}
 ) {
   return {
@@ -263,6 +282,7 @@ export function accountRepositories(
     messagesRepository: overrides.messagesRepository ?? fakeMessagesRepository(),
     reportsRepository: overrides.reportsRepository ?? fakeReportsRepository(),
     groupsRepository: overrides.groupsRepository ?? fakeGroupsRepository(),
+    profileRepository: overrides.profileRepository ?? fakeProfileRepository(),
     google: testGoogleConfig
   };
 }
