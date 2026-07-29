@@ -171,11 +171,12 @@ function buildEventbriteConnectors(): IngestionConnector[] {
     return [];
   }
   // Billed per result ($0.02/event on the free tier) - runs on its own
-  // dedicated job/cadence (see .github/workflows/ingest.yml), never folded
-  // into the twice-daily default events run. Trial: daily while validating
-  // relevance/cost; createEventbriteConnector() defaults to an explicit
-  // today->+7-days window since the actor's own default (dates left blank)
-  // verified live to return almost only same-day events.
+  // dedicated job/cadence (see .github/workflows/ingest.yml: Tue/Thu/Sat,
+  // ~12-13x/month), never folded into the twice-daily default events run.
+  // Kept deliberately light to leave Apify budget for the upcoming
+  // Instagram scraper workstream. createEventbriteConnector() defaults to
+  // an explicit today->+7-days window since the actor's own default (dates
+  // left blank) verified live to return almost only same-day events.
   return [createEventbriteConnector()];
 }
 

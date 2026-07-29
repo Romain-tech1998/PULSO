@@ -6,13 +6,14 @@ on:
     - cron: '0 10,20 * * *'
     # Run at 00:00 every Monday (Venues)
     - cron: '0 0 * * 1'
-    # Run at 01:00 every day (Eventbrite - billed per result, kept on its
-    # own job so it never runs alongside the free connectors in the
-    # twice-daily events job). Trial period: daily while validating
-    # relevance/coverage, since a weekly cadence with this actor's
-    # unreliable default date window missed most of the week - see
-    # DATA-0003. Revisit cadence and cost once real signal exists.
-    - cron: '0 1 * * *'
+    # Run at 01:00 on Tuesday, Thursday, and Saturday (Eventbrite - billed
+    # per result, kept on its own job so it never runs alongside the free
+    # connectors in the twice-daily events job). ~12-13 runs/month at this
+    # cadence (not a strict 10/month cap - cron can't enforce a monthly
+    # count natively), chosen to leave Apify budget for the upcoming
+    # Instagram scraper workstream. Revisit cadence/cost once real signal
+    # exists - see DATA-0003.
+    - cron: '0 1 * * 2,4,6'
   workflow_dispatch:
     inputs:
       job_type:
@@ -83,7 +84,7 @@ jobs:
   ingest-eventbrite:
     name: Run Eventbrite Ingestion
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 1 * * *' || github.event.inputs.job_type == 'eventbrite'
+    if: github.event_name == 'schedule' && github.event.schedule == '0 1 * * 2,4,6' || github.event.inputs.job_type == 'eventbrite'
 
     steps:
       - name: Check out repository
