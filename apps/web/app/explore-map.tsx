@@ -241,11 +241,12 @@ type DetailsState =
   | { kind: 'success'; event: PublicEvent }
   | { kind: 'error'; eventId: string };
 
-// Phase 4.8: 'about'/'participants'/'forum' became 'evenement' (about +
-// participants merged - both describe the event itself)/'membres' (new -
-// distinct forum authors)/'discussion' (unchanged forum content)/'fichiers'
-// (new, empty - no file storage exists)/'apropos' (new, static forum rules).
-type EventDetailsTab = 'evenement' | 'membres' | 'discussion' | 'fichiers' | 'apropos';
+// Phase 4.8 first tried 5 tabs (Événement/Membres/Discussion/Fichiers/À
+// propos); live feedback against the actual reference mockup said 3 is
+// right (matches the mockup exactly) and the extra ones didn't read as
+// meaningful - reverted back to the original 3, with the forum member list
+// folded inline into the Forum tab instead of living as its own tab.
+type EventDetailsTab = 'about' | 'participants' | 'forum';
 
 interface ActiveSearch {
   query: string;
@@ -2155,11 +2156,11 @@ export function ExploreMap({
       ) : user && section === 'forums' ? (
         <ActiveForumsPage
           authToken={authToken}
-          onOpenDetails={(eventId) => openDetails(eventId, { initialTab: 'discussion' })}
+          onOpenDetails={(eventId) => openDetails(eventId, { initialTab: 'forum' })}
           locale={locale}
         />
       ) : user && section === 'groupes' ? (
-        <GroupsPage authToken={authToken} />
+        <GroupsPage authToken={authToken} userId={user.id} />
       ) : user && section === 'messages' ? (
         <MessagesPage authToken={authToken} />
       ) : user && section === 'amis' ? (
@@ -4277,6 +4278,7 @@ function Sidebar({
         <GroupModal
           group={openGroup}
           authToken={authToken}
+          userId={user.id}
           onClose={() => setOpenGroup(undefined)}
           onLeft={() => {
             setOpenGroup(undefined);
@@ -4694,11 +4696,17 @@ function ActiveForumsPage({
 
 // Full-page home for "Mes groupes" (Sidebar nav item) - wraps the same
 // GroupsBlock built in Phase 4.3 rather than duplicating its logic.
-function GroupsPage({ authToken }: { authToken: string | undefined }) {
+function GroupsPage({
+  authToken,
+  userId
+}: {
+  authToken: string | undefined;
+  userId: string;
+}) {
   return (
     <div className="dashboard-home">
       <h1>Mes groupes</h1>
-      <GroupsBlock authToken={authToken} />
+      <GroupsBlock authToken={authToken} userId={userId} />
     </div>
   );
 }
@@ -5639,7 +5647,7 @@ function CompteSection({
           )}
           {tab === 'groupes' && (
             <div className="profil-tab-content">
-              <GroupsBlock authToken={authToken} />
+              <GroupsBlock authToken={authToken} userId={user.id} />
             </div>
           )}
           {tab === 'avis' && (
@@ -6075,7 +6083,13 @@ function ConversationModal({
 // Own block for the same reason as FriendsBlock above: its own
 // fetch/mutate cycle, only renders once signed in. Group membership here
 // is always self-service (DEC-0013) - no invite/approval step to model.
-function GroupsBlock({ authToken }: { authToken: string | undefined }) {
+function GroupsBlock({
+  authToken,
+  userId
+}: {
+  authToken: string | undefined;
+  userId: string;
+}) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>('loading');
   const [name, setName] = useState('');
@@ -6172,6 +6186,7 @@ function GroupsBlock({ authToken }: { authToken: string | undefined }) {
         <GroupModal
           group={openGroup}
           authToken={authToken}
+          userId={userId}
           onClose={() => setOpenGroup(undefined)}
           onLeft={() => {
             setOpenGroup(undefined);
@@ -6186,11 +6201,13 @@ function GroupsBlock({ authToken }: { authToken: string | undefined }) {
 function GroupModal({
   group,
   authToken,
+  userId,
   onClose,
   onLeft
 }: {
   group: Group;
   authToken: string | undefined;
+  userId: string;
   onClose: () => void;
   onLeft: () => void;
 }) {
@@ -6291,15 +6308,22 @@ function GroupModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="conversation-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="conversation-modal-header">
-          <strong>{group.name}</strong>
-          <button type="button" className="text-btn" onClick={leaveGroup}>
-            Quitter
-          </button>
-          <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
-          </button>
+      <div className="group-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="group-modal-header">
+          <div className="group-modal-header-info">
+            <strong>{group.name}</strong>
+            <span>
+              {group.memberCount} membre{group.memberCount !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="group-modal-header-actions">
+            <button type="button" className="text-btn" onClick={leaveGroup}>
+              Quitter
+            </button>
+            <button type="button" className="text-btn" onClick={onClose}>
+              Fermer
+            </button>
+          </div>
         </div>
         {group.description && <p className="forum-disclaimer">{group.description}</p>}
 
@@ -6316,6 +6340,7 @@ function GroupModal({
               <GroupPostRow
                 key={post.id}
                 post={post}
+                userId={userId}
                 authToken={authToken}
                 onLike={toggleLike}
                 onDelete={removePost}
@@ -6357,6 +6382,7 @@ function GroupModal({
 
 function GroupPostRow({
   post,
+  userId,
   authToken,
   onLike,
   onDelete,
@@ -6369,6 +6395,7 @@ function GroupPostRow({
   posting
 }: {
   post: GroupPost;
+  userId: string;
   authToken: string | undefined;
   onLike: (post: GroupPost) => void;
   onDelete: (postId: string) => void;
@@ -6392,9 +6419,19 @@ function GroupPostRow({
       <div className="forum-post-body">
         <div className="forum-post-meta">
           <strong>{post.author.displayName}</strong>
-          <button type="button" className="text-btn" onClick={() => onDelete(post.id)}>
-            Supprimer
-          </button>
+          {post.author.id === userId ? (
+            <button type="button" className="text-btn" onClick={() => onDelete(post.id)}>
+              Supprimer
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="text-btn"
+              onClick={() => reportContent(authToken, 'group_post', post.id)}
+            >
+              Signaler
+            </button>
+          )}
         </div>
         <p>{post.body}</p>
         <div className="forum-post-actions">
@@ -6427,9 +6464,19 @@ function GroupPostRow({
                 <div className="forum-post-body">
                   <div className="forum-post-meta">
                     <strong>{reply.author.displayName}</strong>
-                    <button type="button" className="text-btn" onClick={() => onDelete(reply.id)}>
-                      Supprimer
-                    </button>
+                    {reply.author.id === userId ? (
+                      <button type="button" className="text-btn" onClick={() => onDelete(reply.id)}>
+                        Supprimer
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="text-btn"
+                        onClick={() => reportContent(authToken, 'group_post', reply.id)}
+                      >
+                        Signaler
+                      </button>
+                    )}
                   </div>
                   <p>{reply.body}</p>
                   <button
@@ -7189,13 +7236,13 @@ function EventDetails({
   onClearAttendance: () => void;
   initialTab: EventDetailsTab | undefined;
 }) {
-  const [tab, setTab] = useState<EventDetailsTab>(initialTab ?? 'evenement');
+  const [tab, setTab] = useState<EventDetailsTab>(initialTab ?? 'about');
   // EventDetails stays mounted across different events (see rightPanelMount)
   // rather than remounting per open, so the tab has to be reset explicitly
   // whenever a new event is opened - a plain useState initializer alone
   // would only apply on the very first mount.
   useEffect(() => {
-    setTab(initialTab ?? 'evenement');
+    setTab(initialTab ?? 'about');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event.id, initialTab]);
   const [meetupGroup, setMeetupGroup] = useState<Group>();
@@ -7261,41 +7308,6 @@ function EventDetails({
       className="event-details-content"
       aria-label={translate(locale, 'details.label')}
     >
-      <div className="details-header-actions">
-        <button type="button" className="back-button" onClick={onBack}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-          Retour
-        </button>
-        <div>
-          <button
-            type="button"
-            className="share-button"
-            onClick={onShare}
-            style={{ marginRight: '12px' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="18" cy="5" r="3"/>
-              <circle cx="6" cy="12" r="3"/>
-              <circle cx="18" cy="19" r="3"/>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-            </svg>
-            {translate(locale, 'details.share')}
-          </button>
-          <button
-            type="button"
-            className="favorite-button"
-            aria-pressed={isFavorite}
-            aria-label={translate(
-              locale,
-              isFavorite ? 'favorites.remove' : 'favorites.add'
-            )}
-            onClick={onToggleFavorite}
-          >
-            <HeartIcon filled={isFavorite} />
-          </button>
-        </div>
-      </div>
       <div
         className="details-hero"
         style={
@@ -7308,6 +7320,36 @@ function EventDetails({
             : undefined
         }
       >
+        <div className="details-hero-actions">
+          <button type="button" className="back-button" onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            Retour
+          </button>
+          <div className="details-hero-actions-right">
+            <button type="button" className="share-button" onClick={onShare}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="18" cy="5" r="3"/>
+                <circle cx="6" cy="12" r="3"/>
+                <circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              {translate(locale, 'details.share')}
+            </button>
+            <button
+              type="button"
+              className="favorite-button"
+              aria-pressed={isFavorite}
+              aria-label={translate(
+                locale,
+                isFavorite ? 'favorites.remove' : 'favorites.add'
+              )}
+              onClick={onToggleFavorite}
+            >
+              <HeartIcon filled={isFavorite} />
+            </button>
+          </div>
+        </div>
         <div className="details-badge">{presentation.category}</div>
         <h2 ref={headingRef} tabIndex={-1} className="details-title">
           {event.title}
@@ -7331,28 +7373,22 @@ function EventDetails({
       )}
 
       <div className="details-tabs">
-        <button type="button" className={tab === 'evenement' ? 'active' : ''} onClick={() => setTab('evenement')}>
-          Événement
+        <button type="button" className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>
+          À propos
         </button>
         <button
           type="button"
-          className={tab === 'membres' ? 'active' : ''}
-          onClick={() => setTab('membres')}
+          className={tab === 'participants' ? 'active' : ''}
+          onClick={() => setTab('participants')}
         >
-          Membres
+          Participants
         </button>
-        <button type="button" className={tab === 'discussion' ? 'active' : ''} onClick={() => setTab('discussion')}>
-          Discussion
-        </button>
-        <button type="button" className={tab === 'fichiers' ? 'active' : ''} onClick={() => setTab('fichiers')}>
-          Fichiers
-        </button>
-        <button type="button" className={tab === 'apropos' ? 'active' : ''} onClick={() => setTab('apropos')}>
-          À propos
+        <button type="button" className={tab === 'forum' ? 'active' : ''} onClick={() => setTab('forum')}>
+          Forum
         </button>
       </div>
 
-      {tab === 'evenement' && (
+      {tab === 'about' && (
         <>
           <div className="details-info-list">
             <div className="info-item">
@@ -7413,80 +7449,69 @@ function EventDetails({
               </button>
             )}
           </div>
-
-          <div className="details-section">
-            {!user ? (
-              <SignInPrompt
-                message="Connectez-vous pour voir qui de vos amis participe et indiquer votre propre présence."
-                onLogin={onLogin}
-              />
-            ) : (
-              <>
-                <div className="attendance-row">
-                  <button
-                    type="button"
-                    className={`secondary-action-btn ${attendanceVisibility ? 'active' : ''}`}
-                    onClick={() =>
-                      attendanceVisibility ? onClearAttendance() : onSetAttendance('private')
-                    }
-                  >
-                    {attendanceVisibility ? 'Vous y allez' : "J'y vais"}
-                  </button>
-                  {attendanceVisibility && (
-                    <select
-                      className="attendance-visibility-select"
-                      value={attendanceVisibility}
-                      onChange={(changeEvent) =>
-                        onSetAttendance(changeEvent.target.value as AttendanceVisibility)
-                      }
-                      aria-label="Visibilité de votre participation"
-                    >
-                      <option value="private">Visible par vous seul</option>
-                      <option value="friends">Visible par vos amis</option>
-                    </select>
-                  )}
-                </div>
-                {friendsAttending.length > 0 ? (
-                  <div className="attendance-friends">
-                    {friendsAttending.map((attendee) => (
-                      <span className="attendance-friend" key={attendee.id}>
-                        <span className="friends-row-avatar">
-                          {attendee.avatarUrl ? (
-                            <img src={attendee.avatarUrl} alt="" />
-                          ) : (
-                            attendee.displayName.slice(0, 1).toUpperCase()
-                          )}
-                        </span>
-                        {attendee.displayName}
-                      </span>
-                    ))}
-                    <span className="attendance-friends-label">
-                      {friendsAttending.length === 1 ? 'y va aussi' : 'y vont aussi'}
-                    </span>
-                  </div>
-                ) : (
-                  <p className="list-view-empty">Aucun de vos amis n'a indiqué y participer.</p>
-                )}
-              </>
-            )}
-          </div>
         </>
       )}
 
-      {tab === 'membres' && (
+      {tab === 'participants' && (
         <div className="details-section">
           {!user ? (
             <SignInPrompt
-              message="Connectez-vous pour voir qui participe à la discussion de cet événement."
+              message="Connectez-vous pour voir qui de vos amis participe et indiquer votre propre présence."
               onLogin={onLogin}
             />
           ) : (
-            <ForumMembersTab eventId={event.id} authToken={authToken} />
+            <>
+              <div className="attendance-row">
+                <button
+                  type="button"
+                  className={`secondary-action-btn ${attendanceVisibility ? 'active' : ''}`}
+                  onClick={() =>
+                    attendanceVisibility ? onClearAttendance() : onSetAttendance('private')
+                  }
+                >
+                  {attendanceVisibility ? 'Vous y allez' : "J'y vais"}
+                </button>
+                {attendanceVisibility && (
+                  <select
+                    className="attendance-visibility-select"
+                    value={attendanceVisibility}
+                    onChange={(changeEvent) =>
+                      onSetAttendance(changeEvent.target.value as AttendanceVisibility)
+                    }
+                    aria-label="Visibilité de votre participation"
+                  >
+                    <option value="private">Visible par vous seul</option>
+                    <option value="friends">Visible par vos amis</option>
+                  </select>
+                )}
+              </div>
+              {friendsAttending.length > 0 ? (
+                <div className="attendance-friends">
+                  {friendsAttending.map((attendee) => (
+                    <span className="attendance-friend" key={attendee.id}>
+                      <span className="friends-row-avatar">
+                        {attendee.avatarUrl ? (
+                          <img src={attendee.avatarUrl} alt="" />
+                        ) : (
+                          attendee.displayName.slice(0, 1).toUpperCase()
+                        )}
+                      </span>
+                      {attendee.displayName}
+                    </span>
+                  ))}
+                  <span className="attendance-friends-label">
+                    {friendsAttending.length === 1 ? 'y va aussi' : 'y vont aussi'}
+                  </span>
+                </div>
+              ) : (
+                <p className="list-view-empty">Aucun de vos amis n'a indiqué y participer.</p>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {tab === 'discussion' && (
+      {tab === 'forum' && (
         <div className="details-section">
           {!user ? (
             <SignInPrompt
@@ -7499,92 +7524,16 @@ function EventDetails({
         </div>
       )}
 
-      {tab === 'fichiers' && (
-        <div className="details-section">
-          <ComingSoonTab
-            icon="📎"
-            message="Le partage de fichiers arrive dans une prochaine mise à jour."
-          />
-        </div>
-      )}
-
-      {tab === 'apropos' && (
-        <div className="details-section">
-          <p className="details-description">
-            Cette discussion accompagne l'événement « {event.title} ». Reste courtois·e : un seul
-            message n'est pas modifiable après publication, seulement supprimable par son auteur.
-            La revente de billets entre participants reste entièrement pair-à-pair — Pulso n'y est
-            jamais partie prenante.
-          </p>
-        </div>
-      )}
-
-      {meetupGroup && (
+      {meetupGroup && user && (
         <GroupModal
           group={meetupGroup}
           authToken={authToken}
+          userId={user.id}
           onClose={() => setMeetupGroup(undefined)}
           onLeft={() => setMeetupGroup(undefined)}
         />
       )}
     </div>
-  );
-}
-
-// Distinct authors across an event's forum (Phase 4.8's "Membres" tab) -
-// real, derived from actual posts, never a membership list.
-function ForumMembersTab({
-  eventId,
-  authToken
-}: {
-  eventId: string;
-  authToken: string | undefined;
-}) {
-  const [members, setMembers] = useState<PublicUser[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
-
-  useEffect(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/events/${eventId}/forum/members`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setMembers(forumMembersResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken, eventId]);
-
-  return (
-    <>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger les membres pour le moment.</p>
-      )}
-      {state === 'success' && members.length === 0 && (
-        <p className="list-view-empty">
-          Personne n'a encore écrit ici. Lance la discussion dans l'onglet Discussion !
-        </p>
-      )}
-      {state === 'success' && members.length > 0 && (
-        <div className="forum-members-list">
-          {members.map((member) => (
-            <div className="friends-row" key={member.id}>
-              <span className="friends-row-avatar">
-                {member.avatarUrl ? (
-                  <img src={member.avatarUrl} alt="" />
-                ) : (
-                  member.displayName.slice(0, 1).toUpperCase()
-                )}
-              </span>
-              <span className="friends-row-name">{member.displayName}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </>
   );
 }
 
@@ -7622,6 +7571,20 @@ function EventForum({
   const [posting, setPosting] = useState(false);
   const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  // Real, derived from actual posts - never a membership list (no join
+  // concept exists, DEC-0012 unchanged). Shown inline at the top of the
+  // forum rather than as its own tab, matching the reference mockup.
+  const [members, setMembers] = useState<PublicUser[]>([]);
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/events/${eventId}/forum/members`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setMembers(forumMembersResponseSchema.parse(json).data))
+      .catch(() => {});
+  }, [authToken, eventId]);
 
   const refresh = useCallback(() => {
     if (!authToken) return;
@@ -7707,6 +7670,25 @@ function EventForum({
 
   return (
     <div className="event-forum">
+      {members.length > 0 && (
+        <div className="forum-members-row">
+          <div className="forum-members-avatars">
+            {members.slice(0, 8).map((member) => (
+              <span className="friends-row-avatar" key={member.id} title={member.displayName}>
+                {member.avatarUrl ? (
+                  <img src={member.avatarUrl} alt="" />
+                ) : (
+                  member.displayName.slice(0, 1).toUpperCase()
+                )}
+              </span>
+            ))}
+          </div>
+          <span className="forum-members-count">
+            {members.length} membre{members.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
+
       <div className="forum-tabs">
         {FORUM_CATEGORIES.map((option) => (
           <button

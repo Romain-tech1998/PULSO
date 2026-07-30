@@ -246,16 +246,26 @@ export class PostgresForumRepository implements ForumRepository {
       post_count: string;
       member_count: string;
     }>(
-      `SELECT event_id, body, created_at, post_count, member_count
+      // COUNT(DISTINCT ...) isn't allowed inside a window function in
+      // Postgres, so member_count/post_count are a plain GROUP BY here
+      // (regular aggregates support DISTINCT fine) and the latest post's
+      // body/created_at come from a separate LATERAL join instead of
+      // window-functioning the whole thing in one pass like
+      // getRecentActivityForEvents above does.
+      `SELECT s.event_id, s.post_count, s.member_count, latest.body, latest.created_at
        FROM (
-         SELECT event_id, body, created_at,
-                COUNT(*) OVER (PARTITION BY event_id) AS post_count,
-                COUNT(DISTINCT author_id) OVER (PARTITION BY event_id) AS member_count,
-                ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY created_at DESC) AS rn
+         SELECT event_id, COUNT(*) AS post_count, COUNT(DISTINCT author_id) AS member_count
          FROM forum_posts
          WHERE event_id = ANY($1::uuid[])
-       ) latest
-       WHERE rn = 1`,
+         GROUP BY event_id
+       ) s
+       JOIN LATERAL (
+         SELECT body, created_at
+         FROM forum_posts p
+         WHERE p.event_id = s.event_id
+         ORDER BY created_at DESC
+         LIMIT 1
+       ) latest ON true`,
       [eventIds]
     );
     const stats = new Map<string, ForumStats>();

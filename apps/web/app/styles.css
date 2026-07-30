@@ -2377,46 +2377,68 @@ h6 {
   flex-direction: column;
 }
 
-.details-header-actions {
+/* Back/share/favorite now overlay the hero image itself (Phase 4.8 live
+   feedback: "l'image devrait se glisser jusqu'en haut du panel... sous le
+   fermer/partager") rather than sitting in a separate row above it with a
+   gap - each gets its own scrim background so it stays legible regardless
+   of how bright the image underneath is. */
+.details-hero-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.25rem;
-  flex-shrink: 0;
+  margin-bottom: 1rem;
 }
-.details-header-actions .back-button {
+.details-hero-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.back-button {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  color: var(--text-secondary);
+  padding: 0.4rem 0.85rem 0.4rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  color: #fff;
   font-weight: 600;
+  font-size: 0.85rem;
+  transition: background 0.2s;
 }
-.details-header-actions .back-button:hover {
-  color: var(--text-primary);
-}
-.details-header-actions > div {
-  display: flex;
-  align-items: center;
+.back-button:hover {
+  background: rgba(0, 0, 0, 0.6);
 }
 .share-button {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font-size: 0.85rem;
+  transition: background 0.2s;
 }
 .share-button:hover {
-  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.6);
 }
 .favorite-button {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--surface-base);
-  border: 1px solid var(--brand-border);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  border: none;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background 0.2s;
+}
+.favorite-button:hover {
+  background: rgba(0, 0, 0, 0.6);
 }
 
 .details-badge {
@@ -2445,18 +2467,13 @@ h6 {
   gap: 0.25rem;
   padding: 0 1.25rem;
   border-bottom: 1px solid var(--brand-border);
-  /* 5 tabs since Phase 4.8 (was 3) - scrolls horizontally on narrow panels
-     instead of wrapping/overflowing. */
-  overflow-x: auto;
 }
 .details-tabs button {
-  padding: 0.85rem 0.85rem;
+  padding: 0.85rem 1rem;
   color: var(--text-secondary);
   font-weight: 600;
   font-size: 0.9rem;
   position: relative;
-  flex-shrink: 0;
-  white-space: nowrap;
 }
 .details-tabs button:hover {
   color: var(--text-primary);
@@ -2659,6 +2676,28 @@ h6 {
   margin-top: 0.5rem;
 }
 
+/* Real member avatar row at the top of the forum (Phase 4.8) - matches the
+   reference mockup's avatar strip, but with an honest count instead of a
+   fabricated "N en ligne" (no presence infra exists anywhere in Pulso). */
+.forum-members-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+.forum-members-avatars {
+  display: flex;
+}
+.forum-members-avatars .friends-row-avatar {
+  margin-right: -10px;
+  border: 2px solid var(--surface-base);
+}
+.forum-members-count {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 .forum-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -2832,6 +2871,69 @@ h6 {
   align-items: center;
   gap: 0.6rem;
   min-width: 0;
+}
+
+/* Group discussion modal (Groups + Phase 4.8's "Rencontrer avant
+   l'événement") - its own sizing/header rather than reusing
+   .conversation-modal as-is: that one was tuned for a 1:1 chat with a
+   short name, and a group name plus "Quitter"/"Fermer" both fighting for
+   the same row wrapped badly once names got longer (e.g. "Rencontre –
+   <event title>"). */
+.group-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: 80vh;
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  border-radius: 1rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+.group-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--brand-border);
+}
+.group-modal-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.group-modal-header-info strong {
+  color: var(--text-primary);
+  font-size: 1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-modal-header-info span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.group-modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+.group-modal-header-actions .text-btn {
+  margin-top: 0;
+  white-space: nowrap;
+}
+.group-modal .forum-posts {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+}
+.group-modal .forum-composer {
+  padding: 0.9rem 1.25rem;
+  border-top: 1px solid var(--brand-border);
 }
 .conversation-messages {
   flex: 1;

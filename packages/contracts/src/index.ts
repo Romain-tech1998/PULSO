@@ -974,12 +974,21 @@ export function presentEvent(
             : event.trust.locationConfidence === 'uncertain'
               ? translate(locale, 'event.warning.location')
               : undefined;
-  // Always the generic "See tickets" wording regardless of destination kind
-  // - the connector-provided label (e.g. an internal scraper/tool name) is
-  // never appropriate to show verbatim to an end user.
+  // Always one of two fixed, generic labels - never the connector-provided
+  // one (e.g. an internal scraper/tool name), which is never appropriate to
+  // show verbatim to an end user. Which of the two depends on
+  // externalDestination.kind: 'ticketing' really does sell/reserve a spot
+  // (Ticketmaster, etc.), while 'event_source' is just the organizer's own
+  // info page (most Ville de Montréal listings) - "Voir les billets" would
+  // overpromise a checkout flow that isn't there.
   const externalAvailable =
     event.status !== 'cancelled' && event.externalDestination?.status === 'available'
-      ? translate(locale, 'event.external.viewTickets')
+      ? translate(
+          locale,
+          event.externalDestination.kind === 'ticketing'
+            ? 'event.external.viewTickets'
+            : 'event.external.moreInfo'
+        )
       : undefined;
 
   return {
