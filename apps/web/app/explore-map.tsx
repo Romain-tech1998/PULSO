@@ -9,6 +9,7 @@ import {
   conversationsResponseSchema,
   DATE_FILTER_OPTIONS,
   discoverForumsResponseSchema,
+  discoverGroupsResponseSchema,
   eventDetailsResponseSchema,
   eventListResponseSchema,
   eventPhotoResponseSchema,
@@ -22,8 +23,13 @@ import {
   friendRequestsResponseSchema,
   friendsAttendingResponseSchema,
   friendsResponseSchema,
+  groupAttendanceSummarySchema,
+  groupChecklistItemsResponseSchema,
+  groupJoinRequestsResponseSchema,
+  groupMembersResponseSchema,
   groupPostsResponseSchema,
   groupResponseSchema,
+  groupScheduleItemsResponseSchema,
   groupsResponseSchema,
   intelligentSearchResponseSchema,
   meResponseSchema,
@@ -38,7 +44,9 @@ import {
   venueListResponseSchema,
   type ActiveForum,
   type ActivityEntry,
+  type AttendanceResponse,
   type DiscoverForumEntry,
+  type DiscoverGroupEntry,
   type AttendanceVisibility,
   type ConversationSummary,
   type EventPhoto,
@@ -46,7 +54,12 @@ import {
   type ForumPost,
   type FriendRequestEntry,
   type Group,
+  type GroupAttendanceSummary,
+  type GroupChecklistItem,
+  type GroupMeetupVenue,
   type GroupPost,
+  type GroupScheduleItem,
+  type GroupVisibility,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
   type Message,
@@ -2418,7 +2431,13 @@ export function ExploreMap({
         ) : user && section === 'groupes' ? (
           <GroupsPage authToken={authToken} userId={user.id} />
         ) : user && section === 'messages' ? (
-          <MessagesPage authToken={authToken} user={user} />
+          <MessagesPage
+            authToken={authToken}
+            user={user}
+            onOpenEventForum={(eventId) =>
+              void openDetails(eventId, { asForumPanel: true })
+            }
+          />
         ) : user && section === 'amis' ? (
           <AmisPage authToken={authToken} />
         ) : user && section === 'mes-evenements' ? (
@@ -5448,10 +5467,12 @@ type MessagesTab = 'discussions' | 'demandes' | 'groupes';
 // en ligne" earlier).
 function MessagesPage({
   authToken,
-  user
+  user,
+  onOpenEventForum
 }: {
   authToken: string | undefined;
   user: User;
+  onOpenEventForum: (eventId: string) => void;
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
@@ -5460,6 +5481,7 @@ function MessagesPage({
   const [tab, setTab] = useState<MessagesTab>('discussions');
   const [query, setQuery] = useState('');
   const [selectedFriend, setSelectedFriend] = useState<PublicUser>();
+  const [selectedGroup, setSelectedGroup] = useState<Group>();
   const [composeOpen, setComposeOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -5577,7 +5599,10 @@ function MessagesPage({
                   type="button"
                   className={`conversation-list-row ${conversation.unreadCount > 0 ? 'unread' : ''} ${selectedFriend?.id === conversation.friend.id ? 'selected' : ''}`}
                   key={conversation.friend.id}
-                  onClick={() => setSelectedFriend(conversation.friend)}
+                  onClick={() => {
+                    setSelectedGroup(undefined);
+                    setSelectedFriend(conversation.friend);
+                  }}
                 >
                   <span className="friends-row-avatar friends-row-avatar-lg">
                     {conversation.friend.avatarUrl ? (
@@ -5620,7 +5645,14 @@ function MessagesPage({
         )}
 
         {tab === 'groupes' && (
-          <MessagesGroupsTab authToken={authToken} userId={user.id} />
+          <MessagesGroupsTab
+            authToken={authToken}
+            selectedGroupId={selectedGroup?.id}
+            onSelectGroup={(group) => {
+              setSelectedFriend(undefined);
+              setSelectedGroup(group);
+            }}
+          />
         )}
       </div>
 
@@ -5631,12 +5663,20 @@ function MessagesPage({
             authToken={authToken}
             onActivity={refresh}
           />
+        ) : selectedGroup ? (
+          <GroupDetailContent
+            group={selectedGroup}
+            authToken={authToken}
+            userId={user.id}
+            onGroupUpdated={setSelectedGroup}
+            onOpenEventForum={onOpenEventForum}
+          />
         ) : (
           <div className="messages-empty-pane">
             <span className="empty-state-icon" aria-hidden="true">
               💬
             </span>
-            <p>Sélectionne une discussion pour l'ouvrir ici.</p>
+            <p>Sélectionne une discussion ou un groupe pour l'ouvrir ici.</p>
           </div>
         )}
       </div>
@@ -5646,6 +5686,7 @@ function MessagesPage({
           authToken={authToken}
           existingFriendIds={existingFriendIds}
           onSelect={(friend) => {
+            setSelectedGroup(undefined);
             setSelectedFriend(friend);
             setComposeOpen(false);
           }}
@@ -5816,80 +5857,155 @@ function MessagesRequestsTab({
 // "Groupes" tab - same real data as GroupsBlock (GET /me/groups), just a
 // second, convenient entry point into the same GroupModal rather than a
 // separate group-messaging concept.
+type GroupsSubTab = 'mine' | 'event' | 'discover';
+
+// Groupes tab inside Messages (Phase 4.10) - three sub-tabs matching the
+// mockup: "Mes groupes" (already-joined), "Groupes de l'événement" (every
+// event-linked group, joined or not) and "Découvrir" (the permanent-group
+// directory DEC-0013 v1.1 pre-authorized). Selecting a row opens the real
+// group inline in the right column via onSelectGroup, same pattern as
+// picking a conversation.
 function MessagesGroupsTab({
   authToken,
-  userId
+  selectedGroupId,
+  onSelectGroup
 }: {
   authToken: string | undefined;
-  userId: string;
+  selectedGroupId: string | undefined;
+  onSelectGroup: (group: Group) => void;
 }) {
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [subTab, setSubTab] = useState<GroupsSubTab>('mine');
+  const [myGroups, setMyGroups] = useState<Group[]>([]);
+  const [eventGroups, setEventGroups] = useState<DiscoverGroupEntry[]>([]);
+  const [discoverGroups, setDiscoverGroups] = useState<DiscoverGroupEntry[]>(
+    []
+  );
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
   );
-  const [openGroup, setOpenGroup] = useState<Group>();
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/me/groups`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setGroups(groupsResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (!authToken) return;
+    setState('loading');
+    const request =
+      subTab === 'mine'
+        ? fetch(`${API_BASE_URL}/me/groups`, {
+            headers: { authorization: `Bearer ${authToken}` }
+          })
+            .then((response) =>
+              response.ok ? response.json() : Promise.reject()
+            )
+            .then((json) => setMyGroups(groupsResponseSchema.parse(json).data))
+        : fetch(
+            `${API_BASE_URL}/groups/discover?scope=${subTab === 'event' ? 'event' : 'permanent'}`,
+            { headers: { authorization: `Bearer ${authToken}` } }
+          )
+            .then((response) =>
+              response.ok ? response.json() : Promise.reject()
+            )
+            .then((json) => {
+              const data = discoverGroupsResponseSchema.parse(json).data;
+              if (subTab === 'event') setEventGroups(data);
+              else setDiscoverGroups(data);
+            });
+    request.then(() => setState('success')).catch(() => setState('error'));
+  }, [authToken, subTab]);
+
+  const openGroup = useCallback(
+    (groupId: string) => {
+      if (!authToken) return;
+      fetch(`${API_BASE_URL}/groups/${groupId}`, {
+        headers: { authorization: `Bearer ${authToken}` }
+      })
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => onSelectGroup(groupResponseSchema.parse(json).data))
+        .catch(() => undefined);
+    },
+    [authToken, onSelectGroup]
+  );
+
+  const rows: DiscoverGroupEntry[] =
+    subTab === 'mine'
+      ? myGroups.map((group) => ({ group }))
+      : subTab === 'event'
+        ? eventGroups
+        : discoverGroups;
 
   return (
     <div className="messages-tab-panel">
+      <div className="details-tabs groups-sub-tabs">
+        <button
+          type="button"
+          className={subTab === 'mine' ? 'active' : ''}
+          onClick={() => setSubTab('mine')}
+        >
+          Mes groupes
+        </button>
+        <button
+          type="button"
+          className={subTab === 'event' ? 'active' : ''}
+          onClick={() => setSubTab('event')}
+        >
+          Groupes de l'événement
+        </button>
+        <button
+          type="button"
+          className={subTab === 'discover' ? 'active' : ''}
+          onClick={() => setSubTab('discover')}
+        >
+          Découvrir
+        </button>
+      </div>
+
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger vos groupes pour le moment.
+          Impossible de charger les groupes pour le moment.
         </p>
       )}
-      {state === 'success' && groups.length === 0 && (
+      {state === 'success' && rows.length === 0 && (
         <p className="list-view-empty">
-          Aucun groupe pour le moment. Rejoins-en un depuis "Rencontrer avant
-          l'événement" sur un forum.
+          {subTab === 'mine'
+            ? 'Aucun groupe pour le moment. Découvre-en un dans l\'onglet Découvrir, ou rejoins-en un depuis "Rencontrer avant l\'événement" sur un forum.'
+            : subTab === 'event'
+              ? "Aucun groupe d'événement pour le moment."
+              : 'Aucun groupe permanent pour le moment.'}
         </p>
       )}
       <div className="friends-list">
-        {groups.map((group) => (
-          <div className="friends-row" key={group.id}>
-            <span className="friends-row-name">
-              {group.name}
-              <span className="compte-trends-count">{group.memberCount}</span>
+        {rows.map(({ group, event }) => (
+          <button
+            type="button"
+            key={group.id}
+            className={`conversation-list-row ${selectedGroupId === group.id ? 'selected' : ''}`}
+            onClick={() => openGroup(group.id)}
+          >
+            <span className="friends-row-avatar friends-row-avatar-lg">
+              {group.name.slice(0, 1).toUpperCase()}
             </span>
-            <button
-              type="button"
-              className="text-btn"
-              onClick={() => setOpenGroup(group)}
-            >
-              Ouvrir
-            </button>
-          </div>
+            <span className="conversation-list-info">
+              <span className="conversation-list-row-top">
+                <strong>{group.name}</strong>
+                {group.visibility === 'restricted' && (
+                  <span title="Accès limité">🔒</span>
+                )}
+              </span>
+              <span>
+                {event
+                  ? `${event.title} · ${new Date(event.startsAt).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}`
+                  : `${group.memberCount} membre${group.memberCount > 1 ? 's' : ''}`}
+              </span>
+            </span>
+            {group.isModerator &&
+              group.pendingRequestCount !== undefined &&
+              group.pendingRequestCount > 0 && (
+                <span className="conversation-list-badge">
+                  {group.pendingRequestCount}
+                </span>
+              )}
+          </button>
         ))}
       </div>
-      {openGroup && (
-        <GroupModal
-          group={openGroup}
-          authToken={authToken}
-          userId={userId}
-          onClose={() => setOpenGroup(undefined)}
-          onLeft={() => {
-            setOpenGroup(undefined);
-            refresh();
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -7504,6 +7620,7 @@ function GroupsBlock({
   );
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [visibility, setVisibility] = useState<GroupVisibility>('open');
   const [creating, setCreating] = useState(false);
   const [openGroup, setOpenGroup] = useState<Group>();
 
@@ -7536,6 +7653,7 @@ function GroupsBlock({
       },
       body: JSON.stringify({
         name: name.trim(),
+        visibility,
         ...(description.trim() ? { description: description.trim() } : {})
       })
     })
@@ -7543,6 +7661,7 @@ function GroupsBlock({
       .then(() => {
         setName('');
         setDescription('');
+        setVisibility('open');
         refresh();
       })
       .catch(() => {})
@@ -7581,6 +7700,26 @@ function GroupsBlock({
               placeholder="Description (optionnel)"
               maxLength={500}
             />
+            <div className="groups-visibility-choice">
+              <label>
+                <input
+                  type="radio"
+                  name="group-visibility"
+                  checked={visibility === 'open'}
+                  onChange={() => setVisibility('open')}
+                />
+                Accès libre — tout le monde peut rejoindre
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="group-visibility"
+                  checked={visibility === 'restricted'}
+                  onChange={() => setVisibility('restricted')}
+                />
+                Accès limité — sur demande, approuvée par toi
+              </label>
+            </div>
             <button
               type="submit"
               className="btn-secondary"
@@ -7630,21 +7769,31 @@ function GroupsBlock({
   );
 }
 
-function GroupModal({
+// Phase 4.10 ("Groupes avancés") - the rich detail content shared by the
+// modal chrome (GroupModal, unchanged call sites: sidebar mini-list,
+// GroupsBlock, ForumPanel's meetup flow) and the new inline pane inside
+// Messages' "Groupes" tabs. Everything here is real: member avatars/count,
+// a moderator's real pending-request queue, a meetup point derived from
+// the linked event's actual venue, and member-added schedule/attendance/
+// checklist modules - no online presence, no kick/removal, no content
+// moderation beyond the existing author-only delete (DEC-0013 v1.2).
+function GroupDetailContent({
   group,
   authToken,
   userId,
-  onClose,
-  onLeft
+  onGroupUpdated,
+  onLeave,
+  onOpenEventForum
 }: {
   group: Group;
   authToken: string | undefined;
   userId: string;
-  onClose: () => void;
-  onLeft: () => void;
+  onGroupUpdated: (group: Group) => void;
+  onLeave?: () => void;
+  onOpenEventForum?: (eventId: string) => void;
 }) {
   const [posts, setPosts] = useState<GroupPost[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+  const [postsState, setPostsState] = useState<'loading' | 'success' | 'error'>(
     'loading'
   );
   const [draft, setDraft] = useState('');
@@ -7653,24 +7802,71 @@ function GroupModal({
     new Set()
   );
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [members, setMembers] = useState<PublicUser[]>([]);
+  const [joining, setJoining] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
+  const refreshPosts = useCallback(() => {
+    if (!authToken || !group.isMember) return;
+    setPostsState('loading');
     fetch(`${API_BASE_URL}/groups/${group.id}/posts`, {
       headers: { authorization: `Bearer ${authToken}` }
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
         setPosts(groupPostsResponseSchema.parse(json).data);
-        setState('success');
+        setPostsState('success');
       })
-      .catch(() => setState('error'));
-  }, [authToken, group.id]);
+      .catch(() => setPostsState('error'));
+  }, [authToken, group.id, group.isMember]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    refreshPosts();
+  }, [refreshPosts]);
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setMembers(groupMembersResponseSchema.parse(json).data))
+      .catch(() => {});
+  }, [authToken, group.id]);
+
+  const refreshGroup = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/groups/${group.id}`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => onGroupUpdated(groupResponseSchema.parse(json).data))
+      .catch(() => {});
+  }, [authToken, group.id, onGroupUpdated]);
+
+  const joinGroupAction = () => {
+    if (!authToken || joining) return;
+    setJoining(true);
+    fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => refreshGroup())
+      .catch(() => {})
+      .finally(() => setJoining(false));
+  };
+
+  const leaveGroupAction = () => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).then(() => {
+      if (onLeave) onLeave();
+      else refreshGroup();
+    });
+  };
 
   const submitPost = (parentId?: string) => {
     const body = (parentId ? replyDrafts[parentId] : draft)?.trim();
@@ -7692,7 +7888,7 @@ function GroupModal({
         } else {
           setDraft('');
         }
-        refresh();
+        refreshPosts();
       })
       .catch(() => {})
       .finally(() => setPosting(false));
@@ -7703,7 +7899,7 @@ function GroupModal({
     void fetch(`${API_BASE_URL}/groups/${group.id}/posts/${postId}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${authToken}` }
-    }).then(() => refresh());
+    }).then(() => refreshPosts());
   };
 
   const toggleLike = (post: GroupPost) => {
@@ -7722,7 +7918,7 @@ function GroupModal({
     fetch(`${API_BASE_URL}/groups/${group.id}/posts/${post.id}/like`, {
       method: post.likedByMe ? 'DELETE' : 'POST',
       headers: { authorization: `Bearer ${authToken}` }
-    }).catch(() => refresh());
+    }).catch(() => refreshPosts());
   };
 
   const toggleExpanded = (postId: string) => {
@@ -7734,99 +7930,812 @@ function GroupModal({
     });
   };
 
-  const leaveGroup = () => {
-    if (!authToken) return;
-    void fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
-      method: 'DELETE',
-      headers: { authorization: `Bearer ${authToken}` }
-    }).then(() => onLeft());
-  };
-
   const topLevelPosts = posts.filter((post) => !post.parentId);
   const repliesFor = (postId: string) =>
     posts.filter((post) => post.parentId === postId);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="group-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="group-modal-header">
-          <div className="group-modal-header-info">
+    <div className="group-detail">
+      <div className="group-detail-header">
+        <div className="group-detail-header-top">
+          <div className="group-detail-header-info">
             <strong>{group.name}</strong>
-            <span>
-              {group.memberCount} membre{group.memberCount !== 1 ? 's' : ''}
-            </span>
+            {group.eventId && group.eventTitle && (
+              <span className="group-detail-event-badge">
+                Groupe lié à{' '}
+                <button
+                  type="button"
+                  className="group-detail-event-link"
+                  onClick={() =>
+                    group.eventId &&
+                    onOpenEventForum &&
+                    onOpenEventForum(group.eventId)
+                  }
+                  disabled={!onOpenEventForum}
+                >
+                  {group.eventTitle}
+                  {group.eventStartsAt &&
+                    ` — ${new Date(group.eventStartsAt).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}`}
+                  {group.meetupVenue && ` · ${group.meetupVenue.name}`}
+                </button>
+              </span>
+            )}
+            {group.visibility === 'restricted' && (
+              <span className="group-detail-visibility-badge">
+                🔒 Accès limité
+              </span>
+            )}
           </div>
-          <div className="group-modal-header-actions">
-            <button type="button" className="text-btn" onClick={leaveGroup}>
+          {group.isMember && (
+            <button
+              type="button"
+              className="text-btn"
+              onClick={leaveGroupAction}
+            >
               Quitter
             </button>
-            <button type="button" className="text-btn" onClick={onClose}>
-              Fermer
-            </button>
-          </div>
+          )}
         </div>
         {group.description && (
           <p className="forum-disclaimer">{group.description}</p>
         )}
+        <div className="group-detail-members-row">
+          {members.length > 0 && (
+            <div className="forum-members-avatars">
+              {members.slice(0, 8).map((member) => (
+                <span
+                  className="friends-row-avatar"
+                  key={member.id}
+                  title={member.displayName}
+                >
+                  {member.avatarUrl ? (
+                    <img src={member.avatarUrl} alt="" />
+                  ) : (
+                    member.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+          <span className="forum-members-count">
+            {group.memberCount} membre{group.memberCount !== 1 ? 's' : ''}
+          </span>
+          {group.isMember && (
+            <button
+              type="button"
+              className="text-btn"
+              onClick={() => setInviteOpen(true)}
+            >
+              Inviter des amis
+            </button>
+          )}
+        </div>
+      </div>
 
-        <div className="forum-posts">
+      {!group.isMember && group.myStatus !== 'pending' && (
+        <div className="group-detail-join-banner">
+          <p>
+            {group.visibility === 'restricted'
+              ? 'Ce groupe est à accès limité - ta demande sera envoyée au modérateur.'
+              : 'Rejoins ce groupe pour discuter, voter, et voir le programme.'}
+          </p>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={joinGroupAction}
+            disabled={joining}
+          >
+            {joining
+              ? 'Un instant…'
+              : group.visibility === 'restricted'
+                ? 'Demander à rejoindre'
+                : 'Rejoindre'}
+          </button>
+        </div>
+      )}
+      {group.myStatus === 'pending' && (
+        <div className="group-detail-join-banner">
+          <p>Demande envoyée, en attente d'approbation du modérateur.</p>
+        </div>
+      )}
+
+      {group.isMember && (
+        <>
+          {group.isModerator &&
+            group.pendingRequestCount !== undefined &&
+            group.pendingRequestCount > 0 && (
+              <GroupJoinRequestsCard
+                groupId={group.id}
+                authToken={authToken}
+                onResolved={refreshGroup}
+              />
+            )}
+
+          {group.meetupVenue && <GroupMeetupCard venue={group.meetupVenue} />}
+
+          <GroupScheduleCard groupId={group.id} authToken={authToken} />
+          <GroupAttendanceCard groupId={group.id} authToken={authToken} />
+          <GroupChecklistCard groupId={group.id} authToken={authToken} />
+
+          <div className="group-detail-discussion">
+            <h3>Discussion</h3>
+            <div className="forum-posts">
+              {postsState === 'loading' && (
+                <p className="list-view-empty">Chargement…</p>
+              )}
+              {postsState === 'error' && (
+                <p className="list-view-empty">
+                  Impossible de charger le fil pour le moment.
+                </p>
+              )}
+              {postsState === 'success' && topLevelPosts.length === 0 && (
+                <p className="list-view-empty">
+                  Aucun message pour l'instant. Soyez le premier.
+                </p>
+              )}
+              {postsState === 'success' &&
+                topLevelPosts.map((post) => (
+                  <GroupPostRow
+                    key={post.id}
+                    post={post}
+                    userId={userId}
+                    authToken={authToken}
+                    onLike={toggleLike}
+                    onDelete={removePost}
+                    replies={repliesFor(post.id)}
+                    expanded={expandedReplies.has(post.id)}
+                    onToggleExpanded={() => toggleExpanded(post.id)}
+                    replyDraft={replyDrafts[post.id] ?? ''}
+                    onReplyDraftChange={(value) =>
+                      setReplyDrafts((prev) => ({ ...prev, [post.id]: value }))
+                    }
+                    onSubmitReply={() => submitPost(post.id)}
+                    posting={posting}
+                  />
+                ))}
+            </div>
+            <form
+              className="forum-composer"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitPost();
+              }}
+            >
+              <textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="Écrire un message…"
+                maxLength={2000}
+                rows={2}
+              />
+              <button
+                type="submit"
+                className="btn-secondary"
+                disabled={posting || !draft.trim()}
+              >
+                Publier
+              </button>
+            </form>
+          </div>
+        </>
+      )}
+
+      {inviteOpen && (
+        <InviteToGroupModal
+          group={group}
+          authToken={authToken}
+          onClose={() => setInviteOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// A small, non-interactive MapLibre instance centered on the linked
+// event's real venue - same map tech/style already used everywhere else
+// in the app, not a third-party static-image API (no new dependency, no
+// cost). Absent entirely for permanent groups (no event to derive a
+// meetup point from).
+function GroupMeetupCard({ venue }: { venue: GroupMeetupVenue }) {
+  const container = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!container.current) return;
+    const instance = new maplibregl.Map({
+      container: container.current,
+      center: [venue.longitude, venue.latitude],
+      zoom: 15,
+      style: MAP_STYLE_URL,
+      interactive: false,
+      attributionControl: false
+    });
+    new maplibregl.Marker({ color: '#c026d3' })
+      .setLngLat([venue.longitude, venue.latitude])
+      .addTo(instance);
+    return () => instance.remove();
+  }, [venue.longitude, venue.latitude]);
+
+  return (
+    <div className="group-detail-card">
+      <h3>Point de rendez-vous</h3>
+      <div className="group-meetup-map" ref={container} />
+      <div className="group-meetup-address">
+        <strong>{venue.name}</strong>
+        <span>{venue.address}</span>
+      </div>
+    </div>
+  );
+}
+
+// "Programme" - real items added by members, sorted by time. No item is
+// ever guessed or auto-filled.
+function GroupScheduleCard({
+  groupId,
+  authToken
+}: {
+  groupId: string;
+  authToken: string | undefined;
+}) {
+  const [items, setItems] = useState<GroupScheduleItem[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [label, setLabel] = useState('');
+  const [time, setTime] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/groups/${groupId}/schedule`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setItems(groupScheduleItemsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, groupId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const addItem = () => {
+    if (!authToken || !label.trim() || !time || adding) return;
+    setAdding(true);
+    fetch(`${API_BASE_URL}/groups/${groupId}/schedule`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        label: label.trim(),
+        scheduledAt: new Date(time).toISOString()
+      })
+    })
+      .then((response) => (response.ok ? undefined : Promise.reject()))
+      .then(() => {
+        setLabel('');
+        setTime('');
+        refresh();
+      })
+      .catch(() => {})
+      .finally(() => setAdding(false));
+  };
+
+  return (
+    <div className="group-detail-card">
+      <h3>Programme</h3>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'success' && items.length === 0 && (
+        <p className="list-view-empty">Aucun horaire pour l'instant.</p>
+      )}
+      {state === 'success' && items.length > 0 && (
+        <ul className="group-schedule-list">
+          {items.map((item) => (
+            <li key={item.id}>
+              <span className="group-schedule-time">
+                {new Date(item.scheduledAt).toLocaleTimeString('fr-CA', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </span>
+              <span>{item.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="group-schedule-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addItem();
+        }}
+      >
+        <input
+          type="datetime-local"
+          value={time}
+          onChange={(event) => setTime(event.target.value)}
+        />
+        <input
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+          placeholder="Ex: Rendez-vous au bar"
+          maxLength={120}
+        />
+        <button
+          type="submit"
+          className="text-btn"
+          disabled={adding || !label.trim() || !time}
+        >
+          + Ajouter
+        </button>
+      </form>
+    </div>
+  );
+}
+
+const ATTENDANCE_LABELS: Record<AttendanceResponse, string> = {
+  yes: 'Oui',
+  maybe: 'Peut-être',
+  no: 'Non'
+};
+
+// "Qui vient ?" - real votes from real members, percentages computed from
+// the real total of votes cast (never simulated, never assumed).
+function GroupAttendanceCard({
+  groupId,
+  authToken
+}: {
+  groupId: string;
+  authToken: string | undefined;
+}) {
+  const [summary, setSummary] = useState<GroupAttendanceSummary>();
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/groups/${groupId}/attendance`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setSummary(groupAttendanceSummarySchema.parse(json));
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, groupId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const vote = (response: AttendanceResponse) => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/groups/${groupId}/attendance`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ response })
+    }).then(() => refresh());
+  };
+
+  const total = summary ? summary.yes + summary.maybe + summary.no : 0;
+
+  return (
+    <div className="group-detail-card">
+      <h3>Qui vient ?</h3>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'success' && summary && (
+        <>
+          <div className="group-attendance-bars">
+            {(['yes', 'maybe', 'no'] as const).map((key) => {
+              const count = summary[key];
+              const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+              return (
+                <div className="group-attendance-row" key={key}>
+                  <span className="group-attendance-label">
+                    {ATTENDANCE_LABELS[key]}
+                  </span>
+                  <div className="group-attendance-bar-track">
+                    <div
+                      className={`group-attendance-bar-fill group-attendance-${key}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="group-attendance-count">
+                    {count} ({pct}%)
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="group-attendance-total">
+            {total} réponse{total !== 1 ? 's' : ''}
+          </p>
+          <div className="group-attendance-actions">
+            {(['yes', 'maybe', 'no'] as const).map((key) => (
+              <button
+                type="button"
+                key={key}
+                className={`text-btn ${summary.myResponse === key ? 'active' : ''}`}
+                onClick={() => vote(key)}
+              >
+                {ATTENDANCE_LABELS[key]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// "Checklist" - checkedCount/totalMembers reflects real, individual
+// members checking an item off for themselves, never a fabricated
+// fraction.
+function GroupChecklistCard({
+  groupId,
+  authToken
+}: {
+  groupId: string;
+  authToken: string | undefined;
+}) {
+  const [items, setItems] = useState<GroupChecklistItem[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [label, setLabel] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/groups/${groupId}/checklist`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setItems(groupChecklistItemsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, groupId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const addItem = () => {
+    if (!authToken || !label.trim() || adding) return;
+    setAdding(true);
+    fetch(`${API_BASE_URL}/groups/${groupId}/checklist`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ label: label.trim() })
+    })
+      .then((response) => (response.ok ? undefined : Promise.reject()))
+      .then(() => {
+        setLabel('');
+        refresh();
+      })
+      .catch(() => {})
+      .finally(() => setAdding(false));
+  };
+
+  const toggle = (item: GroupChecklistItem) => {
+    if (!authToken) return;
+    const nextChecked = !item.checkedByMe;
+    setItems((prev) =>
+      prev.map((candidate) =>
+        candidate.id === item.id
+          ? {
+              ...candidate,
+              checkedByMe: nextChecked,
+              checkedCount: candidate.checkedCount + (nextChecked ? 1 : -1)
+            }
+          : candidate
+      )
+    );
+    fetch(`${API_BASE_URL}/groups/${groupId}/checklist/${item.id}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ checked: nextChecked })
+    }).catch(() => refresh());
+  };
+
+  return (
+    <div className="group-detail-card">
+      <h3>Checklist</h3>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'success' && items.length === 0 && (
+        <p className="list-view-empty">Aucun item pour l'instant.</p>
+      )}
+      {state === 'success' && items.length > 0 && (
+        <ul className="group-checklist-list">
+          {items.map((item) => (
+            <li key={item.id}>
+              <label className="group-checklist-item">
+                <input
+                  type="checkbox"
+                  checked={item.checkedByMe}
+                  onChange={() => toggle(item)}
+                />
+                <span>{item.label}</span>
+              </label>
+              <span className="group-checklist-fraction">
+                {item.checkedCount}/{item.totalMembers}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="group-checklist-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addItem();
+        }}
+      >
+        <input
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+          placeholder="Ex: Tickets"
+          maxLength={120}
+        />
+        <button
+          type="submit"
+          className="text-btn"
+          disabled={adding || !label.trim()}
+        >
+          + Ajouter un item
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// Moderator-only (Phase 4.10, DEC-0013 v1.2) - the only moderation power
+// a group's creator has: approving/declining join requests for a
+// restricted group. Nothing else.
+function GroupJoinRequestsCard({
+  groupId,
+  authToken,
+  onResolved
+}: {
+  groupId: string;
+  authToken: string | undefined;
+  onResolved: () => void;
+}) {
+  const [requests, setRequests] = useState<PublicUser[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/groups/${groupId}/join-requests`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setRequests(groupJoinRequestsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, groupId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const respond = (targetUserId: string, action: 'accept' | 'decline') => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/groups/${groupId}/join-requests/${targetUserId}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ action })
+    }).then(() => {
+      refresh();
+      onResolved();
+    });
+  };
+
+  if (state === 'success' && requests.length === 0) return null;
+
+  return (
+    <div className="group-detail-card group-join-requests-card">
+      <h3>Demandes en attente</h3>
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {requests.map((request) => (
+        <div className="amis-row" key={request.id}>
+          <span className="friends-row-avatar friends-row-avatar-lg">
+            {request.avatarUrl ? (
+              <img src={request.avatarUrl} alt="" />
+            ) : (
+              request.displayName.slice(0, 1).toUpperCase()
+            )}
+          </span>
+          <span className="amis-row-name">{request.displayName}</span>
+          <div className="amis-row-actions">
+            <button
+              type="button"
+              className="amis-btn-accept"
+              onClick={() => respond(request.id, 'accept')}
+            >
+              Accepter
+            </button>
+            <button
+              type="button"
+              className="amis-btn-ghost"
+              onClick={() => respond(request.id, 'decline')}
+            >
+              Refuser
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// "Inviter des amis" - never joins someone on their behalf (membership
+// stays a self-service action per DEC-0013); sends a direct message with
+// a link, same real mechanism as EventHero's "Envoyer à un ami".
+function InviteToGroupModal({
+  group,
+  authToken,
+  onClose
+}: {
+  group: Group;
+  authToken: string | undefined;
+  onClose: () => void;
+}) {
+  const [friendsList, setFriendsList] = useState<PublicUser[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [sentTo, setSentTo] = useState<Set<string>>(new Set());
+  const [sendingTo, setSendingTo] = useState<string>();
+
+  useEffect(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/friends`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setFriendsList(friendsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  const sendInvite = (friendId: string) => {
+    if (!authToken || sendingTo) return;
+    setSendingTo(friendId);
+    const url = `${window.location.origin}/groups/${group.id}`;
+    fetch(`${API_BASE_URL}/me/friends/${friendId}/messages`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        body: `Rejoins le groupe « ${group.name} » sur Pulso !\n${url}`
+      })
+    })
+      .then((response) => (response.ok ? undefined : Promise.reject()))
+      .then(() => setSentTo((prev) => new Set(prev).add(friendId)))
+      .catch(() => {})
+      .finally(() => setSendingTo(undefined));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="share-friend-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="conversation-modal-header">
+          <strong>Inviter des amis</strong>
+          <button type="button" className="text-btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        <div className="share-friend-list">
           {state === 'loading' && (
             <p className="list-view-empty">Chargement…</p>
           )}
           {state === 'error' && (
             <p className="list-view-empty">
-              Impossible de charger le fil pour le moment.
+              Impossible de charger vos amis pour le moment.
             </p>
           )}
-          {state === 'success' && topLevelPosts.length === 0 && (
+          {state === 'success' && friendsList.length === 0 && (
             <p className="list-view-empty">
-              Aucun message pour l'instant. Soyez le premier.
+              Ajoute des amis pour pouvoir les inviter.
             </p>
           )}
           {state === 'success' &&
-            topLevelPosts.map((post) => (
-              <GroupPostRow
-                key={post.id}
-                post={post}
-                userId={userId}
-                authToken={authToken}
-                onLike={toggleLike}
-                onDelete={removePost}
-                replies={repliesFor(post.id)}
-                expanded={expandedReplies.has(post.id)}
-                onToggleExpanded={() => toggleExpanded(post.id)}
-                replyDraft={replyDrafts[post.id] ?? ''}
-                onReplyDraftChange={(value) =>
-                  setReplyDrafts((prev) => ({ ...prev, [post.id]: value }))
-                }
-                onSubmitReply={() => submitPost(post.id)}
-                posting={posting}
-              />
+            friendsList.map((friend) => (
+              <div className="friends-row" key={friend.id}>
+                <span className="friends-row-avatar">
+                  {friend.avatarUrl ? (
+                    <img src={friend.avatarUrl} alt="" />
+                  ) : (
+                    friend.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <span className="friends-row-name">{friend.displayName}</span>
+                <button
+                  type="button"
+                  className="text-btn"
+                  onClick={() => sendInvite(friend.id)}
+                  disabled={sendingTo === friend.id || sentTo.has(friend.id)}
+                >
+                  {sentTo.has(friend.id)
+                    ? 'Envoyé ✓'
+                    : sendingTo === friend.id
+                      ? 'Envoi…'
+                      : 'Inviter'}
+                </button>
+              </div>
             ))}
         </div>
+      </div>
+    </div>
+  );
+}
 
-        <form
-          className="forum-composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submitPost();
-          }}
-        >
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Écrire un message…"
-            maxLength={2000}
-            rows={2}
-          />
-          <button
-            type="submit"
-            className="btn-secondary"
-            disabled={posting || !draft.trim()}
-          >
-            Publier
+function GroupModal({
+  group,
+  authToken,
+  userId,
+  onClose,
+  onLeft
+}: {
+  group: Group;
+  authToken: string | undefined;
+  userId: string;
+  onClose: () => void;
+  onLeft: () => void;
+}) {
+  const [current, setCurrent] = useState(group);
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="group-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="group-modal-close-row">
+          <button type="button" className="text-btn" onClick={onClose}>
+            Fermer
           </button>
-        </form>
+        </div>
+        <GroupDetailContent
+          group={current}
+          authToken={authToken}
+          userId={userId}
+          onGroupUpdated={setCurrent}
+          onLeave={onLeft}
+        />
       </div>
     </div>
   );
