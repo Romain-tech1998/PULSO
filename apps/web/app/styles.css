@@ -2388,6 +2388,13 @@ h6 {
   align-items: center;
   margin-bottom: 1rem;
 }
+/* ForumPanel hides the overlaid back button (it has its own standalone one
+   above the hero, see .forum-panel-back) - with only one child left,
+   space-between collapses it to the start instead of the end, which
+   pinned Partager/Favori to the left instead of the right. */
+.details-hero-actions-solo {
+  justify-content: flex-end;
+}
 .details-hero-actions-right {
   display: flex;
   align-items: center;
@@ -2439,6 +2446,46 @@ h6 {
 }
 .favorite-button:hover {
   background: rgba(0, 0, 0, 0.6);
+}
+.share-friend-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  border: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+.share-friend-button:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* "Envoyer à un ami" modal (live feedback) - a friends list reusing the
+   same row/avatar styling as FriendsBlock, in the same overlay/card shape
+   as ConversationModal/GroupModal. */
+.share-friend-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 420px;
+  max-height: 70vh;
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  border-radius: 1rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+.share-friend-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .details-badge {

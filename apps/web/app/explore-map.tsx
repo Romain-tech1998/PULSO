@@ -2994,7 +2994,7 @@ export function ExploreMap({
                      className="card-badge"
                      style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
                    >
-                     {getCategoryLabel(locale, evt.category)}
+                     {SHORT_CATEGORY_LABELS[locale][evt.category]}
                    </div>
                    <button className="card-fav" onClick={(e) => { e.stopPropagation(); toggleFavorite(evt.id); }}>
                      {favorites.includes(evt.id) ? '❤️' : '🤍'}
@@ -4555,7 +4555,7 @@ function DashboardHome({
                   className="card-badge"
                   style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
                 >
-                  {getCategoryLabel(locale, evt.category)}
+                  {SHORT_CATEGORY_LABELS[locale][evt.category]}
                 </div>
                 <button
                   className="card-fav"
@@ -4679,7 +4679,7 @@ function ForumDiscoverCard({
           className="card-badge"
           style={{ background: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'] }}
         >
-          {getCategoryLabel(locale, event.category)}
+          {SHORT_CATEGORY_LABELS[locale][event.category]}
         </div>
       </div>
       <div className="forum-discover-card-body">
@@ -4736,7 +4736,7 @@ function ActiveForumsPage({
             className={filter === category ? 'active' : ''}
             onClick={() => setFilter(category)}
           >
-            {getCategoryLabel(locale, category)}
+            {SHORT_CATEGORY_LABELS[locale][category]}
           </button>
         ))}
       </div>
@@ -4960,7 +4960,7 @@ function EventCarouselRow({
               className="card-badge"
               style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
             >
-              {getCategoryLabel(locale, evt.category)}
+              {SHORT_CATEGORY_LABELS[locale][evt.category]}
             </div>
           </div>
           <div className="event-card-content">
@@ -7184,7 +7184,7 @@ function EventPreview({
   return (
     <div className="event-preview-card" aria-live="polite">
       <div className="preview-header-actions">
-        <div className="card-badge" style={{position: 'relative', top: 0, left: 0}}>{fields.category}</div>
+        <div className="card-badge" style={{position: 'relative', top: 0, left: 0}}>{SHORT_CATEGORY_LABELS[locale][event.category]}</div>
         <div style={{display: 'flex', gap: '0.5rem'}}>
           <button
             type="button"
@@ -7291,7 +7291,9 @@ function EventHero({
   isFavorite,
   onToggleFavorite,
   locale,
-  hideBackButton
+  hideBackButton,
+  user,
+  authToken
 }: {
   event: PublicEvent;
   presentation: ReturnType<typeof eventDetailsFields>['presentation'];
@@ -7305,7 +7307,13 @@ function EventHero({
   // enough against a bright/busy cover image) - EventDetails keeps the
   // overlaid one as-is, already confirmed working there.
   hideBackButton?: boolean;
+  // "Envoyer à un ami" (live feedback: external share is fine, but also
+  // want to re-share within the app) - undefined since an anonymous
+  // visitor viewing this hero has no signed-in user to share as.
+  user: User | undefined;
+  authToken: string | undefined;
 }) {
+  const [shareFriendOpen, setShareFriendOpen] = useState(false);
   return (
     <div
       className="details-hero"
@@ -7319,7 +7327,7 @@ function EventHero({
           : undefined
       }
     >
-      <div className="details-hero-actions">
+      <div className={`details-hero-actions${hideBackButton ? ' details-hero-actions-solo' : ''}`}>
         {!hideBackButton && (
           <button type="button" className="back-button" onClick={onBack}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
@@ -7337,6 +7345,20 @@ function EventHero({
             </svg>
             {translate(locale, 'details.share')}
           </button>
+          {user && (
+            <button
+              type="button"
+              className="share-friend-button"
+              aria-label="Envoyer à un ami"
+              title="Envoyer à un ami"
+              onClick={() => setShareFriendOpen(true)}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             className="favorite-button"
@@ -7351,13 +7373,112 @@ function EventHero({
           </button>
         </div>
       </div>
-      <div className="details-badge">{presentation.category}</div>
+      <div className="details-badge">{SHORT_CATEGORY_LABELS[locale][event.category]}</div>
       <h2 ref={headingRef} tabIndex={-1} className="details-title">
         {event.title}
       </h2>
       {presentation.organizer && (
         <p className="details-subtitle">{presentation.organizer}</p>
       )}
+      {shareFriendOpen && user && (
+        <ShareToFriendModal
+          event={event}
+          authToken={authToken}
+          onClose={() => setShareFriendOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// "Envoyer à un ami" (live feedback: external share is fine, but people
+// also want to re-share an event with a friend directly in the app).
+// Reuses the existing friends + direct-message infrastructure as-is - a
+// message with the event's title and its own /events/:id deep link, no new
+// backend concept needed.
+function ShareToFriendModal({
+  event,
+  authToken,
+  onClose
+}: {
+  event: PublicEvent;
+  authToken: string | undefined;
+  onClose: () => void;
+}) {
+  const [friends, setFriends] = useState<PublicUser[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [sentTo, setSentTo] = useState<Set<string>>(new Set());
+  const [sendingTo, setSendingTo] = useState<string>();
+
+  useEffect(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/friends`, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setFriends(friendsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  const sendToFriend = (friendId: string) => {
+    if (!authToken || sendingTo) return;
+    setSendingTo(friendId);
+    const url = `${window.location.origin}/events/${event.id}`;
+    fetch(`${API_BASE_URL}/me/friends/${friendId}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ body: `${event.title}\n${url}` })
+    })
+      .then((response) => (response.ok ? undefined : Promise.reject()))
+      .then(() => setSentTo((prev) => new Set(prev).add(friendId)))
+      .catch(() => {})
+      .finally(() => setSendingTo(undefined));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="share-friend-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="conversation-modal-header">
+          <strong>Envoyer à un ami</strong>
+          <button type="button" className="text-btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        <div className="share-friend-list">
+          {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+          {state === 'error' && (
+            <p className="list-view-empty">Impossible de charger vos amis pour le moment.</p>
+          )}
+          {state === 'success' && friends.length === 0 && (
+            <p className="list-view-empty">
+              Ajoutez des amis pour pouvoir leur envoyer des événements.
+            </p>
+          )}
+          {state === 'success' &&
+            friends.map((friend) => (
+              <div className="friends-row" key={friend.id}>
+                <span className="friends-row-avatar">
+                  {friend.avatarUrl ? (
+                    <img src={friend.avatarUrl} alt="" />
+                  ) : (
+                    friend.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <span className="friends-row-name">{friend.displayName}</span>
+                <button
+                  type="button"
+                  className="text-btn"
+                  onClick={() => sendToFriend(friend.id)}
+                  disabled={sendingTo === friend.id || sentTo.has(friend.id)}
+                >
+                  {sentTo.has(friend.id) ? 'Envoyé ✓' : sendingTo === friend.id ? 'Envoi…' : 'Envoyer'}
+                </button>
+              </div>
+            ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -7528,6 +7649,8 @@ function EventDetails({
         isFavorite={isFavorite}
         onToggleFavorite={onToggleFavorite}
         locale={locale}
+        user={user}
+        authToken={authToken}
       />
 
       <div className="details-tabs">
@@ -7809,6 +7932,8 @@ function ForumPanel({
           locale={locale}
           onBack={onBack}
           hideBackButton
+          user={user}
+          authToken={authToken}
         />
 
         {user && (
