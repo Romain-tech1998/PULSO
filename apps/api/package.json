@@ -10,7 +10,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@fastify/multipart": "^10.1.0",
     "@fastify/oauth2": "^8.2.0",
+    "@fastify/static": "^10.1.2",
     "@pulso/contracts": "workspace:*",
     "@pulso/database": "workspace:*",
     "@pulso/domain": "workspace:*",

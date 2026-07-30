@@ -37,6 +37,10 @@ playwright-report/
 # Ingestion pilot output (local review artifacts, not source)
 /packages/database/ingestion-output/
 
+# Uploaded event photos (local disk storage, Phase 4.8 follow-up) - user
+# content, not source; see DEC-0012 v1.2.
+/apps/api/uploads/
+
 # Debug logs
 npm-debug.log*
 yarn-debug.log*

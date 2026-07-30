@@ -11,6 +11,8 @@ import {
   discoverForumsResponseSchema,
   eventDetailsResponseSchema,
   eventListResponseSchema,
+  eventPhotoResponseSchema,
+  eventPhotosResponseSchema,
   favoriteEventsResponseSchema,
   favoriteVenuesResponseSchema,
   forumMembersResponseSchema,
@@ -38,6 +40,7 @@ import {
   type DiscoverForumEntry,
   type AttendanceVisibility,
   type ConversationSummary,
+  type EventPhoto,
   type ForumCategory,
   type ForumPost,
   type FriendRequestEntry,
@@ -7862,10 +7865,14 @@ function ForumPanel({
 
       {tab === 'photos' && (
         <div className="details-section">
-          <ComingSoonTab
-            icon="📷"
-            message="Le partage de photos de la soirée arrive dans une prochaine mise à jour."
-          />
+          {!user ? (
+            <SignInPrompt
+              message="Connectez-vous pour voir et partager des photos de cet événement."
+              onLogin={onLogin}
+            />
+          ) : (
+            <EventPhotosTab eventId={event.id} authToken={authToken} userId={user.id} />
+          )}
         </div>
       )}
 
@@ -7921,6 +7928,131 @@ function ForumPanel({
         />
       )}
     </div>
+  );
+}
+
+// Real photos of the event (Phase 4.8 follow-up) - stored on the API's own
+// local disk (see event-photos.ts), distinct from the forum's text-only
+// posts. Organizers publishing about their own event is a monetization
+// idea the user raised for later; this is just the base sharing feature.
+function EventPhotosTab({
+  eventId,
+  authToken,
+  userId
+}: {
+  eventId: string;
+  authToken: string | undefined;
+  userId: string;
+}) {
+  const [photos, setPhotos] = useState<EventPhoto[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/events/${eventId}/photos`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setPhotos(eventPhotosResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, eventId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const uploadPhoto = (file: File) => {
+    if (!authToken || uploading) return;
+    setUploading(true);
+    setUploadError(false);
+    const form = new FormData();
+    form.append('file', file);
+    fetch(`${API_BASE_URL}/events/${eventId}/photos`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` },
+      body: form
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        eventPhotoResponseSchema.parse(json);
+        refresh();
+      })
+      .catch(() => setUploadError(true))
+      .finally(() => setUploading(false));
+  };
+
+  const removePhoto = (photoId: string) => {
+    if (!authToken) return;
+    setPhotos((prev) => prev.filter((photo) => photo.id !== photoId));
+    void fetch(`${API_BASE_URL}/events/${eventId}/photos/${photoId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).catch(() => refresh());
+  };
+
+  return (
+    <>
+      <div className="event-photos-upload">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          style={{ display: 'none' }}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) uploadPhoto(file);
+          }}
+        />
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+        >
+          {uploading ? 'Envoi en cours…' : '📷 Ajouter une photo'}
+        </button>
+        {uploadError && (
+          <span className="event-photos-upload-error">
+            L'envoi a échoué. Réessayez avec une photo JPEG, PNG, WebP ou GIF.
+          </span>
+        )}
+      </div>
+
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger les photos pour le moment.</p>
+      )}
+      {state === 'success' && photos.length === 0 && (
+        <p className="list-view-empty">Aucune photo pour l'instant. Partage la première !</p>
+      )}
+      {state === 'success' && photos.length > 0 && (
+        <div className="event-photos-grid">
+          {photos.map((photo) => (
+            <div className="event-photo-card" key={photo.id}>
+              <img src={photo.url} alt="" loading="lazy" />
+              {photo.uploader.id === userId && (
+                <button
+                  type="button"
+                  className="event-photo-delete"
+                  onClick={() => removePhoto(photo.id)}
+                  aria-label="Supprimer cette photo"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

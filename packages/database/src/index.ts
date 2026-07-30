@@ -62,6 +62,11 @@ export {
   type ProfileStats
 } from './profile-repository.js';
 export {
+  PostgresEventPhotosRepository,
+  type EventPhoto,
+  type EventPhotosRepository
+} from './event-photos-repository.js';
+export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';

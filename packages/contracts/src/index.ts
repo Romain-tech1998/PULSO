@@ -616,6 +616,24 @@ export const discoverForumsResponseSchema = z.object({
 export const forumMembersResponseSchema = z.object({
   data: z.array(publicUserSchema)
 });
+
+// "Photos" tab (Phase 4.8 follow-up) - real photos of the event, distinct
+// from the forum's text-only posts (DEC-0012's "no attachments" boundary
+// is unchanged there, see DEC-0012 v1.2). url is a full, ready-to-use URL
+// built by the API from its own upload storage, never a raw file path.
+export const eventPhotoSchema = z.object({
+  id: z.uuid(),
+  eventId: z.uuid(),
+  uploader: publicUserSchema,
+  url: z.url(),
+  createdAt: z.iso.datetime()
+});
+export const eventPhotosResponseSchema = z.object({
+  data: z.array(eventPhotoSchema)
+});
+export const eventPhotoResponseSchema = z.object({
+  data: eventPhotoSchema
+});
 export const eventDetailsResponseSchema = z.object({ data: publicEventSchema });
 export const errorResponseSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() })
@@ -626,6 +644,8 @@ export type EventListResponse = z.infer<typeof eventListResponseSchema>;
 export type DiscoverForumEntry = z.infer<typeof discoverForumEntrySchema>;
 export type DiscoverForumsResponse = z.infer<typeof discoverForumsResponseSchema>;
 export type ForumMembersResponse = z.infer<typeof forumMembersResponseSchema>;
+export type EventPhoto = z.infer<typeof eventPhotoSchema>;
+export type EventPhotosResponse = z.infer<typeof eventPhotosResponseSchema>;
 export type EventDetailsResponse = z.infer<typeof eventDetailsResponseSchema>;
 export type MapBoundsQuery = z.infer<typeof mapBoundsQuerySchema>;
 export type DirectDistanceQuery = z.infer<typeof directDistanceQuerySchema>;

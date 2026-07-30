@@ -2,6 +2,8 @@ import type { PublicUser, User } from '@pulso/contracts';
 import type {
   AttendanceRepository,
   AuthRepository,
+  EventPhoto,
+  EventPhotosRepository,
   FavoritesRepository,
   ForumPost,
   ForumRepository,
@@ -18,6 +20,8 @@ import type {
   Trends,
   TrendsRepository
 } from '@pulso/database';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { GoogleAuthConfig } from './auth.js';
 
@@ -259,6 +263,34 @@ export function fakeProfileRepository(
   };
 }
 
+export function fakeEventPhoto(overrides: Partial<EventPhoto> = {}): EventPhoto {
+  return {
+    id: '00000000-0000-4000-8000-000000000019',
+    eventId: '00000000-0000-4000-8000-000000000014',
+    uploader: friend,
+    filePath: 'event-photos/00000000-0000-4000-8000-000000000014/photo.jpg',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    ...overrides
+  };
+}
+
+export function fakeEventPhotosRepository(
+  overrides: Partial<EventPhotosRepository> = {}
+): EventPhotosRepository {
+  return {
+    listPhotos: async () => [],
+    createPhoto: async (eventId, uploaderId, filePath) =>
+      fakeEventPhoto({ eventId, uploader: { id: uploaderId, displayName: testUser.displayName }, filePath }),
+    deletePhoto: async () => undefined,
+    ...overrides
+  };
+}
+
+// Isolated from any real upload directory the dev server might be using -
+// a fresh temp folder per test process, safe to leave behind (OS temp dir).
+export const testUploadDir = join(tmpdir(), 'pulso-test-uploads');
+export const testPublicUploadUrl = 'http://127.0.0.1:3001/uploads';
+
 // Bundles all account-layer repositories (+ Google config) so every
 // buildApp(event, accountRepositories()) call in tests stays a one-liner
 // even as the account layer grows more repositories - override only the
@@ -275,6 +307,9 @@ export function accountRepositories(
     reportsRepository?: ReportsRepository;
     groupsRepository?: GroupsRepository;
     profileRepository?: ProfileRepository;
+    eventPhotosRepository?: EventPhotosRepository;
+    uploadDir?: string;
+    publicUploadUrl?: string;
   } = {}
 ) {
   return {
@@ -288,6 +323,9 @@ export function accountRepositories(
     reportsRepository: overrides.reportsRepository ?? fakeReportsRepository(),
     groupsRepository: overrides.groupsRepository ?? fakeGroupsRepository(),
     profileRepository: overrides.profileRepository ?? fakeProfileRepository(),
+    eventPhotosRepository: overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
+    uploadDir: overrides.uploadDir ?? testUploadDir,
+    publicUploadUrl: overrides.publicUploadUrl ?? testPublicUploadUrl,
     google: testGoogleConfig
   };
 }

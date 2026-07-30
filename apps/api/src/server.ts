@@ -2,6 +2,7 @@ import {
   createPool,
   PostgresAttendanceRepository,
   PostgresAuthRepository,
+  PostgresEventPhotosRepository,
   PostgresEventRepository,
   PostgresFavoritesRepository,
   PostgresForumRepository,
@@ -12,12 +13,19 @@ import {
   PostgresReportsRepository,
   PostgresTrendsRepository
 } from '@pulso/database';
+import { join } from 'node:path';
 
 import { buildApp } from './app.js';
 
 const pool = createPool();
 
 const apiBaseUrl = `http://${process.env.API_HOST ?? '127.0.0.1'}:${process.env.API_PORT ?? 3001}`;
+// Local disk storage for uploaded event photos (Phase 4.8 follow-up) -
+// matches the project's current pre-deployment stage rather than adding a
+// cloud object store dependency before the product is feature-complete
+// (see DEC-0012 v1.2).
+const uploadDir = process.env.EVENT_PHOTOS_UPLOAD_DIR ?? join(process.cwd(), 'uploads');
+const publicUploadUrl = `${apiBaseUrl}/uploads`;
 const google =
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? {
@@ -42,6 +50,9 @@ const app = buildApp(new PostgresEventRepository(pool), {
         reportsRepository: new PostgresReportsRepository(pool),
         groupsRepository: new PostgresGroupsRepository(pool),
         profileRepository: new PostgresProfileRepository(pool),
+        eventPhotosRepository: new PostgresEventPhotosRepository(pool),
+        uploadDir,
+        publicUploadUrl,
         google
       }
     : {})

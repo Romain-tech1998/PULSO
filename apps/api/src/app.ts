@@ -13,6 +13,7 @@ import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
 import type {
   AttendanceRepository,
   AuthRepository,
+  EventPhotosRepository,
   EventRepository,
   FavoritesRepository,
   ForumRepository,
@@ -31,16 +32,21 @@ import {
   interpretDeterministicSearch,
   rankAndExplainEvents
 } from '@pulso/search';
+import fastifyMultipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 
 import { registerAuthRoutes, type GoogleAuthConfig } from './auth.js';
+import { registerEventPhotosRoutes } from './event-photos.js';
 import { registerForumRoutes } from './forum.js';
 import { registerGroupsRoutes } from './groups.js';
 import { registerMessagesRoutes } from './messages.js';
 import { registerProfileRoutes } from './profile.js';
 import { registerReportsRoutes } from './reports.js';
 import { registerSocialRoutes } from './social.js';
+
+const MAX_PHOTO_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 const eventParamsSchema = z.object({ id: z.uuid() });
 
@@ -63,10 +69,22 @@ export function buildApp(
     reportsRepository?: ReportsRepository;
     groupsRepository?: GroupsRepository;
     profileRepository?: ProfileRepository;
+    eventPhotosRepository?: EventPhotosRepository;
+    // Where uploaded photo files live on disk, and the base URL the API
+    // serves them back from (see the /uploads static mount below) - local
+    // disk rather than a cloud object store, matching the project's
+    // current pre-deployment stage (DEC-0012 v1.2).
+    uploadDir?: string;
+    publicUploadUrl?: string;
     google?: GoogleAuthConfig;
   } = {}
 ) {
   const app = Fastify({ logger: options.logger ?? false });
+
+  if (options.uploadDir) {
+    app.register(fastifyMultipart, { limits: { fileSize: MAX_PHOTO_UPLOAD_BYTES } });
+    app.register(fastifyStatic, { root: options.uploadDir, prefix: '/uploads/' });
+  }
 
   if (
     options.authRepository &&
@@ -79,6 +97,9 @@ export function buildApp(
     options.reportsRepository &&
     options.groupsRepository &&
     options.profileRepository &&
+    options.eventPhotosRepository &&
+    options.uploadDir &&
+    options.publicUploadUrl &&
     options.google
   ) {
     registerAuthRoutes(
@@ -106,6 +127,13 @@ export function buildApp(
     registerReportsRoutes(app, options.authRepository, options.reportsRepository);
     registerGroupsRoutes(app, options.authRepository, options.groupsRepository, repository);
     registerProfileRoutes(app, options.authRepository, options.profileRepository);
+    registerEventPhotosRoutes(
+      app,
+      options.authRepository,
+      options.eventPhotosRepository,
+      options.uploadDir,
+      options.publicUploadUrl
+    );
   }
 
   app.setErrorHandler((error, request, reply) => {
