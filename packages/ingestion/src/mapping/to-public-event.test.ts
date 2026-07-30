@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { computeDedupeKey, normalizeForKey } from './dedupe-key.js';
 import { deriveDeterministicEventId } from './event-id.js';
-import { mapAndDeduplicateRawEvents, mapRawEventToPublicEvent } from './to-public-event.js';
+import {
+  mapAndDeduplicateRawEvents,
+  mapRawEventToPublicEvent
+} from './to-public-event.js';
 import type { RawIngestedEvent } from '../types.js';
 
 const now = new Date('2026-07-21T12:00:00.000Z');
@@ -36,17 +39,26 @@ describe('normalizeForKey / computeDedupeKey', () => {
   it('produces the same key for the same event regardless of source', () => {
     const a = computeDedupeKey(ticketmasterEvent());
     const b = computeDedupeKey(
-      ticketmasterEvent({ sourceId: 'other-source', sourceUrl: 'https://example.com' })
+      ticketmasterEvent({
+        sourceId: 'other-source',
+        sourceUrl: 'https://example.com'
+      })
     );
     expect(a).toBe(b);
   });
 
   it('uses identitySeed instead of venueName when set, even if venueName differs', () => {
     const a = computeDedupeKey(
-      ticketmasterEvent({ venueName: 'Parc de la Savane', identitySeed: 'stable-seed' })
+      ticketmasterEvent({
+        venueName: 'Parc de la Savane',
+        identitySeed: 'stable-seed'
+      })
     );
     const b = computeDedupeKey(
-      ticketmasterEvent({ venueName: 'Place De La Savane', identitySeed: 'stable-seed' })
+      ticketmasterEvent({
+        venueName: 'Place De La Savane',
+        identitySeed: 'stable-seed'
+      })
     );
     expect(a).toBe(b);
   });
@@ -63,7 +75,9 @@ describe('deriveDeterministicEventId', () => {
   });
 
   it('differs for different keys', () => {
-    expect(deriveDeterministicEventId('a')).not.toBe(deriveDeterministicEventId('b'));
+    expect(deriveDeterministicEventId('a')).not.toBe(
+      deriveDeterministicEventId('b')
+    );
   });
 });
 
@@ -77,7 +91,10 @@ describe('mapRawEventToPublicEvent', () => {
     expect(result.event.trust.label).toBe('probable');
     expect(result.event.trust.freshness).toBe('fresh');
     expect(result.event.trust.locationConfidence).toBe('confirmed');
-    expect(result.event.venue.point).toEqual({ longitude: -73.5605, latitude: 45.5106 });
+    expect(result.event.venue.point).toEqual({
+      longitude: -73.5605,
+      latitude: 45.5106
+    });
     expect(result.event.externalDestination?.kind).toBe('ticketing');
   });
 
@@ -136,7 +153,10 @@ describe('mapRawEventToPublicEvent', () => {
 
   it('skips events with no resolved point rather than fabricating one', () => {
     const result = mapRawEventToPublicEvent(
-      ticketmasterEvent({ point: undefined, pointResolution: 'needs_research' }),
+      ticketmasterEvent({
+        point: undefined,
+        pointResolution: 'needs_research'
+      }),
       { now }
     );
     expect('skip' in result).toBe(true);
@@ -161,24 +181,36 @@ describe('mapRawEventToPublicEvent', () => {
       }),
       { now }
     );
-    if (!('event' in eventA) || !('event' in eventB)) throw new Error('expected events');
+    if (!('event' in eventA) || !('event' in eventB))
+      throw new Error('expected events');
 
     expect(eventA.event.venue.id).not.toBe(eventB.event.venue.id);
   });
 
   it('uses identitySeed instead of venueName for the venue id when set', () => {
     const withDriftingName = mapRawEventToPublicEvent(
-      ticketmasterEvent({ venueName: 'Parc de la Savane', identitySeed: 'place de la savane' }),
+      ticketmasterEvent({
+        venueName: 'Parc de la Savane',
+        identitySeed: 'place de la savane'
+      }),
       { now }
     );
     const withDifferentDriftingName = mapRawEventToPublicEvent(
-      ticketmasterEvent({ venueName: 'Place De La Savane', identitySeed: 'place de la savane' }),
+      ticketmasterEvent({
+        venueName: 'Place De La Savane',
+        identitySeed: 'place de la savane'
+      }),
       { now }
     );
-    if (!('event' in withDriftingName) || !('event' in withDifferentDriftingName)) {
+    if (
+      !('event' in withDriftingName) ||
+      !('event' in withDifferentDriftingName)
+    ) {
       throw new Error('expected events');
     }
-    expect(withDriftingName.event.venue.id).toBe(withDifferentDriftingName.event.venue.id);
+    expect(withDriftingName.event.venue.id).toBe(
+      withDifferentDriftingName.event.venue.id
+    );
     // Display name still reflects the connector's own (prettier) venueName.
     expect(withDriftingName.event.venue.name).toBe('Parc de la Savane');
   });
@@ -203,7 +235,10 @@ describe('mapAndDeduplicateRawEvents', () => {
       sourceUrl: 'https://montreal.ca/evenements/charlotte-cardin'
     });
 
-    const result = mapAndDeduplicateRawEvents([fromTicketmaster, fromOfficial], { now });
+    const result = mapAndDeduplicateRawEvents(
+      [fromTicketmaster, fromOfficial],
+      { now }
+    );
 
     expect(result.events).toHaveLength(1);
     expect(result.events[0]?.event.source.name).toBe('Ville de Montréal');
@@ -218,9 +253,14 @@ describe('mapAndDeduplicateRawEvents', () => {
       title: 'Kaytranada',
       startsAt: '2026-08-02T22:00:00.000Z'
     });
-    const unmapped = ticketmasterEvent({ category: 'unmapped', title: 'Marché' });
+    const unmapped = ticketmasterEvent({
+      category: 'unmapped',
+      title: 'Marché'
+    });
 
-    const result = mapAndDeduplicateRawEvents([eventA, eventB, unmapped], { now });
+    const result = mapAndDeduplicateRawEvents([eventA, eventB, unmapped], {
+      now
+    });
 
     expect(result.events).toHaveLength(2);
     expect(result.skipped).toHaveLength(1);

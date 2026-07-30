@@ -92,7 +92,9 @@ export async function upsertPublicEvents(
         event.trust.freshness,
         event.trust.locationConfidence,
         event.price.kind,
-        event.price.kind === 'paid' ? event.price.minimumAmount ?? null : null,
+        event.price.kind === 'paid'
+          ? (event.price.minimumAmount ?? null)
+          : null,
         event.imageUrl ?? null,
         event.description ?? null,
         event.organizer ?? null,

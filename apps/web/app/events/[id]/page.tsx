@@ -26,13 +26,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         title: `${event.title} - Pulso`,
         description: `Découvre ${event.title} à ${event.venue.name} sur Pulso.`,
         url: `/events/${id}`,
-        type: 'website',
+        type: 'website'
       },
       twitter: {
         card: 'summary_large_image',
         title: `${event.title} - Pulso`,
-        description: `Découvre ${event.title} à ${event.venue.name} sur Pulso.`,
-      },
+        description: `Découvre ${event.title} à ${event.venue.name} sur Pulso.`
+      }
     };
   } catch {
     return {};

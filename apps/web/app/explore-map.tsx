@@ -221,7 +221,12 @@ function buildClusterBadgeImageData(): ImageData {
 
   const center = CLUSTER_BADGE_SIZE / 2;
   const radius = center - 4;
-  const gradient = ctx.createLinearGradient(0, 0, CLUSTER_BADGE_SIZE, CLUSTER_BADGE_SIZE);
+  const gradient = ctx.createLinearGradient(
+    0,
+    0,
+    CLUSTER_BADGE_SIZE,
+    CLUSTER_BADGE_SIZE
+  );
   gradient.addColorStop(0, '#7336C1');
   gradient.addColorStop(0.5, '#EA3E81');
   gradient.addColorStop(1, '#FE7C5C');
@@ -277,7 +282,10 @@ type GeoStatus = 'pending' | 'granted' | 'denied' | 'unsupported';
  */
 function useUserLocation() {
   const [status, setStatus] = useState<GeoStatus>('pending');
-  const [location, setLocation] = useState<{ longitude: number; latitude: number }>();
+  const [location, setLocation] = useState<{
+    longitude: number;
+    latitude: number;
+  }>();
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -315,7 +323,11 @@ function useFavorites(authToken: string | undefined) {
   useEffect(() => {
     const stored = localStorage.getItem('pulso-favorites');
     if (stored) {
-      try { setFavorites(JSON.parse(stored)); } catch (err) { console.warn('Failed to parse favorites', err); }
+      try {
+        setFavorites(JSON.parse(stored));
+      } catch (err) {
+        console.warn('Failed to parse favorites', err);
+      }
     }
   }, []);
 
@@ -328,7 +340,9 @@ function useFavorites(authToken: string | undefined) {
     } catch {
       localIds = [];
     }
-    fetch(`${API_BASE_URL}/me/favorites`, { headers: { authorization: `Bearer ${authToken}` } })
+    fetch(`${API_BASE_URL}/me/favorites`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => favoriteEventsResponseSchema.parse(json).data.eventIds)
       .then((serverIds) => {
@@ -338,7 +352,10 @@ function useFavorites(authToken: string | undefined) {
         if (merged.length !== serverIds.length) {
           void fetch(`${API_BASE_URL}/me/favorites`, {
             method: 'PUT',
-            headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${authToken}`
+            },
             body: JSON.stringify({ eventIds: merged })
           });
         }
@@ -348,12 +365,17 @@ function useFavorites(authToken: string | undefined) {
 
   const toggleFavorite = (id: string) => {
     setFavorites((prev) => {
-      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      const next = prev.includes(id)
+        ? prev.filter((f) => f !== id)
+        : [...prev, id];
       localStorage.setItem('pulso-favorites', JSON.stringify(next));
       if (authToken) {
         void fetch(`${API_BASE_URL}/me/favorites`, {
           method: 'PUT',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${authToken}`
+          },
           body: JSON.stringify({ eventIds: next })
         });
       }
@@ -374,7 +396,11 @@ function useFavoriteVenues(authToken: string | undefined) {
   useEffect(() => {
     const stored = localStorage.getItem('pulso-favorite-venues');
     if (stored) {
-      try { setFavoriteVenues(JSON.parse(stored)); } catch (err) { console.warn('Failed to parse favorite venues', err); }
+      try {
+        setFavoriteVenues(JSON.parse(stored));
+      } catch (err) {
+        console.warn('Failed to parse favorite venues', err);
+      }
     }
   }, []);
 
@@ -383,11 +409,15 @@ function useFavoriteVenues(authToken: string | undefined) {
     syncedTokenRef.current = authToken;
     let localIds: string[] = [];
     try {
-      localIds = JSON.parse(localStorage.getItem('pulso-favorite-venues') ?? '[]');
+      localIds = JSON.parse(
+        localStorage.getItem('pulso-favorite-venues') ?? '[]'
+      );
     } catch {
       localIds = [];
     }
-    fetch(`${API_BASE_URL}/me/favorite-venues`, { headers: { authorization: `Bearer ${authToken}` } })
+    fetch(`${API_BASE_URL}/me/favorite-venues`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => favoriteVenuesResponseSchema.parse(json).data.venueIds)
       .then((serverIds) => {
@@ -397,7 +427,10 @@ function useFavoriteVenues(authToken: string | undefined) {
         if (merged.length !== serverIds.length) {
           void fetch(`${API_BASE_URL}/me/favorite-venues`, {
             method: 'PUT',
-            headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${authToken}`
+            },
             body: JSON.stringify({ venueIds: merged })
           });
         }
@@ -407,12 +440,17 @@ function useFavoriteVenues(authToken: string | undefined) {
 
   const toggleFavoriteVenue = (id: string) => {
     setFavoriteVenues((prev) => {
-      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      const next = prev.includes(id)
+        ? prev.filter((f) => f !== id)
+        : [...prev, id];
       localStorage.setItem('pulso-favorite-venues', JSON.stringify(next));
       if (authToken) {
         void fetch(`${API_BASE_URL}/me/favorite-venues`, {
           method: 'PUT',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${authToken}`
+          },
           body: JSON.stringify({ venueIds: next })
         });
       }
@@ -427,19 +465,25 @@ function useFavoriteVenues(authToken: string | undefined) {
 // account to attach visibility to), so this only ever fetches once signed
 // in and is a no-op with `authToken` undefined.
 function useAttendance(authToken: string | undefined) {
-  const [attendance, setAttendanceState] = useState<Record<string, AttendanceVisibility>>({});
+  const [attendance, setAttendanceState] = useState<
+    Record<string, AttendanceVisibility>
+  >({});
 
   useEffect(() => {
     if (!authToken) {
       setAttendanceState({});
       return;
     }
-    fetch(`${API_BASE_URL}/me/attendance`, { headers: { authorization: `Bearer ${authToken}` } })
+    fetch(`${API_BASE_URL}/me/attendance`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
         const entries = myAttendanceResponseSchema.parse(json).data;
         setAttendanceState(
-          Object.fromEntries(entries.map((entry) => [entry.eventId, entry.visibility]))
+          Object.fromEntries(
+            entries.map((entry) => [entry.eventId, entry.visibility])
+          )
         );
       })
       .catch(() => {});
@@ -450,7 +494,10 @@ function useAttendance(authToken: string | undefined) {
     setAttendanceState((prev) => ({ ...prev, [eventId]: visibility }));
     void fetch(`${API_BASE_URL}/me/attendance/${eventId}`, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
       body: JSON.stringify({ visibility })
     });
   };
@@ -475,7 +522,10 @@ function useAttendance(authToken: string | undefined) {
 // `refreshKey` changes (the caller passes the current header section, so
 // navigating into "Mon compte" - where conversations get marked read - is
 // enough to keep this reasonably fresh without polling).
-function useUnreadMessagesCount(authToken: string | undefined, refreshKey: unknown) {
+function useUnreadMessagesCount(
+  authToken: string | undefined,
+  refreshKey: unknown
+) {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
@@ -487,9 +537,10 @@ function useUnreadMessagesCount(authToken: string | undefined, refreshKey: unkno
       headers: { authorization: `Bearer ${authToken}` }
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setCount(unreadCountResponseSchema.parse(json).data.count))
+      .then((json) =>
+        setCount(unreadCountResponseSchema.parse(json).data.count)
+      )
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authToken, refreshKey]);
 
   return count;
@@ -500,7 +551,9 @@ function useUnreadMessagesCount(authToken: string | undefined, refreshKey: unkno
 // from a single fetch/refresh cycle rather than duplicating it.
 function useActiveForums(authToken: string | undefined) {
   const [forums, setForums] = useState<ActiveForum[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
 
   const refresh = useCallback(() => {
     if (!authToken) return;
@@ -535,12 +588,21 @@ function reportContent(
   // Cancelling the prompt aborts the report entirely; confirming with an
   // empty reason still sends it (the target/reporter/timestamp alone are
   // useful even with no reason given).
-  const input = window.prompt('Pourquoi signalez-vous ce contenu ? (optionnel)');
+  const input = window.prompt(
+    'Pourquoi signalez-vous ce contenu ? (optionnel)'
+  );
   if (input === null) return;
   fetch(`${API_BASE_URL}/reports`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
-    body: JSON.stringify({ targetType, targetId, ...(input.trim() ? { reason: input.trim() } : {}) })
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${authToken}`
+    },
+    body: JSON.stringify({
+      targetType,
+      targetId,
+      ...(input.trim() ? { reason: input.trim() } : {})
+    })
   })
     .then((response) => {
       if (response.ok) alert('Signalement envoyé.');
@@ -561,7 +623,9 @@ function useAuth() {
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
     if (!token) return;
     setAuthToken(token);
-    fetch(`${API_BASE_URL}/me`, { headers: { authorization: `Bearer ${token}` } })
+    fetch(`${API_BASE_URL}/me`, {
+      headers: { authorization: `Bearer ${token}` }
+    })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => setUser(meResponseSchema.parse(json).data))
       .catch(() => {
@@ -651,7 +715,6 @@ export function ExploreMap({
   const [nearbyEvents, setNearbyEvents] = useState<PublicEvent[]>([]);
   const [nearbyState, setNearbyState] = useState<LoadState>('loading');
   const [selected, setSelected] = useState<PublicEvent>();
-  const [state, setState] = useState<LoadState>('loading');
   const [basemapState, setBasemapState] = useState<BasemapState>('loading');
   const [details, setDetails] = useState<DetailsState>({ kind: 'closed' });
   // Set when an event is opened from a context that implies which tab
@@ -675,7 +738,6 @@ export function ExploreMap({
   const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersOverlayMount = useTransitionedMount(filtersOpen);
-  const [filterNotice, setFilterNotice] = useState<string>();
   const [queryInput, setQueryInput] = useState('');
   const [searchResult, setSearchResult] = useState<IntelligentSearchResponse>();
   const [searchProcessing, setSearchProcessing] = useState(false);
@@ -686,7 +748,8 @@ export function ExploreMap({
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const { favoriteVenues, toggleFavoriteVenue } = useFavoriteVenues(authToken);
   const [showFavoriteVenuesOnly, setShowFavoriteVenuesOnly] = useState(false);
-  const { attendance, setAttendance, clearAttendance } = useAttendance(authToken);
+  const { attendance, setAttendance, clearAttendance } =
+    useAttendance(authToken);
   // Set when the user follows "Voir tous les événements" from the nearby
   // carousel, so List shows that same distance-sorted set instead of the
   // map's viewport-bound events - the carousel is deliberately about
@@ -755,7 +818,9 @@ export function ExploreMap({
     };
   }, [userLocation]);
 
-  const [section, setSection] = useState<ConnectedSection | 'compte'>('evenement');
+  const [section, setSection] = useState<ConnectedSection | 'compte'>(
+    'evenement'
+  );
   // One-time redirect: an anonymous session always starts on 'evenement'
   // (the map), but once a session resolves to a signed-in user it should
   // land on the connected dashboard instead - only while the visitor
@@ -773,8 +838,12 @@ export function ExploreMap({
   // Reset to 'event' every time Explorer is (re-)entered rather than
   // persisted - simplest, least surprising default per the restructuring
   // plan.
-  const [explorerPinKind, setExplorerPinKind] = useState<'event' | 'venue'>('event');
-  const [venueCategoryFilter, setVenueCategoryFilter] = useState<VenueCategory[]>([]);
+  const [explorerPinKind, setExplorerPinKind] = useState<'event' | 'venue'>(
+    'event'
+  );
+  const [venueCategoryFilter, setVenueCategoryFilter] = useState<
+    VenueCategory[]
+  >([]);
   const [noEventVenues, setNoEventVenues] = useState<PublicVenue[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const aboutPanelMount = useTransitionedMount(aboutOpen);
@@ -789,11 +858,18 @@ export function ExploreMap({
   // kept deliberately separate from the map's `filters` state - per user
   // feedback, switching a category/price pill on the map should not silently
   // narrow what the calendar shows, and vice versa.
-  const [calendarCategories, setCalendarCategories] = useState<EventCategory[]>([]);
-  const [calendarPrice, setCalendarPrice] = useState<DiscoveryFilters['price']>('all');
+  const [calendarCategories, setCalendarCategories] = useState<EventCategory[]>(
+    []
+  );
+  const [calendarPrice, setCalendarPrice] =
+    useState<DiscoveryFilters['price']>('all');
 
   const loadCalendarEvents = useCallback(
-    async (month: Date, categories: EventCategory[], price: DiscoveryFilters['price']) => {
+    async (
+      month: Date,
+      categories: EventCategory[],
+      price: DiscoveryFilters['price']
+    ) => {
       setCalendarState('loading');
       const monthStart = getMontrealCalendarDate(
         new Date(month.getFullYear(), month.getMonth(), 1)
@@ -826,10 +902,21 @@ export function ExploreMap({
     // Shared by both Événement's and Lieu's Calendrier tab - same underlying
     // month of events either way, only the day-click behavior differs (see
     // the two CalendarView render sites below).
-    if (viewMode === 'calendar' || (section === 'lieu' && lieuTab === 'calendar')) {
+    if (
+      viewMode === 'calendar' ||
+      (section === 'lieu' && lieuTab === 'calendar')
+    ) {
       void loadCalendarEvents(calendarMonth, calendarCategories, calendarPrice);
     }
-  }, [viewMode, section, lieuTab, calendarMonth, calendarCategories, calendarPrice, loadCalendarEvents]);
+  }, [
+    viewMode,
+    section,
+    lieuTab,
+    calendarMonth,
+    calendarCategories,
+    calendarPrice,
+    loadCalendarEvents
+  ]);
 
   useEffect(() => {
     if (section !== 'lieu') return;
@@ -838,7 +925,9 @@ export function ExploreMap({
       `${API_BASE_URL}/venues?west=${bounds.west}&south=${bounds.south}&east=${bounds.east}&north=${bounds.north}`
     )
       .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setNoEventVenues(venueListResponseSchema.parse(json).data))
+      .then((json) =>
+        setNoEventVenues(venueListResponseSchema.parse(json).data)
+      )
       .catch(() => setNoEventVenues([]));
   }, [section]);
 
@@ -866,13 +955,12 @@ export function ExploreMap({
     document.documentElement.lang = nextLocale;
   }
 
-    const loadEvents = useCallback(
+  const loadEvents = useCallback(
     async (
       bounds = currentBounds.current,
       activeFilters = filtersRef.current
     ) => {
       currentBounds.current = bounds;
-      setState('loading');
       setSearchError(false);
 
       // Stale-While-Revalidate : Charger le cache instantanément
@@ -882,7 +970,6 @@ export function ExploreMap({
           const parsed = JSON.parse(cached);
           if (parsed.length > 0) {
             setEvents(parsed);
-            setState('success');
           }
         }
       } catch (err) {
@@ -915,13 +1002,15 @@ export function ExploreMap({
           setFilters(effectiveFilters);
           const foundEvents = result.data.map(({ event }) => event);
           setEvents(foundEvents);
-          localStorage.setItem('pulso-offline-events', JSON.stringify(foundEvents));
+          localStorage.setItem(
+            'pulso-offline-events',
+            JSON.stringify(foundEvents)
+          );
           setSelected((current) =>
             current && foundEvents.some(({ id }) => id === current.id)
               ? current
               : undefined
           );
-          setState(foundEvents.length === 0 ? 'empty' : 'success');
           setSearchProcessing(false);
           return;
         }
@@ -938,15 +1027,16 @@ export function ExploreMap({
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
         setEvents(result.data);
-        localStorage.setItem('pulso-offline-events', JSON.stringify(result.data));
+        localStorage.setItem(
+          'pulso-offline-events',
+          JSON.stringify(result.data)
+        );
         setSelected((current) =>
           current && result.data.some(({ id }) => id === current.id)
             ? current
             : undefined
         );
-        setState(result.data.length === 0 ? 'empty' : 'success');
       } catch {
-        setState('error');
         if (activeSearch.current) setSearchError(true);
         setSearchProcessing(false);
       }
@@ -966,9 +1056,6 @@ export function ExploreMap({
     setFilters(nextFilters);
     if (selected) {
       setSelected(undefined);
-      setFilterNotice(translate(localeRef.current, 'filters.previewClosed'));
-    } else {
-      setFilterNotice(undefined);
     }
     void loadEvents(currentBounds.current, nextFilters);
   }
@@ -1042,7 +1129,6 @@ export function ExploreMap({
       ]
     };
     setSelected(undefined);
-    setFilterNotice(translate(localeRef.current, 'search.previewClosed'));
     void loadEvents(currentBounds.current);
   }
 
@@ -1061,9 +1147,13 @@ export function ExploreMap({
       // Pin icons must be registered before any layer references them, or
       // that layer silently renders nothing for that image.
       for (const [category, color] of Object.entries(CATEGORY_COLORS)) {
-        instance.addImage(`pin-${category}`, buildPinImageData(color), { pixelRatio: PIN_SCALE });
+        instance.addImage(`pin-${category}`, buildPinImageData(color), {
+          pixelRatio: PIN_SCALE
+        });
       }
-      instance.addImage('cluster-badge', buildClusterBadgeImageData(), { pixelRatio: PIN_SCALE });
+      instance.addImage('cluster-badge', buildClusterBadgeImageData(), {
+        pixelRatio: PIN_SCALE
+      });
 
       // Source pour les événements avec clustering
       instance.addSource('events-source', {
@@ -1098,7 +1188,15 @@ export function ExploreMap({
           'icon-image': 'cluster-badge',
           // Matches the previous circle-radius steps (20/30/40px radius)
           // scaled against the 72px badge image.
-          'icon-size': ['step', ['get', 'point_count'], 0.56, 10, 0.83, 50, 1.1],
+          'icon-size': [
+            'step',
+            ['get', 'point_count'],
+            0.56,
+            10,
+            0.83,
+            50,
+            1.1
+          ],
           'icon-allow-overlap': true,
           'icon-ignore-placement': true
         }
@@ -1175,7 +1273,9 @@ export function ExploreMap({
         // topmost first. With nothing to distinguish them, always show a
         // picker rather than silently opening whichever one happened to be
         // on top - matches the picker used for clusters below.
-        const ids = [...new Set(e.features.map((f) => f.properties?.id as string))];
+        const ids = [
+          ...new Set(e.features.map((f) => f.properties?.id as string))
+        ];
         const matched = ids
           .map((id) => eventsRef.current.find((ev) => ev.id === id))
           .filter((ev): ev is PublicEvent => Boolean(ev));
@@ -1200,8 +1300,7 @@ export function ExploreMap({
         const feature = e.features?.[0];
         const clusterId = feature?.properties?.cluster_id;
         const source = instance.getSource('events-source') as
-          | maplibregl.GeoJSONSource
-          | undefined;
+          maplibregl.GeoJSONSource | undefined;
         if (clusterId === undefined || !source || !feature) return;
         const coordinates = (
           feature.geometry as { type: 'Point'; coordinates: [number, number] }
@@ -1337,16 +1436,19 @@ export function ExploreMap({
 
   // Fonction utilitaire réutilisable pour remplir la source
   const pushEventsToMap = useCallback((instance: maplibregl.Map) => {
-    const source = instance.getSource('events-source') as maplibregl.GeoJSONSource | undefined;
+    const source = instance.getSource('events-source') as
+      maplibregl.GeoJSONSource | undefined;
     if (!source) return;
     const evs = pendingDataRef.current;
     const favs = favoritesRef.current;
     const showFavs = showFavoritesOnlyRef.current;
     const sel = selectedRef.current;
-    const visibleEvents = evs.filter((e) => (showFavs ? favs.includes(e.id) : true));
+    const visibleEvents = evs.filter((e) =>
+      showFavs ? favs.includes(e.id) : true
+    );
     source.setData({
       type: 'FeatureCollection',
-      features: visibleEvents.map(event => ({
+      features: visibleEvents.map((event) => ({
         type: 'Feature',
         geometry: {
           type: 'Point',
@@ -1369,7 +1471,11 @@ export function ExploreMap({
         ['!', ['has', 'point_count']],
         ['!=', ['get', 'id'], sel?.id ?? '']
       ]);
-      instance.setFilter('events-selected', ['==', ['get', 'id'], sel?.id ?? '']);
+      instance.setFilter('events-selected', [
+        '==',
+        ['get', 'id'],
+        sel?.id ?? ''
+      ]);
     }
   }, []);
 
@@ -1378,11 +1484,21 @@ export function ExploreMap({
   const showFavoritesOnlyRef = useRef(showFavoritesOnly);
   const selectedRef = useRef(selected);
   const detailsRef = useRef(details);
-  useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
-  useEffect(() => { showFavoritesOnlyRef.current = showFavoritesOnly; }, [showFavoritesOnly]);
-  useEffect(() => { selectedRef.current = selected; }, [selected]);
-  useEffect(() => { detailsRef.current = details; }, [details]);
-  useEffect(() => { distanceKmRef.current = distanceKm; }, [distanceKm]);
+  useEffect(() => {
+    favoritesRef.current = favorites;
+  }, [favorites]);
+  useEffect(() => {
+    showFavoritesOnlyRef.current = showFavoritesOnly;
+  }, [showFavoritesOnly]);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+  useEffect(() => {
+    detailsRef.current = details;
+  }, [details]);
+  useEffect(() => {
+    distanceKmRef.current = distanceKm;
+  }, [distanceKm]);
   useEffect(() => {
     distanceFilterActiveRef.current = distanceFilterActive;
   }, [distanceFilterActive]);
@@ -1460,7 +1576,10 @@ export function ExploreMap({
     } else if (pickerList !== undefined) {
       lastRightPanelContentRef.current = { kind: 'picker', list: pickerList };
     } else if (venuePickerList !== undefined) {
-      lastRightPanelContentRef.current = { kind: 'venue-picker', list: venuePickerList };
+      lastRightPanelContentRef.current = {
+        kind: 'venue-picker',
+        list: venuePickerList
+      };
     }
   }, [showingDetails, details, pickerList, venuePickerList]);
   const shownRightPanelContent = rightPanelOpen
@@ -1477,20 +1596,20 @@ export function ExploreMap({
   // event rows, ever.
   const venueGroups: VenueGroup[] = [
     ...groupEventsByVenue(events),
-    ...noEventVenues.map(
-      (venue): VenueGroup => ({
-        id: venue.id,
-        name: venue.name,
-        address: venue.address,
-        point: venue.point,
-        events: [],
-        categories: [],
-        ...(venue.category !== undefined ? { venueCategory: venue.category } : {}),
-        ...(venue.secondaryCategories !== undefined
-          ? { venueSecondaryCategories: venue.secondaryCategories }
-          : {})
-      })
-    )
+    ...noEventVenues.map((venue): VenueGroup => ({
+      id: venue.id,
+      name: venue.name,
+      address: venue.address,
+      point: venue.point,
+      events: [],
+      categories: [],
+      ...(venue.category !== undefined
+        ? { venueCategory: venue.category }
+        : {}),
+      ...(venue.secondaryCategories !== undefined
+        ? { venueSecondaryCategories: venue.secondaryCategories }
+        : {})
+    }))
   ];
   // Never guessed: a venue with no known type/price simply isn't matched by
   // an active filter rather than being bucketed into a default - same
@@ -1499,10 +1618,15 @@ export function ExploreMap({
     .filter(
       (group) =>
         venueCategoryFilter.length === 0 ||
-        (group.venueCategory !== undefined && venueCategoryFilter.includes(group.venueCategory)) ||
-        group.venueSecondaryCategories?.some((category) => venueCategoryFilter.includes(category))
+        (group.venueCategory !== undefined &&
+          venueCategoryFilter.includes(group.venueCategory)) ||
+        group.venueSecondaryCategories?.some((category) =>
+          venueCategoryFilter.includes(category)
+        )
     )
-    .filter((group) => !showFavoriteVenuesOnly || favoriteVenues.includes(group.id));
+    .filter(
+      (group) => !showFavoriteVenuesOnly || favoriteVenues.includes(group.id)
+    );
 
   // Lieu's own map: a genuinely separate MapLibre instance (own container,
   // own source/layers) rather than a mode switch on the Événement map above
@@ -1518,8 +1642,7 @@ export function ExploreMap({
 
   const pushVenuesToMap = useCallback((instance: maplibregl.Map) => {
     const source = instance.getSource('venues-source') as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!source) return;
     source.setData({
       type: 'FeatureCollection',
@@ -1614,7 +1737,9 @@ export function ExploreMap({
 
       instance.on('click', 'venues-circles', (e) => {
         if (!e.features?.[0]) return;
-        const ids = [...new Set(e.features.map((f) => f.properties?.id as string))];
+        const ids = [
+          ...new Set(e.features.map((f) => f.properties?.id as string))
+        ];
         const matched = ids
           .map((id) => venueGroupsRef.current.find((g) => g.id === id))
           .filter((g): g is VenueGroup => Boolean(g));
@@ -1623,18 +1748,23 @@ export function ExploreMap({
         if (matched.length === 1) {
           const group = matched[0]!;
           setVenuePickerList(undefined);
-          setPickerList({ title: `${group.name} — ${group.address}`, events: group.events });
+          setPickerList({
+            title: `${group.name} — ${group.address}`,
+            events: group.events
+          });
           return;
         }
         setPickerList(undefined);
-        setVenuePickerList({ title: `${matched.length} lieux à cet endroit`, groups: matched });
+        setVenuePickerList({
+          title: `${matched.length} lieux à cet endroit`,
+          groups: matched
+        });
       });
       instance.on('click', 'venue-clusters', (e) => {
         const feature = e.features?.[0];
         const clusterId = feature?.properties?.cluster_id;
         const source = instance.getSource('venues-source') as
-          | maplibregl.GeoJSONSource
-          | undefined;
+          maplibregl.GeoJSONSource | undefined;
         if (clusterId === undefined || !source || !feature) return;
         const coordinates = (
           feature.geometry as { type: 'Point'; coordinates: [number, number] }
@@ -1708,10 +1838,15 @@ export function ExploreMap({
   useEffect(() => {
     explorerPinKindRef.current = explorerPinKind;
     if (!explorerMap.current) return;
-    const visible = (kind: 'event' | 'venue') => (explorerPinKind === kind ? 'visible' : 'none');
+    const visible = (kind: 'event' | 'venue') =>
+      explorerPinKind === kind ? 'visible' : 'none';
     for (const layer of ['explorer-events-glow', 'explorer-events-circles']) {
       if (explorerMap.current.getLayer(layer)) {
-        explorerMap.current.setLayoutProperty(layer, 'visibility', visible('event'));
+        explorerMap.current.setLayoutProperty(
+          layer,
+          'visibility',
+          visible('event')
+        );
       }
     }
     for (const layer of [
@@ -1721,7 +1856,11 @@ export function ExploreMap({
       'explorer-venues-circles'
     ]) {
       if (explorerMap.current.getLayer(layer)) {
-        explorerMap.current.setLayoutProperty(layer, 'visibility', visible('venue'));
+        explorerMap.current.setLayoutProperty(
+          layer,
+          'visibility',
+          visible('venue')
+        );
       }
     }
   }, [explorerPinKind]);
@@ -1755,8 +1894,7 @@ export function ExploreMap({
 
   const pushExplorerDataToMap = useCallback((instance: maplibregl.Map) => {
     const eventSource = instance.getSource('explorer-events-source') as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (eventSource) {
       eventSource.setData({
         type: 'FeatureCollection',
@@ -1764,7 +1902,10 @@ export function ExploreMap({
           type: 'Feature',
           geometry: {
             type: 'Point',
-            coordinates: [event.venue.point.longitude, event.venue.point.latitude]
+            coordinates: [
+              event.venue.point.longitude,
+              event.venue.point.latitude
+            ]
           },
           properties: {
             id: event.id,
@@ -1775,8 +1916,7 @@ export function ExploreMap({
       });
     }
     const venueSource = instance.getSource('explorer-venues-source') as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (venueSource) {
       venueSource.setData({
         type: 'FeatureCollection',
@@ -1803,16 +1943,28 @@ export function ExploreMap({
 
     instance.on('load', () => {
       for (const [category, color] of Object.entries(CATEGORY_COLORS)) {
-        instance.addImage(`explorer-pin-${category}`, buildPinImageData(color), {
-          pixelRatio: PIN_SCALE
-        });
+        instance.addImage(
+          `explorer-pin-${category}`,
+          buildPinImageData(color),
+          {
+            pixelRatio: PIN_SCALE
+          }
+        );
       }
-      instance.addImage('explorer-cluster-badge', buildClusterBadgeImageData(), {
-        pixelRatio: PIN_SCALE
-      });
-      instance.addImage('explorer-pin-venue', buildPinImageData(VENUE_PIN_COLOR), {
-        pixelRatio: PIN_SCALE
-      });
+      instance.addImage(
+        'explorer-cluster-badge',
+        buildClusterBadgeImageData(),
+        {
+          pixelRatio: PIN_SCALE
+        }
+      );
+      instance.addImage(
+        'explorer-pin-venue',
+        buildPinImageData(VENUE_PIN_COLOR),
+        {
+          pixelRatio: PIN_SCALE
+        }
+      );
 
       instance.addSource('explorer-events-source', {
         type: 'geojson',
@@ -1829,8 +1981,10 @@ export function ExploreMap({
         clusterRadius: 30
       });
 
-      const eventVisible = explorerPinKindRef.current === 'event' ? 'visible' : 'none';
-      const venueVisible = explorerPinKindRef.current === 'venue' ? 'visible' : 'none';
+      const eventVisible =
+        explorerPinKindRef.current === 'event' ? 'visible' : 'none';
+      const venueVisible =
+        explorerPinKindRef.current === 'venue' ? 'visible' : 'none';
 
       instance.addLayer({
         id: 'explorer-events-glow',
@@ -1915,7 +2069,9 @@ export function ExploreMap({
 
       instance.on('click', 'explorer-events-circles', (e) => {
         if (!e.features?.[0]) return;
-        const ids = [...new Set(e.features.map((f) => f.properties?.id as string))];
+        const ids = [
+          ...new Set(e.features.map((f) => f.properties?.id as string))
+        ];
         const matched = ids
           .map((id) => eventsRef.current.find((ev) => ev.id === id))
           .filter((ev): ev is PublicEvent => Boolean(ev));
@@ -1927,12 +2083,17 @@ export function ExploreMap({
           void openDetails(matched[0]!.id);
           return;
         }
-        setPickerList({ title: `${matched.length} événements à cet endroit`, events: matched });
+        setPickerList({
+          title: `${matched.length} événements à cet endroit`,
+          events: matched
+        });
       });
 
       instance.on('click', 'explorer-venues-circles', (e) => {
         if (!e.features?.[0]) return;
-        const ids = [...new Set(e.features.map((f) => f.properties?.id as string))];
+        const ids = [
+          ...new Set(e.features.map((f) => f.properties?.id as string))
+        ];
         const matched = ids
           .map((id) => explorerVenueGroupsRef.current.find((g) => g.id === id))
           .filter((g): g is VenueGroup => Boolean(g));
@@ -1941,19 +2102,24 @@ export function ExploreMap({
         if (matched.length === 1) {
           const group = matched[0]!;
           setVenuePickerList(undefined);
-          setPickerList({ title: `${group.name} — ${group.address}`, events: group.events });
+          setPickerList({
+            title: `${group.name} — ${group.address}`,
+            events: group.events
+          });
           return;
         }
         setPickerList(undefined);
-        setVenuePickerList({ title: `${matched.length} lieux à cet endroit`, groups: matched });
+        setVenuePickerList({
+          title: `${matched.length} lieux à cet endroit`,
+          groups: matched
+        });
       });
 
       instance.on('click', 'explorer-venue-clusters', (e) => {
         const feature = e.features?.[0];
         const clusterId = feature?.properties?.cluster_id;
         const source = instance.getSource('explorer-venues-source') as
-          | maplibregl.GeoJSONSource
-          | undefined;
+          maplibregl.GeoJSONSource | undefined;
         if (clusterId === undefined || !source || !feature) return;
         const coordinates = (
           feature.geometry as { type: 'Point'; coordinates: [number, number] }
@@ -1961,7 +2127,9 @@ export function ExploreMap({
         source.getClusterLeaves(clusterId, Infinity, 0).then((leaves) => {
           const ids = leaves.map((leaf) => leaf.properties?.id as string);
           const matched = ids
-            .map((id) => explorerVenueGroupsRef.current.find((g) => g.id === id))
+            .map((id) =>
+              explorerVenueGroupsRef.current.find((g) => g.id === id)
+            )
             .filter((g): g is VenueGroup => Boolean(g));
           if (matched.length <= 10) {
             setDetails({ kind: 'closed' });
@@ -1978,7 +2146,11 @@ export function ExploreMap({
         });
       });
 
-      for (const layer of ['explorer-events-circles', 'explorer-venues-circles', 'explorer-venue-clusters']) {
+      for (const layer of [
+        'explorer-events-circles',
+        'explorer-venues-circles',
+        'explorer-venue-clusters'
+      ]) {
         instance.on('mouseenter', layer, () => {
           instance.getCanvas().style.cursor = 'pointer';
         });
@@ -2013,7 +2185,8 @@ export function ExploreMap({
 
   // Prefer real-distance nearby results; fall back to the bounds-based list
   // when geolocation was denied/unsupported or hasn't resolved yet.
-  const carouselEvents = userLocation && nearbyState === 'success' ? nearbyEvents : events;
+  const carouselEvents =
+    userLocation && nearbyState === 'success' ? nearbyEvents : events;
   const carouselEmpty =
     userLocation && (nearbyState === 'success' || nearbyState === 'empty')
       ? nearbyEvents.length === 0
@@ -2025,7 +2198,9 @@ export function ExploreMap({
     <div className={`app-container${user ? ' app-container-connected' : ''}`}>
       {user && (
         <Sidebar
-          activeSection={(section === 'compte' ? 'decouvrir' : section) as ConnectedSection}
+          activeSection={
+            (section === 'compte' ? 'decouvrir' : section) as ConnectedSection
+          }
           onNavigate={(nextSection) => {
             setAboutOpen(false);
             // Sidebar/TopBar navigation always wins over a currently-open
@@ -2045,78 +2220,11 @@ export function ExploreMap({
           }}
         />
       )}
-      <ContentColumn {...(user ? { className: 'connected-content-column' } : {})}>
-      {user ? (
-        <TopBar
-          query={queryInput}
-          result={searchResult}
-          processing={searchProcessing}
-          error={searchError}
-          onQueryChange={setQueryInput}
-          onSubmit={submitSearch}
-          onClear={clearSearch}
-          onClearConstraint={clearDerivedConstraint}
-          onPreview={setSelected}
-          locale={locale}
-          user={user}
-          unreadMessagesCount={unreadMessagesCount}
-          onOpenAccount={() => {
-            setAboutOpen(false);
-            setForumPanelMode(false);
-            setSection('compte');
-          }}
-          onOpenMessages={() => {
-            setAboutOpen(false);
-            setForumPanelMode(false);
-            setSection('messages');
-          }}
-          onOpenAbout={() => setAboutOpen((prev) => !prev)}
-          aboutOpen={aboutOpen}
-        />
-      ) : (
-      <header className="top-navbar">
-        <div className="nav-left">
-          <button type="button" className="nav-logo" onClick={goHome} aria-label={translate(locale, 'app.title')}>
-            <img
-              src="/brand/pulso-logo-horizontal-dark.svg"
-              alt={translate(locale, 'app.title')}
-            />
-          </button>
-          <div className="nav-actions-links">
-             <button
-               type="button"
-               className={!aboutOpen && section === 'evenement' ? 'active' : ''}
-               onClick={() => {
-                 setAboutOpen(false);
-                 setSection('evenement');
-               }}
-             >
-               Événement
-             </button>
-             <button
-               type="button"
-               className={!aboutOpen && section === 'lieu' ? 'active' : ''}
-               onClick={() => {
-                 setAboutOpen(false);
-                 setSection('lieu');
-               }}
-             >
-               Lieu
-             </button>
-             <button
-               type="button"
-               className={!aboutOpen && section === 'explorer' ? 'active' : ''}
-               onClick={() => {
-                 setAboutOpen(false);
-                 setSection('explorer');
-               }}
-             >
-               Explorer
-             </button>
-          </div>
-        </div>
-        <div className="nav-search">
-          <SearchPanel
+      <ContentColumn
+        {...(user ? { className: 'connected-content-column' } : {})}
+      >
+        {user ? (
+          <TopBar
             query={queryInput}
             result={searchResult}
             processing={searchProcessing}
@@ -2127,922 +2235,1227 @@ export function ExploreMap({
             onClearConstraint={clearDerivedConstraint}
             onPreview={setSelected}
             locale={locale}
-          />
-        </div>
-        <div className="nav-actions">
-          <button
-            type="button"
-            className={`nav-icon-btn ${!aboutOpen && section === 'favoris' ? 'active' : ''}`}
-            onClick={() => {
-              setAboutOpen(false);
-              setSection('favoris');
-            }}
-            aria-label="Favoris"
-            title="Favoris"
-          >
-            <HeartIcon filled={!aboutOpen && section === 'favoris'} />
-          </button>
-          <button
-            type="button"
-            data-about-toggle
-            className={`nav-icon-btn ${aboutOpen ? 'active' : ''}`}
-            onClick={() => setAboutOpen((prev) => !prev)}
-            aria-label="À propos"
-            title="À propos"
-          >
-            <InfoIcon />
-          </button>
-          <button
-            type="button"
-            className="nav-icon-btn"
-            disabled
-            aria-label="Notifications (bientôt disponible)"
-            title="Bientôt disponible"
-          >
-            <BellIcon />
-          </button>
-          {!user && <LanguageSelector locale={locale} onChange={selectLocale} />}
-          <AccountMenu
             user={user}
-            onLogin={login}
+            unreadMessagesCount={unreadMessagesCount}
             onOpenAccount={() => {
               setAboutOpen(false);
+              setForumPanelMode(false);
               setSection('compte');
             }}
-            unreadCount={unreadMessagesCount}
+            onOpenMessages={() => {
+              setAboutOpen(false);
+              setForumPanelMode(false);
+              setSection('messages');
+            }}
+            onOpenAbout={() => setAboutOpen((prev) => !prev)}
+            aboutOpen={aboutOpen}
           />
-        </div>
-      </header>
-      )}
-
-      {user && forumPanelMode && showingDetails ? (
-        <div className="forum-panel-page">
-          {details.kind === 'success' && (
-            <ForumPanel
-              event={details.event}
-              onBack={returnToMap}
-              isFavorite={favorites.includes(details.event.id)}
-              onToggleFavorite={() => toggleFavorite(details.event.id)}
-              locale={locale}
-              user={user}
-              authToken={authToken}
-              onLogin={login}
-            />
-          )}
-          {details.kind === 'loading' && <p className="list-view-empty">Chargement…</p>}
-          {details.kind === 'error' && (
-            <div style={{ padding: '2rem' }}>
-              Erreur de chargement.
-              <button
-                className="btn-secondary"
-                onClick={() => void openDetails(details.eventId, { asForumPanel: true })}
-                style={{ marginTop: '1rem' }}
-              >
-                Réessayer
-              </button>
-            </div>
-          )}
-        </div>
-      ) : user && section === 'decouvrir' ? (
-        <DashboardHome
-          user={user}
-          carouselEvents={carouselEvents}
-          carouselEmpty={carouselEmpty}
-          favorites={favorites}
-          onToggleFavorite={toggleFavorite}
-          onOpenDetails={openDetails}
-          locale={locale}
-          authToken={authToken}
-          onNavigate={setSection}
-        />
-      ) : user && section === 'forums' ? (
-        <ActiveForumsPage
-          authToken={authToken}
-          onOpenDetails={(eventId, knownEvent) =>
-            openDetails(eventId, { asForumPanel: true, knownEvent })
-          }
-          locale={locale}
-        />
-      ) : user && section === 'groupes' ? (
-        <GroupsPage authToken={authToken} userId={user.id} />
-      ) : user && section === 'messages' ? (
-        <MessagesPage authToken={authToken} />
-      ) : user && section === 'amis' ? (
-        <AmisPage authToken={authToken} />
-      ) : user && section === 'mes-evenements' ? (
-        <AttendanceEventsPage
-          title="Mes événements"
-          emptyMessage="Aucun événement à venir pour l'instant. Marquez votre présence sur un événement pour le voir apparaître ici."
-          mode="upcoming"
-          attendance={attendance}
-          onOpenDetails={openDetails}
-          locale={locale}
-        />
-      ) : user && section === 'historique' ? (
-        <AttendanceEventsPage
-          title="Historique"
-          emptyMessage="Aucun événement passé pour l'instant."
-          mode="past"
-          attendance={attendance}
-          onOpenDetails={openDetails}
-          locale={locale}
-        />
-      ) : (
-      <Fragment>
-      <div className="dashboard-main">
-        {(section === 'evenement' || section === 'lieu') && (
-        /* Left Sidebar */
-        <aside className="sidebar-left">
-          <h2 className="sidebar-section-title">
-            {section === 'evenement' ? 'Événement' : 'Lieu'}
-          </h2>
-
-          <div className="view-toggles">
-            <div className="view-toggles-list">
-              {section === 'evenement' ? (
-                <>
-                  <button
-                    type="button"
-                    className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
-                    onClick={() => setViewMode('map')}
-                  >
-                    <ViewModeIcon kind="map" /> Carte
-                  </button>
-                  <button
-                    type="button"
-                    className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
-                    onClick={() => {
-                      setListOverride(undefined);
-                      setViewMode('list');
-                    }}
-                  >
-                    <ViewModeIcon kind="list" /> Liste
-                  </button>
-                  <button
-                    type="button"
-                    className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
-                    onClick={() => setViewMode('calendar')}
-                  >
-                    <ViewModeIcon kind="calendar" /> Calendrier
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className={`view-toggle-btn ${lieuTab === 'map' ? 'active' : ''}`}
-                    onClick={() => setLieuTab('map')}
-                  >
-                    <ViewModeIcon kind="map" /> Carte
-                  </button>
-                  <button
-                    type="button"
-                    className={`view-toggle-btn ${lieuTab === 'list' ? 'active' : ''}`}
-                    onClick={() => setLieuTab('list')}
-                  >
-                    <ViewModeIcon kind="list" /> Liste
-                  </button>
-                  <button
-                    type="button"
-                    className={`view-toggle-btn ${lieuTab === 'calendar' ? 'active' : ''}`}
-                    onClick={() => setLieuTab('calendar')}
-                  >
-                    <ViewModeIcon kind="calendar" /> Calendrier
-                  </button>
-                </>
-              )}
-            </div>
-            {section === 'evenement' && (
+        ) : (
+          <header className="top-navbar">
+            <div className="nav-left">
               <button
                 type="button"
-                className={`view-toggle-fav ${showFavoritesOnly ? 'active' : ''}`}
-                aria-label={showFavoritesOnly ? 'Afficher tous les événements' : 'Afficher uniquement mes favoris'}
-                aria-pressed={showFavoritesOnly}
-                onClick={() => setShowFavoritesOnly((prev) => !prev)}
+                className="nav-logo"
+                onClick={goHome}
+                aria-label={translate(locale, 'app.title')}
               >
-                <HeartIcon filled={showFavoritesOnly} />
+                <img
+                  src="/brand/pulso-logo-horizontal-dark.svg"
+                  alt={translate(locale, 'app.title')}
+                />
               </button>
-            )}
-            {section === 'lieu' && (
+              <div className="nav-actions-links">
+                <button
+                  type="button"
+                  className={
+                    !aboutOpen && section === 'evenement' ? 'active' : ''
+                  }
+                  onClick={() => {
+                    setAboutOpen(false);
+                    setSection('evenement');
+                  }}
+                >
+                  Événement
+                </button>
+                <button
+                  type="button"
+                  className={!aboutOpen && section === 'lieu' ? 'active' : ''}
+                  onClick={() => {
+                    setAboutOpen(false);
+                    setSection('lieu');
+                  }}
+                >
+                  Lieu
+                </button>
+                <button
+                  type="button"
+                  className={
+                    !aboutOpen && section === 'explorer' ? 'active' : ''
+                  }
+                  onClick={() => {
+                    setAboutOpen(false);
+                    setSection('explorer');
+                  }}
+                >
+                  Explorer
+                </button>
+              </div>
+            </div>
+            <div className="nav-search">
+              <SearchPanel
+                query={queryInput}
+                result={searchResult}
+                processing={searchProcessing}
+                error={searchError}
+                onQueryChange={setQueryInput}
+                onSubmit={submitSearch}
+                onClear={clearSearch}
+                onClearConstraint={clearDerivedConstraint}
+                onPreview={setSelected}
+                locale={locale}
+              />
+            </div>
+            <div className="nav-actions">
               <button
                 type="button"
-                className={`view-toggle-fav ${showFavoriteVenuesOnly ? 'active' : ''}`}
-                aria-label={showFavoriteVenuesOnly ? 'Afficher tous les lieux' : 'Afficher uniquement mes lieux suivis'}
-                title={showFavoriteVenuesOnly ? 'Afficher tous les lieux' : 'Lieux suivis'}
-                aria-pressed={showFavoriteVenuesOnly}
-                onClick={() => setShowFavoriteVenuesOnly((prev) => !prev)}
+                className={`nav-icon-btn ${!aboutOpen && section === 'favoris' ? 'active' : ''}`}
+                onClick={() => {
+                  setAboutOpen(false);
+                  setSection('favoris');
+                }}
+                aria-label="Favoris"
+                title="Favoris"
+              >
+                <HeartIcon filled={!aboutOpen && section === 'favoris'} />
+              </button>
+              <button
+                type="button"
+                data-about-toggle
+                className={`nav-icon-btn ${aboutOpen ? 'active' : ''}`}
+                onClick={() => setAboutOpen((prev) => !prev)}
+                aria-label="À propos"
+                title="À propos"
+              >
+                <InfoIcon />
+              </button>
+              <button
+                type="button"
+                className="nav-icon-btn"
+                disabled
+                aria-label="Notifications (bientôt disponible)"
+                title="Bientôt disponible"
               >
                 <BellIcon />
               </button>
-            )}
-          </div>
-
-          {section === 'evenement' && (
-          <>
-          <CollapsibleFilterGroup
-            title="Filtres"
-            collapsed={collapsedSections.has('filtres')}
-            onToggle={() => toggleSection('filtres')}
-            action={
-              <button className="filter-reset" onClick={clearAll}>
-                Réinitialiser
-              </button>
-            }
-          >
-            <div className="pill-list pill-list-long">
-              {(['today', 'weekend', 'next7'] as const).map((value) => (
-                <button
-                  type="button"
-                  key={value}
-                  className={`filter-pill ${filters.date === value ? 'active' : ''}`}
-                  onClick={() => applyFilters(withoutCustomDates(filters, value))}
-                >
-                  {getDateFilterLabel(locale, value)}
-                </button>
-              ))}
-            </div>
-          </CollapsibleFilterGroup>
-
-          <CollapsibleFilterGroup
-            title="Catégories"
-            collapsed={collapsedSections.has('categories')}
-            onToggle={() => toggleSection('categories')}
-          >
-            <p className="category-legend-hint">
-              La couleur de chaque catégorie correspond à celle des pins sur la carte.
-            </p>
-            <div className="category-grid">
-              {CATEGORY_FILTER_OPTIONS.map((option) => (
-                <button
-                  type="button"
-                  key={option.value}
-                  className={`category-item ${filters.categories.includes(option.value) ? 'active' : ''}`}
-                  onClick={() => {
-                    const nextCategories = filters.categories.includes(option.value)
-                      ? filters.categories.filter((c) => c !== option.value)
-                      : [...filters.categories, option.value];
-                    applyFilters({ ...filters, categories: nextCategories });
-                  }}
-                >
-                  <div
-                    className="category-icon"
-                    style={
-                      filters.categories.includes(option.value)
-                        ? {
-                            background: CATEGORY_COLORS[option.value],
-                            borderColor: CATEGORY_COLORS[option.value],
-                            color: '#fff'
-                          }
-                        : {
-                            borderColor: CATEGORY_COLORS[option.value],
-                            color: CATEGORY_COLORS[option.value]
-                          }
-                    }
-                  >
-                    <CategoryIcon category={option.value} />
-                  </div>
-                  <span>{SHORT_CATEGORY_LABELS[locale][option.value]}</span>
-                </button>
-              ))}
-            </div>
-          </CollapsibleFilterGroup>
-
-          <CollapsibleFilterGroup
-            title="Prix"
-            collapsed={collapsedSections.has('prix')}
-            onToggle={() => toggleSection('prix')}
-          >
-            <div className="pill-list">
-              {PRICE_FILTER_OPTIONS.map((option) => (
-                <button
-                  type="button"
-                  key={option.value}
-                  className={`filter-pill ${filters.price === option.value ? 'active' : ''}`}
-                  onClick={() => applyFilters({ ...filters, price: option.value })}
-                >
-                  {getPriceLabel(locale, option.value)}
-                </button>
-              ))}
-            </div>
-          </CollapsibleFilterGroup>
-
-          <CollapsibleFilterGroup
-            title="Distance"
-            collapsed={collapsedSections.has('distance')}
-            onToggle={() => toggleSection('distance')}
-          >
-            <div className="distance-slider-container">
-              <input
-                type="range"
-                min="1"
-                max="30"
-                value={distanceKm}
-                onChange={(event) => setDistanceKm(Number(event.target.value))}
-                onMouseUp={applyDistanceFilter}
-                onTouchEnd={applyDistanceFilter}
-                onKeyUp={applyDistanceFilter}
-                className="distance-slider"
+              {!user && (
+                <LanguageSelector locale={locale} onChange={selectLocale} />
+              )}
+              <AccountMenu
+                user={user}
+                onLogin={login}
+                onOpenAccount={() => {
+                  setAboutOpen(false);
+                  setSection('compte');
+                }}
+                unreadCount={unreadMessagesCount}
               />
-              <div className="distance-labels">
-                <span>1km</span>
-                <span>10km</span>
-                <span>20km</span>
-                <span>30km</span>
-              </div>
-              <p className="distance-value">
-                {distanceFilterActive
-                  ? `Rayon actif : ${distanceKm} km`
-                  : `Rayon max (${distanceKm} km) — non appliqué`}
-                {geoStatus === 'pending' && ' · localisation…'}
-                {geoStatus === 'denied' && ' · position non partagée'}
-                {geoStatus === 'unsupported' && ' · non disponible sur cet appareil'}
-              </p>
             </div>
-          </CollapsibleFilterGroup>
-
-          <CollapsibleFilterGroup
-            title="Ambiance"
-            collapsed={collapsedSections.has('ambiance')}
-            onToggle={() => toggleSection('ambiance')}
-          >
-            <p className="category-legend-hint">
-              Bientôt : une IA déterminera l'ambiance de chaque événement.
-            </p>
-            <div className="pill-list">
-              <button className="filter-pill" disabled>🔥 Énergique</button>
-              <button className="filter-pill" disabled>☕ Chill</button>
-              <button className="filter-pill" disabled>🥂 Romantique</button>
-              <button className="filter-pill" disabled>🎉 Festif</button>
-            </div>
-          </CollapsibleFilterGroup>
-          </>
-          )}
-
-          {section === 'lieu' && (
-          <>
-          <CollapsibleFilterGroup
-            title="Catégorie de lieu"
-            collapsed={collapsedSections.has('lieu-categorie')}
-            onToggle={() => toggleSection('lieu-categorie')}
-          >
-            <div className="pill-list venue-category-pills">
-              {VENUE_CATEGORY_FILTER_OPTIONS.map((option) => {
-                const active = venueCategoryFilter.includes(option.value);
-                return (
-                  <button
-                    type="button"
-                    key={option.value}
-                    className={`filter-pill ${active ? 'active' : ''}`}
-                    style={
-                      active
-                        ? {
-                            background: VENUE_CATEGORY_COLORS[option.value],
-                            borderColor: VENUE_CATEGORY_COLORS[option.value],
-                            color: '#fff'
-                          }
-                        : {
-                            borderColor: VENUE_CATEGORY_COLORS[option.value],
-                            color: VENUE_CATEGORY_COLORS[option.value]
-                          }
-                    }
-                    onClick={() =>
-                      setVenueCategoryFilter((prev) =>
-                        prev.includes(option.value)
-                          ? prev.filter((value) => value !== option.value)
-                          : [...prev, option.value]
-                      )
-                    }
-                  >
-                    {VENUE_CATEGORY_LABELS[locale][option.value]}
-                  </button>
-                );
-              })}
-            </div>
-          </CollapsibleFilterGroup>
-
-          <CollapsibleFilterGroup
-            title="Distance"
-            collapsed={collapsedSections.has('distance')}
-            onToggle={() => toggleSection('distance')}
-          >
-            <div className="distance-slider-container">
-              <input
-                type="range"
-                min="1"
-                max="30"
-                value={distanceKm}
-                onChange={(event) => setDistanceKm(Number(event.target.value))}
-                onMouseUp={applyDistanceFilter}
-                onTouchEnd={applyDistanceFilter}
-                onKeyUp={applyDistanceFilter}
-                className="distance-slider"
-              />
-              <div className="distance-labels">
-                <span>1km</span>
-                <span>10km</span>
-                <span>20km</span>
-                <span>30km</span>
-              </div>
-              <p className="distance-value">
-                {distanceFilterActive
-                  ? `Rayon actif : ${distanceKm} km`
-                  : `Rayon max (${distanceKm} km) — non appliqué`}
-                {geoStatus === 'pending' && ' · localisation…'}
-                {geoStatus === 'denied' && ' · position non partagée'}
-                {geoStatus === 'unsupported' && ' · non disponible sur cet appareil'}
-              </p>
-            </div>
-          </CollapsibleFilterGroup>
-
-          <CollapsibleFilterGroup
-            title="Ambiance"
-            collapsed={collapsedSections.has('ambiance')}
-            onToggle={() => toggleSection('ambiance')}
-          >
-            <p className="category-legend-hint">
-              Bientôt : une IA déterminera l'ambiance de chaque lieu.
-            </p>
-            <div className="pill-list">
-              <button className="filter-pill" disabled>🔥 Énergique</button>
-              <button className="filter-pill" disabled>☕ Chill</button>
-              <button className="filter-pill" disabled>🥂 Romantique</button>
-              <button className="filter-pill" disabled>🎉 Festif</button>
-            </div>
-          </CollapsibleFilterGroup>
-          </>
-          )}
-
-          <div className="promo-card">
-             <div className="promo-content">
-               <h4>Téléchargez Pulso</h4>
-               <p>Emportez la ville dans votre poche.</p>
-             </div>
-          </div>
-        </aside>
+          </header>
         )}
 
-        {/* Événement map + content - always mounted (never conditionally
+        {user && forumPanelMode && showingDetails ? (
+          <div className="forum-panel-page">
+            {details.kind === 'success' && (
+              <ForumPanel
+                event={details.event}
+                onBack={returnToMap}
+                isFavorite={favorites.includes(details.event.id)}
+                onToggleFavorite={() => toggleFavorite(details.event.id)}
+                locale={locale}
+                user={user}
+                authToken={authToken}
+                onLogin={login}
+              />
+            )}
+            {details.kind === 'loading' && (
+              <p className="list-view-empty">Chargement…</p>
+            )}
+            {details.kind === 'error' && (
+              <div style={{ padding: '2rem' }}>
+                Erreur de chargement.
+                <button
+                  className="btn-secondary"
+                  onClick={() =>
+                    void openDetails(details.eventId, { asForumPanel: true })
+                  }
+                  style={{ marginTop: '1rem' }}
+                >
+                  Réessayer
+                </button>
+              </div>
+            )}
+          </div>
+        ) : user && section === 'decouvrir' ? (
+          <DashboardHome
+            user={user}
+            carouselEvents={carouselEvents}
+            carouselEmpty={carouselEmpty}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
+            onOpenDetails={openDetails}
+            locale={locale}
+            authToken={authToken}
+            onNavigate={setSection}
+          />
+        ) : user && section === 'forums' ? (
+          <ActiveForumsPage
+            authToken={authToken}
+            onOpenDetails={(eventId, knownEvent) =>
+              openDetails(eventId, { asForumPanel: true, knownEvent })
+            }
+            locale={locale}
+          />
+        ) : user && section === 'groupes' ? (
+          <GroupsPage authToken={authToken} userId={user.id} />
+        ) : user && section === 'messages' ? (
+          <MessagesPage authToken={authToken} />
+        ) : user && section === 'amis' ? (
+          <AmisPage authToken={authToken} />
+        ) : user && section === 'mes-evenements' ? (
+          <AttendanceEventsPage
+            title="Mes événements"
+            emptyMessage="Aucun événement à venir pour l'instant. Marquez votre présence sur un événement pour le voir apparaître ici."
+            mode="upcoming"
+            attendance={attendance}
+            onOpenDetails={openDetails}
+            locale={locale}
+          />
+        ) : user && section === 'historique' ? (
+          <AttendanceEventsPage
+            title="Historique"
+            emptyMessage="Aucun événement passé pour l'instant."
+            mode="past"
+            attendance={attendance}
+            onOpenDetails={openDetails}
+            locale={locale}
+          />
+        ) : (
+          <Fragment>
+            <div className="dashboard-main">
+              {(section === 'evenement' || section === 'lieu') && (
+                /* Left Sidebar */
+                <aside className="sidebar-left">
+                  <h2 className="sidebar-section-title">
+                    {section === 'evenement' ? 'Événement' : 'Lieu'}
+                  </h2>
+
+                  <div className="view-toggles">
+                    <div className="view-toggles-list">
+                      {section === 'evenement' ? (
+                        <>
+                          <button
+                            type="button"
+                            className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
+                            onClick={() => setViewMode('map')}
+                          >
+                            <ViewModeIcon kind="map" /> Carte
+                          </button>
+                          <button
+                            type="button"
+                            className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+                            onClick={() => {
+                              setListOverride(undefined);
+                              setViewMode('list');
+                            }}
+                          >
+                            <ViewModeIcon kind="list" /> Liste
+                          </button>
+                          <button
+                            type="button"
+                            className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
+                            onClick={() => setViewMode('calendar')}
+                          >
+                            <ViewModeIcon kind="calendar" /> Calendrier
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className={`view-toggle-btn ${lieuTab === 'map' ? 'active' : ''}`}
+                            onClick={() => setLieuTab('map')}
+                          >
+                            <ViewModeIcon kind="map" /> Carte
+                          </button>
+                          <button
+                            type="button"
+                            className={`view-toggle-btn ${lieuTab === 'list' ? 'active' : ''}`}
+                            onClick={() => setLieuTab('list')}
+                          >
+                            <ViewModeIcon kind="list" /> Liste
+                          </button>
+                          <button
+                            type="button"
+                            className={`view-toggle-btn ${lieuTab === 'calendar' ? 'active' : ''}`}
+                            onClick={() => setLieuTab('calendar')}
+                          >
+                            <ViewModeIcon kind="calendar" /> Calendrier
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    {section === 'evenement' && (
+                      <button
+                        type="button"
+                        className={`view-toggle-fav ${showFavoritesOnly ? 'active' : ''}`}
+                        aria-label={
+                          showFavoritesOnly
+                            ? 'Afficher tous les événements'
+                            : 'Afficher uniquement mes favoris'
+                        }
+                        aria-pressed={showFavoritesOnly}
+                        onClick={() => setShowFavoritesOnly((prev) => !prev)}
+                      >
+                        <HeartIcon filled={showFavoritesOnly} />
+                      </button>
+                    )}
+                    {section === 'lieu' && (
+                      <button
+                        type="button"
+                        className={`view-toggle-fav ${showFavoriteVenuesOnly ? 'active' : ''}`}
+                        aria-label={
+                          showFavoriteVenuesOnly
+                            ? 'Afficher tous les lieux'
+                            : 'Afficher uniquement mes lieux suivis'
+                        }
+                        title={
+                          showFavoriteVenuesOnly
+                            ? 'Afficher tous les lieux'
+                            : 'Lieux suivis'
+                        }
+                        aria-pressed={showFavoriteVenuesOnly}
+                        onClick={() =>
+                          setShowFavoriteVenuesOnly((prev) => !prev)
+                        }
+                      >
+                        <BellIcon />
+                      </button>
+                    )}
+                  </div>
+
+                  {section === 'evenement' && (
+                    <>
+                      <CollapsibleFilterGroup
+                        title="Filtres"
+                        collapsed={collapsedSections.has('filtres')}
+                        onToggle={() => toggleSection('filtres')}
+                        action={
+                          <button className="filter-reset" onClick={clearAll}>
+                            Réinitialiser
+                          </button>
+                        }
+                      >
+                        <div className="pill-list pill-list-long">
+                          {(['today', 'weekend', 'next7'] as const).map(
+                            (value) => (
+                              <button
+                                type="button"
+                                key={value}
+                                className={`filter-pill ${filters.date === value ? 'active' : ''}`}
+                                onClick={() =>
+                                  applyFilters(
+                                    withoutCustomDates(filters, value)
+                                  )
+                                }
+                              >
+                                {getDateFilterLabel(locale, value)}
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </CollapsibleFilterGroup>
+
+                      <CollapsibleFilterGroup
+                        title="Catégories"
+                        collapsed={collapsedSections.has('categories')}
+                        onToggle={() => toggleSection('categories')}
+                      >
+                        <p className="category-legend-hint">
+                          La couleur de chaque catégorie correspond à celle des
+                          pins sur la carte.
+                        </p>
+                        <div className="category-grid">
+                          {CATEGORY_FILTER_OPTIONS.map((option) => (
+                            <button
+                              type="button"
+                              key={option.value}
+                              className={`category-item ${filters.categories.includes(option.value) ? 'active' : ''}`}
+                              onClick={() => {
+                                const nextCategories =
+                                  filters.categories.includes(option.value)
+                                    ? filters.categories.filter(
+                                        (c) => c !== option.value
+                                      )
+                                    : [...filters.categories, option.value];
+                                applyFilters({
+                                  ...filters,
+                                  categories: nextCategories
+                                });
+                              }}
+                            >
+                              <div
+                                className="category-icon"
+                                style={
+                                  filters.categories.includes(option.value)
+                                    ? {
+                                        background:
+                                          CATEGORY_COLORS[option.value],
+                                        borderColor:
+                                          CATEGORY_COLORS[option.value],
+                                        color: '#fff'
+                                      }
+                                    : {
+                                        borderColor:
+                                          CATEGORY_COLORS[option.value],
+                                        color: CATEGORY_COLORS[option.value]
+                                      }
+                                }
+                              >
+                                <CategoryIcon category={option.value} />
+                              </div>
+                              <span>
+                                {SHORT_CATEGORY_LABELS[locale][option.value]}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </CollapsibleFilterGroup>
+
+                      <CollapsibleFilterGroup
+                        title="Prix"
+                        collapsed={collapsedSections.has('prix')}
+                        onToggle={() => toggleSection('prix')}
+                      >
+                        <div className="pill-list">
+                          {PRICE_FILTER_OPTIONS.map((option) => (
+                            <button
+                              type="button"
+                              key={option.value}
+                              className={`filter-pill ${filters.price === option.value ? 'active' : ''}`}
+                              onClick={() =>
+                                applyFilters({
+                                  ...filters,
+                                  price: option.value
+                                })
+                              }
+                            >
+                              {getPriceLabel(locale, option.value)}
+                            </button>
+                          ))}
+                        </div>
+                      </CollapsibleFilterGroup>
+
+                      <CollapsibleFilterGroup
+                        title="Distance"
+                        collapsed={collapsedSections.has('distance')}
+                        onToggle={() => toggleSection('distance')}
+                      >
+                        <div className="distance-slider-container">
+                          <input
+                            type="range"
+                            min="1"
+                            max="30"
+                            value={distanceKm}
+                            onChange={(event) =>
+                              setDistanceKm(Number(event.target.value))
+                            }
+                            onMouseUp={applyDistanceFilter}
+                            onTouchEnd={applyDistanceFilter}
+                            onKeyUp={applyDistanceFilter}
+                            className="distance-slider"
+                          />
+                          <div className="distance-labels">
+                            <span>1km</span>
+                            <span>10km</span>
+                            <span>20km</span>
+                            <span>30km</span>
+                          </div>
+                          <p className="distance-value">
+                            {distanceFilterActive
+                              ? `Rayon actif : ${distanceKm} km`
+                              : `Rayon max (${distanceKm} km) — non appliqué`}
+                            {geoStatus === 'pending' && ' · localisation…'}
+                            {geoStatus === 'denied' &&
+                              ' · position non partagée'}
+                            {geoStatus === 'unsupported' &&
+                              ' · non disponible sur cet appareil'}
+                          </p>
+                        </div>
+                      </CollapsibleFilterGroup>
+
+                      <CollapsibleFilterGroup
+                        title="Ambiance"
+                        collapsed={collapsedSections.has('ambiance')}
+                        onToggle={() => toggleSection('ambiance')}
+                      >
+                        <p className="category-legend-hint">
+                          Bientôt : une IA déterminera l'ambiance de chaque
+                          événement.
+                        </p>
+                        <div className="pill-list">
+                          <button className="filter-pill" disabled>
+                            🔥 Énergique
+                          </button>
+                          <button className="filter-pill" disabled>
+                            ☕ Chill
+                          </button>
+                          <button className="filter-pill" disabled>
+                            🥂 Romantique
+                          </button>
+                          <button className="filter-pill" disabled>
+                            🎉 Festif
+                          </button>
+                        </div>
+                      </CollapsibleFilterGroup>
+                    </>
+                  )}
+
+                  {section === 'lieu' && (
+                    <>
+                      <CollapsibleFilterGroup
+                        title="Catégorie de lieu"
+                        collapsed={collapsedSections.has('lieu-categorie')}
+                        onToggle={() => toggleSection('lieu-categorie')}
+                      >
+                        <div className="pill-list venue-category-pills">
+                          {VENUE_CATEGORY_FILTER_OPTIONS.map((option) => {
+                            const active = venueCategoryFilter.includes(
+                              option.value
+                            );
+                            return (
+                              <button
+                                type="button"
+                                key={option.value}
+                                className={`filter-pill ${active ? 'active' : ''}`}
+                                style={
+                                  active
+                                    ? {
+                                        background:
+                                          VENUE_CATEGORY_COLORS[option.value],
+                                        borderColor:
+                                          VENUE_CATEGORY_COLORS[option.value],
+                                        color: '#fff'
+                                      }
+                                    : {
+                                        borderColor:
+                                          VENUE_CATEGORY_COLORS[option.value],
+                                        color:
+                                          VENUE_CATEGORY_COLORS[option.value]
+                                      }
+                                }
+                                onClick={() =>
+                                  setVenueCategoryFilter((prev) =>
+                                    prev.includes(option.value)
+                                      ? prev.filter(
+                                          (value) => value !== option.value
+                                        )
+                                      : [...prev, option.value]
+                                  )
+                                }
+                              >
+                                {VENUE_CATEGORY_LABELS[locale][option.value]}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </CollapsibleFilterGroup>
+
+                      <CollapsibleFilterGroup
+                        title="Distance"
+                        collapsed={collapsedSections.has('distance')}
+                        onToggle={() => toggleSection('distance')}
+                      >
+                        <div className="distance-slider-container">
+                          <input
+                            type="range"
+                            min="1"
+                            max="30"
+                            value={distanceKm}
+                            onChange={(event) =>
+                              setDistanceKm(Number(event.target.value))
+                            }
+                            onMouseUp={applyDistanceFilter}
+                            onTouchEnd={applyDistanceFilter}
+                            onKeyUp={applyDistanceFilter}
+                            className="distance-slider"
+                          />
+                          <div className="distance-labels">
+                            <span>1km</span>
+                            <span>10km</span>
+                            <span>20km</span>
+                            <span>30km</span>
+                          </div>
+                          <p className="distance-value">
+                            {distanceFilterActive
+                              ? `Rayon actif : ${distanceKm} km`
+                              : `Rayon max (${distanceKm} km) — non appliqué`}
+                            {geoStatus === 'pending' && ' · localisation…'}
+                            {geoStatus === 'denied' &&
+                              ' · position non partagée'}
+                            {geoStatus === 'unsupported' &&
+                              ' · non disponible sur cet appareil'}
+                          </p>
+                        </div>
+                      </CollapsibleFilterGroup>
+
+                      <CollapsibleFilterGroup
+                        title="Ambiance"
+                        collapsed={collapsedSections.has('ambiance')}
+                        onToggle={() => toggleSection('ambiance')}
+                      >
+                        <p className="category-legend-hint">
+                          Bientôt : une IA déterminera l'ambiance de chaque
+                          lieu.
+                        </p>
+                        <div className="pill-list">
+                          <button className="filter-pill" disabled>
+                            🔥 Énergique
+                          </button>
+                          <button className="filter-pill" disabled>
+                            ☕ Chill
+                          </button>
+                          <button className="filter-pill" disabled>
+                            🥂 Romantique
+                          </button>
+                          <button className="filter-pill" disabled>
+                            🎉 Festif
+                          </button>
+                        </div>
+                      </CollapsibleFilterGroup>
+                    </>
+                  )}
+
+                  <div className="promo-card">
+                    <div className="promo-content">
+                      <h4>Téléchargez Pulso</h4>
+                      <p>Emportez la ville dans votre poche.</p>
+                    </div>
+                  </div>
+                </aside>
+              )}
+
+              {/* Événement map + content - always mounted (never conditionally
             unmounted by section) so the MapLibre instance attached to
             `container` is never torn down and recreated; only its CSS
             display toggles. A map created while its container isn't in the
             DOM never recovers its size once it reappears. */}
-        <section
-          className="map-container-wrapper"
-          aria-label={translate(locale, 'map.label')}
-          style={{ display: section === 'evenement' ? undefined : 'none' }}
-        >
-          <div
-            className="map-shell"
-            data-map-context="preserved"
-            style={{ display: viewMode === 'map' ? undefined : 'none' }}
-          >
-             <div ref={container} className="map" />
-             <button className="map-floating-search" onClick={() => loadEvents(currentBounds.current, filters)}>
-               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight: 8}}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-               Rechercher dans cette zone
-             </button>
-
-             <MapFilterBar
-               filters={filters}
-               onChange={applyFilters}
-               onOpenMore={() => setFiltersOpen((prev) => !prev)}
-               locale={locale}
-             />
-
-             <div className="map-zoom-controls">
-               <button
-                 type="button"
-                 className="map-zoom-btn"
-                 aria-label={translate(locale, 'map.zoomIn')}
-                 onClick={() => map.current?.zoomIn()}
-               >
-                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-               </button>
-               <button
-                 type="button"
-                 className="map-zoom-btn"
-                 aria-label={translate(locale, 'map.zoomOut')}
-                 onClick={() => map.current?.zoomOut()}
-               >
-                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-               </button>
-               <button
-                 type="button"
-                 className="map-zoom-btn map-recenter-btn"
-                 aria-label={translate(locale, 'map.recenter')}
-                 disabled={!userLocation}
-                 onClick={() => {
-                   if (!userLocation) return;
-                   map.current?.flyTo({ center: [userLocation.longitude, userLocation.latitude], zoom: 14 });
-                 }}
-               >
-                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-               </button>
-             </div>
-
-             {basemapState !== 'loaded' && (
-              <p className="map-basemap-status" role="status">
-                {basemapState === 'loading' ? 'Loading map...' : 'Map unavailable'}
-              </p>
-             )}
-          </div>
-
-          {viewMode === 'list' && (
-            <ListView
-              events={listOverride?.events ?? events}
-              favorites={favorites}
-              showFavoritesOnly={showFavoritesOnly}
-              onToggleFavorite={toggleFavorite}
-              onOpenDetails={openDetails}
-              title={listOverride?.title}
-              onClearTitle={listOverride ? () => setListOverride(undefined) : undefined}
-              locale={locale}
-            />
-          )}
-
-          {viewMode === 'calendar' && (
-            <CalendarView
-              month={calendarMonth}
-              onChangeMonth={setCalendarMonth}
-              events={calendarEvents}
-              state={calendarState}
-              favorites={favorites}
-              showFavoritesOnly={showFavoritesOnly}
-              categories={calendarCategories}
-              onChangeCategories={setCalendarCategories}
-              price={calendarPrice}
-              onChangePrice={setCalendarPrice}
-              selectedDay={selectedDay}
-              onSelectDay={(day, dayEvents) => {
-                setSelectedDay(day);
-                if (day) {
-                  const dayLabel = new Date(`${day}T00:00:00`).toLocaleDateString(
-                    locale === 'fr' ? 'fr-CA' : 'en-CA',
-                    { weekday: 'long', day: 'numeric', month: 'long' }
-                  );
-                  // The festive-day marker on the grid only had a hover
-                  // tooltip, easy to miss (and useless on touch) - naming
-                  // it in the picker title that opens on click/tap makes
-                  // "what is this highlighted day" self-evident the moment
-                  // someone actually interacts with it.
-                  const festiveLabel = FESTIVE_DAYS[day.slice(5)];
-                  setDetails({ kind: 'closed' });
-                  setPickerList({
-                    title: festiveLabel ? `${dayLabel} — ${festiveLabel}` : dayLabel,
-                    events: dayEvents
-                  });
-                } else {
-                  setPickerList(undefined);
-                }
-              }}
-              locale={locale}
-            />
-          )}
-        </section>
-
-        {/* Lieu map + content - same always-mounted rationale as Événement's
-            map above. */}
-        <section
-          className="map-container-wrapper"
-          style={{ display: section === 'lieu' ? undefined : 'none' }}
-        >
-          <div className="venue-section">
-            <div className="map-shell" style={{ display: lieuTab === 'map' ? undefined : 'none' }}>
-              <div ref={lieuMapContainer} className="map" />
-            </div>
-            {lieuTab === 'list' && (
-              <VenueListView
-                groups={filteredVenueGroups}
-                onSelectVenue={(group) => {
-                  // A newly-picked list must win over an already-open
-                  // details panel (same rule as map cluster/pin clicks) -
-                  // without this, clicking another venue while one's
-                  // events are open silently swapped the list behind the
-                  // visible details panel.
-                  setDetails({ kind: 'closed' });
-                  setVenuePickerList(undefined);
-                  if (group.events.length === 1) {
-                    void openDetails(group.events[0]!.id);
-                  } else {
-                    setPickerList({
-                      title: `${group.name} — ${group.address}`,
-                      events: group.events
-                    });
-                  }
+              <section
+                className="map-container-wrapper"
+                aria-label={translate(locale, 'map.label')}
+                style={{
+                  display: section === 'evenement' ? undefined : 'none'
                 }}
-                favoriteVenues={favoriteVenues}
-                onToggleFavoriteVenue={toggleFavoriteVenue}
-                locale={locale}
-              />
-            )}
-            {lieuTab === 'calendar' && (
-              <CalendarView
-                month={calendarMonth}
-                onChangeMonth={setCalendarMonth}
-                events={calendarEvents}
-                state={calendarState}
-                favorites={favorites}
-                showFavoritesOnly={false}
-                categories={calendarCategories}
-                onChangeCategories={setCalendarCategories}
-                price={calendarPrice}
-                onChangePrice={setCalendarPrice}
-                selectedDay={selectedDay}
-                onSelectDay={(day, dayEvents) => {
-                  // The one real divergence from Événement's calendar: a day
-                  // groups its events by venue first (confirmed with the
-                  // user) rather than opening the raw event list - drilling
-                  // into one venue from there opens the normal PickerList
-                  // with that venue's events for the day.
-                  setSelectedDay(day);
-                  if (day) {
-                    const dayLabel = new Date(`${day}T00:00:00`).toLocaleDateString(
-                      locale === 'fr' ? 'fr-CA' : 'en-CA',
-                      { weekday: 'long', day: 'numeric', month: 'long' }
-                    );
-                    setDetails({ kind: 'closed' });
-                    setPickerList(undefined);
-                    setVenuePickerList({
-                      title: dayLabel,
-                      groups: groupEventsByVenue(dayEvents)
-                    });
-                  } else {
-                    setVenuePickerList(undefined);
-                  }
-                }}
-                locale={locale}
-              />
-            )}
-          </div>
-        </section>
-
-        {/* Explorer map - same always-mounted rationale. */}
-        <section
-          className="map-container-wrapper"
-          style={{ display: section === 'explorer' ? undefined : 'none' }}
-        >
-          <div className="map-shell">
-            <div ref={explorerMapContainer} className="map" />
-            <div className="map-floating-pin-toggle">
-              <button
-                type="button"
-                className={explorerPinKind === 'event' ? 'active' : ''}
-                onClick={() => setExplorerPinKind('event')}
               >
-                Événements
-              </button>
-              <button
-                type="button"
-                className={explorerPinKind === 'venue' ? 'active' : ''}
-                onClick={() => setExplorerPinKind('venue')}
-              >
-                Lieux
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {section === 'favoris' && (
-          <FavorisSection
-            favorites={favorites}
-            onToggleFavorite={toggleFavorite}
-            onOpenDetails={openDetails}
-            favoriteVenueGroups={venueGroups.filter((group) => favoriteVenues.includes(group.id))}
-            favoriteVenues={favoriteVenues}
-            onToggleFavoriteVenue={toggleFavoriteVenue}
-            onSelectVenue={(group) => {
-              setDetails({ kind: 'closed' });
-              setVenuePickerList(undefined);
-              if (group.events.length === 1) {
-                void openDetails(group.events[0]!.id);
-              } else {
-                setPickerList({ title: `${group.name} — ${group.address}`, events: group.events });
-                setSection('lieu');
-              }
-            }}
-            locale={locale}
-          />
-        )}
-
-        {section === 'compte' && user && (
-          <CompteSection
-            user={user}
-            authToken={authToken}
-            onUserUpdated={setUser}
-            onLogout={logout}
-            locale={locale}
-            onChangeLocale={selectLocale}
-            attendance={attendance}
-            favorites={favorites}
-            onToggleFavorite={toggleFavorite}
-            onOpenDetails={openDetails}
-            favoriteVenueGroups={venueGroups.filter((group) => favoriteVenues.includes(group.id))}
-            favoriteVenues={favoriteVenues}
-            onToggleFavoriteVenue={toggleFavoriteVenue}
-            onSelectVenue={(group) => {
-              setDetails({ kind: 'closed' });
-              setVenuePickerList(undefined);
-              if (group.events.length === 1) {
-                void openDetails(group.events[0]!.id);
-              } else {
-                setPickerList({ title: `${group.name} — ${group.address}`, events: group.events });
-                setSection('lieu');
-              }
-            }}
-            onOpenAmis={() => setSection('amis')}
-          />
-        )}
-
-        {/* Right Sidebar (Details / cluster picker) - one shared slot, see
-            rightPanelMount above for why these aren't two independent panels. */}
-        {rightPanelMount.mounted && (
-           <div className={`sidebar-right panel-transition ${rightPanelMount.visible ? 'panel-visible' : ''}`}>
-             {shownRightPanelContent.kind === 'details' && shownRightPanelContent.state.kind === 'success' && (() => {
-               const shownEvent = shownRightPanelContent.state.event;
-               return (
-                 <EventDetails
-                   event={shownEvent}
-                   headingRef={detailsHeading}
-                   onBack={returnToMap}
-                   isFavorite={favorites.includes(shownEvent.id)}
-                   onToggleFavorite={() => toggleFavorite(shownEvent.id)}
-                   locale={locale}
-                   user={user}
-                   authToken={authToken}
-                   onLogin={login}
-                   attendanceVisibility={attendance[shownEvent.id]}
-                   onSetAttendance={(visibility) => setAttendance(shownEvent.id, visibility)}
-                   onClearAttendance={() => clearAttendance(shownEvent.id)}
-                   initialTab={detailsInitialTab}
-                   onOpenForumPanel={() => setForumPanelMode(true)}
-                 />
-               );
-             })()}
-             {shownRightPanelContent.kind === 'details' && shownRightPanelContent.state.kind === 'loading' && (
-               <div style={{padding: '2rem'}}>Chargement...</div>
-             )}
-             {shownRightPanelContent.kind === 'details' && shownRightPanelContent.state.kind === 'error' && (() => {
-               const failedEventId = shownRightPanelContent.state.eventId;
-               return (
-                 <div style={{padding: '2rem'}}>
-                   Erreur de chargement.
-                   <button className="btn-secondary" onClick={() => void openDetails(failedEventId, { keepPickerList: true })} style={{marginTop: '1rem'}}>Réessayer</button>
-                 </div>
-               );
-             })()}
-             {shownRightPanelContent.kind === 'picker' && (
-               <PickerList
-                 title={shownRightPanelContent.list.title}
-                 events={shownRightPanelContent.list.events}
-                 favorites={favorites}
-                 locale={locale}
-                 onClose={() => setPickerList(undefined)}
-                 onSelect={(id) => void openDetails(id, { keepPickerList: true })}
-               />
-             )}
-             {shownRightPanelContent.kind === 'venue-picker' && (
-               <VenuePickerList
-                 title={shownRightPanelContent.list.title}
-                 groups={shownRightPanelContent.list.groups}
-                 favoriteVenues={favoriteVenues}
-                 locale={locale}
-                 onClose={() => setVenuePickerList(undefined)}
-                 onSelectVenue={(group) => {
-                   setDetails({ kind: 'closed' });
-                   if (group.events.length === 1) {
-                     setVenuePickerList(undefined);
-                     void openDetails(group.events[0]!.id);
-                   } else {
-                     setPickerList({
-                       title: `${group.name} — ${group.address}`,
-                       events: group.events
-                     });
-                   }
-                 }}
-               />
-             )}
-           </div>
-        )}
-      </div>
-
-      {filtersOverlayMount.mounted && (
-        <FilterOverlay
-          filters={filters}
-          onChange={applyFilters}
-          onClose={() => setFiltersOpen(false)}
-          onClearAll={clearAll}
-          locale={locale}
-          visible={filtersOverlayMount.visible}
-        />
-      )}
-
-      {aboutPanelMount.mounted && (
-        <AboutPanel onClose={() => setAboutOpen(false)} visible={aboutPanelMount.visible} />
-      )}
-
-      {/* Selected marker preview fallback logic */}
-      {selected && details.kind === 'closed' && (
-        <div className="event-preview-wrapper">
-          <EventPreview
-            event={selected}
-            searchMatch={searchResult?.data.find(({ event }) => event.id === selected.id)}
-            detailsButton={detailsButton}
-            onClose={() => setSelected(undefined)}
-            onDetails={() => void openDetails(selected.id)}
-            isFavorite={favorites.includes(selected.id)}
-            onToggleFavorite={() => toggleFavorite(selected.id)}
-            locale={locale}
-          />
-        </div>
-      )}
-
-      <div className="bottom-section">
-         <div className="section-header">
-           <h2>Événements autour de vous</h2>
-           <button
-             type="button"
-             className="view-all"
-             onClick={() => {
-               setListOverride({
-                 title: 'Événements les plus proches de vous',
-                 events: carouselEvents.slice(0, 15)
-               });
-               setViewMode('list');
-             }}
-           >
-             Voir tous les événements <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{verticalAlign: 'middle', marginLeft: 4}}><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-           </button>
-         </div>
-         
-         <div className="event-carousel">
-           {carouselEvents.slice(0, 15).map(evt => (
-              <div className="event-card" key={evt.id} onClick={() => openDetails(evt.id)} style={{cursor: 'pointer'}}>
                 <div
-                  className="event-card-img"
-                  style={
-                    evt.imageUrl
-                      ? {
-                          backgroundImage: `url(${evt.imageUrl})`,
-                          backgroundSize: 'cover',
-                          backgroundPosition: 'center'
-                        }
-                      : undefined
-                  }
+                  className="map-shell"
+                  data-map-context="preserved"
+                  style={{ display: viewMode === 'map' ? undefined : 'none' }}
                 >
-                   {!evt.imageUrl && <EventImageFallback category={evt.category} />}
-                   <div
-                     className="card-badge"
-                     style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
-                   >
-                     {SHORT_CATEGORY_LABELS[locale][evt.category]}
-                   </div>
-                   <button className="card-fav" onClick={(e) => { e.stopPropagation(); toggleFavorite(evt.id); }}>
-                     {favorites.includes(evt.id) ? '❤️' : '🤍'}
-                   </button>
-                </div>
-                <div className="event-card-content">
-                   <h3>{evt.title}</h3>
-                   <p>{evt.venue?.name}</p>
-                   <p className="card-price">{evt.startsAt ? new Date(evt.startsAt).toLocaleDateString() : ''}</p>
-                </div>
-              </div>
-           ))}
-           {carouselEmpty && <p>Aucun événement trouvé.</p>}
-         </div>
+                  <div ref={container} className="map" />
+                  <button
+                    className="map-floating-search"
+                    onClick={() => loadEvents(currentBounds.current, filters)}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      style={{ marginRight: 8 }}
+                    >
+                      <circle cx="11" cy="11" r="8" />
+                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    Rechercher dans cette zone
+                  </button>
 
-         <div className="feature-footer">
-            <div className="feature-item">
-              <div className="feature-icon">⚡</div>
-              <div className="feature-text">
-                <h4>Carte intelligente</h4>
-                <p>Explorez votre ville et découvrez des événements autour de vous en temps réel.</p>
+                  <MapFilterBar
+                    filters={filters}
+                    onChange={applyFilters}
+                    onOpenMore={() => setFiltersOpen((prev) => !prev)}
+                    locale={locale}
+                  />
+
+                  <div className="map-zoom-controls">
+                    <button
+                      type="button"
+                      className="map-zoom-btn"
+                      aria-label={translate(locale, 'map.zoomIn')}
+                      onClick={() => map.current?.zoomIn()}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="map-zoom-btn"
+                      aria-label={translate(locale, 'map.zoomOut')}
+                      onClick={() => map.current?.zoomOut()}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="map-zoom-btn map-recenter-btn"
+                      aria-label={translate(locale, 'map.recenter')}
+                      disabled={!userLocation}
+                      onClick={() => {
+                        if (!userLocation) return;
+                        map.current?.flyTo({
+                          center: [
+                            userLocation.longitude,
+                            userLocation.latitude
+                          ],
+                          zoom: 14
+                        });
+                      }}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {basemapState !== 'loaded' && (
+                    <p className="map-basemap-status" role="status">
+                      {basemapState === 'loading'
+                        ? 'Loading map...'
+                        : 'Map unavailable'}
+                    </p>
+                  )}
+                </div>
+
+                {viewMode === 'list' && (
+                  <ListView
+                    events={listOverride?.events ?? events}
+                    favorites={favorites}
+                    showFavoritesOnly={showFavoritesOnly}
+                    onToggleFavorite={toggleFavorite}
+                    onOpenDetails={openDetails}
+                    title={listOverride?.title}
+                    onClearTitle={
+                      listOverride
+                        ? () => setListOverride(undefined)
+                        : undefined
+                    }
+                    locale={locale}
+                  />
+                )}
+
+                {viewMode === 'calendar' && (
+                  <CalendarView
+                    month={calendarMonth}
+                    onChangeMonth={setCalendarMonth}
+                    events={calendarEvents}
+                    state={calendarState}
+                    favorites={favorites}
+                    showFavoritesOnly={showFavoritesOnly}
+                    categories={calendarCategories}
+                    onChangeCategories={setCalendarCategories}
+                    price={calendarPrice}
+                    onChangePrice={setCalendarPrice}
+                    selectedDay={selectedDay}
+                    onSelectDay={(day, dayEvents) => {
+                      setSelectedDay(day);
+                      if (day) {
+                        const dayLabel = new Date(
+                          `${day}T00:00:00`
+                        ).toLocaleDateString(
+                          locale === 'fr' ? 'fr-CA' : 'en-CA',
+                          { weekday: 'long', day: 'numeric', month: 'long' }
+                        );
+                        // The festive-day marker on the grid only had a hover
+                        // tooltip, easy to miss (and useless on touch) - naming
+                        // it in the picker title that opens on click/tap makes
+                        // "what is this highlighted day" self-evident the moment
+                        // someone actually interacts with it.
+                        const festiveLabel = FESTIVE_DAYS[day.slice(5)];
+                        setDetails({ kind: 'closed' });
+                        setPickerList({
+                          title: festiveLabel
+                            ? `${dayLabel} — ${festiveLabel}`
+                            : dayLabel,
+                          events: dayEvents
+                        });
+                      } else {
+                        setPickerList(undefined);
+                      }
+                    }}
+                    locale={locale}
+                  />
+                )}
+              </section>
+
+              {/* Lieu map + content - same always-mounted rationale as Événement's
+            map above. */}
+              <section
+                className="map-container-wrapper"
+                style={{ display: section === 'lieu' ? undefined : 'none' }}
+              >
+                <div className="venue-section">
+                  <div
+                    className="map-shell"
+                    style={{ display: lieuTab === 'map' ? undefined : 'none' }}
+                  >
+                    <div ref={lieuMapContainer} className="map" />
+                  </div>
+                  {lieuTab === 'list' && (
+                    <VenueListView
+                      groups={filteredVenueGroups}
+                      onSelectVenue={(group) => {
+                        // A newly-picked list must win over an already-open
+                        // details panel (same rule as map cluster/pin clicks) -
+                        // without this, clicking another venue while one's
+                        // events are open silently swapped the list behind the
+                        // visible details panel.
+                        setDetails({ kind: 'closed' });
+                        setVenuePickerList(undefined);
+                        if (group.events.length === 1) {
+                          void openDetails(group.events[0]!.id);
+                        } else {
+                          setPickerList({
+                            title: `${group.name} — ${group.address}`,
+                            events: group.events
+                          });
+                        }
+                      }}
+                      favoriteVenues={favoriteVenues}
+                      onToggleFavoriteVenue={toggleFavoriteVenue}
+                      locale={locale}
+                    />
+                  )}
+                  {lieuTab === 'calendar' && (
+                    <CalendarView
+                      month={calendarMonth}
+                      onChangeMonth={setCalendarMonth}
+                      events={calendarEvents}
+                      state={calendarState}
+                      favorites={favorites}
+                      showFavoritesOnly={false}
+                      categories={calendarCategories}
+                      onChangeCategories={setCalendarCategories}
+                      price={calendarPrice}
+                      onChangePrice={setCalendarPrice}
+                      selectedDay={selectedDay}
+                      onSelectDay={(day, dayEvents) => {
+                        // The one real divergence from Événement's calendar: a day
+                        // groups its events by venue first (confirmed with the
+                        // user) rather than opening the raw event list - drilling
+                        // into one venue from there opens the normal PickerList
+                        // with that venue's events for the day.
+                        setSelectedDay(day);
+                        if (day) {
+                          const dayLabel = new Date(
+                            `${day}T00:00:00`
+                          ).toLocaleDateString(
+                            locale === 'fr' ? 'fr-CA' : 'en-CA',
+                            { weekday: 'long', day: 'numeric', month: 'long' }
+                          );
+                          setDetails({ kind: 'closed' });
+                          setPickerList(undefined);
+                          setVenuePickerList({
+                            title: dayLabel,
+                            groups: groupEventsByVenue(dayEvents)
+                          });
+                        } else {
+                          setVenuePickerList(undefined);
+                        }
+                      }}
+                      locale={locale}
+                    />
+                  )}
+                </div>
+              </section>
+
+              {/* Explorer map - same always-mounted rationale. */}
+              <section
+                className="map-container-wrapper"
+                style={{ display: section === 'explorer' ? undefined : 'none' }}
+              >
+                <div className="map-shell">
+                  <div ref={explorerMapContainer} className="map" />
+                  <div className="map-floating-pin-toggle">
+                    <button
+                      type="button"
+                      className={explorerPinKind === 'event' ? 'active' : ''}
+                      onClick={() => setExplorerPinKind('event')}
+                    >
+                      Événements
+                    </button>
+                    <button
+                      type="button"
+                      className={explorerPinKind === 'venue' ? 'active' : ''}
+                      onClick={() => setExplorerPinKind('venue')}
+                    >
+                      Lieux
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              {section === 'favoris' && (
+                <FavorisSection
+                  favorites={favorites}
+                  onToggleFavorite={toggleFavorite}
+                  onOpenDetails={openDetails}
+                  favoriteVenueGroups={venueGroups.filter((group) =>
+                    favoriteVenues.includes(group.id)
+                  )}
+                  favoriteVenues={favoriteVenues}
+                  onToggleFavoriteVenue={toggleFavoriteVenue}
+                  onSelectVenue={(group) => {
+                    setDetails({ kind: 'closed' });
+                    setVenuePickerList(undefined);
+                    if (group.events.length === 1) {
+                      void openDetails(group.events[0]!.id);
+                    } else {
+                      setPickerList({
+                        title: `${group.name} — ${group.address}`,
+                        events: group.events
+                      });
+                      setSection('lieu');
+                    }
+                  }}
+                  locale={locale}
+                />
+              )}
+
+              {section === 'compte' && user && (
+                <CompteSection
+                  user={user}
+                  authToken={authToken}
+                  onUserUpdated={setUser}
+                  onLogout={logout}
+                  locale={locale}
+                  onChangeLocale={selectLocale}
+                  attendance={attendance}
+                  favorites={favorites}
+                  onToggleFavorite={toggleFavorite}
+                  onOpenDetails={openDetails}
+                  favoriteVenueGroups={venueGroups.filter((group) =>
+                    favoriteVenues.includes(group.id)
+                  )}
+                  favoriteVenues={favoriteVenues}
+                  onToggleFavoriteVenue={toggleFavoriteVenue}
+                  onSelectVenue={(group) => {
+                    setDetails({ kind: 'closed' });
+                    setVenuePickerList(undefined);
+                    if (group.events.length === 1) {
+                      void openDetails(group.events[0]!.id);
+                    } else {
+                      setPickerList({
+                        title: `${group.name} — ${group.address}`,
+                        events: group.events
+                      });
+                      setSection('lieu');
+                    }
+                  }}
+                  onOpenAmis={() => setSection('amis')}
+                />
+              )}
+
+              {/* Right Sidebar (Details / cluster picker) - one shared slot, see
+            rightPanelMount above for why these aren't two independent panels. */}
+              {rightPanelMount.mounted && (
+                <div
+                  className={`sidebar-right panel-transition ${rightPanelMount.visible ? 'panel-visible' : ''}`}
+                >
+                  {shownRightPanelContent.kind === 'details' &&
+                    shownRightPanelContent.state.kind === 'success' &&
+                    (() => {
+                      const shownEvent = shownRightPanelContent.state.event;
+                      return (
+                        <EventDetails
+                          event={shownEvent}
+                          headingRef={detailsHeading}
+                          onBack={returnToMap}
+                          isFavorite={favorites.includes(shownEvent.id)}
+                          onToggleFavorite={() => toggleFavorite(shownEvent.id)}
+                          locale={locale}
+                          user={user}
+                          authToken={authToken}
+                          onLogin={login}
+                          attendanceVisibility={attendance[shownEvent.id]}
+                          onSetAttendance={(visibility) =>
+                            setAttendance(shownEvent.id, visibility)
+                          }
+                          onClearAttendance={() =>
+                            clearAttendance(shownEvent.id)
+                          }
+                          initialTab={detailsInitialTab}
+                          onOpenForumPanel={() => setForumPanelMode(true)}
+                        />
+                      );
+                    })()}
+                  {shownRightPanelContent.kind === 'details' &&
+                    shownRightPanelContent.state.kind === 'loading' && (
+                      <div style={{ padding: '2rem' }}>Chargement...</div>
+                    )}
+                  {shownRightPanelContent.kind === 'details' &&
+                    shownRightPanelContent.state.kind === 'error' &&
+                    (() => {
+                      const failedEventId =
+                        shownRightPanelContent.state.eventId;
+                      return (
+                        <div style={{ padding: '2rem' }}>
+                          Erreur de chargement.
+                          <button
+                            className="btn-secondary"
+                            onClick={() =>
+                              void openDetails(failedEventId, {
+                                keepPickerList: true
+                              })
+                            }
+                            style={{ marginTop: '1rem' }}
+                          >
+                            Réessayer
+                          </button>
+                        </div>
+                      );
+                    })()}
+                  {shownRightPanelContent.kind === 'picker' && (
+                    <PickerList
+                      title={shownRightPanelContent.list.title}
+                      events={shownRightPanelContent.list.events}
+                      favorites={favorites}
+                      locale={locale}
+                      onClose={() => setPickerList(undefined)}
+                      onSelect={(id) =>
+                        void openDetails(id, { keepPickerList: true })
+                      }
+                    />
+                  )}
+                  {shownRightPanelContent.kind === 'venue-picker' && (
+                    <VenuePickerList
+                      title={shownRightPanelContent.list.title}
+                      groups={shownRightPanelContent.list.groups}
+                      favoriteVenues={favoriteVenues}
+                      locale={locale}
+                      onClose={() => setVenuePickerList(undefined)}
+                      onSelectVenue={(group) => {
+                        setDetails({ kind: 'closed' });
+                        if (group.events.length === 1) {
+                          setVenuePickerList(undefined);
+                          void openDetails(group.events[0]!.id);
+                        } else {
+                          setPickerList({
+                            title: `${group.name} — ${group.address}`,
+                            events: group.events
+                          });
+                        }
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+
+            {filtersOverlayMount.mounted && (
+              <FilterOverlay
+                filters={filters}
+                onChange={applyFilters}
+                onClose={() => setFiltersOpen(false)}
+                onClearAll={clearAll}
+                locale={locale}
+                visible={filtersOverlayMount.visible}
+              />
+            )}
+
+            {aboutPanelMount.mounted && (
+              <AboutPanel
+                onClose={() => setAboutOpen(false)}
+                visible={aboutPanelMount.visible}
+              />
+            )}
+
+            {/* Selected marker preview fallback logic */}
+            {selected && details.kind === 'closed' && (
+              <div className="event-preview-wrapper">
+                <EventPreview
+                  event={selected}
+                  searchMatch={searchResult?.data.find(
+                    ({ event }) => event.id === selected.id
+                  )}
+                  detailsButton={detailsButton}
+                  onClose={() => setSelected(undefined)}
+                  onDetails={() => void openDetails(selected.id)}
+                  isFavorite={favorites.includes(selected.id)}
+                  onToggleFavorite={() => toggleFavorite(selected.id)}
+                  locale={locale}
+                />
+              </div>
+            )}
+
+            <div className="bottom-section">
+              <div className="section-header">
+                <h2>Événements autour de vous</h2>
+                <button
+                  type="button"
+                  className="view-all"
+                  onClick={() => {
+                    setListOverride({
+                      title: 'Événements les plus proches de vous',
+                      events: carouselEvents.slice(0, 15)
+                    });
+                    setViewMode('list');
+                  }}
+                >
+                  Voir tous les événements{' '}
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    style={{ verticalAlign: 'middle', marginLeft: 4 }}
+                  >
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                  </svg>
+                </button>
+              </div>
+
+              <div className="event-carousel">
+                {carouselEvents.slice(0, 15).map((evt) => (
+                  <div
+                    className="event-card"
+                    key={evt.id}
+                    onClick={() => openDetails(evt.id)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div
+                      className="event-card-img"
+                      style={
+                        evt.imageUrl
+                          ? {
+                              backgroundImage: `url(${evt.imageUrl})`,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center'
+                            }
+                          : undefined
+                      }
+                    >
+                      {!evt.imageUrl && (
+                        <EventImageFallback category={evt.category} />
+                      )}
+                      <div
+                        className="card-badge"
+                        style={{
+                          background:
+                            CATEGORY_COLORS[evt.category] ??
+                            CATEGORY_COLORS['other']
+                        }}
+                      >
+                        {SHORT_CATEGORY_LABELS[locale][evt.category]}
+                      </div>
+                      <button
+                        className="card-fav"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite(evt.id);
+                        }}
+                      >
+                        {favorites.includes(evt.id) ? '❤️' : '🤍'}
+                      </button>
+                    </div>
+                    <div className="event-card-content">
+                      <h3>{evt.title}</h3>
+                      <p>{evt.venue?.name}</p>
+                      <p className="card-price">
+                        {evt.startsAt
+                          ? new Date(evt.startsAt).toLocaleDateString()
+                          : ''}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {carouselEmpty && <p>Aucun événement trouvé.</p>}
+              </div>
+
+              <div className="feature-footer">
+                <div className="feature-item">
+                  <div className="feature-icon">⚡</div>
+                  <div className="feature-text">
+                    <h4>Carte intelligente</h4>
+                    <p>
+                      Explorez votre ville et découvrez des événements autour de
+                      vous en temps réel.
+                    </p>
+                  </div>
+                </div>
+                <div className="feature-item">
+                  <div className="feature-icon">🔍</div>
+                  <div className="feature-text">
+                    <h4>Recherche puissante</h4>
+                    <p>
+                      Trouvez exactement ce que vous cherchez grâce à la
+                      recherche et à nos suggestions.
+                    </p>
+                  </div>
+                </div>
+                <div className="feature-item">
+                  <div className="feature-icon">❤️</div>
+                  <div className="feature-text">
+                    <h4>Vos favoris</h4>
+                    <p>
+                      Sauvegardez vos événements préférés et ne manquez jamais
+                      une sortie.
+                    </p>
+                  </div>
+                </div>
+                <div className="feature-item">
+                  <div className="feature-icon">👥</div>
+                  <div className="feature-text">
+                    <h4>Communauté</h4>
+                    <p>
+                      Rejoignez des milliers de passionnés et partagez vos
+                      meilleures découvertes.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="feature-item">
-              <div className="feature-icon">🔍</div>
-              <div className="feature-text">
-                <h4>Recherche puissante</h4>
-                <p>Trouvez exactement ce que vous cherchez grâce à la recherche et à nos suggestions.</p>
-              </div>
-            </div>
-            <div className="feature-item">
-              <div className="feature-icon">❤️</div>
-              <div className="feature-text">
-                <h4>Vos favoris</h4>
-                <p>Sauvegardez vos événements préférés et ne manquez jamais une sortie.</p>
-              </div>
-            </div>
-            <div className="feature-item">
-              <div className="feature-icon">👥</div>
-              <div className="feature-text">
-                <h4>Communauté</h4>
-                <p>Rejoignez des milliers de passionnés et partagez vos meilleures découvertes.</p>
-              </div>
-            </div>
-         </div>
-      </div>
-      </Fragment>
-      )}
+          </Fragment>
+        )}
       </ContentColumn>
     </div>
   );
@@ -3053,7 +3466,10 @@ export function ExploreMap({
 // for the filter overlay's checkboxes but too long to fit the sidebar grid
 // on one line. Short display-only labels for that grid; the overlay still
 // uses the full scope text.
-const SHORT_CATEGORY_LABELS: Record<SupportedLocale, Record<EventCategory, string>> = {
+const SHORT_CATEGORY_LABELS: Record<
+  SupportedLocale,
+  Record<EventCategory, string>
+> = {
   fr: {
     music: 'Musique',
     nightlife: 'Vie nocturne',
@@ -3072,7 +3488,10 @@ const SHORT_CATEGORY_LABELS: Record<SupportedLocale, Record<EventCategory, strin
   }
 };
 
-const VENUE_CATEGORY_LABELS: Record<SupportedLocale, Record<VenueCategory, string>> = {
+const VENUE_CATEGORY_LABELS: Record<
+  SupportedLocale,
+  Record<VenueCategory, string>
+> = {
   fr: {
     bar: 'Bar',
     nightclub: 'Boîte de nuit',
@@ -3209,7 +3628,13 @@ function MessageIcon() {
   );
 }
 
-function CategoryIcon({ category, size = 20 }: { category: EventCategory; size?: number }) {
+function CategoryIcon({
+  category,
+  size = 20
+}: {
+  category: EventCategory;
+  size?: number;
+}) {
   return (
     <svg
       width={size}
@@ -3249,7 +3674,11 @@ function EventImageFallback({ category }: { category: EventCategory }) {
   );
 }
 
-function ViewModeIcon({ kind }: { kind: 'map' | 'list' | 'venues' | 'calendar' }) {
+function ViewModeIcon({
+  kind
+}: {
+  kind: 'map' | 'list' | 'venues' | 'calendar';
+}) {
   const paths: Record<typeof kind, ReactNode> = {
     map: (
       <>
@@ -3318,13 +3747,29 @@ function PickerList({
     <div className="picker-list">
       <div className="picker-list-header">
         <h3>{title}</h3>
-        <button type="button" className="close-button" onClick={onClose} aria-label="Fermer">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        <button
+          type="button"
+          className="close-button"
+          onClick={onClose}
+          aria-label="Fermer"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
         </button>
       </div>
       <div className="picker-list-rows">
         {events.length === 0 && (
-          <p className="list-view-empty">Aucun événement prévu pour le moment.</p>
+          <p className="list-view-empty">
+            Aucun événement prévu pour le moment.
+          </p>
         )}
         {events.map((event) => {
           const fields = eventPreviewFields(event, locale);
@@ -3337,14 +3782,21 @@ function PickerList({
             >
               <span
                 className="list-view-dot"
-                style={{ background: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'] }}
+                style={{
+                  background:
+                    CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']
+                }}
               />
               <span className="list-view-main">
                 <strong>{fields.title}</strong>
-                <span className="list-view-sub">{fields.venue} · {fields.dateTime}</span>
+                <span className="list-view-sub">
+                  {fields.venue} · {fields.dateTime}
+                </span>
               </span>
               <span className="list-view-price">{fields.price}</span>
-              {favorites.includes(event.id) && <span aria-hidden="true">❤️</span>}
+              {favorites.includes(event.id) && (
+                <span aria-hidden="true">❤️</span>
+              )}
             </button>
           );
         })}
@@ -3376,8 +3828,22 @@ function VenuePickerList({
     <div className="picker-list">
       <div className="picker-list-header">
         <h3>{title}</h3>
-        <button type="button" className="close-button" onClick={onClose} aria-label="Fermer">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        <button
+          type="button"
+          className="close-button"
+          onClick={onClose}
+          aria-label="Fermer"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
         </button>
       </div>
       <div className="picker-list-rows">
@@ -3393,20 +3859,28 @@ function VenuePickerList({
           >
             <span
               className="list-view-dot"
-              style={{ background: CATEGORY_COLORS[group.categories[0] ?? 'other'] }}
+              style={{
+                background: CATEGORY_COLORS[group.categories[0] ?? 'other']
+              }}
             />
             <span className="list-view-main">
               <strong>{group.name}</strong>
               <span className="list-view-sub">
                 {group.address}
-                {group.venueCategory && ` · ${VENUE_CATEGORY_LABELS[locale][group.venueCategory]}`}
+                {group.venueCategory &&
+                  ` · ${VENUE_CATEGORY_LABELS[locale][group.venueCategory]}`}
               </span>
             </span>
             <span className="list-view-price">
-              {group.events.length} événement{group.events.length > 1 ? 's' : ''}
+              {group.events.length} événement
+              {group.events.length > 1 ? 's' : ''}
             </span>
             {favoriteVenues.includes(group.id) && (
-              <span aria-hidden="true" title="Suivi" className="list-view-following-dot">
+              <span
+                aria-hidden="true"
+                title="Suivi"
+                className="list-view-following-dot"
+              >
                 🔔
               </span>
             )}
@@ -3471,18 +3945,30 @@ function FavorisSection({
   return (
     <section className="map-container-wrapper favoris-section">
       <div className="favoris-kind-toggle">
-        <button type="button" className={kind === 'event' ? 'active' : ''} onClick={() => setKind('event')}>
+        <button
+          type="button"
+          className={kind === 'event' ? 'active' : ''}
+          onClick={() => setKind('event')}
+        >
           Événements
         </button>
-        <button type="button" className={kind === 'venue' ? 'active' : ''} onClick={() => setKind('venue')}>
+        <button
+          type="button"
+          className={kind === 'venue' ? 'active' : ''}
+          onClick={() => setKind('venue')}
+        >
           Lieux suivis
         </button>
       </div>
       {kind === 'event' && (
         <div className="favoris-block">
-          {state === 'loading' && <p className="list-view-empty">Chargement de vos favoris…</p>}
+          {state === 'loading' && (
+            <p className="list-view-empty">Chargement de vos favoris…</p>
+          )}
           {state === 'error' && (
-            <p className="list-view-empty">Impossible de charger vos favoris pour le moment.</p>
+            <p className="list-view-empty">
+              Impossible de charger vos favoris pour le moment.
+            </p>
           )}
           {(state === 'success' || state === 'empty') && (
             <ListView
@@ -3560,7 +4046,10 @@ function ListView({
           >
             <span
               className="list-view-dot"
-              style={{ background: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'] }}
+              style={{
+                background:
+                  CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']
+              }}
             />
             <span className="list-view-main">
               <strong>{fields.title}</strong>
@@ -3657,7 +4146,9 @@ function groupEventsByVenue(events: PublicEvent[]): VenueGroup[] {
         point: event.venue.point,
         events: [],
         categories: [],
-        ...(event.venue.category !== undefined ? { venueCategory: event.venue.category } : {}),
+        ...(event.venue.category !== undefined
+          ? { venueCategory: event.venue.category }
+          : {}),
         ...(event.venue.secondaryCategories !== undefined
           ? { venueSecondaryCategories: event.venue.secondaryCategories }
           : {})
@@ -3697,7 +4188,9 @@ function VenueListView({
   return (
     <div className="venue-view">
       {groups.length === 0 && (
-        <p className="list-view-empty">Aucun lieu à afficher dans cette zone.</p>
+        <p className="list-view-empty">
+          Aucun lieu à afficher dans cette zone.
+        </p>
       )}
 
       <div className="venue-grid">
@@ -3733,9 +4226,13 @@ function VenueListView({
                 className={`card-fav ${favoriteVenues.includes(group.id) ? 'card-fav-following' : ''}`}
                 aria-pressed={favoriteVenues.includes(group.id)}
                 aria-label={
-                  favoriteVenues.includes(group.id) ? 'Ne plus suivre ce lieu' : 'Suivre ce lieu'
+                  favoriteVenues.includes(group.id)
+                    ? 'Ne plus suivre ce lieu'
+                    : 'Suivre ce lieu'
                 }
-                title={favoriteVenues.includes(group.id) ? 'Suivi' : 'Suivre ce lieu'}
+                title={
+                  favoriteVenues.includes(group.id) ? 'Suivi' : 'Suivre ce lieu'
+                }
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleFavoriteVenue(group.id);
@@ -3781,12 +4278,17 @@ function VenueListView({
                   <span
                     key={category}
                     className="venue-card-category-dot"
-                    style={{ background: CATEGORY_COLORS[category] ?? CATEGORY_COLORS['other'] }}
+                    style={{
+                      background:
+                        CATEGORY_COLORS[category] ?? CATEGORY_COLORS['other']
+                    }}
                     title={SHORT_CATEGORY_LABELS[locale][category]}
                   />
                 ))}
                 {group.categories.length > 3 && (
-                  <span className="venue-card-more">+{group.categories.length - 3}</span>
+                  <span className="venue-card-more">
+                    +{group.categories.length - 3}
+                  </span>
                 )}
               </div>
               <span className="venue-card-count">
@@ -3860,7 +4362,11 @@ function CalendarView({
   }
 
   const firstOfMonth = new Date(month.getFullYear(), month.getMonth(), 1);
-  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const daysInMonth = new Date(
+    month.getFullYear(),
+    month.getMonth() + 1,
+    0
+  ).getDate();
   // Monday-first grid: JS getDay() is 0=Sunday, shift so Monday=0.
   const leadingBlanks = (firstOfMonth.getDay() + 6) % 7;
   const cells: Array<{ day: number; key: string } | undefined> = [
@@ -3872,28 +4378,57 @@ function CalendarView({
     })
   ];
 
-  const monthLabel = month.toLocaleDateString(locale === 'fr' ? 'fr-CA' : 'en-CA', {
-    month: 'long',
-    year: 'numeric'
-  });
+  const monthLabel = month.toLocaleDateString(
+    locale === 'fr' ? 'fr-CA' : 'en-CA',
+    {
+      month: 'long',
+      year: 'numeric'
+    }
+  );
 
   return (
     <div className="calendar-view">
       <div className="calendar-header">
         <button
           type="button"
-          onClick={() => onChangeMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+          onClick={() =>
+            onChangeMonth(
+              new Date(month.getFullYear(), month.getMonth() - 1, 1)
+            )
+          }
           aria-label="Mois précédent"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
         </button>
         <h3>{monthLabel}</h3>
         <button
           type="button"
-          onClick={() => onChangeMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+          onClick={() =>
+            onChangeMonth(
+              new Date(month.getFullYear(), month.getMonth() + 1, 1)
+            )
+          }
           aria-label="Mois suivant"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M9 18l6-6-6-6" />
+          </svg>
         </button>
       </div>
 
@@ -3942,7 +4477,10 @@ function CalendarView({
 
       <div className="calendar-grid">
         {cells.map((cell, index) => {
-          if (!cell) return <div className="calendar-cell empty" key={`blank-${index}`} />;
+          if (!cell)
+            return (
+              <div className="calendar-cell empty" key={`blank-${index}`} />
+            );
           const dayCount = eventsByDay.get(cell.key)?.length ?? 0;
           const festiveLabel = FESTIVE_DAYS[cell.key.slice(5)];
           return (
@@ -3959,15 +4497,21 @@ function CalendarView({
               }
             >
               <span className="calendar-day-number">{cell.day}</span>
-              {festiveLabel && <span className="calendar-festive-dot" aria-hidden="true" />}
-              {dayCount > 0 && <span className="calendar-day-count">{dayCount}</span>}
+              {festiveLabel && (
+                <span className="calendar-festive-dot" aria-hidden="true" />
+              )}
+              {dayCount > 0 && (
+                <span className="calendar-day-count">{dayCount}</span>
+              )}
             </button>
           );
         })}
       </div>
 
       {state === 'loading' && <p className="calendar-status">Chargement…</p>}
-      {state === 'error' && <p className="calendar-status">Erreur de chargement.</p>}
+      {state === 'error' && (
+        <p className="calendar-status">Erreur de chargement.</p>
+      )}
     </div>
   );
 }
@@ -4056,15 +4600,29 @@ function LanguageSelector({
   const [open, setOpen] = useState(false);
   const other: SupportedLocale = locale === 'fr' ? 'en' : 'fr';
   return (
-    <div className="lang-selector" aria-label={translate(locale, 'language.label')}>
+    <div
+      className="lang-selector"
+      aria-label={translate(locale, 'language.label')}
+    >
       <button
         type="button"
         className="lang-selector-current"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
       >
-        <span className="lang-flag"><LocaleFlagIcon locale={locale} /></span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+        <span className="lang-flag">
+          <LocaleFlagIcon locale={locale} />
+        </span>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
       </button>
       {open && (
         <div className="lang-selector-menu">
@@ -4076,7 +4634,9 @@ function LanguageSelector({
             }}
             title={LOCALE_META[other].title}
           >
-            <span className="lang-flag"><LocaleFlagIcon locale={other} /></span>
+            <span className="lang-flag">
+              <LocaleFlagIcon locale={other} />
+            </span>
             {LOCALE_META[other].title}
           </button>
         </div>
@@ -4089,7 +4649,13 @@ function LanguageSelector({
 // (PROJECT_INDEX Roadmap: "autres villes") - shown disabled with a "Bientôt"
 // badge rather than a working switch, since Pulso only has real data for
 // Montréal (MVP-0001 scopes the MVP to a single city).
-const OTHER_CANADIAN_CITIES = ['Toronto', 'Vancouver', 'Calgary', 'Edmonton', 'Ottawa'];
+const OTHER_CANADIAN_CITIES = [
+  'Toronto',
+  'Vancouver',
+  'Calgary',
+  'Edmonton',
+  'Ottawa'
+];
 
 function CitySelector() {
   const [open, setOpen] = useState(false);
@@ -4098,7 +4664,10 @@ function CitySelector() {
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     };
@@ -4115,7 +4684,14 @@ function CitySelector() {
         aria-expanded={open}
       >
         Montréal
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
@@ -4200,7 +4776,11 @@ type ConnectedSection =
   | 'mes-evenements'
   | 'historique';
 
-const SIDEBAR_NAV_ITEMS: Array<{ section: ConnectedSection; label: string; icon: string }> = [
+const SIDEBAR_NAV_ITEMS: Array<{
+  section: ConnectedSection;
+  label: string;
+  icon: string;
+}> = [
   { section: 'decouvrir', label: 'Découvrir', icon: '✨' },
   { section: 'explorer', label: 'Carte', icon: '🗺️' },
   { section: 'evenement', label: 'Événements', icon: '🎟️' },
@@ -4213,7 +4793,11 @@ const SIDEBAR_NAV_ITEMS: Array<{ section: ConnectedSection; label: string; icon:
 
 // "Événements suivis" points at the existing Favoris section (same data,
 // already hydrated there via /events/by-ids) rather than duplicating it.
-const SIDEBAR_SHORTCUT_ITEMS: Array<{ section: ConnectedSection; label: string; icon: string }> = [
+const SIDEBAR_SHORTCUT_ITEMS: Array<{
+  section: ConnectedSection;
+  label: string;
+  icon: string;
+}> = [
   { section: 'mes-evenements', label: 'Mes événements', icon: '🎟️' },
   { section: 'favoris', label: 'Événements suivis', icon: '🔖' },
   { section: 'historique', label: 'Historique', icon: '🕘' }
@@ -4245,15 +4829,21 @@ function Sidebar({
 
   useEffect(() => {
     if (!authToken) return;
-    fetch(`${API_BASE_URL}/me/friend-code`, { headers: { authorization: `Bearer ${authToken}` } })
+    fetch(`${API_BASE_URL}/me/friend-code`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setFriendCode(friendCodeResponseSchema.parse(json).data.friendCode))
+      .then((json) =>
+        setFriendCode(friendCodeResponseSchema.parse(json).data.friendCode)
+      )
       .catch(() => {});
   }, [authToken]);
 
   const refreshGroups = useCallback(() => {
     if (!authToken) return;
-    fetch(`${API_BASE_URL}/me/groups`, { headers: { authorization: `Bearer ${authToken}` } })
+    fetch(`${API_BASE_URL}/me/groups`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => setMyGroups(groupsResponseSchema.parse(json).data))
       .catch(() => {});
@@ -4353,7 +4943,11 @@ function Sidebar({
       )}
 
       <div className="primary-sidebar-divider" />
-      <button type="button" className="primary-sidebar-profile" onClick={onOpenAccount}>
+      <button
+        type="button"
+        className="primary-sidebar-profile"
+        onClick={onOpenAccount}
+      >
         <span className="account-avatar">{renderUserAvatarContent(user)}</span>
         <span className="primary-sidebar-profile-info">
           <strong>{user.displayName}</strong>
@@ -4456,7 +5050,9 @@ function TopBar({
           className="nav-icon-btn"
           onClick={onOpenMessages}
           aria-label={
-            unreadMessagesCount > 0 ? `Messages — ${unreadMessagesCount} non lus` : 'Messages'
+            unreadMessagesCount > 0
+              ? `Messages — ${unreadMessagesCount} non lus`
+              : 'Messages'
           }
           title="Messages"
         >
@@ -4476,7 +5072,12 @@ function TopBar({
         >
           <BellIcon />
         </button>
-        <AccountMenu user={user} onLogin={() => {}} onOpenAccount={onOpenAccount} unreadCount={0} />
+        <AccountMenu
+          user={user}
+          onLogin={() => {}}
+          onOpenAccount={onOpenAccount}
+          unreadCount={0}
+        />
       </div>
     </header>
   );
@@ -4513,7 +5114,11 @@ function DashboardHome({
     <div className="dashboard-home">
       <h1>Bonjour {user.displayName.split(' ')[0]}</h1>
 
-      <button type="button" className="dashboard-home-map-card" onClick={() => onNavigate('explorer')}>
+      <button
+        type="button"
+        className="dashboard-home-map-card"
+        onClick={() => onNavigate('explorer')}
+      >
         <span className="dashboard-home-map-card-icon" aria-hidden="true">
           🗺️
         </span>
@@ -4526,7 +5131,11 @@ function DashboardHome({
       <div className="dashboard-home-section">
         <div className="section-header">
           <h2>Événements autour de vous</h2>
-          <button type="button" className="view-all" onClick={() => onNavigate('evenement')}>
+          <button
+            type="button"
+            className="view-all"
+            onClick={() => onNavigate('evenement')}
+          >
             Voir tous les événements
           </button>
         </div>
@@ -4550,10 +5159,15 @@ function DashboardHome({
                     : undefined
                 }
               >
-                {!evt.imageUrl && <EventImageFallback category={evt.category} />}
+                {!evt.imageUrl && (
+                  <EventImageFallback category={evt.category} />
+                )}
                 <div
                   className="card-badge"
-                  style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
+                  style={{
+                    background:
+                      CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']
+                  }}
                 >
                   {SHORT_CATEGORY_LABELS[locale][evt.category]}
                 </div>
@@ -4571,7 +5185,9 @@ function DashboardHome({
                 <h3>{evt.title}</h3>
                 <p>{evt.venue?.name}</p>
                 <p className="card-price">
-                  {evt.startsAt ? new Date(evt.startsAt).toLocaleDateString() : ''}
+                  {evt.startsAt
+                    ? new Date(evt.startsAt).toLocaleDateString()
+                    : ''}
                 </p>
               </div>
             </div>
@@ -4583,15 +5199,22 @@ function DashboardHome({
       <div className="dashboard-home-section">
         <div className="section-header">
           <h2>Forums actifs</h2>
-          <button type="button" className="view-all" onClick={() => onNavigate('forums')}>
+          <button
+            type="button"
+            className="view-all"
+            onClick={() => onNavigate('forums')}
+          >
             Voir tous les forums
           </button>
         </div>
-        {forumsState === 'loading' && <p className="list-view-empty">Chargement…</p>}
+        {forumsState === 'loading' && (
+          <p className="list-view-empty">Chargement…</p>
+        )}
         {forumsState === 'success' && forums.length === 0 && (
           <p className="list-view-empty">
-            Aucune activité récente dans vos forums. Ajoutez des favoris ou marquez votre
-            participation à un événement pour en voir apparaître ici.
+            Aucune activité récente dans vos forums. Ajoutez des favoris ou
+            marquez votre participation à un événement pour en voir apparaître
+            ici.
           </p>
         )}
         <div className="active-forums-list">
@@ -4603,9 +5226,12 @@ function DashboardHome({
               onClick={() => onOpenDetails(forum.eventId)}
             >
               <span className="active-forum-row-title">{forum.eventTitle}</span>
-              <span className="active-forum-row-excerpt">{forum.lastPostExcerpt}</span>
+              <span className="active-forum-row-excerpt">
+                {forum.lastPostExcerpt}
+              </span>
               <span className="active-forum-row-meta">
-                {FORUM_CATEGORY_LABELS[forum.category]} · {forum.postCount} message
+                {FORUM_CATEGORY_LABELS[forum.category]} · {forum.postCount}{' '}
+                message
                 {forum.postCount !== 1 ? 's' : ''}
               </span>
             </button>
@@ -4625,9 +5251,14 @@ type ForumDiscoverFilter = 'mine' | 'popular' | EventCategory;
 // "mine" filter itself, which reuses that narrower scope (same idea as the
 // "Forums actifs" DashboardHome widget/useActiveForums above, just as a
 // filter chip here instead of a separate page).
-function useDiscoverForums(authToken: string | undefined, filter: ForumDiscoverFilter) {
+function useDiscoverForums(
+  authToken: string | undefined,
+  filter: ForumDiscoverFilter
+) {
   const [entries, setEntries] = useState<DiscoverForumEntry[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
 
   useEffect(() => {
     if (!authToken) return;
@@ -4661,7 +5292,11 @@ function ForumDiscoverCard({
 }) {
   const { event, memberCount, lastPostAt, lastPostExcerpt } = entry;
   return (
-    <div className="forum-discover-card" onClick={onOpen} style={{ cursor: 'pointer' }}>
+    <div
+      className="forum-discover-card"
+      onClick={onOpen}
+      style={{ cursor: 'pointer' }}
+    >
       <div
         className="forum-discover-card-cover"
         style={
@@ -4677,7 +5312,10 @@ function ForumDiscoverCard({
         {!event.imageUrl && <EventImageFallback category={event.category} />}
         <div
           className="card-badge"
-          style={{ background: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'] }}
+          style={{
+            background:
+              CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']
+          }}
         >
           {SHORT_CATEGORY_LABELS[locale][event.category]}
         </div>
@@ -4719,7 +5357,11 @@ function ActiveForumsPage({
     <div className="dashboard-home">
       <h1>Forums</h1>
       <div className="forum-discover-filters">
-        <button type="button" className={filter === 'mine' ? 'active' : ''} onClick={() => setFilter('mine')}>
+        <button
+          type="button"
+          className={filter === 'mine' ? 'active' : ''}
+          onClick={() => setFilter('mine')}
+        >
           Mes forums
         </button>
         <button
@@ -4729,29 +5371,35 @@ function ActiveForumsPage({
         >
           Les plus populaires
         </button>
-        {EVENT_CATEGORIES.filter((category) => category !== 'other').map((category) => (
-          <button
-            type="button"
-            key={category}
-            className={filter === category ? 'active' : ''}
-            onClick={() => setFilter(category)}
-          >
-            {SHORT_CATEGORY_LABELS[locale][category]}
-          </button>
-        ))}
+        {EVENT_CATEGORIES.filter((category) => category !== 'other').map(
+          (category) => (
+            <button
+              type="button"
+              key={category}
+              className={filter === category ? 'active' : ''}
+              onClick={() => setFilter(category)}
+            >
+              {SHORT_CATEGORY_LABELS[locale][category]}
+            </button>
+          )
+        )}
       </div>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger les forums pour le moment.</p>
+        <p className="list-view-empty">
+          Impossible de charger les forums pour le moment.
+        </p>
       )}
       {state === 'success' && entries.length === 0 && filter === 'mine' && (
         <p className="list-view-empty">
-          Aucun forum pour l'instant. Ajoute des favoris ou marque ta participation à un événement
-          pour en voir apparaître ici.
+          Aucun forum pour l'instant. Ajoute des favoris ou marque ta
+          participation à un événement pour en voir apparaître ici.
         </p>
       )}
       {state === 'success' && entries.length === 0 && filter !== 'mine' && (
-        <p className="list-view-empty">Aucun événement à venir pour le moment.</p>
+        <p className="list-view-empty">
+          Aucun événement à venir pour le moment.
+        </p>
       )}
       <div className="forum-discover-grid">
         {entries.map((entry) => (
@@ -4789,7 +5437,9 @@ function GroupsPage({
 // the per-friend "Message" button in FriendsBlock, unmodified.
 function MessagesPage({ authToken }: { authToken: string | undefined }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   const [openWith, setOpenWith] = useState<PublicUser>();
 
   const refresh = useCallback(() => {
@@ -4815,7 +5465,9 @@ function MessagesPage({ authToken }: { authToken: string | undefined }) {
       <h1>Messages</h1>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger vos messages pour le moment.</p>
+        <p className="list-view-empty">
+          Impossible de charger vos messages pour le moment.
+        </p>
       )}
       {state === 'success' && conversations.length === 0 && (
         <div className="empty-state-card">
@@ -4846,7 +5498,9 @@ function MessagesPage({ authToken }: { authToken: string | undefined }) {
               <span>{conversation.lastMessage?.body ?? 'Dites bonjour !'}</span>
             </span>
             {conversation.unreadCount > 0 && (
-              <span className="conversation-list-badge">{conversation.unreadCount}</span>
+              <span className="conversation-list-badge">
+                {conversation.unreadCount}
+              </span>
             )}
           </button>
         ))}
@@ -4889,7 +5543,9 @@ function useAttendanceEvents(
   mode: 'upcoming' | 'past'
 ) {
   const [events, setEvents] = useState<PublicEvent[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   const eventIds = Object.keys(attendance);
   // Stable dependency: the array reference from Object.keys changes every
   // render even when the ids themselves don't, which would otherwise
@@ -4910,12 +5566,15 @@ function useAttendanceEvents(
         setState('success');
       })
       .catch(() => setState('error'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventIdsKey]);
 
   const now = Date.now();
   const filtered = events
-    .filter((event) => (mode === 'upcoming' ? new Date(event.startsAt).getTime() >= now : new Date(event.startsAt).getTime() < now))
+    .filter((event) =>
+      mode === 'upcoming'
+        ? new Date(event.startsAt).getTime() >= now
+        : new Date(event.startsAt).getTime() < now
+    )
     .sort((a, b) =>
       mode === 'upcoming'
         ? new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
@@ -4958,7 +5617,10 @@ function EventCarouselRow({
             {!evt.imageUrl && <EventImageFallback category={evt.category} />}
             <div
               className="card-badge"
-              style={{ background: CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other'] }}
+              style={{
+                background:
+                  CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']
+              }}
             >
               {SHORT_CATEGORY_LABELS[locale][evt.category]}
             </div>
@@ -4998,12 +5660,18 @@ function AttendanceEventsPage({
       <h1>{title}</h1>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger vos événements pour le moment.</p>
+        <p className="list-view-empty">
+          Impossible de charger vos événements pour le moment.
+        </p>
       )}
       {state === 'success' && events.length === 0 && (
         <p className="list-view-empty">{emptyMessage}</p>
       )}
-      <EventCarouselRow events={events} onOpenDetails={onOpenDetails} locale={locale} />
+      <EventCarouselRow
+        events={events}
+        onOpenDetails={onOpenDetails}
+        locale={locale}
+      />
     </div>
   );
 }
@@ -5045,7 +5713,10 @@ const DEFAULT_PROFILE_COVER = 'aurora';
 // account menu, profile header), same "no upload" rationale as the cover
 // presets. Reuses the same brand gradients rather than inventing a second
 // palette.
-const PROFILE_AVATAR_PRESETS: Record<string, { emoji: string; gradient: string }> = {
+const PROFILE_AVATAR_PRESETS: Record<
+  string,
+  { emoji: string; gradient: string }
+> = {
   note: { emoji: '🎧', gradient: PROFILE_COVER_GRADIENTS['aurora']! },
   disco: { emoji: '🪩', gradient: PROFILE_COVER_GRADIENTS['midnight']! },
   moon: { emoji: '🌙', gradient: PROFILE_COVER_GRADIENTS['nebula']! },
@@ -5058,7 +5729,9 @@ const PROFILE_AVATAR_PRESETS: Record<string, { emoji: string; gradient: string }
 // profile card, ProfilHeader) - a chosen preset always wins over the Google
 // photo; falls back to the initial only when neither exists.
 function renderUserAvatarContent(user: User): ReactNode {
-  const preset = user.avatarStyle ? PROFILE_AVATAR_PRESETS[user.avatarStyle] : undefined;
+  const preset = user.avatarStyle
+    ? PROFILE_AVATAR_PRESETS[user.avatarStyle]
+    : undefined;
   if (preset) {
     return (
       <span
@@ -5089,7 +5762,10 @@ function formatRelativeTime(iso: string): string {
 }
 
 function formatMemberSince(iso: string): string {
-  const formatted = new Date(iso).toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' });
+  const formatted = new Date(iso).toLocaleDateString('fr-CA', {
+    month: 'long',
+    year: 'numeric'
+  });
   return formatted.charAt(0).toUpperCase() + formatted.slice(1);
 }
 
@@ -5106,7 +5782,10 @@ function activityEntryKey(entry: ActivityEntry): string {
   }
 }
 
-function activityEntryDisplay(entry: ActivityEntry): { icon: string; text: string } {
+function activityEntryDisplay(entry: ActivityEntry): {
+  icon: string;
+  text: string;
+} {
   switch (entry.kind) {
     case 'favorited_event':
       return { icon: '❤️', text: `A ajouté ${entry.eventTitle} à ses favoris` };
@@ -5121,7 +5800,9 @@ function activityEntryDisplay(entry: ActivityEntry): { icon: string; text: strin
 
 function useProfileStats(authToken: string | undefined) {
   const [stats, setStats] = useState<ProfileStatsResponse['data']>();
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   useEffect(() => {
     if (!authToken) return;
     setState('loading');
@@ -5140,7 +5821,9 @@ function useProfileStats(authToken: string | undefined) {
 
 function useActivity(authToken: string | undefined, limit: number) {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   useEffect(() => {
     if (!authToken) return;
     setState('loading');
@@ -5177,7 +5860,9 @@ function ActivityList({
               {icon}
             </span>
             <span className="profil-activity-text">{text}</span>
-            <span className="profil-activity-time">{formatRelativeTime(entry.occurredAt)}</span>
+            <span className="profil-activity-time">
+              {formatRelativeTime(entry.occurredAt)}
+            </span>
           </li>
         );
       })}
@@ -5197,7 +5882,9 @@ function EditProfileModal({
   onSaved: (user: User) => void;
 }) {
   const [bio, setBio] = useState(user.bio ?? '');
-  const [coverStyle, setCoverStyle] = useState(user.coverStyle ?? DEFAULT_PROFILE_COVER);
+  const [coverStyle, setCoverStyle] = useState(
+    user.coverStyle ?? DEFAULT_PROFILE_COVER
+  );
   // '' means "use the Google photo" - the explicit clear signal
   // updateProfileRequestSchema accepts (see auth-repository.ts).
   const [avatarStyle, setAvatarStyle] = useState(user.avatarStyle ?? '');
@@ -5208,7 +5895,10 @@ function EditProfileModal({
     setSaving(true);
     fetch(`${API_BASE_URL}/me/profile`, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
       body: JSON.stringify({ bio: bio.trim(), coverStyle, avatarStyle })
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
@@ -5222,7 +5912,10 @@ function EditProfileModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="profil-edit-modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="profil-edit-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="conversation-modal-header">
           <strong>Modifier mon profil</strong>
           <button type="button" className="text-btn" onClick={onClose}>
@@ -5288,7 +5981,12 @@ function EditProfileModal({
           </div>
         </div>
         <div className="profil-edit-footer">
-          <button type="button" className="btn-secondary" onClick={save} disabled={saving}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={save}
+            disabled={saving}
+          >
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </div>
@@ -5327,7 +6025,9 @@ function ProfilHeader({
       </div>
       <div className="profil-header-details">
         <p className="profil-location">📍 Montréal, QC</p>
-        <p className="profil-member-since">Membre depuis {formatMemberSince(user.createdAt)}</p>
+        <p className="profil-member-since">
+          Membre depuis {formatMemberSince(user.createdAt)}
+        </p>
         {user.bio && <p className="profil-bio">{user.bio}</p>}
         <div className="profil-stats-row">
           <span>
@@ -5346,7 +6046,9 @@ function ProfilStatsCard({ authToken }: { authToken: string | undefined }) {
       <h3>Stats</h3>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger vos stats pour le moment.</p>
+        <p className="list-view-empty">
+          Impossible de charger vos stats pour le moment.
+        </p>
       )}
       {state === 'success' && stats && (
         <div className="profil-stats-grid">
@@ -5395,12 +6097,16 @@ function ProfilBadgesCard() {
 // own favorites, not simulated data.
 function ProfilTrendsCard({ authToken }: { authToken: string | undefined }) {
   const [trends, setTrends] = useState<TrendsResponse['data']>();
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
 
   useEffect(() => {
     if (!authToken) return;
     setState('loading');
-    fetch(`${API_BASE_URL}/me/trends`, { headers: { authorization: `Bearer ${authToken}` } })
+    fetch(`${API_BASE_URL}/me/trends`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
         setTrends(trendsResponseSchema.parse(json).data);
@@ -5410,14 +6116,17 @@ function ProfilTrendsCard({ authToken }: { authToken: string | undefined }) {
   }, [authToken]);
 
   const hasTrends =
-    trends && (trends.eventCategories.length > 0 || trends.venueCategories.length > 0);
+    trends &&
+    (trends.eventCategories.length > 0 || trends.venueCategories.length > 0);
 
   return (
     <div className="profil-side-card">
       <h3>Vos tendances</h3>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger vos tendances pour le moment.</p>
+        <p className="list-view-empty">
+          Impossible de charger vos tendances pour le moment.
+        </p>
       )}
       {state === 'success' && !hasTrends && (
         <p className="list-view-empty">
@@ -5473,7 +6182,9 @@ function ProfilAmisCard({
           Voir tous mes amis
         </button>
       </div>
-      {friends.length === 0 && <p className="list-view-empty">Aucun ami pour le moment.</p>}
+      {friends.length === 0 && (
+        <p className="list-view-empty">Aucun ami pour le moment.</p>
+      )}
       {friends.length > 0 && (
         <div className="profil-friends-avatars">
           {friends.slice(0, 6).map((friend) => (
@@ -5514,7 +6225,10 @@ function ProfilActivityRecentCard({
         <p className="list-view-empty">Impossible de charger votre activité.</p>
       )}
       {state === 'success' && (
-        <ActivityList entries={activity} emptyMessage="Aucune activité pour le moment." />
+        <ActivityList
+          entries={activity}
+          emptyMessage="Aucune activité pour le moment."
+        />
       )}
       <button type="button" className="text-btn" onClick={onSeeAll}>
         Voir toute mon activité
@@ -5544,13 +6258,19 @@ function ApercuTab({
         <div className="list-view-heading">
           <h3>Événements à venir</h3>
           {upcoming.events.length > 0 && (
-            <button type="button" className="text-btn" onClick={onSeeMoreUpcoming}>
+            <button
+              type="button"
+              className="text-btn"
+              onClick={onSeeMoreUpcoming}
+            >
               Voir tout
             </button>
           )}
         </div>
         {upcoming.state === 'success' && upcoming.events.length === 0 && (
-          <p className="list-view-empty">Aucun événement à venir pour le moment.</p>
+          <p className="list-view-empty">
+            Aucun événement à venir pour le moment.
+          </p>
         )}
         <EventCarouselRow
           events={upcoming.events.slice(0, 4)}
@@ -5568,7 +6288,9 @@ function ApercuTab({
           )}
         </div>
         {past.state === 'success' && past.events.length === 0 && (
-          <p className="list-view-empty">Aucun événement passé pour le moment.</p>
+          <p className="list-view-empty">
+            Aucun événement passé pour le moment.
+          </p>
         )}
         <EventCarouselRow
           events={past.events.slice(0, 5)}
@@ -5594,9 +6316,15 @@ function MesEvenementsTab({
     <div className="profil-tab-content">
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'success' && events.length === 0 && (
-        <p className="list-view-empty">Vous n'avez pas encore d'événement à venir.</p>
+        <p className="list-view-empty">
+          Vous n'avez pas encore d'événement à venir.
+        </p>
       )}
-      <EventCarouselRow events={events} onOpenDetails={onOpenDetails} locale={locale} />
+      <EventCarouselRow
+        events={events}
+        onOpenDetails={onOpenDetails}
+        locale={locale}
+      />
     </div>
   );
 }
@@ -5610,7 +6338,10 @@ function ActiviteTab({ authToken }: { authToken: string | undefined }) {
         <p className="list-view-empty">Impossible de charger votre activité.</p>
       )}
       {state === 'success' && (
-        <ActivityList entries={activity} emptyMessage="Aucune activité pour le moment." />
+        <ActivityList
+          entries={activity}
+          emptyMessage="Aucune activité pour le moment."
+        />
       )}
     </div>
   );
@@ -5667,7 +6398,9 @@ function CompteSection({
 
   useEffect(() => {
     if (!authToken) return;
-    fetch(`${API_BASE_URL}/me/friends`, { headers: { authorization: `Bearer ${authToken}` } })
+    fetch(`${API_BASE_URL}/me/friends`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => setFriends(friendsResponseSchema.parse(json).data))
       .catch(() => {});
@@ -5675,7 +6408,11 @@ function CompteSection({
 
   return (
     <section className="map-container-wrapper profil-page">
-      <ProfilHeader user={user} friendsCount={friends.length} onEdit={() => setEditing(true)} />
+      <ProfilHeader
+        user={user}
+        friendsCount={friends.length}
+        onEdit={() => setEditing(true)}
+      />
 
       <div className="profil-body">
         <div className="profil-main">
@@ -5702,7 +6439,11 @@ function CompteSection({
             />
           )}
           {tab === 'mes-evenements' && (
-            <MesEvenementsTab attendance={attendance} onOpenDetails={onOpenDetails} locale={locale} />
+            <MesEvenementsTab
+              attendance={attendance}
+              onOpenDetails={onOpenDetails}
+              locale={locale}
+            />
           )}
           {tab === 'favoris' && (
             <div className="profil-tab-content">
@@ -5747,7 +6488,10 @@ function CompteSection({
         <div className="profil-side">
           <ProfilStatsCard authToken={authToken} />
           <ProfilBadgesCard />
-          <ProfilActivityRecentCard authToken={authToken} onSeeAll={() => setTab('activite')} />
+          <ProfilActivityRecentCard
+            authToken={authToken}
+            onSeeAll={() => setTab('activite')}
+          />
           <ProfilAmisCard friends={friends} onOpenAmis={onOpenAmis} />
           <ProfilTrendsCard authToken={authToken} />
           <div className="profil-side-card">
@@ -5778,7 +6522,8 @@ function CompteSection({
 const FRIEND_REQUEST_ERROR_MESSAGES: Record<string, string> = {
   FRIEND_CODE_NOT_FOUND: 'Aucun compte ne correspond à ce code.',
   CANNOT_FRIEND_SELF: 'Vous ne pouvez pas vous ajouter vous-même.',
-  FRIENDSHIP_ALREADY_EXISTS: 'Vous êtes déjà amis, ou une demande est déjà en attente.'
+  FRIENDSHIP_ALREADY_EXISTS:
+    'Vous êtes déjà amis, ou une demande est déjà en attente.'
 };
 
 // Own block rather than folded into the trends/favoris blocks above - it
@@ -5787,9 +6532,13 @@ const FRIEND_REQUEST_ERROR_MESSAGES: Record<string, string> = {
 // once signed in, same guard as the rest of this page.
 function FriendsBlock({ authToken }: { authToken: string | undefined }) {
   const [friendCode, setFriendCode] = useState<string>();
-  const [pendingRequests, setPendingRequests] = useState<FriendRequestEntry[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<FriendRequestEntry[]>(
+    []
+  );
   const [friends, setFriends] = useState<PublicUser[]>([]);
-  const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   const [codeInput, setCodeInput] = useState('');
   const [sendError, setSendError] = useState<string>();
   const [copied, setCopied] = useState(false);
@@ -5812,7 +6561,9 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
     ])
       .then(([codeJson, requestsJson, friendsJson]) => {
         setFriendCode(friendCodeResponseSchema.parse(codeJson).data.friendCode);
-        setPendingRequests(friendRequestsResponseSchema.parse(requestsJson).data);
+        setPendingRequests(
+          friendRequestsResponseSchema.parse(requestsJson).data
+        );
         setFriends(friendsResponseSchema.parse(friendsJson).data);
         setLoadState('success');
       })
@@ -5828,7 +6579,10 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
     setSendError(undefined);
     fetch(`${API_BASE_URL}/me/friends/requests`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
       body: JSON.stringify({ friendCode: codeInput.trim() })
     }).then((response) => {
       if (response.status === 204) {
@@ -5844,7 +6598,9 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
               "Impossible d'envoyer la demande pour le moment."
           );
         })
-        .catch(() => setSendError("Impossible d'envoyer la demande pour le moment."));
+        .catch(() =>
+          setSendError("Impossible d'envoyer la demande pour le moment.")
+        );
     });
   };
 
@@ -5852,7 +6608,10 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
     if (!authToken) return;
     void fetch(`${API_BASE_URL}/me/friends/requests/${requestId}`, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
       body: JSON.stringify({ action })
     }).then(() => refresh());
   };
@@ -5865,14 +6624,22 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
     }).then(() => refresh());
   };
 
-  const incoming = pendingRequests.filter((request) => request.direction === 'incoming');
-  const outgoing = pendingRequests.filter((request) => request.direction === 'outgoing');
+  const incoming = pendingRequests.filter(
+    (request) => request.direction === 'incoming'
+  );
+  const outgoing = pendingRequests.filter(
+    (request) => request.direction === 'outgoing'
+  );
 
   return (
     <div className="amis-page">
-      {loadState === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {loadState === 'loading' && (
+        <p className="list-view-empty">Chargement…</p>
+      )}
       {loadState === 'error' && (
-        <p className="list-view-empty">Impossible de charger vos amis pour le moment.</p>
+        <p className="list-view-empty">
+          Impossible de charger vos amis pour le moment.
+        </p>
       )}
       {loadState === 'success' && (
         <>
@@ -5912,7 +6679,11 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
               placeholder="Coller le code d'un ami pour l'ajouter"
               maxLength={32}
             />
-            <button type="submit" className="amis-add-btn" disabled={!codeInput.trim()}>
+            <button
+              type="submit"
+              className="amis-add-btn"
+              disabled={!codeInput.trim()}
+            >
               Ajouter
             </button>
           </form>
@@ -5931,7 +6702,9 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
                         request.user.displayName.slice(0, 1).toUpperCase()
                       )}
                     </span>
-                    <span className="amis-row-name">{request.user.displayName}</span>
+                    <span className="amis-row-name">
+                      {request.user.displayName}
+                    </span>
                     <div className="amis-row-actions">
                       <button
                         type="button"
@@ -5967,7 +6740,9 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
                         request.user.displayName.slice(0, 1).toUpperCase()
                       )}
                     </span>
-                    <span className="amis-row-name">{request.user.displayName}</span>
+                    <span className="amis-row-name">
+                      {request.user.displayName}
+                    </span>
                     <span className="amis-row-pending">En attente</span>
                   </div>
                 ))}
@@ -5996,7 +6771,9 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
                         friendUser.displayName.slice(0, 1).toUpperCase()
                       )}
                     </span>
-                    <span className="amis-row-name">{friendUser.displayName}</span>
+                    <span className="amis-row-name">
+                      {friendUser.displayName}
+                    </span>
                     <div className="amis-row-actions">
                       <button
                         type="button"
@@ -6041,7 +6818,9 @@ function ConversationModal({
   onClose: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -6073,7 +6852,10 @@ function ConversationModal({
     setSending(true);
     fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
       body: JSON.stringify({ body: draft.trim() })
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
@@ -6087,7 +6869,10 @@ function ConversationModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="conversation-modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="conversation-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="conversation-modal-header">
           <span className="conversation-modal-friend">
             <span className="friends-row-avatar friends-row-avatar-md">
@@ -6104,9 +6889,13 @@ function ConversationModal({
           </button>
         </div>
         <div className="conversation-messages">
-          {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+          {state === 'loading' && (
+            <p className="list-view-empty">Chargement…</p>
+          )}
           {state === 'error' && (
-            <p className="list-view-empty">Impossible de charger la conversation.</p>
+            <p className="list-view-empty">
+              Impossible de charger la conversation.
+            </p>
           )}
           {state === 'success' && messages.length === 0 && (
             <p className="list-view-empty">Aucun message pour l'instant.</p>
@@ -6115,13 +6904,18 @@ function ConversationModal({
             messages.map((message) => {
               const incoming = message.senderId === friend.id;
               return (
-                <div key={message.id} className={`conversation-message ${incoming ? 'incoming' : 'outgoing'}`}>
+                <div
+                  key={message.id}
+                  className={`conversation-message ${incoming ? 'incoming' : 'outgoing'}`}
+                >
                   {message.body}
                   {incoming && (
                     <button
                       type="button"
                       className="conversation-message-report"
-                      onClick={() => reportContent(authToken, 'message', message.id)}
+                      onClick={() =>
+                        reportContent(authToken, 'message', message.id)
+                      }
                     >
                       Signaler
                     </button>
@@ -6144,7 +6938,11 @@ function ConversationModal({
             maxLength={2000}
             rows={2}
           />
-          <button type="submit" className="btn-secondary" disabled={sending || !draft.trim()}>
+          <button
+            type="submit"
+            className="btn-secondary"
+            disabled={sending || !draft.trim()}
+          >
             Envoyer
           </button>
         </form>
@@ -6164,7 +6962,9 @@ function GroupsBlock({
   userId: string;
 }) {
   const [groups, setGroups] = useState<Group[]>([]);
-  const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
@@ -6173,7 +6973,9 @@ function GroupsBlock({
   const refresh = useCallback(() => {
     if (!authToken) return;
     setLoadState('loading');
-    fetch(`${API_BASE_URL}/me/groups`, { headers: { authorization: `Bearer ${authToken}` } })
+    fetch(`${API_BASE_URL}/me/groups`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
         setGroups(groupsResponseSchema.parse(json).data);
@@ -6191,8 +6993,14 @@ function GroupsBlock({
     setCreating(true);
     fetch(`${API_BASE_URL}/me/groups`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ name: name.trim(), ...(description.trim() ? { description: description.trim() } : {}) })
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        name: name.trim(),
+        ...(description.trim() ? { description: description.trim() } : {})
+      })
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then(() => {
@@ -6207,9 +7015,13 @@ function GroupsBlock({
   return (
     <div className="compte-block">
       <h3>Mes groupes</h3>
-      {loadState === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {loadState === 'loading' && (
+        <p className="list-view-empty">Chargement…</p>
+      )}
       {loadState === 'error' && (
-        <p className="list-view-empty">Impossible de charger vos groupes pour le moment.</p>
+        <p className="list-view-empty">
+          Impossible de charger vos groupes pour le moment.
+        </p>
       )}
       {loadState === 'success' && (
         <div className="friends-block">
@@ -6232,7 +7044,11 @@ function GroupsBlock({
               placeholder="Description (optionnel)"
               maxLength={500}
             />
-            <button type="submit" className="btn-secondary" disabled={creating || !name.trim()}>
+            <button
+              type="submit"
+              className="btn-secondary"
+              disabled={creating || !name.trim()}
+            >
               Créer
             </button>
           </form>
@@ -6245,9 +7061,15 @@ function GroupsBlock({
               <div className="friends-row" key={group.id}>
                 <span className="friends-row-name">
                   {group.name}
-                  <span className="compte-trends-count">{group.memberCount}</span>
+                  <span className="compte-trends-count">
+                    {group.memberCount}
+                  </span>
                 </span>
-                <button type="button" className="text-btn" onClick={() => setOpenGroup(group)}>
+                <button
+                  type="button"
+                  className="text-btn"
+                  onClick={() => setOpenGroup(group)}
+                >
                   Ouvrir
                 </button>
               </div>
@@ -6285,10 +7107,14 @@ function GroupModal({
   onLeft: () => void;
 }) {
   const [posts, setPosts] = useState<GroupPost[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   const [draft, setDraft] = useState('');
   const [posting, setPosting] = useState(false);
-  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(
+    new Set()
+  );
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
 
   const refresh = useCallback(() => {
@@ -6315,7 +7141,10 @@ function GroupModal({
     setPosting(true);
     fetch(`${API_BASE_URL}/groups/${group.id}/posts`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
       body: JSON.stringify({ body, ...(parentId ? { parentId } : {}) })
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
@@ -6377,7 +7206,8 @@ function GroupModal({
   };
 
   const topLevelPosts = posts.filter((post) => !post.parentId);
-  const repliesFor = (postId: string) => posts.filter((post) => post.parentId === postId);
+  const repliesFor = (postId: string) =>
+    posts.filter((post) => post.parentId === postId);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -6398,15 +7228,23 @@ function GroupModal({
             </button>
           </div>
         </div>
-        {group.description && <p className="forum-disclaimer">{group.description}</p>}
+        {group.description && (
+          <p className="forum-disclaimer">{group.description}</p>
+        )}
 
         <div className="forum-posts">
-          {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+          {state === 'loading' && (
+            <p className="list-view-empty">Chargement…</p>
+          )}
           {state === 'error' && (
-            <p className="list-view-empty">Impossible de charger le fil pour le moment.</p>
+            <p className="list-view-empty">
+              Impossible de charger le fil pour le moment.
+            </p>
           )}
           {state === 'success' && topLevelPosts.length === 0 && (
-            <p className="list-view-empty">Aucun message pour l'instant. Soyez le premier.</p>
+            <p className="list-view-empty">
+              Aucun message pour l'instant. Soyez le premier.
+            </p>
           )}
           {state === 'success' &&
             topLevelPosts.map((post) => (
@@ -6444,7 +7282,11 @@ function GroupModal({
             maxLength={2000}
             rows={2}
           />
-          <button type="submit" className="btn-secondary" disabled={posting || !draft.trim()}>
+          <button
+            type="submit"
+            className="btn-secondary"
+            disabled={posting || !draft.trim()}
+          >
             Publier
           </button>
         </form>
@@ -6487,7 +7329,10 @@ function GroupPostRow({
   const renderBubble = (item: GroupPost, isReply: boolean) => {
     const mine = item.author.id === userId;
     return (
-      <div key={item.id} className={`group-bubble-row ${mine ? 'mine' : 'theirs'}`}>
+      <div
+        key={item.id}
+        className={`group-bubble-row ${mine ? 'mine' : 'theirs'}`}
+      >
         {!mine && (
           <span className="friends-row-avatar group-bubble-avatar">
             {item.author.avatarUrl ? (
@@ -6498,7 +7343,11 @@ function GroupPostRow({
           </span>
         )}
         <div className="group-bubble-col">
-          {!mine && <span className="group-bubble-author">{item.author.displayName}</span>}
+          {!mine && (
+            <span className="group-bubble-author">
+              {item.author.displayName}
+            </span>
+          )}
           <div className="group-bubble">
             <p>{item.body}</p>
           </div>
@@ -6512,14 +7361,22 @@ function GroupPostRow({
               {item.likeCount > 0 && item.likeCount}
             </button>
             {!isReply && (
-              <button type="button" className="text-btn" onClick={onToggleExpanded}>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={onToggleExpanded}
+              >
                 {item.replyCount === 0
                   ? 'Répondre'
                   : `${item.replyCount} réponse${item.replyCount !== 1 ? 's' : ''}`}
               </button>
             )}
             {mine ? (
-              <button type="button" className="text-btn" onClick={() => onDelete(item.id)}>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => onDelete(item.id)}
+              >
                 Supprimer
               </button>
             ) : (
@@ -6613,7 +7470,16 @@ function SearchPanel({
           <CitySelector />
           <span className="search-divider" aria-hidden="true" />
           <span className="search-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
@@ -6647,7 +7513,10 @@ function SearchPanel({
                 {result.clarification && (
                   <p className="clarification">
                     {translate(locale, 'search.clarificationPrefix', {
-                      message: localizeSearchMessage(locale, result.clarification)
+                      message: localizeSearchMessage(
+                        locale,
+                        result.clarification
+                      )
                     })}
                   </p>
                 )}
@@ -6847,7 +7716,16 @@ function MapFilterBar({
           onClick={() => toggleChip('date')}
         >
           {getDateFilterLabel(locale, filters.date)}
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </button>
         {openChip === 'date' && (
           <div className="map-filter-dropdown">
@@ -6876,7 +7754,16 @@ function MapFilterBar({
           onClick={() => toggleChip('price')}
         >
           {getPriceLabel(locale, filters.price)}
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </button>
         {openChip === 'price' && (
           <div className="map-filter-dropdown">
@@ -6905,7 +7792,16 @@ function MapFilterBar({
           onClick={() => toggleChip('category')}
         >
           {categoryLabel}
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </button>
         {openChip === 'category' && (
           <div className="map-filter-dropdown">
@@ -6923,15 +7819,34 @@ function MapFilterBar({
         )}
       </div>
 
-      <button type="button" className="map-filter-chip map-filter-more" onClick={onOpenMore}>
+      <button
+        type="button"
+        className="map-filter-chip map-filter-more"
+        onClick={onOpenMore}
+      >
         Plus de filtres
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
       </button>
     </div>
   );
 }
 
-function AboutPanel({ onClose, visible }: { onClose: () => void; visible: boolean }) {
+function AboutPanel({
+  onClose,
+  visible
+}: {
+  onClose: () => void;
+  visible: boolean;
+}) {
   const panelRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -6959,29 +7874,34 @@ function AboutPanel({ onClose, visible }: { onClose: () => void; visible: boolea
     >
       <div className="filter-heading">
         <h2>À propos de Pulso</h2>
-        <button type="button" onClick={onClose}>Fermer</button>
+        <button type="button" onClick={onClose}>
+          Fermer
+        </button>
       </div>
       <div className="about-content">
         <p>
           Pulso est un répertoire d'événements festifs, musicaux et de soirée
           géolocalisés à Montréal : concerts, clubs, bars, spectacles, comedy
           clubs et catégories similaires. Vous pouvez explorer la carte sans
-          compte ni intention précise, ou chercher exactement ce que vous
-          voulez en langage naturel.
+          compte ni intention précise, ou chercher exactement ce que vous voulez
+          en langage naturel.
         </p>
         <p>
-          L'objectif est de regrouper le plus grand nombre possible
-          d'événements montréalais correctement référencés, avec un accès en
-          une action vers la billetterie ou la source d'origine — sans
-          réservation ni billet géré par Pulso lui-même.
+          L'objectif est de regrouper le plus grand nombre possible d'événements
+          montréalais correctement référencés, avec un accès en une action vers
+          la billetterie ou la source d'origine — sans réservation ni billet
+          géré par Pulso lui-même.
         </p>
         <h3>Vous organisez un événement ?</h3>
         <p>
           Si vous voulez que votre événement soit listé sur Pulso, ou que vous
-          représentez une salle, un organisateur ou une billetterie
-          intéressé·e à collaborer, écrivez-nous :
+          représentez une salle, un organisateur ou une billetterie intéressé·e
+          à collaborer, écrivez-nous :
         </p>
-        <a className="primary-action-btn glow-purple" href="mailto:rmeynaud@pulsonight.com">
+        <a
+          className="primary-action-btn glow-purple"
+          href="mailto:rmeynaud@pulsonight.com"
+        >
           rmeynaud@pulsonight.com
         </a>
       </div>
@@ -7184,12 +8104,17 @@ function EventPreview({
   return (
     <div className="event-preview-card" aria-live="polite">
       <div className="preview-header-actions">
-        <div className="card-badge" style={{position: 'relative', top: 0, left: 0}}>{SHORT_CATEGORY_LABELS[locale][event.category]}</div>
-        <div style={{display: 'flex', gap: '0.5rem'}}>
+        <div
+          className="card-badge"
+          style={{ position: 'relative', top: 0, left: 0 }}
+        >
+          {SHORT_CATEGORY_LABELS[locale][event.category]}
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button
             type="button"
             className="card-fav"
-            style={{position: 'relative', top: 0, right: 0}}
+            style={{ position: 'relative', top: 0, right: 0 }}
             aria-pressed={isFavorite}
             aria-label={translate(
               locale,
@@ -7199,12 +8124,39 @@ function EventPreview({
           >
             <HeartIcon filled={isFavorite} />
           </button>
-          <button type="button" className="close-button" onClick={onClose} style={{background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: 28, height: 28, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          <button
+            type="button"
+            className="close-button"
+            onClick={onClose}
+            style={{
+              background: 'rgba(255,255,255,0.1)',
+              border: 'none',
+              borderRadius: '50%',
+              width: 28,
+              height: 28,
+              color: '#fff',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
           </button>
         </div>
       </div>
-      <h3 style={{margin: '0.5rem 0 0 0', fontSize: '1.25rem'}}>{fields.title}</h3>
+      <h3 style={{ margin: '0.5rem 0 0 0', fontSize: '1.25rem' }}>
+        {fields.title}
+      </h3>
       <dl className="preview-fields">
         <div>
           <dt>{translate(locale, 'preview.when')}</dt>
@@ -7336,7 +8288,16 @@ function EventHero({
       <div className="details-hero-actions">
         {!hideBackButton && (
           <button type="button" className="back-button" onClick={onBack}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
             Retour
           </button>
         )}
@@ -7346,13 +8307,27 @@ function EventHero({
           </div>
         )}
         <div className="details-hero-actions-right">
-          <button type="button" className="share-button" onClick={() => void shareEvent(event, locale)}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="18" cy="5" r="3"/>
-              <circle cx="6" cy="12" r="3"/>
-              <circle cx="18" cy="19" r="3"/>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          <button
+            type="button"
+            className="share-button"
+            onClick={() => void shareEvent(event, locale)}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="18" cy="5" r="3" />
+              <circle cx="6" cy="12" r="3" />
+              <circle cx="18" cy="19" r="3" />
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
             </svg>
             {translate(locale, 'details.share')}
           </button>
@@ -7364,9 +8339,19 @@ function EventHero({
               title="Envoyer à un ami"
               onClick={() => setShareFriendOpen(true)}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="22" y1="2" x2="11" y2="13"/>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
             </button>
           )}
@@ -7385,7 +8370,9 @@ function EventHero({
         </div>
       </div>
       {!inlineBadge && (
-        <div className="details-badge">{SHORT_CATEGORY_LABELS[locale][event.category]}</div>
+        <div className="details-badge">
+          {SHORT_CATEGORY_LABELS[locale][event.category]}
+        </div>
       )}
       <h2 ref={headingRef} tabIndex={-1} className="details-title">
         {event.title}
@@ -7419,14 +8406,18 @@ function ShareToFriendModal({
   onClose: () => void;
 }) {
   const [friends, setFriends] = useState<PublicUser[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   const [sentTo, setSentTo] = useState<Set<string>>(new Set());
   const [sendingTo, setSendingTo] = useState<string>();
 
   useEffect(() => {
     if (!authToken) return;
     setState('loading');
-    fetch(`${API_BASE_URL}/me/friends`, { headers: { authorization: `Bearer ${authToken}` } })
+    fetch(`${API_BASE_URL}/me/friends`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
         setFriends(friendsResponseSchema.parse(json).data);
@@ -7441,7 +8432,10 @@ function ShareToFriendModal({
     const url = `${window.location.origin}/events/${event.id}`;
     fetch(`${API_BASE_URL}/me/friends/${friendId}/messages`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
       body: JSON.stringify({ body: `${event.title}\n${url}` })
     })
       .then((response) => (response.ok ? undefined : Promise.reject()))
@@ -7452,7 +8446,10 @@ function ShareToFriendModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="share-friend-modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="share-friend-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="conversation-modal-header">
           <strong>Envoyer à un ami</strong>
           <button type="button" className="text-btn" onClick={onClose}>
@@ -7460,9 +8457,13 @@ function ShareToFriendModal({
           </button>
         </div>
         <div className="share-friend-list">
-          {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+          {state === 'loading' && (
+            <p className="list-view-empty">Chargement…</p>
+          )}
           {state === 'error' && (
-            <p className="list-view-empty">Impossible de charger vos amis pour le moment.</p>
+            <p className="list-view-empty">
+              Impossible de charger vos amis pour le moment.
+            </p>
           )}
           {state === 'success' && friends.length === 0 && (
             <p className="list-view-empty">
@@ -7486,7 +8487,11 @@ function ShareToFriendModal({
                   onClick={() => sendToFriend(friend.id)}
                   disabled={sendingTo === friend.id || sentTo.has(friend.id)}
                 >
-                  {sentTo.has(friend.id) ? 'Envoyé ✓' : sendingTo === friend.id ? 'Envoi…' : 'Envoyer'}
+                  {sentTo.has(friend.id)
+                    ? 'Envoyé ✓'
+                    : sendingTo === friend.id
+                      ? 'Envoi…'
+                      : 'Envoyer'}
                 </button>
               </div>
             ))}
@@ -7527,7 +8532,22 @@ function EventAboutContent({
       <div className="details-info-list">
         <div className="info-item">
           <span className="info-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
           </span>
           <div>
             <strong>Date et heure</strong>
@@ -7536,7 +8556,20 @@ function EventAboutContent({
         </div>
         <div className="info-item">
           <span className="info-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
           </span>
           <div>
             <strong>Lieu</strong>
@@ -7546,7 +8579,20 @@ function EventAboutContent({
         </div>
         <div className="info-item">
           <span className="info-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+              <line x1="4" y1="22" x2="4" y2="15" />
+            </svg>
           </span>
           <div>
             <strong>Prix</strong>
@@ -7557,7 +8603,12 @@ function EventAboutContent({
 
       <div className="details-actions-main">
         {presentation.externalAction ? (
-          <a className="primary-action-btn glow-purple" href={externalHref} target="_blank" rel="noopener noreferrer">
+          <a
+            className="primary-action-btn glow-purple"
+            href={externalHref}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             {presentation.externalAction}
           </a>
         ) : (
@@ -7630,7 +8681,6 @@ function EventDetails({
   // would only apply on the very first mount.
   useEffect(() => {
     setTab(initialTab ?? 'about');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event.id, initialTab]);
   const { presentation } = eventDetailsFields(event, locale);
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
@@ -7645,7 +8695,9 @@ function EventDetails({
       headers: { authorization: `Bearer ${authToken}` }
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setFriendsAttending(friendsAttendingResponseSchema.parse(json).data))
+      .then((json) =>
+        setFriendsAttending(friendsAttendingResponseSchema.parse(json).data)
+      )
       .catch(() => setFriendsAttending([]));
   }, [authToken, event.id]);
 
@@ -7667,7 +8719,11 @@ function EventDetails({
       />
 
       <div className="details-tabs">
-        <button type="button" className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>
+        <button
+          type="button"
+          className={tab === 'about' ? 'active' : ''}
+          onClick={() => setTab('about')}
+        >
           À propos
         </button>
         <button
@@ -7677,7 +8733,11 @@ function EventDetails({
         >
           Participants
         </button>
-        <button type="button" className={tab === 'forum' ? 'active' : ''} onClick={() => setTab('forum')}>
+        <button
+          type="button"
+          className={tab === 'forum' ? 'active' : ''}
+          onClick={() => setTab('forum')}
+        >
           Forum
         </button>
       </div>
@@ -7706,7 +8766,9 @@ function EventDetails({
                   type="button"
                   className={`secondary-action-btn ${attendanceVisibility ? 'active' : ''}`}
                   onClick={() =>
-                    attendanceVisibility ? onClearAttendance() : onSetAttendance('private')
+                    attendanceVisibility
+                      ? onClearAttendance()
+                      : onSetAttendance('private')
                   }
                 >
                   {attendanceVisibility ? 'Vous y allez' : "J'y vais"}
@@ -7716,7 +8778,9 @@ function EventDetails({
                     className="attendance-visibility-select"
                     value={attendanceVisibility}
                     onChange={(changeEvent) =>
-                      onSetAttendance(changeEvent.target.value as AttendanceVisibility)
+                      onSetAttendance(
+                        changeEvent.target.value as AttendanceVisibility
+                      )
                     }
                     aria-label="Visibilité de votre participation"
                   >
@@ -7740,11 +8804,15 @@ function EventDetails({
                     </span>
                   ))}
                   <span className="attendance-friends-label">
-                    {friendsAttending.length === 1 ? 'y va aussi' : 'y vont aussi'}
+                    {friendsAttending.length === 1
+                      ? 'y va aussi'
+                      : 'y vont aussi'}
                   </span>
                 </div>
               ) : (
-                <p className="list-view-empty">Aucun de vos amis n'a indiqué y participer.</p>
+                <p className="list-view-empty">
+                  Aucun de vos amis n'a indiqué y participer.
+                </p>
               )}
             </>
           )}
@@ -7786,7 +8854,9 @@ function ForumTeaser({
   onOpenForumPanel: () => void;
 }) {
   const [members, setMembers] = useState<PublicUser[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
 
   useEffect(() => {
     if (!authToken) return;
@@ -7813,7 +8883,9 @@ function ForumTeaser({
       headers: { authorization: `Bearer ${authToken}` }
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setFollowing(forumFollowResponseSchema.parse(json).following))
+      .then((json) =>
+        setFollowing(forumFollowResponseSchema.parse(json).following)
+      )
       .catch(() => {});
   }, [authToken, eventId]);
   const toggleFollow = () => {
@@ -7833,13 +8905,19 @@ function ForumTeaser({
     <div className="forum-teaser">
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger le forum pour le moment.</p>
+        <p className="list-view-empty">
+          Impossible de charger le forum pour le moment.
+        </p>
       )}
       {state === 'success' && members.length > 0 && (
         <div className="forum-teaser-members">
           <div className="forum-members-avatars">
             {members.slice(0, 6).map((member) => (
-              <span className="friends-row-avatar" key={member.id} title={member.displayName}>
+              <span
+                className="friends-row-avatar"
+                key={member.id}
+                title={member.displayName}
+              >
                 {member.avatarUrl ? (
                   <img src={member.avatarUrl} alt="" />
                 ) : (
@@ -7854,7 +8932,9 @@ function ForumTeaser({
         </div>
       )}
       {state === 'success' && members.length === 0 && (
-        <p className="list-view-empty">Personne n'a encore écrit ici. Sois le premier !</p>
+        <p className="list-view-empty">
+          Personne n'a encore écrit ici. Sois le premier !
+        </p>
       )}
       <div className="forum-teaser-actions">
         <button type="button" className="meetup-btn" onClick={onOpenForumPanel}>
@@ -7873,7 +8953,8 @@ function ForumTeaser({
   );
 }
 
-type ForumPanelTab = 'discussion' | 'evenement' | 'membres' | 'photos' | 'apropos';
+type ForumPanelTab =
+  'discussion' | 'evenement' | 'membres' | 'photos' | 'apropos';
 
 // The dedicated Forum panel (Phase 4.8 follow-up) - opened specifically
 // from the Forums discovery grid, not from Carte/Événements/Lieux (those
@@ -7909,7 +8990,9 @@ function ForumPanel({
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
 
   const [members, setMembers] = useState<PublicUser[]>([]);
-  const [membersState, setMembersState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [membersState, setMembersState] = useState<
+    'loading' | 'success' | 'error'
+  >('loading');
   useEffect(() => {
     if (!authToken) return;
     setMembersState('loading');
@@ -7950,7 +9033,9 @@ function ForumPanel({
       headers: { authorization: `Bearer ${authToken}` }
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setFollowing(forumFollowResponseSchema.parse(json).following))
+      .then((json) =>
+        setFollowing(forumFollowResponseSchema.parse(json).following)
+      )
       .catch(() => {});
   }, [authToken, event.id]);
   const toggleFollow = () => {
@@ -7971,7 +9056,16 @@ function ForumPanel({
       <div className="forum-panel-main">
         <div className="forum-panel-hero-wrap">
           <button type="button" className="forum-panel-back" onClick={onBack}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
             Retour
           </button>
 
@@ -7997,25 +9091,46 @@ function ForumPanel({
               onClick={openMeetupGroup}
               disabled={meetupLoading}
             >
-              🤝 {meetupLoading ? 'Un instant…' : "Rencontrer avant l'événement"}
+              🤝{' '}
+              {meetupLoading ? 'Un instant…' : "Rencontrer avant l'événement"}
             </button>
           </div>
         )}
 
         <div className="details-tabs">
-          <button type="button" className={tab === 'discussion' ? 'active' : ''} onClick={() => setTab('discussion')}>
+          <button
+            type="button"
+            className={tab === 'discussion' ? 'active' : ''}
+            onClick={() => setTab('discussion')}
+          >
             Discussion
           </button>
-          <button type="button" className={tab === 'evenement' ? 'active' : ''} onClick={() => setTab('evenement')}>
+          <button
+            type="button"
+            className={tab === 'evenement' ? 'active' : ''}
+            onClick={() => setTab('evenement')}
+          >
             Événement
           </button>
-          <button type="button" className={tab === 'membres' ? 'active' : ''} onClick={() => setTab('membres')}>
+          <button
+            type="button"
+            className={tab === 'membres' ? 'active' : ''}
+            onClick={() => setTab('membres')}
+          >
             Membres
           </button>
-          <button type="button" className={tab === 'photos' ? 'active' : ''} onClick={() => setTab('photos')}>
+          <button
+            type="button"
+            className={tab === 'photos' ? 'active' : ''}
+            onClick={() => setTab('photos')}
+          >
             Photos
           </button>
-          <button type="button" className={tab === 'apropos' ? 'active' : ''} onClick={() => setTab('apropos')}>
+          <button
+            type="button"
+            className={tab === 'apropos' ? 'active' : ''}
+            onClick={() => setTab('apropos')}
+          >
             À propos
           </button>
         </div>
@@ -8028,7 +9143,11 @@ function ForumPanel({
                 onLogin={onLogin}
               />
             ) : (
-              <EventForum eventId={event.id} authToken={authToken} userId={user.id} />
+              <EventForum
+                eventId={event.id}
+                authToken={authToken}
+                userId={user.id}
+              />
             )}
           </div>
         )}
@@ -8045,13 +9164,18 @@ function ForumPanel({
 
         {tab === 'membres' && (
           <div className="details-section">
-            {membersState === 'loading' && <p className="list-view-empty">Chargement…</p>}
+            {membersState === 'loading' && (
+              <p className="list-view-empty">Chargement…</p>
+            )}
             {membersState === 'error' && (
-              <p className="list-view-empty">Impossible de charger les membres pour le moment.</p>
+              <p className="list-view-empty">
+                Impossible de charger les membres pour le moment.
+              </p>
             )}
             {membersState === 'success' && members.length === 0 && (
               <p className="list-view-empty">
-                Personne n'a encore écrit ici. Lance la discussion dans l'onglet Discussion !
+                Personne n'a encore écrit ici. Lance la discussion dans l'onglet
+                Discussion !
               </p>
             )}
             {membersState === 'success' && members.length > 0 && (
@@ -8065,7 +9189,9 @@ function ForumPanel({
                         member.displayName.slice(0, 1).toUpperCase()
                       )}
                     </span>
-                    <span className="friends-row-name">{member.displayName}</span>
+                    <span className="friends-row-name">
+                      {member.displayName}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -8081,7 +9207,11 @@ function ForumPanel({
                 onLogin={onLogin}
               />
             ) : (
-              <EventPhotosTab eventId={event.id} authToken={authToken} userId={user.id} />
+              <EventPhotosTab
+                eventId={event.id}
+                authToken={authToken}
+                userId={user.id}
+              />
             )}
           </div>
         )}
@@ -8089,40 +9219,51 @@ function ForumPanel({
         {tab === 'apropos' && (
           <div className="details-section forum-about-grid">
             <div className="forum-about-card">
-              <span className="forum-about-icon" aria-hidden="true">💬</span>
+              <span className="forum-about-icon" aria-hidden="true">
+                💬
+              </span>
               <div>
                 <strong>Un espace pour cet événement</strong>
                 <p>
-                  Discutez de « {event.title} », posez vos questions et trouvez des partenaires
-                  pour la soirée.
+                  Discutez de « {event.title} », posez vos questions et trouvez
+                  des partenaires pour la soirée.
                 </p>
               </div>
             </div>
             <div className="forum-about-card">
-              <span className="forum-about-icon" aria-hidden="true">✏️</span>
+              <span className="forum-about-icon" aria-hidden="true">
+                ✏️
+              </span>
               <div>
                 <strong>Un message, une fois</strong>
                 <p>
-                  Un message publié n'est pas modifiable après coup — seulement supprimable par
-                  son auteur.
+                  Un message publié n'est pas modifiable après coup — seulement
+                  supprimable par son auteur.
                 </p>
               </div>
             </div>
             <div className="forum-about-card">
-              <span className="forum-about-icon" aria-hidden="true">🎟️</span>
+              <span className="forum-about-icon" aria-hidden="true">
+                🎟️
+              </span>
               <div>
                 <strong>Revente entre particuliers</strong>
                 <p>
-                  La revente de billets entre participants reste entièrement pair-à-pair — Pulso
-                  n'y est jamais partie prenante.
+                  La revente de billets entre participants reste entièrement
+                  pair-à-pair — Pulso n'y est jamais partie prenante.
                 </p>
               </div>
             </div>
             <div className="forum-about-card">
-              <span className="forum-about-icon" aria-hidden="true">🚩</span>
+              <span className="forum-about-icon" aria-hidden="true">
+                🚩
+              </span>
               <div>
                 <strong>Signalement</strong>
-                <p>Chaque message peut être signalé. Restez courtois·e envers les autres participants.</p>
+                <p>
+                  Chaque message peut être signalé. Restez courtois·e envers les
+                  autres participants.
+                </p>
               </div>
             </div>
           </div>
@@ -8147,19 +9288,31 @@ function ForumPanel({
               className="forum-panel-rail-thumb"
               style={
                 event.imageUrl
-                  ? { backgroundImage: `url(${event.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                  ? {
+                      backgroundImage: `url(${event.imageUrl})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center'
+                    }
                   : undefined
               }
             >
-              {!event.imageUrl && <EventImageFallback category={event.category} />}
+              {!event.imageUrl && (
+                <EventImageFallback category={event.category} />
+              )}
             </div>
             <div className="forum-panel-rail-event-info">
               <span>{presentation.dateTime}</span>
               <span>{event.venue.name}</span>
-              <span className="forum-panel-rail-address">{event.venue.address}</span>
+              <span className="forum-panel-rail-address">
+                {event.venue.address}
+              </span>
             </div>
           </div>
-          <button type="button" className="text-btn" onClick={() => setTab('evenement')}>
+          <button
+            type="button"
+            className="text-btn"
+            onClick={() => setTab('evenement')}
+          >
             Voir l'événement
           </button>
         </div>
@@ -8170,7 +9323,11 @@ function ForumPanel({
             <div className="forum-panel-members-row">
               <div className="forum-members-avatars">
                 {members.slice(0, 8).map((member) => (
-                  <span className="friends-row-avatar" key={member.id} title={member.displayName}>
+                  <span
+                    className="friends-row-avatar"
+                    key={member.id}
+                    title={member.displayName}
+                  >
                     {member.avatarUrl ? (
                       <img src={member.avatarUrl} alt="" />
                     ) : (
@@ -8209,7 +9366,11 @@ function ForumPanel({
             >
               {following ? '✓ Forum suivi' : '+ Suivre ce forum'}
             </button>
-            <button type="button" className="forum-panel-rail-action" onClick={() => setTab('membres')}>
+            <button
+              type="button"
+              className="forum-panel-rail-action"
+              onClick={() => setTab('membres')}
+            >
               Voir les membres
             </button>
           </div>
@@ -8233,7 +9394,9 @@ function EventPhotosTab({
   userId: string;
 }) {
   const [photos, setPhotos] = useState<EventPhoto[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -8316,10 +9479,14 @@ function EventPhotosTab({
 
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger les photos pour le moment.</p>
+        <p className="list-view-empty">
+          Impossible de charger les photos pour le moment.
+        </p>
       )}
       {state === 'success' && photos.length === 0 && (
-        <p className="list-view-empty">Aucune photo pour l'instant. Partage la première !</p>
+        <p className="list-view-empty">
+          Aucune photo pour l'instant. Partage la première !
+        </p>
       )}
       {state === 'success' && photos.length > 0 && (
         <div className="event-photos-grid">
@@ -8344,11 +9511,24 @@ function EventPhotosTab({
   );
 }
 
-function SignInPrompt({ message, onLogin }: { message: string; onLogin: () => void }) {
+function SignInPrompt({
+  message,
+  onLogin
+}: {
+  message: string;
+  onLogin: () => void;
+}) {
   return (
     <div className="sign-in-prompt">
       <span className="sign-in-prompt-icon" aria-hidden="true">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <svg
+          width="28"
+          height="28"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+        >
           <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
           <circle cx="10" cy="7" r="4" />
           <path d="M22 8v6M19 11h6" />
@@ -8373,10 +9553,14 @@ function EventForum({
 }) {
   const [category, setCategory] = useState<ForumCategory>('general');
   const [posts, setPosts] = useState<ForumPost[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
   const [draft, setDraft] = useState('');
   const [posting, setPosting] = useState(false);
-  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(
+    new Set()
+  );
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
 
   const refresh = useCallback(() => {
@@ -8403,7 +9587,10 @@ function EventForum({
     setPosting(true);
     fetch(`${API_BASE_URL}/events/${eventId}/forum/${category}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${authToken}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
       body: JSON.stringify({ body, ...(parentId ? { parentId } : {}) })
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
@@ -8459,7 +9646,8 @@ function EventForum({
   };
 
   const topLevelPosts = posts.filter((post) => !post.parentId);
-  const repliesFor = (postId: string) => posts.filter((post) => post.parentId === postId);
+  const repliesFor = (postId: string) =>
+    posts.filter((post) => post.parentId === postId);
 
   return (
     <div className="event-forum">
@@ -8478,18 +9666,23 @@ function EventForum({
 
       {category === 'ticket_resale' && (
         <p className="forum-disclaimer">
-          Discussion entre utilisateurs uniquement : Pulso n'intervient pas dans la
-          transaction, aucun paiement ni billet ne transite par la plateforme.
+          Discussion entre utilisateurs uniquement : Pulso n'intervient pas dans
+          la transaction, aucun paiement ni billet ne transite par la
+          plateforme.
         </p>
       )}
 
       <div className="forum-posts">
         {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
         {state === 'error' && (
-          <p className="list-view-empty">Impossible de charger le forum pour le moment.</p>
+          <p className="list-view-empty">
+            Impossible de charger le forum pour le moment.
+          </p>
         )}
         {state === 'success' && topLevelPosts.length === 0 && (
-          <p className="list-view-empty">Aucun message pour l'instant. Soyez le premier.</p>
+          <p className="list-view-empty">
+            Aucun message pour l'instant. Soyez le premier.
+          </p>
         )}
         {state === 'success' &&
           topLevelPosts.map((post) => (
@@ -8527,7 +9720,11 @@ function EventForum({
           maxLength={2000}
           rows={2}
         />
-        <button type="submit" className="btn-secondary" disabled={posting || !draft.trim()}>
+        <button
+          type="submit"
+          className="btn-secondary"
+          disabled={posting || !draft.trim()}
+        >
           Publier
         </button>
       </form>

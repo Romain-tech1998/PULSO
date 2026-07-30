@@ -66,14 +66,22 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
   async getMyAttendance(
     userId: string
   ): Promise<Array<{ eventId: string; visibility: AttendanceVisibility }>> {
-    const result = await this.pool.query<{ event_id: string; visibility: AttendanceVisibility }>(
-      `SELECT event_id, visibility FROM event_attendance WHERE user_id = $1`,
-      [userId]
-    );
-    return result.rows.map((row) => ({ eventId: row.event_id, visibility: row.visibility }));
+    const result = await this.pool.query<{
+      event_id: string;
+      visibility: AttendanceVisibility;
+    }>(`SELECT event_id, visibility FROM event_attendance WHERE user_id = $1`, [
+      userId
+    ]);
+    return result.rows.map((row) => ({
+      eventId: row.event_id,
+      visibility: row.visibility
+    }));
   }
 
-  async getFriendsAttending(viewerId: string, eventId: string): Promise<PublicUser[]> {
+  async getFriendsAttending(
+    viewerId: string,
+    eventId: string
+  ): Promise<PublicUser[]> {
     const result = await this.pool.query<{
       id: string;
       display_name: string;

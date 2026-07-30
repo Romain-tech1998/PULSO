@@ -39,10 +39,15 @@ export const testGoogleConfig: GoogleAuthConfig = {
   appCallbackUrl: 'http://localhost:3000/auth/callback'
 };
 
-export function fakeAuthRepository(overrides: Partial<AuthRepository> = {}): AuthRepository {
+export function fakeAuthRepository(
+  overrides: Partial<AuthRepository> = {}
+): AuthRepository {
   return {
     upsertUserFromGoogle: async (_profile: GoogleProfile) => testUser,
-    createSession: async () => ({ token: 'valid-token', expiresAt: new Date() }),
+    createSession: async () => ({
+      token: 'valid-token',
+      expiresAt: new Date()
+    }),
     findUserBySessionToken: async (token: string) =>
       token === 'valid-token' ? testUser : undefined,
     deleteSession: async () => undefined,
@@ -88,7 +93,9 @@ export const friend: PublicUser = {
   displayName: 'Friend User'
 };
 
-export function fakeFriendRequest(overrides: Partial<FriendRequest> = {}): FriendRequest {
+export function fakeFriendRequest(
+  overrides: Partial<FriendRequest> = {}
+): FriendRequest {
   return {
     id: '00000000-0000-4000-8000-000000000011',
     user: friend,
@@ -110,7 +117,9 @@ export function fakeAttendanceRepository(
   };
 }
 
-export function fakeForumRepository(overrides: Partial<ForumRepository> = {}): ForumRepository {
+export function fakeForumRepository(
+  overrides: Partial<ForumRepository> = {}
+): ForumRepository {
   return {
     getPosts: async () => [],
     createPost: async (eventId, authorId, category, body, parentId) => ({
@@ -146,7 +155,7 @@ export function fakeForumPost(overrides: Partial<ForumPost> = {}): ForumPost {
     eventId: '00000000-0000-4000-8000-000000000014',
     author: friend,
     category: 'general',
-    body: 'Quelqu\'un vient à cet event ?',
+    body: "Quelqu'un vient à cet event ?",
     createdAt: '2026-01-01T00:00:00.000Z',
     parentId: undefined,
     likeCount: 0,
@@ -216,7 +225,7 @@ export function fakeGroupPost(overrides: Partial<GroupPost> = {}): GroupPost {
     id: '00000000-0000-4000-8000-000000000018',
     groupId: '00000000-0000-4000-8000-000000000017',
     author: friend,
-    body: 'Quelqu\'un a un plan pour ce soir ?',
+    body: "Quelqu'un a un plan pour ce soir ?",
     createdAt: '2026-01-01T00:00:00.000Z',
     parentId: undefined,
     likeCount: 0,
@@ -248,7 +257,11 @@ export function fakeGroupsRepository(
     likePost: async () => undefined,
     unlikePost: async () => undefined,
     findOrCreateEventGroup: async (eventId, eventTitle, userId) =>
-      fakeGroup({ eventId, name: `Rencontre – ${eventTitle}`, createdBy: userId }),
+      fakeGroup({
+        eventId,
+        name: `Rencontre – ${eventTitle}`,
+        createdBy: userId
+      }),
     ...overrides
   };
 }
@@ -268,7 +281,9 @@ export function fakeProfileRepository(
   };
 }
 
-export function fakeEventPhoto(overrides: Partial<EventPhoto> = {}): EventPhoto {
+export function fakeEventPhoto(
+  overrides: Partial<EventPhoto> = {}
+): EventPhoto {
   return {
     id: '00000000-0000-4000-8000-000000000019',
     eventId: '00000000-0000-4000-8000-000000000014',
@@ -285,7 +300,11 @@ export function fakeEventPhotosRepository(
   return {
     listPhotos: async () => [],
     createPhoto: async (eventId, uploaderId, filePath) =>
-      fakeEventPhoto({ eventId, uploader: { id: uploaderId, displayName: testUser.displayName }, filePath }),
+      fakeEventPhoto({
+        eventId,
+        uploader: { id: uploaderId, displayName: testUser.displayName },
+        filePath
+      }),
     deletePhoto: async () => undefined,
     ...overrides
   };
@@ -319,16 +338,20 @@ export function accountRepositories(
 ) {
   return {
     authRepository: overrides.authRepository ?? fakeAuthRepository(),
-    favoritesRepository: overrides.favoritesRepository ?? fakeFavoritesRepository(),
+    favoritesRepository:
+      overrides.favoritesRepository ?? fakeFavoritesRepository(),
     trendsRepository: overrides.trendsRepository ?? fakeTrendsRepository(),
     friendsRepository: overrides.friendsRepository ?? fakeFriendsRepository(),
-    attendanceRepository: overrides.attendanceRepository ?? fakeAttendanceRepository(),
+    attendanceRepository:
+      overrides.attendanceRepository ?? fakeAttendanceRepository(),
     forumRepository: overrides.forumRepository ?? fakeForumRepository(),
-    messagesRepository: overrides.messagesRepository ?? fakeMessagesRepository(),
+    messagesRepository:
+      overrides.messagesRepository ?? fakeMessagesRepository(),
     reportsRepository: overrides.reportsRepository ?? fakeReportsRepository(),
     groupsRepository: overrides.groupsRepository ?? fakeGroupsRepository(),
     profileRepository: overrides.profileRepository ?? fakeProfileRepository(),
-    eventPhotosRepository: overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
+    eventPhotosRepository:
+      overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
     uploadDir: overrides.uploadDir ?? testUploadDir,
     publicUploadUrl: overrides.publicUploadUrl ?? testPublicUploadUrl,
     google: testGoogleConfig

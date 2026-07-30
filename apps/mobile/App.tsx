@@ -88,7 +88,9 @@ function useFavorites() {
   }, []);
   const toggleFavorite = (id: string) => {
     setFavorites((prev) => {
-      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      const next = prev.includes(id)
+        ? prev.filter((f) => f !== id)
+        : [...prev, id];
       void AsyncStorage.setItem('pulso-favorites', JSON.stringify(next));
       return next;
     });
@@ -205,7 +207,10 @@ export default function App() {
           setFilters(effectiveFilters);
           const foundEvents = result.data.map(({ event }) => event);
           setEvents(foundEvents);
-          void AsyncStorage.setItem('pulso-offline-events', JSON.stringify(foundEvents));
+          void AsyncStorage.setItem(
+            'pulso-offline-events',
+            JSON.stringify(foundEvents)
+          );
           setSelected((current) =>
             current && foundEvents.some(({ id }) => id === current.id)
               ? current
@@ -219,7 +224,10 @@ export default function App() {
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
         setEvents(result.data);
-        void AsyncStorage.setItem('pulso-offline-events', JSON.stringify(result.data));
+        void AsyncStorage.setItem(
+          'pulso-offline-events',
+          JSON.stringify(result.data)
+        );
         setSelected((current) =>
           current && result.data.some(({ id }) => id === current.id)
             ? current
@@ -243,13 +251,18 @@ export default function App() {
   useEffect(() => {
     const handleUrl = (url: string | null) => {
       if (!url) return;
-      const match = url.match(/eventId=([^&]+)/) || url.match(/\/events\/([^/?]+)/);
+      const match =
+        url.match(/eventId=([^&]+)/) || url.match(/\/events\/([^/?]+)/);
       if (match && match[1]) {
         void openDetails(match[1]);
       }
     };
-    Linking.getInitialURL().then(handleUrl).catch(() => {});
-    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    Linking.getInitialURL()
+      .then(handleUrl)
+      .catch(() => {});
+    const subscription = Linking.addEventListener('url', ({ url }) =>
+      handleUrl(url)
+    );
     return () => subscription.remove();
   }, []);
 
@@ -388,7 +401,10 @@ export default function App() {
               <Marker
                 id={event.id}
                 key={event.id}
-                lngLat={[event.venue.point.longitude, event.venue.point.latitude]}
+                lngLat={[
+                  event.venue.point.longitude,
+                  event.venue.point.latitude
+                ]}
                 onPress={() => setSelected(event)}
                 accessible
                 accessibilityRole="button"
@@ -401,7 +417,8 @@ export default function App() {
                     styles.marker,
                     {
                       backgroundColor:
-                        CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.other,
+                        CATEGORY_COLORS[event.category] ??
+                        CATEGORY_COLORS.other,
                       transform: [
                         { scale: selected?.id === event.id ? 1.3 : 1 }
                       ]
@@ -672,133 +689,145 @@ function MobileSearchPanel({
         </View>
 
         {(processing || error || result) && (
-        <ScrollView
-          style={styles.searchDropdown}
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-        >
-          {processing && (
-            <View
-              style={styles.searchProgress}
-              accessibilityLiveRegion="polite"
-            >
-              <ActivityIndicator color={theme.pink} />
-              <Text style={styles.body}>
-                {translate(locale, 'search.processing')}
-              </Text>
-            </View>
-          )}
-          {error && (
-            <Text style={styles.warning} accessibilityLiveRegion="assertive">
-              {translate(locale, 'search.error')}
-            </Text>
-          )}
-          {result && !processing && (
-            <View style={styles.searchInterpretation}>
-              <View style={styles.searchHeading}>
-                <Text
-                  style={styles.searchResultTitle}
-                  accessibilityRole="header"
-                >
-                  {translate(locale, 'search.understood')}
+          <ScrollView
+            style={styles.searchDropdown}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+          >
+            {processing && (
+              <View
+                style={styles.searchProgress}
+                accessibilityLiveRegion="polite"
+              >
+                <ActivityIndicator color={theme.pink} />
+                <Text style={styles.body}>
+                  {translate(locale, 'search.processing')}
                 </Text>
-                <Pressable accessibilityRole="button" onPress={onClear}>
-                  <Text style={styles.link}>
-                    {translate(locale, 'search.clearSearch')}
-                  </Text>
-                </Pressable>
               </View>
-              <Text style={styles.body}>
-                {localizeSearchMessage(locale, result.message)}
+            )}
+            {error && (
+              <Text style={styles.warning} accessibilityLiveRegion="assertive">
+                {translate(locale, 'search.error')}
               </Text>
-              {result.clarification && (
-                <Text style={styles.warningText}>
-                  {translate(locale, 'search.clarificationPrefix', {
-                    message: localizeSearchMessage(locale, result.clarification)
-                  })}
-                </Text>
-              )}
-              <Text style={styles.filterLegend}>
-                {translate(locale, 'search.hardConstraints')}
-              </Text>
-              {result.interpretation.constraints.map((constraint) => {
-                const label = localizeSearchMessage(locale, constraint.message);
-                return (
-                  <View
-                    style={styles.searchConstraint}
-                    key={`${constraint.key}-${constraint.message.code}`}
+            )}
+            {result && !processing && (
+              <View style={styles.searchInterpretation}>
+                <View style={styles.searchHeading}>
+                  <Text
+                    style={styles.searchResultTitle}
+                    accessibilityRole="header"
                   >
-                    <Text style={styles.body}>{label}</Text>
-                    {isSearchConstraintKey(constraint.key) && (
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={translate(
-                          locale,
-                          'search.clearConstraint',
-                          { label }
-                        )}
-                        onPress={() =>
-                          onClearConstraint(
-                            constraint.key as SearchConstraintKey
-                          )
-                        }
-                      >
-                        <Text style={styles.link}>
-                          {translate(locale, 'search.clear')}
-                        </Text>
-                      </Pressable>
-                    )}
-                  </View>
-                );
-              })}
-              {result.interpretation.rankingSignals.length > 0 && (
-                <>
-                  <Text style={styles.filterLegend}>
-                    {translate(locale, 'search.rankingSignals')}
+                    {translate(locale, 'search.understood')}
                   </Text>
-                  {result.interpretation.rankingSignals.map((signal) => (
-                    <Text
-                      style={styles.body}
-                      key={`${signal.key}-${signal.message.code}`}
-                    >
-                      • {localizeSearchMessage(locale, signal.message)}
+                  <Pressable accessibilityRole="button" onPress={onClear}>
+                    <Text style={styles.link}>
+                      {translate(locale, 'search.clearSearch')}
                     </Text>
-                  ))}
-                </>
-              )}
-            </View>
-          )}
-          {result && result.data.length > 0 && (
-            <View style={styles.searchResults}>
-              <Text style={styles.filterLegend}>
-                {translate(locale, 'search.results')}
-              </Text>
-              {result.data.map(({ event, matchType }, index) => (
-                <Pressable
-                  key={event.id}
-                  style={styles.markerAction}
-                  accessibilityRole="button"
-                  accessibilityLabel={translate(
-                    locale,
-                    'search.previewResultAria',
-                    {
-                      index: index + 1,
-                      matchType: translate(locale, `search.match.${matchType}`)
-                    }
-                  )}
-                  onPress={() => onPreview(event)}
-                >
-                  <Text style={styles.markerActionText}>
-                    {translate(locale, 'search.previewResult', {
-                      title: event.title,
-                      matchType: translate(locale, `search.match.${matchType}`)
+                  </Pressable>
+                </View>
+                <Text style={styles.body}>
+                  {localizeSearchMessage(locale, result.message)}
+                </Text>
+                {result.clarification && (
+                  <Text style={styles.warningText}>
+                    {translate(locale, 'search.clarificationPrefix', {
+                      message: localizeSearchMessage(
+                        locale,
+                        result.clarification
+                      )
                     })}
                   </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </ScrollView>
+                )}
+                <Text style={styles.filterLegend}>
+                  {translate(locale, 'search.hardConstraints')}
+                </Text>
+                {result.interpretation.constraints.map((constraint) => {
+                  const label = localizeSearchMessage(
+                    locale,
+                    constraint.message
+                  );
+                  return (
+                    <View
+                      style={styles.searchConstraint}
+                      key={`${constraint.key}-${constraint.message.code}`}
+                    >
+                      <Text style={styles.body}>{label}</Text>
+                      {isSearchConstraintKey(constraint.key) && (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={translate(
+                            locale,
+                            'search.clearConstraint',
+                            { label }
+                          )}
+                          onPress={() =>
+                            onClearConstraint(
+                              constraint.key as SearchConstraintKey
+                            )
+                          }
+                        >
+                          <Text style={styles.link}>
+                            {translate(locale, 'search.clear')}
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  );
+                })}
+                {result.interpretation.rankingSignals.length > 0 && (
+                  <>
+                    <Text style={styles.filterLegend}>
+                      {translate(locale, 'search.rankingSignals')}
+                    </Text>
+                    {result.interpretation.rankingSignals.map((signal) => (
+                      <Text
+                        style={styles.body}
+                        key={`${signal.key}-${signal.message.code}`}
+                      >
+                        • {localizeSearchMessage(locale, signal.message)}
+                      </Text>
+                    ))}
+                  </>
+                )}
+              </View>
+            )}
+            {result && result.data.length > 0 && (
+              <View style={styles.searchResults}>
+                <Text style={styles.filterLegend}>
+                  {translate(locale, 'search.results')}
+                </Text>
+                {result.data.map(({ event, matchType }, index) => (
+                  <Pressable
+                    key={event.id}
+                    style={styles.markerAction}
+                    accessibilityRole="button"
+                    accessibilityLabel={translate(
+                      locale,
+                      'search.previewResultAria',
+                      {
+                        index: index + 1,
+                        matchType: translate(
+                          locale,
+                          `search.match.${matchType}`
+                        )
+                      }
+                    )}
+                    onPress={() => onPreview(event)}
+                  >
+                    <Text style={styles.markerActionText}>
+                      {translate(locale, 'search.previewResult', {
+                        title: event.title,
+                        matchType: translate(
+                          locale,
+                          `search.match.${matchType}`
+                        )
+                      })}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </ScrollView>
         )}
       </View>
     </View>
@@ -1223,7 +1252,9 @@ function DetailsOverlay({
               accessibilityLabel={translate(locale, 'details.share')}
               style={{ marginRight: 16 }}
             >
-              <Text style={styles.favoriteButton}>↗️ {translate(locale, 'details.share')}</Text>
+              <Text style={styles.favoriteButton}>
+                ↗️ {translate(locale, 'details.share')}
+              </Text>
             </Pressable>
             <Pressable
               onPress={onToggleFavorite}
@@ -1234,7 +1265,9 @@ function DetailsOverlay({
                 isFavorite ? 'favorites.remove' : 'favorites.add'
               )}
             >
-              <Text style={styles.favoriteButton}>{isFavorite ? '❤️' : '🤍'}</Text>
+              <Text style={styles.favoriteButton}>
+                {isFavorite ? '❤️' : '🤍'}
+              </Text>
             </Pressable>
           </View>
         )}
@@ -1678,7 +1711,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)'
   },
-  primaryActionText: { color: theme.background, fontWeight: '800', textAlign: 'center' },
+  primaryActionText: {
+    color: theme.background,
+    fontWeight: '800',
+    textAlign: 'center'
+  },
   detailsOverlay: {
     bottom: 0,
     left: 0,

@@ -112,8 +112,11 @@ export function createIcsCalendarConnector(config: {
       const parsed = parseIcs(text);
 
       return parsed
-        .filter((event): event is ParsedVEvent & { summary: string; dtstart: string } =>
-          Boolean(event.summary && event.dtstart)
+        .filter(
+          (
+            event
+          ): event is ParsedVEvent & { summary: string; dtstart: string } =>
+            Boolean(event.summary && event.dtstart)
         )
         .map((event) => ({
           sourceId: config.sourceId,

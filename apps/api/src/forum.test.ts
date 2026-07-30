@@ -88,17 +88,17 @@ describe('event forum API', () => {
       method: 'POST',
       url: `/events/${eventId}/forum/find_partners`,
       headers: { authorization: 'Bearer valid-token' },
-      payload: { body: 'Quelqu\'un pour y aller ensemble ?' }
+      payload: { body: "Quelqu'un pour y aller ensemble ?" }
     });
     expect(response.statusCode).toBe(201);
     expect(received).toEqual({
       eventId,
       authorId: testUser.id,
       category: 'find_partners',
-      body: 'Quelqu\'un pour y aller ensemble ?',
+      body: "Quelqu'un pour y aller ensemble ?",
       parentId: undefined
     });
-    expect(response.json().data.body).toBe('Quelqu\'un pour y aller ensemble ?');
+    expect(response.json().data.body).toBe("Quelqu'un pour y aller ensemble ?");
     await app.close();
   });
 
@@ -111,7 +111,12 @@ describe('event forum API', () => {
         forumRepository: fakeForumRepository({
           createPost: async (id, authorId, category, body, parent) => {
             receivedParentId = parent;
-            return fakeForumPost({ eventId: id, category, body, parentId: parent });
+            return fakeForumPost({
+              eventId: id,
+              category,
+              body,
+              parentId: parent
+            });
           }
         })
       })
@@ -270,7 +275,12 @@ describe('event forum API', () => {
       ...event,
       findByIds: async (ids) =>
         ids.includes(eventId)
-          ? [{ id: eventId, title: 'Concert au parc' } as unknown as PublicEvent]
+          ? [
+              {
+                id: eventId,
+                title: 'Concert au parc'
+              } as unknown as PublicEvent
+            ]
           : []
     };
     const app = buildApp(
@@ -287,7 +297,7 @@ describe('event forum API', () => {
                 eventId,
                 category: 'general',
                 lastPostAt: '2026-01-01T00:00:00.000Z',
-                lastPostExcerpt: 'Quelqu\'un vient ce soir ?',
+                lastPostExcerpt: "Quelqu'un vient ce soir ?",
                 postCount: 3
               }
             ];
@@ -307,7 +317,7 @@ describe('event forum API', () => {
         eventTitle: 'Concert au parc',
         category: 'general',
         lastPostAt: '2026-01-01T00:00:00.000Z',
-        lastPostExcerpt: 'Quelqu\'un vient ce soir ?',
+        lastPostExcerpt: "Quelqu'un vient ce soir ?",
         postCount: 3
       }
     ]);
@@ -316,8 +326,14 @@ describe('event forum API', () => {
 
   it('rejects the forum members list and the discover grid without a bearer token', async () => {
     const app = buildApp(event, accountRepositories());
-    const members = await app.inject({ method: 'GET', url: `/events/${eventId}/forum/members` });
-    const discover = await app.inject({ method: 'GET', url: '/me/forums/discover' });
+    const members = await app.inject({
+      method: 'GET',
+      url: `/events/${eventId}/forum/members`
+    });
+    const discover = await app.inject({
+      method: 'GET',
+      url: '/me/forums/discover'
+    });
     expect(members.statusCode).toBe(401);
     expect(discover.statusCode).toBe(401);
     await app.close();
@@ -328,7 +344,9 @@ describe('event forum API', () => {
       event,
       accountRepositories({
         forumRepository: fakeForumRepository({
-          getForumMembers: async () => [{ id: '00000000-0000-4000-8000-000000000030', displayName: 'Alex' }]
+          getForumMembers: async () => [
+            { id: '00000000-0000-4000-8000-000000000030', displayName: 'Alex' }
+          ]
         })
       })
     );
@@ -365,7 +383,11 @@ describe('event forum API', () => {
         url: 'https://example.com/event',
         observedAt: '2026-07-01T00:00:00.000Z'
       },
-      trust: { label: 'confirmed', freshness: 'fresh', locationConfidence: 'confirmed' }
+      trust: {
+        label: 'confirmed',
+        freshness: 'fresh',
+        locationConfidence: 'confirmed'
+      }
     };
     const eventWithForum: EventRepository = {
       ...event,
@@ -374,7 +396,9 @@ describe('event forum API', () => {
     const app = buildApp(
       eventWithForum,
       accountRepositories({
-        forumRepository: fakeForumRepository({ getForumStatsForEvents: async () => new Map() })
+        forumRepository: fakeForumRepository({
+          getForumStatsForEvents: async () => new Map()
+        })
       })
     );
     const response = await app.inject({
@@ -411,10 +435,18 @@ describe('event forum API', () => {
         url: 'https://example.com/event',
         observedAt: '2026-07-01T00:00:00.000Z'
       },
-      trust: { label: 'confirmed', freshness: 'fresh', locationConfidence: 'confirmed' }
+      trust: {
+        label: 'confirmed',
+        freshness: 'fresh',
+        locationConfidence: 'confirmed'
+      }
     };
     const myEvent = baseEvent;
-    const someoneElsesEvent = { ...baseEvent, id: otherEventId, title: 'Un autre événement' };
+    const someoneElsesEvent = {
+      ...baseEvent,
+      id: otherEventId,
+      title: 'Un autre événement'
+    };
     const eventWithForum: EventRepository = {
       ...event,
       findInBounds: async () =>
@@ -425,7 +457,9 @@ describe('event forum API', () => {
     const app = buildApp(
       eventWithForum,
       accountRepositories({
-        forumRepository: fakeForumRepository({ getForumStatsForEvents: async () => new Map() }),
+        forumRepository: fakeForumRepository({
+          getForumStatsForEvents: async () => new Map()
+        }),
         favoritesRepository: fakeFavoritesRepository({
           getFavoriteEventIds: async () => [eventId]
         })
@@ -437,7 +471,9 @@ describe('event forum API', () => {
       headers: { authorization: 'Bearer valid-token' }
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().data).toEqual([{ event: myEvent, postCount: 0, memberCount: 0 }]);
+    expect(response.json().data).toEqual([
+      { event: myEvent, postCount: 0, memberCount: 0 }
+    ]);
     await app.close();
   });
 
@@ -464,10 +500,22 @@ describe('event forum API', () => {
         url: 'https://example.com/event',
         observedAt: '2026-07-01T00:00:00.000Z'
       },
-      trust: { label: 'confirmed', freshness: 'fresh', locationConfidence: 'confirmed' }
+      trust: {
+        label: 'confirmed',
+        freshness: 'fresh',
+        locationConfidence: 'confirmed'
+      }
     };
-    const postedEvent = { ...baseEvent, id: postedEventId, title: 'Posté sans favori' };
-    const followedEvent = { ...baseEvent, id: followedEventId, title: 'Suivi sans favori' };
+    const postedEvent = {
+      ...baseEvent,
+      id: postedEventId,
+      title: 'Posté sans favori'
+    };
+    const followedEvent = {
+      ...baseEvent,
+      id: followedEventId,
+      title: 'Suivi sans favori'
+    };
     const eventWithForum: EventRepository = {
       ...event,
       findInBounds: async () =>
@@ -500,7 +548,10 @@ describe('event forum API', () => {
 
   it('rejects reading/changing forum follow status without a bearer token', async () => {
     const app = buildApp(event, accountRepositories());
-    const getResponse = await app.inject({ method: 'GET', url: `/events/${eventId}/forum/follow` });
+    const getResponse = await app.inject({
+      method: 'GET',
+      url: `/events/${eventId}/forum/follow`
+    });
     expect(getResponse.statusCode).toBe(401);
     const postResponse = await app.inject({
       method: 'POST',

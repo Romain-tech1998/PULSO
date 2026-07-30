@@ -61,7 +61,11 @@ const knownVenues: KnownVenue[] = [
   // fit than concert_hall or theater, which don't capture the dining side.
   { name: 'Le Balcon', category: 'cafe_concert' },
   { name: 'Le Balcon X Terrasse', category: 'cafe_concert' },
-  { name: 'Théâtre de Verdure', category: 'theater', secondaryCategories: ['outdoor_festival_site'] },
+  {
+    name: 'Théâtre de Verdure',
+    category: 'theater',
+    secondaryCategories: ['outdoor_festival_site']
+  },
   {
     name: 'L’Entrepôt',
     category: 'theater',
@@ -142,7 +146,11 @@ const knownVenues: KnownVenue[] = [
   // the top-of-file note - already categorized by seed-curated-venues.ts.
   { name: 'Vino Disco', category: 'bar', secondaryCategories: ['nightclub'] }, // wine bar with a nightly DJ dance floor, Quartier des Spectacles
   { name: 'Sans Soleil', category: 'bar' }, // vinyl-only listening bar, Chinatown
-  { name: 'Piranha Bar', category: 'bar', secondaryCategories: ['concert_hall'] }, // dive bar with an upstairs live-music stage
+  {
+    name: 'Piranha Bar',
+    category: 'bar',
+    secondaryCategories: ['concert_hall']
+  }, // dive bar with an upstairs live-music stage
   { name: 'Église Notre-Dame-des-Sept-Douleurs', category: 'concert_hall' }, // Verdun church, regular ticketed concert series (Candlelight, Musical Wednesdays)
   { name: 'La Salle Désilets', category: 'concert_hall' }, // 700-seat performance hall, Cégep Marie-Victorin - largest in Eastern Montreal
   { name: 'Espace Projet', category: 'gallery_museum' }, // Mile-End gallery for emerging design/art
@@ -155,9 +163,15 @@ const knownVenues: KnownVenue[] = [
   { name: 'Esplanade du Parc olympique', category: 'outdoor_festival_site' },
   { name: 'Parc de la Savane', category: 'outdoor_festival_site' },
   { name: 'Parc Marcel-Léger', category: 'outdoor_festival_site' },
-  { name: "Parc de l'esplanade de la Pointe-Nord", category: 'outdoor_festival_site' }, // Old Port
+  {
+    name: "Parc de l'esplanade de la Pointe-Nord",
+    category: 'outdoor_festival_site'
+  }, // Old Port
   { name: 'Parc Martin-Luther-King', category: 'outdoor_festival_site' },
-  { name: "Parc Nature de l'Ile-de-la-Visitation", category: 'outdoor_festival_site' },
+  {
+    name: "Parc Nature de l'Ile-de-la-Visitation",
+    category: 'outdoor_festival_site'
+  },
   { name: 'Complexe Sportif Claude-Robillard', category: 'other' }, // large multi-sport complex, no sports-venue category
   { name: 'Théâtre Maisonneuve', category: 'theater' }, // Place des Arts
   { name: 'Maison Etienne Nivard de Saint-Dizier', category: 'gallery_museum' }, // Lachine historic house museum
@@ -170,7 +184,9 @@ try {
       `UPDATE venues SET category = $1, secondary_categories = $2 WHERE name = $3`,
       [venue.category, venue.secondaryCategories ?? [], venue.name]
     );
-    console.log(`${venue.name}: ${result.rowCount} row(s) updated to "${venue.category}".`);
+    console.log(
+      `${venue.name}: ${result.rowCount} row(s) updated to "${venue.category}".`
+    );
   }
 } finally {
   await pool.end();

@@ -80,7 +80,10 @@ const FAMILY_AUDIENCE_KEYWORDS = [
   'pour petits et grands'
 ];
 
-function looksLikeFamilyOrKidsEvent(title: string, description: string | undefined): boolean {
+function looksLikeFamilyOrKidsEvent(
+  title: string,
+  description: string | undefined
+): boolean {
   const haystack = `${title} ${description ?? ''}`.toLowerCase();
   return FAMILY_AUDIENCE_KEYWORDS.some((keyword) => haystack.includes(keyword));
 }
@@ -107,7 +110,8 @@ export function mapMontrealOpenDataRow(
     description,
     category: looksLikeFamilyOrKidsEvent(row.titre, description)
       ? 'unmapped'
-      : (TYPE_TO_CATEGORY[row.type_evenement?.toLowerCase() ?? ''] ?? 'unmapped'),
+      : (TYPE_TO_CATEGORY[row.type_evenement?.toLowerCase() ?? ''] ??
+        'unmapped'),
     startsAt,
     endsAt: toIsoOrUndefined(row.date_fin ?? ''),
     venueName: cleanField(row.titre_adresse),

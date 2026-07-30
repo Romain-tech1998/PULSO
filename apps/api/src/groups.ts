@@ -6,8 +6,16 @@ import {
   groupResponseSchema,
   groupsResponseSchema
 } from '@pulso/contracts';
-import type { AuthRepository, EventRepository, GroupsRepository } from '@pulso/database';
-import { EventNotFoundError, GroupNotFoundError, NotGroupMemberError } from '@pulso/database';
+import type {
+  AuthRepository,
+  EventRepository,
+  GroupsRepository
+} from '@pulso/database';
+import {
+  EventNotFoundError,
+  GroupNotFoundError,
+  NotGroupMemberError
+} from '@pulso/database';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -33,7 +41,11 @@ export function registerGroupsRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { name, description } = createGroupRequestSchema.parse(request.body);
-    const group = await groupsRepository.createGroup(user.id, name, description);
+    const group = await groupsRepository.createGroup(
+      user.id,
+      name,
+      description
+    );
     return reply.status(201).send(groupResponseSchema.parse({ data: group }));
   });
 
@@ -51,7 +63,10 @@ export function registerGroupsRoutes(
     const group = await groupsRepository.getGroup(id, user.id);
     if (!group) {
       return reply.status(404).send({
-        error: { code: 'GROUP_NOT_FOUND', message: 'This group does not exist.' }
+        error: {
+          code: 'GROUP_NOT_FOUND',
+          message: 'This group does not exist.'
+        }
       });
     }
     return groupResponseSchema.parse({ data: group });
@@ -65,7 +80,9 @@ export function registerGroupsRoutes(
       await groupsRepository.joinGroup(id, user.id);
     } catch (error) {
       if (error instanceof GroupNotFoundError) {
-        return reply.status(404).send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
+        return reply
+          .status(404)
+          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
       }
       throw error;
     }
@@ -89,10 +106,14 @@ export function registerGroupsRoutes(
       return groupPostsResponseSchema.parse({ data: posts });
     } catch (error) {
       if (error instanceof GroupNotFoundError) {
-        return reply.status(404).send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
+        return reply
+          .status(404)
+          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
       }
       if (error instanceof NotGroupMemberError) {
-        return reply.status(403).send({ error: { code: 'NOT_GROUP_MEMBER', message: error.message } });
+        return reply.status(403).send({
+          error: { code: 'NOT_GROUP_MEMBER', message: error.message }
+        });
       }
       throw error;
     }
@@ -104,14 +125,25 @@ export function registerGroupsRoutes(
     const { id } = groupParamsSchema.parse(request.params);
     const { body, parentId } = createGroupPostRequestSchema.parse(request.body);
     try {
-      const post = await groupsRepository.createPost(id, user.id, body, parentId);
-      return reply.status(201).send(groupPostResponseSchema.parse({ data: post }));
+      const post = await groupsRepository.createPost(
+        id,
+        user.id,
+        body,
+        parentId
+      );
+      return reply
+        .status(201)
+        .send(groupPostResponseSchema.parse({ data: post }));
     } catch (error) {
       if (error instanceof GroupNotFoundError) {
-        return reply.status(404).send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
+        return reply
+          .status(404)
+          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
       }
       if (error instanceof NotGroupMemberError) {
-        return reply.status(403).send({ error: { code: 'NOT_GROUP_MEMBER', message: error.message } });
+        return reply.status(403).send({
+          error: { code: 'NOT_GROUP_MEMBER', message: error.message }
+        });
       }
       throw error;
     }
@@ -133,7 +165,9 @@ export function registerGroupsRoutes(
       await groupsRepository.likePost(postId, user.id);
     } catch (error) {
       if (error instanceof GroupNotFoundError) {
-        return reply.status(404).send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
+        return reply
+          .status(404)
+          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
       }
       throw error;
     }
@@ -159,11 +193,18 @@ export function registerGroupsRoutes(
     const event = await eventRepository.findById(eventId);
     if (!event) {
       return reply.status(404).send({
-        error: { code: 'EVENT_NOT_FOUND', message: 'This event does not exist.' }
+        error: {
+          code: 'EVENT_NOT_FOUND',
+          message: 'This event does not exist.'
+        }
       });
     }
     try {
-      const group = await groupsRepository.findOrCreateEventGroup(eventId, event.title, user.id);
+      const group = await groupsRepository.findOrCreateEventGroup(
+        eventId,
+        event.title,
+        user.id
+      );
       return groupResponseSchema.parse({ data: group });
     } catch (error) {
       if (error instanceof EventNotFoundError) {

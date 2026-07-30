@@ -82,8 +82,13 @@ export function buildApp(
   const app = Fastify({ logger: options.logger ?? false });
 
   if (options.uploadDir) {
-    app.register(fastifyMultipart, { limits: { fileSize: MAX_PHOTO_UPLOAD_BYTES } });
-    app.register(fastifyStatic, { root: options.uploadDir, prefix: '/uploads/' });
+    app.register(fastifyMultipart, {
+      limits: { fileSize: MAX_PHOTO_UPLOAD_BYTES }
+    });
+    app.register(fastifyStatic, {
+      root: options.uploadDir,
+      prefix: '/uploads/'
+    });
   }
 
   if (
@@ -123,10 +128,27 @@ export function buildApp(
       options.attendanceRepository,
       repository
     );
-    registerMessagesRoutes(app, options.authRepository, options.messagesRepository);
-    registerReportsRoutes(app, options.authRepository, options.reportsRepository);
-    registerGroupsRoutes(app, options.authRepository, options.groupsRepository, repository);
-    registerProfileRoutes(app, options.authRepository, options.profileRepository);
+    registerMessagesRoutes(
+      app,
+      options.authRepository,
+      options.messagesRepository
+    );
+    registerReportsRoutes(
+      app,
+      options.authRepository,
+      options.reportsRepository
+    );
+    registerGroupsRoutes(
+      app,
+      options.authRepository,
+      options.groupsRepository,
+      repository
+    );
+    registerProfileRoutes(
+      app,
+      options.authRepository,
+      options.profileRepository
+    );
     registerEventPhotosRoutes(
       app,
       options.authRepository,
@@ -158,7 +180,10 @@ export function buildApp(
 
   app.addHook('onSend', async (_request, reply, payload) => {
     reply.header('access-control-allow-origin', '*');
-    reply.header('access-control-allow-methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    reply.header(
+      'access-control-allow-methods',
+      'GET, POST, PUT, DELETE, OPTIONS'
+    );
     reply.header('access-control-allow-headers', 'content-type, authorization');
     return payload;
   });

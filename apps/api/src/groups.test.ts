@@ -35,7 +35,9 @@ describe('groups API', () => {
   });
 
   it('creates a group as the signed-in creator, who becomes its first member', async () => {
-    let received: { creatorId: string; name: string; description: string | undefined } | undefined;
+    let received:
+      | { creatorId: string; name: string; description: string | undefined }
+      | undefined;
     const app = buildApp(
       event,
       accountRepositories({
@@ -69,7 +71,9 @@ describe('groups API', () => {
     const app = buildApp(
       event,
       accountRepositories({
-        groupsRepository: fakeGroupsRepository({ listMyGroups: async () => [group] })
+        groupsRepository: fakeGroupsRepository({
+          listMyGroups: async () => [group]
+        })
       })
     );
     const response = await app.inject({
@@ -86,7 +90,9 @@ describe('groups API', () => {
     const app = buildApp(
       event,
       accountRepositories({
-        groupsRepository: fakeGroupsRepository({ getGroup: async () => undefined })
+        groupsRepository: fakeGroupsRepository({
+          getGroup: async () => undefined
+        })
       })
     );
     const response = await app.inject({
@@ -203,7 +209,12 @@ describe('groups API', () => {
 
   it('creates a post as a member', async () => {
     let received:
-      | { groupId: string; authorId: string; body: string; parentId: string | undefined }
+      | {
+          groupId: string;
+          authorId: string;
+          body: string;
+          parentId: string | undefined;
+        }
       | undefined;
     const app = buildApp(
       event,
@@ -346,14 +357,19 @@ describe('groups API', () => {
             >)
           : undefined
     };
-    let received: { eventId: string; eventTitle: string; userId: string } | undefined;
+    let received:
+      { eventId: string; eventTitle: string; userId: string } | undefined;
     const app = buildApp(
       eventWithMatch,
       accountRepositories({
         groupsRepository: fakeGroupsRepository({
           findOrCreateEventGroup: async (id, title, userId) => {
             received = { eventId: id, eventTitle: title, userId };
-            return fakeGroup({ eventId: id, name: `Rencontre – ${title}`, createdBy: userId });
+            return fakeGroup({
+              eventId: id,
+              name: `Rencontre – ${title}`,
+              createdBy: userId
+            });
           }
         })
       })
@@ -365,7 +381,11 @@ describe('groups API', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().data.name).toBe('Rencontre – Charlotte Cardin');
-    expect(received).toEqual({ eventId, eventTitle: 'Charlotte Cardin', userId: testUser.id });
+    expect(received).toEqual({
+      eventId,
+      eventTitle: 'Charlotte Cardin',
+      userId: testUser.id
+    });
     await app.close();
   });
 });

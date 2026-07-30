@@ -27,8 +27,16 @@ export interface MessagesRepository {
   // Verifies an accepted friendship between the two accounts before
   // inserting - closed context is the abuse guard here (DEC-0012), not a
   // separate blocklist.
-  sendMessage(senderId: string, recipientId: string, body: string): Promise<Message>;
-  getConversation(userId: string, friendUserId: string, limit?: number): Promise<Message[]>;
+  sendMessage(
+    senderId: string,
+    recipientId: string,
+    body: string
+  ): Promise<Message>;
+  getConversation(
+    userId: string,
+    friendUserId: string,
+    limit?: number
+  ): Promise<Message[]>;
   markConversationRead(userId: string, friendUserId: string): Promise<void>;
   getUnreadCount(userId: string): Promise<number>;
   // One row per accepted friend (not just ones with an existing message
@@ -53,14 +61,19 @@ function toMessage(row: MessageRow): Message {
     recipientId: row.recipient_id,
     body: row.body,
     createdAt: new Date(row.created_at).toISOString(),
-    readAt: row.read_at !== null ? new Date(row.read_at).toISOString() : undefined
+    readAt:
+      row.read_at !== null ? new Date(row.read_at).toISOString() : undefined
   };
 }
 
 export class PostgresMessagesRepository implements MessagesRepository {
   constructor(private readonly pool: Pool) {}
 
-  async sendMessage(senderId: string, recipientId: string, body: string): Promise<Message> {
+  async sendMessage(
+    senderId: string,
+    recipientId: string,
+    body: string
+  ): Promise<Message> {
     const friendship = await this.pool.query(
       `SELECT 1 FROM friendships
        WHERE status = 'accepted'
@@ -94,7 +107,10 @@ export class PostgresMessagesRepository implements MessagesRepository {
     return result.rows.map(toMessage).reverse();
   }
 
-  async markConversationRead(userId: string, friendUserId: string): Promise<void> {
+  async markConversationRead(
+    userId: string,
+    friendUserId: string
+  ): Promise<void> {
     await this.pool.query(
       `UPDATE messages SET read_at = now()
        WHERE recipient_id = $1 AND sender_id = $2 AND read_at IS NULL`,

@@ -2,7 +2,11 @@ import type { EventRepository } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
-import { accountRepositories, fakeReportsRepository, testUser } from './test-support.js';
+import {
+  accountRepositories,
+  fakeReportsRepository,
+  testUser
+} from './test-support.js';
 
 const event: EventRepository = {
   findInBounds: async () => [],
@@ -29,7 +33,12 @@ describe('content reports API', () => {
 
   it('captures a report with an optional reason', async () => {
     let received:
-      | { reporterId: string; targetType: string; targetId: string; reason: string | undefined }
+      | {
+          reporterId: string;
+          targetType: string;
+          targetId: string;
+          reason: string | undefined;
+        }
       | undefined;
     const app = buildApp(
       event,

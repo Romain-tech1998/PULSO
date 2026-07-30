@@ -4,7 +4,9 @@ import { mapMontrealOpenDataRow } from './montreal-open-data.js';
 
 const observedAt = '2026-07-28T12:00:00.000Z';
 
-function row(overrides: Partial<Record<string, string>> = {}): Record<string, string> {
+function row(
+  overrides: Partial<Record<string, string>> = {}
+): Record<string, string> {
   return {
     titre: 'Concert au parc',
     date_debut: '2026-08-01T18:00:00',
@@ -31,7 +33,10 @@ describe('mapMontrealOpenDataRow', () => {
   });
 
   it('leaves identitySeed undefined when no address is available', () => {
-    const mapped = mapMontrealOpenDataRow(row({ adresse_principale: 'nan' }), observedAt);
+    const mapped = mapMontrealOpenDataRow(
+      row({ adresse_principale: 'nan' }),
+      observedAt
+    );
     expect(mapped?.identitySeed).toBeUndefined();
   });
 
@@ -40,7 +45,8 @@ describe('mapMontrealOpenDataRow', () => {
       row({
         titre: 'Ciné-biblio',
         type_evenement: 'cinéma',
-        description: 'Venez voir de merveilleux films pour enfants dans notre salle.'
+        description:
+          'Venez voir de merveilleux films pour enfants dans notre salle.'
       }),
       observedAt
     );

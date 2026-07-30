@@ -86,7 +86,9 @@ export class PostgresAuthRepository implements AuthRepository {
     return toUser(result.rows[0]!);
   }
 
-  async createSession(userId: string): Promise<{ token: string; expiresAt: Date }> {
+  async createSession(
+    userId: string
+  ): Promise<{ token: string; expiresAt: Date }> {
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
     await this.pool.query(
@@ -133,7 +135,12 @@ export class PostgresAuthRepository implements AuthRepository {
          END
        WHERE id = $1
        RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style, avatar_style`,
-      [userId, update.bio ?? null, update.coverStyle ?? null, update.avatarStyle ?? null]
+      [
+        userId,
+        update.bio ?? null,
+        update.coverStyle ?? null,
+        update.avatarStyle ?? null
+      ]
     );
     return toUser(result.rows[0]!);
   }

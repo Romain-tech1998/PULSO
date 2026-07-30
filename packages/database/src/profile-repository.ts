@@ -55,9 +55,16 @@ export class PostgresProfileRepository implements ProfileRepository {
   // exposed together - nothing here is inferred or invented. No "avis"
   // (review) entry kind, since reviews aren't built yet (see DEC-0012-style
   // future decision needed for that).
-  async getRecentActivity(userId: string, limit: number): Promise<ActivityEntry[]> {
+  async getRecentActivity(
+    userId: string,
+    limit: number
+  ): Promise<ActivityEntry[]> {
     const result = await this.pool.query<{
-      kind: 'favorited_event' | 'favorited_venue' | 'attended_event' | 'joined_group';
+      kind:
+        | 'favorited_event'
+        | 'favorited_venue'
+        | 'attended_event'
+        | 'joined_group';
       occurred_at: Date;
       ref_id: string;
       label: string;
@@ -89,13 +96,33 @@ export class PostgresProfileRepository implements ProfileRepository {
       const occurredAt = row.occurred_at.toISOString();
       switch (row.kind) {
         case 'favorited_event':
-          return { kind: 'favorited_event', occurredAt, eventId: row.ref_id, eventTitle: row.label };
+          return {
+            kind: 'favorited_event',
+            occurredAt,
+            eventId: row.ref_id,
+            eventTitle: row.label
+          };
         case 'favorited_venue':
-          return { kind: 'favorited_venue', occurredAt, venueId: row.ref_id, venueName: row.label };
+          return {
+            kind: 'favorited_venue',
+            occurredAt,
+            venueId: row.ref_id,
+            venueName: row.label
+          };
         case 'attended_event':
-          return { kind: 'attended_event', occurredAt, eventId: row.ref_id, eventTitle: row.label };
+          return {
+            kind: 'attended_event',
+            occurredAt,
+            eventId: row.ref_id,
+            eventTitle: row.label
+          };
         case 'joined_group':
-          return { kind: 'joined_group', occurredAt, groupId: row.ref_id, groupName: row.label };
+          return {
+            kind: 'joined_group',
+            occurredAt,
+            groupId: row.ref_id,
+            groupName: row.label
+          };
       }
     });
   }

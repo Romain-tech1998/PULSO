@@ -6,7 +6,11 @@ import {
   meResponseSchema,
   trendsResponseSchema
 } from '@pulso/contracts';
-import type { AuthRepository, FavoritesRepository, TrendsRepository } from '@pulso/database';
+import type {
+  AuthRepository,
+  FavoritesRepository,
+  TrendsRepository
+} from '@pulso/database';
 import fastifyOauth2 from '@fastify/oauth2';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -28,7 +32,10 @@ interface GoogleUserInfo {
   picture?: string;
 }
 
-export async function resolveBearerUser(request: FastifyRequest, authRepository: AuthRepository) {
+export async function resolveBearerUser(
+  request: FastifyRequest,
+  authRepository: AuthRepository
+) {
   const header = request.headers.authorization;
   if (!header?.startsWith('Bearer ')) return undefined;
   const token = header.slice('Bearer '.length);
@@ -37,7 +44,10 @@ export async function resolveBearerUser(request: FastifyRequest, authRepository:
 
 export function sendUnauthenticated(reply: FastifyReply) {
   return reply.status(401).send({
-    error: { code: 'UNAUTHENTICATED', message: 'Sign in to access this resource.' }
+    error: {
+      code: 'UNAUTHENTICATED',
+      message: 'Sign in to access this resource.'
+    }
   });
 }
 
@@ -73,14 +83,19 @@ export function registerAuthRoutes(
     // but it's always defined here since registerAuthRoutes always
     // registers the plugin with this exact name before this route can run.
     const { token } =
-      await app.oauth2GoogleOAuth2!.getAccessTokenFromAuthorizationCodeFlow(request);
+      await app.oauth2GoogleOAuth2!.getAccessTokenFromAuthorizationCodeFlow(
+        request
+      );
     const userInfoResponse = await fetch(
       'https://www.googleapis.com/oauth2/v3/userinfo',
       { headers: { authorization: `Bearer ${token.access_token}` } }
     );
     if (!userInfoResponse.ok) {
       return reply.status(502).send({
-        error: { code: 'GOOGLE_USERINFO_FAILED', message: 'Could not read the Google profile.' }
+        error: {
+          code: 'GOOGLE_USERINFO_FAILED',
+          message: 'Could not read the Google profile.'
+        }
       });
     }
     const profile = (await userInfoResponse.json()) as GoogleUserInfo;
@@ -113,7 +128,10 @@ export function registerAuthRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const body = favoriteEventsRequestSchema.parse(request.body);
-    const eventIds = await favoritesRepository.setFavoriteEventIds(user.id, body.eventIds);
+    const eventIds = await favoritesRepository.setFavoriteEventIds(
+      user.id,
+      body.eventIds
+    );
     return favoriteEventsResponseSchema.parse({ data: { eventIds } });
   });
 
@@ -128,7 +146,10 @@ export function registerAuthRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const body = favoriteVenuesRequestSchema.parse(request.body);
-    const venueIds = await favoritesRepository.setFavoriteVenueIds(user.id, body.venueIds);
+    const venueIds = await favoritesRepository.setFavoriteVenueIds(
+      user.id,
+      body.venueIds
+    );
     return favoriteVenuesResponseSchema.parse({ data: { venueIds } });
   });
 

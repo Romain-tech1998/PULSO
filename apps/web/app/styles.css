@@ -1,6 +1,14 @@
 :root {
   color-scheme: dark;
-  font-family: var(--font-satoshi), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family:
+    var(--font-satoshi),
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   background: var(--background);
   color: var(--text-primary);
 
@@ -198,7 +206,10 @@ h6 {
   background: var(--surface-base);
   border: 1px solid var(--brand-border);
   border-radius: 999px;
-  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    background 0.2s;
 }
 
 .search-input-wrapper:focus-within {
@@ -316,7 +327,9 @@ h6 {
   font-weight: 600;
   font-size: 0.85rem;
   white-space: nowrap;
-  transition: border-color 0.2s, color 0.2s;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
 }
 .account-login-btn:hover {
   border-color: var(--brand-purple);
@@ -654,7 +667,9 @@ h6 {
   color: var(--text-primary);
   font-weight: 600;
   font-size: 0.85rem;
-  transition: border-color 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
   flex-shrink: 0;
 }
 .amis-code-copy:hover {
@@ -688,7 +703,10 @@ h6 {
   color: #fff;
   font-weight: 700;
   font-size: 0.9rem;
-  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s,
+    opacity 0.15s;
 }
 .amis-add-btn:hover:not(:disabled) {
   transform: translateY(-1px);
@@ -726,7 +744,9 @@ h6 {
   border-radius: 0.9rem;
   background: var(--surface-base);
   border: 1px solid transparent;
-  transition: border-color 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
 }
 .amis-row:hover {
   border-color: var(--brand-border);
@@ -761,7 +781,9 @@ h6 {
   color: #fff;
   font-weight: 700;
   font-size: 0.8rem;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
 }
 .amis-btn-accept:hover {
   transform: translateY(-1px);
@@ -775,7 +797,9 @@ h6 {
   color: var(--text-secondary);
   font-weight: 600;
   font-size: 0.8rem;
-  transition: border-color 0.2s, color 0.2s;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
 }
 .amis-btn-ghost:hover {
   border-color: var(--text-secondary);
@@ -789,7 +813,9 @@ h6 {
   color: var(--text-primary);
   font-weight: 600;
   font-size: 0.8rem;
-  transition: background 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
 }
 .amis-btn-message:hover {
   background: rgba(91, 63, 224, 0.24);
@@ -1005,7 +1031,9 @@ h6 {
   font-size: 0.88rem;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  transition: color 0.2s, border-color 0.2s;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
 }
 .profil-tabs button:hover {
   color: var(--text-primary);
@@ -1195,7 +1223,9 @@ h6 {
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: border-color 0.2s, transform 0.15s;
+  transition:
+    border-color 0.2s,
+    transform 0.15s;
 }
 .profil-cover-swatch:hover {
   transform: translateY(-1px);
@@ -1210,7 +1240,9 @@ h6 {
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: border-color 0.2s, transform 0.15s;
+  transition:
+    border-color 0.2s,
+    transform 0.15s;
   background: var(--surface-base);
   color: #fff;
   display: flex;
@@ -1263,7 +1295,9 @@ h6 {
   background: var(--surface-base);
   border: 1px solid transparent;
   text-align: left;
-  transition: border-color 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
 }
 
 .conversation-list-row:hover {
@@ -1328,7 +1362,9 @@ h6 {
   border-radius: 50%;
   color: var(--text-secondary);
   flex-shrink: 0;
-  transition: background 0.2s, color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s;
 }
 
 .nav-icon-btn:hover:not(:disabled) {
@@ -1405,7 +1441,9 @@ h6 {
   color: var(--text-secondary);
   font-weight: 600;
   font-size: 0.85rem;
-  transition: border-color 0.2s, color 0.2s;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
 }
 
 .lang-selector-current:hover {
@@ -1720,7 +1758,10 @@ h6 {
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
 }
 .favoris-kind-toggle button.active {
   background: rgba(91, 63, 224, 0.35);
@@ -1882,7 +1923,9 @@ h6 {
   border: 1px solid var(--brand-border);
   border-radius: 1rem;
   overflow: hidden;
-  transition: transform 0.2s, border-color 0.2s;
+  transition:
+    transform 0.2s,
+    border-color 0.2s;
 }
 .venue-card:hover {
   transform: translateY(-3px);
@@ -2064,7 +2107,12 @@ h6 {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--brand-purple), var(--brand-pink), #FE7C5C);
+  background: linear-gradient(
+    135deg,
+    var(--brand-purple),
+    var(--brand-pink),
+    #fe7c5c
+  );
 }
 .calendar-day-number {
   font-weight: 600;
@@ -2145,7 +2193,9 @@ h6 {
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s;
 }
 .map-floating-pin-toggle button.active {
   background: rgba(91, 63, 224, 0.35);
@@ -2185,7 +2235,9 @@ h6 {
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .map-filter-chip:hover {
@@ -2576,7 +2628,9 @@ h6 {
   font-weight: 700;
   font-size: 0.9rem;
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
 }
 .sign-in-prompt-btn:hover {
   transform: translateY(-1px);
@@ -2805,7 +2859,9 @@ h6 {
   font-weight: 700;
   font-size: 0.9rem;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  transition: border-color 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
 }
 .forum-panel-back:hover {
   border-color: var(--brand-purple);
@@ -2903,7 +2959,10 @@ h6 {
   font-size: 0.85rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
-  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    color 0.2s;
 }
 .forum-panel-rail-action:last-child {
   margin-bottom: 0;
@@ -3049,7 +3108,10 @@ h6 {
   font-size: 0.8rem;
   font-weight: 500;
   white-space: nowrap;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
 }
 .forum-tabs button.active {
   background: rgba(91, 63, 224, 0.35);
@@ -3086,7 +3148,11 @@ h6 {
    so the two never read as the same interface. */
 .forum-post.mine {
   border-color: rgba(91, 63, 224, 0.55);
-  background: linear-gradient(180deg, rgba(91, 63, 224, 0.16), var(--surface-raised) 65%);
+  background: linear-gradient(
+    180deg,
+    rgba(91, 63, 224, 0.16),
+    var(--surface-raised) 65%
+  );
 }
 .forum-post-body {
   flex: 1;
@@ -3182,7 +3248,11 @@ h6 {
   background: var(--surface-base);
 }
 .forum-post.forum-reply.mine {
-  background: linear-gradient(180deg, rgba(91, 63, 224, 0.16), var(--surface-base) 65%);
+  background: linear-gradient(
+    180deg,
+    rgba(91, 63, 224, 0.16),
+    var(--surface-base) 65%
+  );
 }
 .forum-reply-composer {
   margin-top: 0.3rem;
@@ -3446,7 +3516,9 @@ h6 {
   border-radius: 50%;
   background: var(--gradient-primary);
   border: 3px solid #fff;
-  box-shadow: 0 0 0 2px rgba(167, 62, 232, 0.35), 0 4px 14px rgba(0, 0, 0, 0.55);
+  box-shadow:
+    0 0 0 2px rgba(167, 62, 232, 0.35),
+    0 4px 14px rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3485,7 +3557,9 @@ h6 {
   justify-content: center;
   font-weight: 700;
   font-size: 1rem;
-  box-shadow: 0 0 0 2px rgba(9, 8, 13, 0.5), 0 4px 10px rgba(255, 42, 122, 0.4);
+  box-shadow:
+    0 0 0 2px rgba(9, 8, 13, 0.5),
+    0 4px 10px rgba(255, 42, 122, 0.4);
   cursor: pointer;
   transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
@@ -3497,19 +3571,25 @@ h6 {
 }
 
 /* Variations based on categories */
-.marker[data-color="purple"] {
+.marker[data-color='purple'] {
   background: var(--brand-purple);
-  box-shadow: 0 0 0 2px rgba(9, 8, 13, 0.5), 0 4px 10px rgba(112, 88, 255, 0.4);
+  box-shadow:
+    0 0 0 2px rgba(9, 8, 13, 0.5),
+    0 4px 10px rgba(112, 88, 255, 0.4);
 }
 
-.marker[data-color="orange"] {
+.marker[data-color='orange'] {
   background: var(--brand-orange);
-  box-shadow: 0 0 0 2px rgba(9, 8, 13, 0.5), 0 4px 10px rgba(255, 123, 0, 0.4);
+  box-shadow:
+    0 0 0 2px rgba(9, 8, 13, 0.5),
+    0 4px 10px rgba(255, 123, 0, 0.4);
 }
 
-.marker[data-color="blue"] {
+.marker[data-color='blue'] {
   background: var(--brand-blue);
-  box-shadow: 0 0 0 2px rgba(9, 8, 13, 0.5), 0 4px 10px rgba(0, 136, 255, 0.4);
+  box-shadow:
+    0 0 0 2px rgba(9, 8, 13, 0.5),
+    0 4px 10px rgba(0, 136, 255, 0.4);
 }
 
 /* Sidebar Right (Event Details) */
@@ -3614,7 +3694,9 @@ h6 {
   border-radius: 1rem;
   overflow: hidden;
   scroll-snap-align: start;
-  transition: transform 0.2s, border-color 0.2s;
+  transition:
+    transform 0.2s,
+    border-color 0.2s;
 }
 
 .event-card:hover {
@@ -3770,7 +3852,9 @@ h6 {
    `from` state every time, which is exactly what made closing feel abrupt -
    the panel had an entrance but no reverse). */
 .panel-transition {
-  transition: transform 0.18s ease-out, opacity 0.18s ease-out;
+  transition:
+    transform 0.18s ease-out,
+    opacity 0.18s ease-out;
   transform: translateX(16px);
   opacity: 0;
 }
@@ -3954,7 +4038,9 @@ h6 {
   font-weight: 600;
   font-size: 0.9rem;
   text-align: left;
-  transition: background 0.2s, color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s;
 }
 
 .primary-sidebar-nav-item:hover {
@@ -3963,7 +4049,11 @@ h6 {
 }
 
 .primary-sidebar-nav-item.active {
-  background: linear-gradient(90deg, rgba(167, 62, 232, 0.22), rgba(255, 42, 122, 0.1));
+  background: linear-gradient(
+    90deg,
+    rgba(167, 62, 232, 0.22),
+    rgba(255, 42, 122, 0.1)
+  );
   color: var(--text-primary);
   box-shadow: inset 3px 0 0 var(--brand-pink);
 }
@@ -4199,7 +4289,10 @@ h6 {
   color: var(--text-secondary);
   font-size: 0.85rem;
   font-weight: 600;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
 }
 .forum-discover-filters button:hover {
   border-color: var(--brand-purple);
@@ -4224,7 +4317,9 @@ h6 {
   border: 1px solid var(--brand-border);
   border-radius: 1rem;
   overflow: hidden;
-  transition: transform 0.2s, border-color 0.2s;
+  transition:
+    transform 0.2s,
+    border-color 0.2s;
 }
 .forum-discover-card:hover {
   transform: translateY(-3px);
@@ -4284,7 +4379,10 @@ h6 {
   color: #fff;
   font-weight: 700;
   font-size: 0.88rem;
-  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s,
+    opacity 0.15s;
 }
 .meetup-btn:hover:not(:disabled) {
   transform: translateY(-1px);

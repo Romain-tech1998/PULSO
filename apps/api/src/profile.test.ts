@@ -63,7 +63,9 @@ describe('profile API', () => {
       }
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json().data.bio).toBe('Toujours à la recherche de la prochaine bonne vibe');
+    expect(response.json().data.bio).toBe(
+      'Toujours à la recherche de la prochaine bonne vibe'
+    );
     expect(response.json().data.avatarStyle).toBe('disco');
     expect(received).toEqual({
       userId: testUser.id,
@@ -96,7 +98,10 @@ describe('profile API', () => {
       payload: { avatarStyle: '' }
     });
     expect(response.statusCode).toBe(200);
-    expect(received).toEqual({ userId: testUser.id, update: { avatarStyle: '' } });
+    expect(received).toEqual({
+      userId: testUser.id,
+      update: { avatarStyle: '' }
+    });
     await app.close();
   });
 
@@ -139,7 +144,9 @@ describe('profile API', () => {
     const app = buildApp(
       event,
       accountRepositories({
-        profileRepository: fakeProfileRepository({ getRecentActivity: async () => [entry] })
+        profileRepository: fakeProfileRepository({
+          getRecentActivity: async () => [entry]
+        })
       })
     );
     const response = await app.inject({

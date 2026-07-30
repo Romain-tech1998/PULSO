@@ -2,7 +2,12 @@ import { EventNotFoundError, type EventRepository } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
-import { accountRepositories, fakeAttendanceRepository, friend, testUser } from './test-support.js';
+import {
+  accountRepositories,
+  fakeAttendanceRepository,
+  friend,
+  testUser
+} from './test-support.js';
 
 const event: EventRepository = {
   findInBounds: async () => [],
@@ -23,7 +28,10 @@ describe('participation visibility API', () => {
       url: `/me/attendance/${eventId}`,
       payload: { visibility: 'private' }
     });
-    const del = await app.inject({ method: 'DELETE', url: `/me/attendance/${eventId}` });
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/me/attendance/${eventId}`
+    });
     const list = await app.inject({ method: 'GET', url: '/me/attendance' });
     expect(put.statusCode).toBe(401);
     expect(del.statusCode).toBe(401);
@@ -32,7 +40,8 @@ describe('participation visibility API', () => {
   });
 
   it('marks attendance with the given visibility', async () => {
-    let received: { userId: string; eventId: string; visibility: string } | undefined;
+    let received:
+      { userId: string; eventId: string; visibility: string } | undefined;
     const app = buildApp(
       event,
       accountRepositories({
@@ -50,7 +59,11 @@ describe('participation visibility API', () => {
       payload: { visibility: 'friends' }
     });
     expect(response.statusCode).toBe(204);
-    expect(received).toEqual({ userId: testUser.id, eventId, visibility: 'friends' });
+    expect(received).toEqual({
+      userId: testUser.id,
+      eventId,
+      visibility: 'friends'
+    });
     await app.close();
   });
 

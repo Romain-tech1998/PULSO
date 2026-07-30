@@ -17,7 +17,9 @@ export function registerReportsRoutes(
   app.post('/reports', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
-    const { targetType, targetId, reason } = createReportRequestSchema.parse(request.body);
+    const { targetType, targetId, reason } = createReportRequestSchema.parse(
+      request.body
+    );
     await reportsRepository.createReport(user.id, targetType, targetId, reason);
     return reply.status(204).send();
   });

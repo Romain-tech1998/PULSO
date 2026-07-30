@@ -23,11 +23,18 @@ const baseEvent: PublicEvent = {
     url: 'https://example.com/event',
     observedAt: '2026-07-15T12:00:00.000Z'
   },
-  trust: { label: 'confirmed', freshness: 'unknown', locationConfidence: 'confirmed' }
+  trust: {
+    label: 'confirmed',
+    freshness: 'unknown',
+    locationConfidence: 'confirmed'
+  }
 };
 
 function paidEvent(minimumAmount: number): PublicEvent {
-  return { ...baseEvent, price: { kind: 'paid', currency: 'CAD', minimumAmount } };
+  return {
+    ...baseEvent,
+    price: { kind: 'paid', currency: 'CAD', minimumAmount }
+  };
 }
 
 describe('deriveVenuePriceTier', () => {
@@ -36,7 +43,13 @@ describe('deriveVenuePriceTier', () => {
   });
 
   it('returns undefined for a venue whose events are all free or unknown price', () => {
-    const events = [baseEvent, { ...baseEvent, price: { kind: 'unknown' as const, currency: 'CAD' as const } }];
+    const events = [
+      baseEvent,
+      {
+        ...baseEvent,
+        price: { kind: 'unknown' as const, currency: 'CAD' as const }
+      }
+    ];
     expect(deriveVenuePriceTier(events)).toBeUndefined();
   });
 
@@ -55,7 +68,13 @@ describe('deriveVenuePriceTier', () => {
   it('uses the median so one outlier premium show does not skew a cheap bar', () => {
     // Four $10 shows and one $500 show - the average would be well over
     // $100 (=> $$$), but the median stays at $10 (=> $).
-    const events = [paidEvent(10), paidEvent(10), paidEvent(10), paidEvent(10), paidEvent(500)];
+    const events = [
+      paidEvent(10),
+      paidEvent(10),
+      paidEvent(10),
+      paidEvent(10),
+      paidEvent(500)
+    ];
     expect(deriveVenuePriceTier(events)).toBe('$');
   });
 

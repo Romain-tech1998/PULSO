@@ -19,7 +19,7 @@ export function deriveDeterministicEventId(dedupeKey: string): string {
     bytes.slice(0, 8),
     bytes.slice(8, 12),
     `5${bytes.slice(13, 16)}`,
-    `${(parseInt(bytes[16]!, 16) & 0x3 | 0x8).toString(16)}${bytes.slice(17, 20)}`,
+    `${((parseInt(bytes[16]!, 16) & 0x3) | 0x8).toString(16)}${bytes.slice(17, 20)}`,
     bytes.slice(20, 32)
   ].join('-');
 }

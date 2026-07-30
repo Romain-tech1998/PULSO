@@ -1,4 +1,7 @@
-import { eventPhotoResponseSchema, eventPhotosResponseSchema } from '@pulso/contracts';
+import {
+  eventPhotoResponseSchema,
+  eventPhotosResponseSchema
+} from '@pulso/contracts';
 import type { AuthRepository, EventPhotosRepository } from '@pulso/database';
 import { EventNotFoundError } from '@pulso/database';
 import type { FastifyInstance } from 'fastify';
@@ -71,7 +74,10 @@ export function registerEventPhotosRoutes(
       buffer = await file.toBuffer();
     } catch {
       return reply.status(413).send({
-        error: { code: 'FILE_TOO_LARGE', message: 'The photo exceeds the maximum allowed size.' }
+        error: {
+          code: 'FILE_TOO_LARGE',
+          message: 'The photo exceeds the maximum allowed size.'
+        }
       });
     }
 
@@ -82,10 +88,16 @@ export function registerEventPhotosRoutes(
     const filePath = `event-photos/${eventId}/${filename}`;
 
     try {
-      const photo = await eventPhotosRepository.createPhoto(eventId, user.id, filePath);
-      return reply
-        .status(201)
-        .send(eventPhotoResponseSchema.parse({ data: { ...photo, url: toUrl(photo.filePath) } }));
+      const photo = await eventPhotosRepository.createPhoto(
+        eventId,
+        user.id,
+        filePath
+      );
+      return reply.status(201).send(
+        eventPhotoResponseSchema.parse({
+          data: { ...photo, url: toUrl(photo.filePath) }
+        })
+      );
     } catch (error) {
       await unlink(join(uploadDir, filePath)).catch(() => {});
       if (error instanceof EventNotFoundError) {
@@ -101,7 +113,10 @@ export function registerEventPhotosRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { photoId } = photoParamsSchema.parse(request.params);
-    const deletedPath = await eventPhotosRepository.deletePhoto(photoId, user.id);
+    const deletedPath = await eventPhotosRepository.deletePhoto(
+      photoId,
+      user.id
+    );
     if (deletedPath) {
       await unlink(join(uploadDir, deletedPath)).catch(() => {});
     }

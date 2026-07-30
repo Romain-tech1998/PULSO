@@ -54,7 +54,11 @@ export interface GroupPost {
 }
 
 export interface GroupsRepository {
-  createGroup(creatorId: string, name: string, description: string | undefined): Promise<Group>;
+  createGroup(
+    creatorId: string,
+    name: string,
+    description: string | undefined
+  ): Promise<Group>;
   listMyGroups(userId: string): Promise<Group[]>;
   getGroup(groupId: string, viewerId: string): Promise<Group | undefined>;
   joinGroup(groupId: string, userId: string): Promise<void>;
@@ -66,7 +70,11 @@ export interface GroupsRepository {
   // subsequent caller for that event id just gets joined to the existing
   // one. Relies on a unique index on groups.event_id (migration 0022) to
   // stay race-safe under concurrent first clicks.
-  findOrCreateEventGroup(eventId: string, eventTitle: string, userId: string): Promise<Group>;
+  findOrCreateEventGroup(
+    eventId: string,
+    eventTitle: string,
+    userId: string
+  ): Promise<Group>;
   getPosts(groupId: string, viewerId: string): Promise<GroupPost[]>;
   createPost(
     groupId: string,
@@ -147,7 +155,14 @@ export class PostgresGroupsRepository implements GroupsRepository {
     try {
       await client.query('BEGIN');
       const id = randomUUID();
-      const inserted = await client.query<{ id: string; name: string; description: string | null; created_by: string; created_at: string; event_id: string | null }>(
+      const inserted = await client.query<{
+        id: string;
+        name: string;
+        description: string | null;
+        created_by: string;
+        created_at: string;
+        event_id: string | null;
+      }>(
         `INSERT INTO groups (id, name, description, created_by)
          VALUES ($1, $2, $3, $4)
          RETURNING id, name, description, created_by, created_at, event_id`,
@@ -181,7 +196,10 @@ export class PostgresGroupsRepository implements GroupsRepository {
     return result.rows.map(toGroup);
   }
 
-  async getGroup(groupId: string, viewerId: string): Promise<Group | undefined> {
+  async getGroup(
+    groupId: string,
+    viewerId: string
+  ): Promise<Group | undefined> {
     const result = await this.pool.query<GroupRow>(
       `SELECT g.id, g.name, g.description, g.created_by, g.created_at, g.event_id,
               (SELECT COUNT(*) FROM group_memberships gm WHERE gm.group_id = g.id) AS member_count,
@@ -196,7 +214,11 @@ export class PostgresGroupsRepository implements GroupsRepository {
     return result.rows[0] ? toGroup(result.rows[0]) : undefined;
   }
 
-  async findOrCreateEventGroup(eventId: string, eventTitle: string, userId: string): Promise<Group> {
+  async findOrCreateEventGroup(
+    eventId: string,
+    eventTitle: string,
+    userId: string
+  ): Promise<Group> {
     const client = await this.pool.connect();
     let groupId: string;
     try {
@@ -251,13 +273,19 @@ export class PostgresGroupsRepository implements GroupsRepository {
     );
   }
 
-  private async requireMembership(groupId: string, userId: string): Promise<void> {
+  private async requireMembership(
+    groupId: string,
+    userId: string
+  ): Promise<void> {
     const membership = await this.pool.query(
       `SELECT 1 FROM group_memberships WHERE group_id = $1 AND user_id = $2`,
       [groupId, userId]
     );
     if (membership.rows.length === 0) {
-      const group = await this.pool.query(`SELECT 1 FROM groups WHERE id = $1`, [groupId]);
+      const group = await this.pool.query(
+        `SELECT 1 FROM groups WHERE id = $1`,
+        [groupId]
+      );
       if (group.rows.length === 0) throw new GroupNotFoundError();
       throw new NotGroupMemberError();
     }
@@ -310,10 +338,10 @@ export class PostgresGroupsRepository implements GroupsRepository {
   }
 
   async deletePost(postId: string, authorId: string): Promise<void> {
-    await this.pool.query(`DELETE FROM group_posts WHERE id = $1 AND author_id = $2`, [
-      postId,
-      authorId
-    ]);
+    await this.pool.query(
+      `DELETE FROM group_posts WHERE id = $1 AND author_id = $2`,
+      [postId, authorId]
+    );
   }
 
   async likePost(postId: string, userId: string): Promise<void> {
@@ -329,9 +357,9 @@ export class PostgresGroupsRepository implements GroupsRepository {
   }
 
   async unlikePost(postId: string, userId: string): Promise<void> {
-    await this.pool.query(`DELETE FROM group_post_likes WHERE post_id = $1 AND user_id = $2`, [
-      postId,
-      userId
-    ]);
+    await this.pool.query(
+      `DELETE FROM group_post_likes WHERE post_id = $1 AND user_id = $2`,
+      [postId, userId]
+    );
   }
 }

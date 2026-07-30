@@ -52,7 +52,8 @@ async function main(): Promise<void> {
     const dupeGroups = await pool.query<{
       keep_id: string;
       remove_ids: string[];
-    }>(`
+    }>(
+      `
       SELECT (array_agg(e.id ORDER BY e.id))[1] AS keep_id,
              (array_agg(e.id ORDER BY e.id))[2:] AS remove_ids
       FROM events e
@@ -60,7 +61,9 @@ async function main(): Promise<void> {
       WHERE e.source_name = $1
       GROUP BY e.title, v.address, e.starts_at, e.source_url
       HAVING count(*) > 1
-    `, [SOURCE_NAME]);
+    `,
+      [SOURCE_NAME]
+    );
 
     const allRemoveIds = dupeGroups.rows.flatMap((row) => row.remove_ids);
     console.log(
@@ -109,38 +112,53 @@ async function main(): Promise<void> {
       // Family/kids rows have no survivor to repoint to - their own
       // references are removed outright, same as deleting any other
       // out-of-scope event.
-      for (const { keep_id: keepId, remove_ids: removeIds } of dupeGroups.rows) {
+      for (const {
+        keep_id: keepId,
+        remove_ids: removeIds
+      } of dupeGroups.rows) {
         if (removeIds.length === 0) continue;
         await pool.query(
           `UPDATE event_attendance SET event_id = $1 WHERE event_id = ANY($2)
            AND NOT EXISTS (SELECT 1 FROM event_attendance ea2 WHERE ea2.event_id = $1 AND ea2.user_id = event_attendance.user_id)`,
           [keepId, removeIds]
         );
-        await pool.query(`DELETE FROM event_attendance WHERE event_id = ANY($1)`, [removeIds]);
-        await pool.query(`UPDATE forum_posts SET event_id = $1 WHERE event_id = ANY($2)`, [
-          keepId,
-          removeIds
-        ]);
+        await pool.query(
+          `DELETE FROM event_attendance WHERE event_id = ANY($1)`,
+          [removeIds]
+        );
+        await pool.query(
+          `UPDATE forum_posts SET event_id = $1 WHERE event_id = ANY($2)`,
+          [keepId, removeIds]
+        );
         await pool.query(
           `UPDATE user_favorite_events SET event_id = $1 WHERE event_id = ANY($2)
            AND NOT EXISTS (SELECT 1 FROM user_favorite_events f2 WHERE f2.event_id = $1 AND f2.user_id = user_favorite_events.user_id)`,
           [keepId, removeIds]
         );
-        await pool.query(`DELETE FROM user_favorite_events WHERE event_id = ANY($1)`, [
-          removeIds
-        ]);
+        await pool.query(
+          `DELETE FROM user_favorite_events WHERE event_id = ANY($1)`,
+          [removeIds]
+        );
       }
 
       const familyIds = familyEvents.rows.map((r) => r.id);
       if (familyIds.length > 0) {
-        await pool.query(`DELETE FROM event_attendance WHERE event_id = ANY($1)`, [familyIds]);
-        await pool.query(`DELETE FROM forum_posts WHERE event_id = ANY($1)`, [familyIds]);
-        await pool.query(`DELETE FROM user_favorite_events WHERE event_id = ANY($1)`, [
+        await pool.query(
+          `DELETE FROM event_attendance WHERE event_id = ANY($1)`,
+          [familyIds]
+        );
+        await pool.query(`DELETE FROM forum_posts WHERE event_id = ANY($1)`, [
           familyIds
         ]);
+        await pool.query(
+          `DELETE FROM user_favorite_events WHERE event_id = ANY($1)`,
+          [familyIds]
+        );
       }
 
-      const result = await pool.query(`DELETE FROM events WHERE id = ANY($1)`, [idsToRemove]);
+      const result = await pool.query(`DELETE FROM events WHERE id = ANY($1)`, [
+        idsToRemove
+      ]);
       await pool.query('COMMIT');
       console.log(`[cleanup] Removed ${result.rowCount} event row(s).`);
     } catch (error) {

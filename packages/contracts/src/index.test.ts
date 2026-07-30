@@ -347,7 +347,9 @@ describe('public event contract', () => {
     // billets" would overpromise - "Plus d'informations" is the honest
     // generic label for that case.
     expect(presentEvent(event, 'en').externalAction).toBe('More information');
-    expect(presentEvent(event, 'fr').externalAction).toBe('Plus d’informations');
+    expect(presentEvent(event, 'fr').externalAction).toBe(
+      'Plus d’informations'
+    );
   });
 
   it('localizes Pulso labels while preserving external event content', () => {

@@ -27,8 +27,14 @@ describe('direct messages API', () => {
       url: `/me/friends/${friend.id}/messages`,
       payload: { body: 'Salut' }
     });
-    const list = await app.inject({ method: 'GET', url: `/me/friends/${friend.id}/messages` });
-    const unread = await app.inject({ method: 'GET', url: '/me/messages/unread-count' });
+    const list = await app.inject({
+      method: 'GET',
+      url: `/me/friends/${friend.id}/messages`
+    });
+    const unread = await app.inject({
+      method: 'GET',
+      url: '/me/messages/unread-count'
+    });
     expect(send.statusCode).toBe(401);
     expect(list.statusCode).toBe(401);
     expect(unread.statusCode).toBe(401);
@@ -36,7 +42,8 @@ describe('direct messages API', () => {
   });
 
   it('sends a message to a friend', async () => {
-    let received: { senderId: string; recipientId: string; body: string } | undefined;
+    let received:
+      { senderId: string; recipientId: string; body: string } | undefined;
     const app = buildApp(
       event,
       accountRepositories({
@@ -91,7 +98,9 @@ describe('direct messages API', () => {
     const app = buildApp(
       event,
       accountRepositories({
-        messagesRepository: fakeMessagesRepository({ getConversation: async () => [message] })
+        messagesRepository: fakeMessagesRepository({
+          getConversation: async () => [message]
+        })
       })
     );
     const response = await app.inject({
@@ -130,7 +139,9 @@ describe('direct messages API', () => {
     const app = buildApp(
       event,
       accountRepositories({
-        messagesRepository: fakeMessagesRepository({ getUnreadCount: async () => 3 })
+        messagesRepository: fakeMessagesRepository({
+          getUnreadCount: async () => 3
+        })
       })
     );
     const response = await app.inject({
@@ -145,7 +156,10 @@ describe('direct messages API', () => {
 
   it('rejects the conversations list without a bearer token', async () => {
     const app = buildApp(event, accountRepositories());
-    const response = await app.inject({ method: 'GET', url: '/me/conversations' });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/conversations'
+    });
     expect(response.statusCode).toBe(401);
     await app.close();
   });

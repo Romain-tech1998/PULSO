@@ -102,13 +102,20 @@ function roadColorFor(id) {
 
 const ROAD_PHASE_PREFIXES = ['tunnel_', 'road_', 'bridge_'];
 const COLOR_KEYS = [
-  'background-color', 'fill-color', 'fill-outline-color', 'fill-extrusion-color',
-  'line-color', 'text-color', 'text-halo-color', 'icon-color'
+  'background-color',
+  'fill-color',
+  'fill-outline-color',
+  'fill-extrusion-color',
+  'line-color',
+  'text-color',
+  'text-halo-color',
+  'icon-color'
 ];
 
 async function main() {
   const response = await fetch(LIBERTY_STYLE_URL);
-  if (!response.ok) throw new Error(`Failed to fetch ${LIBERTY_STYLE_URL}: ${response.status}`);
+  if (!response.ok)
+    throw new Error(`Failed to fetch ${LIBERTY_STYLE_URL}: ${response.status}`);
   const original = await response.json();
   const style = structuredClone(original);
 
@@ -137,8 +144,13 @@ async function main() {
     const after = style.layers[i];
     if (!before.paint) continue;
     for (const key of COLOR_KEYS) {
-      if (before.paint[key] !== undefined && before.paint[key] === after.paint?.[key]) {
-        untouched.push(`${before.id}.${key} = ${JSON.stringify(before.paint[key])}`);
+      if (
+        before.paint[key] !== undefined &&
+        before.paint[key] === after.paint?.[key]
+      ) {
+        untouched.push(
+          `${before.id}.${key} = ${JSON.stringify(before.paint[key])}`
+        );
       }
     }
   }

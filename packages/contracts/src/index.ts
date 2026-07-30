@@ -215,12 +215,24 @@ export const meResponseSchema = z.object({ data: userSchema });
 // 4.7) - never a photo upload, since Pulso stores no user images beyond the
 // Google avatar. Shared between contracts (validation) and the web app
 // (rendering each key to its actual gradient).
-export const PROFILE_COVER_STYLES = ['aurora', 'sunset', 'midnight', 'nebula'] as const;
+export const PROFILE_COVER_STYLES = [
+  'aurora',
+  'sunset',
+  'midnight',
+  'nebula'
+] as const;
 
 // Fixed set of preset avatars (emoji + gradient, defined on the web side) -
 // picking one overrides the Google avatar photo everywhere the user's own
 // avatar appears. Same "no upload" rationale as PROFILE_COVER_STYLES.
-export const PROFILE_AVATAR_STYLES = ['note', 'disco', 'moon', 'star', 'flame', 'heart'] as const;
+export const PROFILE_AVATAR_STYLES = [
+  'note',
+  'disco',
+  'moon',
+  'star',
+  'flame',
+  'heart'
+] as const;
 
 export const updateProfileRequestSchema = z.object({
   bio: z.string().max(280).optional(),
@@ -228,7 +240,9 @@ export const updateProfileRequestSchema = z.object({
   // An empty string is the explicit "clear it, go back to the Google photo"
   // signal - `undefined` means "leave whatever is stored today untouched"
   // (see PostgresAuthRepository.updateProfile's COALESCE-based update).
-  avatarStyle: z.union([z.enum(PROFILE_AVATAR_STYLES), z.literal('')]).optional()
+  avatarStyle: z
+    .union([z.enum(PROFILE_AVATAR_STYLES), z.literal('')])
+    .optional()
 });
 
 // Real, derived counts only - deliberately not the mockup's "heures passées
@@ -458,7 +472,11 @@ export const conversationsResponseSchema = z.object({
 
 // Captures a report only (DEC-0012) - no moderation queue or automated
 // action exists yet, this is a minimal safety net.
-export const reportTargetTypeSchema = z.enum(['forum_post', 'message', 'group_post']);
+export const reportTargetTypeSchema = z.enum([
+  'forum_post',
+  'message',
+  'group_post'
+]);
 
 export const createReportRequestSchema = z.object({
   targetType: reportTargetTypeSchema,
@@ -648,7 +666,9 @@ export const errorResponseSchema = z.object({
 export type PublicEvent = z.infer<typeof publicEventSchema>;
 export type EventListResponse = z.infer<typeof eventListResponseSchema>;
 export type DiscoverForumEntry = z.infer<typeof discoverForumEntrySchema>;
-export type DiscoverForumsResponse = z.infer<typeof discoverForumsResponseSchema>;
+export type DiscoverForumsResponse = z.infer<
+  typeof discoverForumsResponseSchema
+>;
 export type ForumMembersResponse = z.infer<typeof forumMembersResponseSchema>;
 export type ForumFollowResponse = z.infer<typeof forumFollowResponseSchema>;
 export type EventPhoto = z.infer<typeof eventPhotoSchema>;
@@ -713,7 +733,9 @@ export type CreateGroupRequest = z.infer<typeof createGroupRequestSchema>;
 export type GroupsResponse = z.infer<typeof groupsResponseSchema>;
 export type GroupResponse = z.infer<typeof groupResponseSchema>;
 export type GroupPost = z.infer<typeof groupPostSchema>;
-export type CreateGroupPostRequest = z.infer<typeof createGroupPostRequestSchema>;
+export type CreateGroupPostRequest = z.infer<
+  typeof createGroupPostRequestSchema
+>;
 export type GroupPostsResponse = z.infer<typeof groupPostsResponseSchema>;
 export type GroupPostResponse = z.infer<typeof groupPostResponseSchema>;
 
@@ -1009,7 +1031,8 @@ export function presentEvent(
   // info page (most Ville de Montréal listings) - "Voir les billets" would
   // overpromise a checkout flow that isn't there.
   const externalAvailable =
-    event.status !== 'cancelled' && event.externalDestination?.status === 'available'
+    event.status !== 'cancelled' &&
+    event.externalDestination?.status === 'available'
       ? translate(
           locale,
           event.externalDestination.kind === 'ticketing'

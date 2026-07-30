@@ -31,8 +31,14 @@ export function registerMessagesRoutes(
     const { friendUserId } = friendParamsSchema.parse(request.params);
     const { body } = sendMessageRequestSchema.parse(request.body);
     try {
-      const message = await messagesRepository.sendMessage(user.id, friendUserId, body);
-      return reply.status(201).send(messageResponseSchema.parse({ data: message }));
+      const message = await messagesRepository.sendMessage(
+        user.id,
+        friendUserId,
+        body
+      );
+      return reply
+        .status(201)
+        .send(messageResponseSchema.parse({ data: message }));
     } catch (error) {
       if (error instanceof NotFriendsError) {
         return reply.status(403).send({
@@ -47,7 +53,10 @@ export function registerMessagesRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { friendUserId } = friendParamsSchema.parse(request.params);
-    const messages = await messagesRepository.getConversation(user.id, friendUserId);
+    const messages = await messagesRepository.getConversation(
+      user.id,
+      friendUserId
+    );
     return conversationResponseSchema.parse({ data: messages });
   });
 

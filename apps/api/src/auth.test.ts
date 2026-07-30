@@ -92,7 +92,9 @@ describe('account authentication API', () => {
     const app = buildApp(event, accountRepositories());
     const response = await app.inject({ method: 'OPTIONS', url: '/me' });
     expect(response.statusCode).toBe(204);
-    expect(response.headers['access-control-allow-headers']).toContain('authorization');
+    expect(response.headers['access-control-allow-headers']).toContain(
+      'authorization'
+    );
     await app.close();
   });
 });
@@ -116,7 +118,9 @@ describe('account favorites API', () => {
       event,
       accountRepositories({
         favoritesRepository: fakeFavoritesRepository({
-          getFavoriteEventIds: async () => ['00000000-0000-4000-8000-000000000001']
+          getFavoriteEventIds: async () => [
+            '00000000-0000-4000-8000-000000000001'
+          ]
         })
       })
     );
@@ -167,7 +171,9 @@ describe('account favorites API', () => {
       event,
       accountRepositories({
         favoritesRepository: fakeFavoritesRepository({
-          getFavoriteVenueIds: async () => ['00000000-0000-4000-8000-000000000003']
+          getFavoriteVenueIds: async () => [
+            '00000000-0000-4000-8000-000000000003'
+          ]
         })
       })
     );

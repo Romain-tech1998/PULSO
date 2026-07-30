@@ -28,7 +28,10 @@ const event: EventRepository = {
 describe('friend code API', () => {
   it('rejects /me/friend-code without a bearer token', async () => {
     const app = buildApp(event, accountRepositories());
-    const response = await app.inject({ method: 'GET', url: '/me/friend-code' });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/friend-code'
+    });
     expect(response.statusCode).toBe(401);
     await app.close();
   });
@@ -37,7 +40,9 @@ describe('friend code API', () => {
     const app = buildApp(
       event,
       accountRepositories({
-        friendsRepository: fakeFriendsRepository({ getFriendCode: async () => 'a1b2c3d4' })
+        friendsRepository: fakeFriendsRepository({
+          getFriendCode: async () => 'a1b2c3d4'
+        })
       })
     );
     const response = await app.inject({
@@ -71,7 +76,10 @@ describe('friend requests API', () => {
       payload: { friendCode: 'a1b2c3d4' }
     });
     expect(response.statusCode).toBe(204);
-    expect(received).toEqual({ requesterId: testUser.id, friendCode: 'a1b2c3d4' });
+    expect(received).toEqual({
+      requesterId: testUser.id,
+      friendCode: 'a1b2c3d4'
+    });
     await app.close();
   });
 
@@ -161,7 +169,8 @@ describe('friend requests API', () => {
   });
 
   it('accepts a pending request', async () => {
-    let received: { userId: string; requestId: string; action: string } | undefined;
+    let received:
+      { userId: string; requestId: string; action: string } | undefined;
     const app = buildApp(
       event,
       accountRepositories({
@@ -215,7 +224,9 @@ describe('friends list API', () => {
     const app = buildApp(
       event,
       accountRepositories({
-        friendsRepository: fakeFriendsRepository({ getFriends: async () => [friend] })
+        friendsRepository: fakeFriendsRepository({
+          getFriends: async () => [friend]
+        })
       })
     );
     const response = await app.inject({

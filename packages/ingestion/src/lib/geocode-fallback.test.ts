@@ -64,17 +64,15 @@ describe('findNearbyNamedPlace', () => {
   });
 
   it('ignores features with no name tag', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValue(
-        overpassResponse([
-          {
-            type: 'way',
-            center: { lat: 45.536, lon: -73.5567 },
-            tags: { leisure: 'park' }
-          }
-        ])
-      );
+    const fetchImpl = vi.fn().mockResolvedValue(
+      overpassResponse([
+        {
+          type: 'way',
+          center: { lat: 45.536, lon: -73.5567 },
+          tags: { leisure: 'park' }
+        }
+      ])
+    );
     const result = await findNearbyNamedPlace(point, fetchImpl);
     expect(result).toBeUndefined();
   });

@@ -26,7 +26,10 @@ import { z } from 'zod';
 
 import { resolveBearerUser, sendUnauthenticated } from './auth.js';
 
-const categoryParamsSchema = z.object({ eventId: z.uuid(), category: forumCategorySchema });
+const categoryParamsSchema = z.object({
+  eventId: z.uuid(),
+  category: forumCategorySchema
+});
 const postParamsSchema = z.object({ postId: z.uuid() });
 const eventParamsSchema = z.object({ eventId: z.uuid() });
 const discoverQuerySchema = z.object({
@@ -41,7 +44,12 @@ const discoverQuerySchema = z.object({
 // Broad Montréal-wide bounds (same city-wide default used on the web side's
 // initial map load) - the discovery grid isn't map-viewport-driven, it just
 // needs "every upcoming event in the one city Pulso covers today."
-const MONTREAL_WIDE_BOUNDS = { west: -73.75, south: 45.4, east: -73.4, north: 45.7 };
+const MONTREAL_WIDE_BOUNDS = {
+  west: -73.75,
+  south: 45.4,
+  east: -73.4,
+  north: 45.7
+};
 const DISCOVER_WINDOW_DAYS = 45;
 const DISCOVER_LIMIT = 30;
 
@@ -74,8 +82,16 @@ export function registerForumRoutes(
     const { eventId, category } = categoryParamsSchema.parse(request.params);
     const { body, parentId } = createForumPostRequestSchema.parse(request.body);
     try {
-      const post = await forumRepository.createPost(eventId, user.id, category, body, parentId);
-      return reply.status(201).send(forumPostResponseSchema.parse({ data: post }));
+      const post = await forumRepository.createPost(
+        eventId,
+        user.id,
+        category,
+        body,
+        parentId
+      );
+      return reply
+        .status(201)
+        .send(forumPostResponseSchema.parse({ data: post }));
     } catch (error) {
       if (error instanceof EventNotFoundError) {
         return reply.status(404).send({
@@ -94,30 +110,36 @@ export function registerForumRoutes(
     return reply.status(204).send();
   });
 
-  app.post('/events/:eventId/forum/posts/:postId/like', async (request, reply) => {
-    const user = await resolveBearerUser(request, authRepository);
-    if (!user) return sendUnauthenticated(reply);
-    const { postId } = postParamsSchema.parse(request.params);
-    try {
-      await forumRepository.likePost(postId, user.id);
-    } catch (error) {
-      if (error instanceof ForumPostNotFoundError) {
-        return reply.status(404).send({
-          error: { code: 'FORUM_POST_NOT_FOUND', message: error.message }
-        });
+  app.post(
+    '/events/:eventId/forum/posts/:postId/like',
+    async (request, reply) => {
+      const user = await resolveBearerUser(request, authRepository);
+      if (!user) return sendUnauthenticated(reply);
+      const { postId } = postParamsSchema.parse(request.params);
+      try {
+        await forumRepository.likePost(postId, user.id);
+      } catch (error) {
+        if (error instanceof ForumPostNotFoundError) {
+          return reply.status(404).send({
+            error: { code: 'FORUM_POST_NOT_FOUND', message: error.message }
+          });
+        }
+        throw error;
       }
-      throw error;
+      return reply.status(204).send();
     }
-    return reply.status(204).send();
-  });
+  );
 
-  app.delete('/events/:eventId/forum/posts/:postId/like', async (request, reply) => {
-    const user = await resolveBearerUser(request, authRepository);
-    if (!user) return sendUnauthenticated(reply);
-    const { postId } = postParamsSchema.parse(request.params);
-    await forumRepository.unlikePost(postId, user.id);
-    return reply.status(204).send();
-  });
+  app.delete(
+    '/events/:eventId/forum/posts/:postId/like',
+    async (request, reply) => {
+      const user = await resolveBearerUser(request, authRepository);
+      if (!user) return sendUnauthenticated(reply);
+      const { postId } = postParamsSchema.parse(request.params);
+      await forumRepository.unlikePost(postId, user.id);
+      return reply.status(204).send();
+    }
+  );
 
   // Dashboard "Forums actifs" widget: scoped to the caller's own
   // favorited/attended events, never a public/global feed of every forum.
@@ -129,14 +151,24 @@ export function registerForumRoutes(
       attendanceRepository.getMyAttendance(user.id)
     ]);
     const eventIds = Array.from(
-      new Set([...favoriteEventIds, ...attendance.map((entry) => entry.eventId)])
+      new Set([
+        ...favoriteEventIds,
+        ...attendance.map((entry) => entry.eventId)
+      ])
     );
     const activity = await forumRepository.getRecentActivityForEvents(eventIds);
-    const events = await eventRepository.findByIds(activity.map((entry) => entry.eventId));
-    const eventTitleById = new Map(events.map((event) => [event.id, event.title]));
+    const events = await eventRepository.findByIds(
+      activity.map((entry) => entry.eventId)
+    );
+    const eventTitleById = new Map(
+      events.map((event) => [event.id, event.title])
+    );
     const data = activity
       .filter((entry) => eventTitleById.has(entry.eventId))
-      .map((entry) => ({ ...entry, eventTitle: eventTitleById.get(entry.eventId)! }));
+      .map((entry) => ({
+        ...entry,
+        eventTitle: eventTitleById.get(entry.eventId)!
+      }));
     return activeForumsResponseSchema.parse({ data });
   });
 
@@ -197,33 +229,48 @@ export function registerForumRoutes(
     if (!user) return sendUnauthenticated(reply);
     const { category, sort, scope } = discoverQuerySchema.parse(request.query);
     const now = new Date();
-    const windowEnd = new Date(now.getTime() + DISCOVER_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-    const [allEvents, favoriteEventIds, myAttendance, followedEventIds, postedEventIds] =
-      await Promise.all([
-        eventRepository.findInBounds(
-          {
-            ...MONTREAL_WIDE_BOUNDS,
-            date: 'custom',
-            categories: category ? [category] : [],
-            price: 'all',
-            dateStart: getMontrealCalendarDate(now),
-            dateEnd: getMontrealCalendarDate(windowEnd)
-          },
-          createFilteredDiscoveryWindow(now, {
-            date: 'custom',
-            customStartDate: getMontrealCalendarDate(now),
-            customEndDate: getMontrealCalendarDate(windowEnd)
-          })
-        ),
-        scope === 'mine' ? favoritesRepository.getFavoriteEventIds(user.id) : Promise.resolve([]),
-        scope === 'mine' ? attendanceRepository.getMyAttendance(user.id) : Promise.resolve([]),
-        // "Mine" also includes forums the caller explicitly followed or
-        // has actually posted in (Phase 4.8 follow-up) - participating in
-        // a forum is real signal that it belongs in "Mes forums", not just
-        // having favorited/attended the underlying event.
-        scope === 'mine' ? forumRepository.getFollowedEventIds(user.id) : Promise.resolve([]),
-        scope === 'mine' ? forumRepository.getPostedEventIds(user.id) : Promise.resolve([])
-      ]);
+    const windowEnd = new Date(
+      now.getTime() + DISCOVER_WINDOW_DAYS * 24 * 60 * 60 * 1000
+    );
+    const [
+      allEvents,
+      favoriteEventIds,
+      myAttendance,
+      followedEventIds,
+      postedEventIds
+    ] = await Promise.all([
+      eventRepository.findInBounds(
+        {
+          ...MONTREAL_WIDE_BOUNDS,
+          date: 'custom',
+          categories: category ? [category] : [],
+          price: 'all',
+          dateStart: getMontrealCalendarDate(now),
+          dateEnd: getMontrealCalendarDate(windowEnd)
+        },
+        createFilteredDiscoveryWindow(now, {
+          date: 'custom',
+          customStartDate: getMontrealCalendarDate(now),
+          customEndDate: getMontrealCalendarDate(windowEnd)
+        })
+      ),
+      scope === 'mine'
+        ? favoritesRepository.getFavoriteEventIds(user.id)
+        : Promise.resolve([]),
+      scope === 'mine'
+        ? attendanceRepository.getMyAttendance(user.id)
+        : Promise.resolve([]),
+      // "Mine" also includes forums the caller explicitly followed or
+      // has actually posted in (Phase 4.8 follow-up) - participating in
+      // a forum is real signal that it belongs in "Mes forums", not just
+      // having favorited/attended the underlying event.
+      scope === 'mine'
+        ? forumRepository.getFollowedEventIds(user.id)
+        : Promise.resolve([]),
+      scope === 'mine'
+        ? forumRepository.getPostedEventIds(user.id)
+        : Promise.resolve([])
+    ]);
     const myEventIds = new Set([
       ...favoriteEventIds,
       ...myAttendance.map((entry) => entry.eventId),
@@ -231,21 +278,36 @@ export function registerForumRoutes(
       ...postedEventIds
     ]);
     const events =
-      scope === 'mine' ? allEvents.filter((event) => myEventIds.has(event.id)) : allEvents;
-    const stats = await forumRepository.getForumStatsForEvents(events.map((event) => event.id));
+      scope === 'mine'
+        ? allEvents.filter((event) => myEventIds.has(event.id))
+        : allEvents;
+    const stats = await forumRepository.getForumStatsForEvents(
+      events.map((event) => event.id)
+    );
     const entries = events.map((event) => {
       const eventStats = stats.get(event.id);
       return {
         event,
         postCount: eventStats?.postCount ?? 0,
         memberCount: eventStats?.memberCount ?? 0,
-        ...(eventStats ? { lastPostAt: eventStats.lastPostAt, lastPostExcerpt: eventStats.lastPostExcerpt } : {})
+        ...(eventStats
+          ? {
+              lastPostAt: eventStats.lastPostAt,
+              lastPostExcerpt: eventStats.lastPostExcerpt
+            }
+          : {})
       };
     });
     const sorted =
       sort === 'popular'
         ? entries.sort((a, b) => b.postCount - a.postCount)
-        : entries.sort((a, b) => new Date(a.event.startsAt).getTime() - new Date(b.event.startsAt).getTime());
-    return discoverForumsResponseSchema.parse({ data: sorted.slice(0, DISCOVER_LIMIT) });
+        : entries.sort(
+            (a, b) =>
+              new Date(a.event.startsAt).getTime() -
+              new Date(b.event.startsAt).getTime()
+          );
+    return discoverForumsResponseSchema.parse({
+      data: sorted.slice(0, DISCOVER_LIMIT)
+    });
   });
 }

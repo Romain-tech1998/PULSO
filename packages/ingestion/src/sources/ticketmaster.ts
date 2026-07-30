@@ -12,7 +12,8 @@ import type { IngestionConnector, RawIngestedEvent } from '../types.js';
  *
  * Set TICKETMASTER_API_KEY in the environment to use this connector.
  */
-const DISCOVERY_BASE_URL = 'https://app.ticketmaster.com/discovery/v2/events.json';
+const DISCOVERY_BASE_URL =
+  'https://app.ticketmaster.com/discovery/v2/events.json';
 
 const SEGMENT_TO_CATEGORY: Record<string, RawIngestedEvent['category']> = {
   music: 'music',
@@ -28,7 +29,12 @@ interface TicketmasterEvent {
   name: string;
   url: string;
   info?: string;
-  images?: Array<{ ratio?: string; url: string; width?: number; height?: number }>;
+  images?: Array<{
+    ratio?: string;
+    url: string;
+    width?: number;
+    height?: number;
+  }>;
   classifications?: Array<{
     segment?: { name?: string };
     genre?: { name?: string };
@@ -60,11 +66,15 @@ interface TicketmasterResponse {
  * image - the smallest candidate at or above 640px wide, falling back to
  * the largest available if every image is smaller than that.
  */
-function pickImageUrl(images?: TicketmasterEvent['images']): string | undefined {
+function pickImageUrl(
+  images?: TicketmasterEvent['images']
+): string | undefined {
   if (!images || images.length === 0) return undefined;
   const sixteenByNine = images.filter((img) => img.ratio === '16_9');
   const candidates = sixteenByNine.length > 0 ? sixteenByNine : images;
-  const sorted = [...candidates].sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
+  const sorted = [...candidates].sort(
+    (a, b) => (a.width ?? 0) - (b.width ?? 0)
+  );
   const goodEnough = sorted.find((img) => (img.width ?? 0) >= 640);
   return (goodEnough ?? sorted[sorted.length - 1])?.url;
 }
@@ -104,7 +114,8 @@ export function mapTicketmasterEvent(
     title: event.name,
     description: event.info,
     category: mapCategory(event),
-    startsAt: event.dates.start.dateTime ?? `${event.dates.start.localDate}T00:00:00Z`,
+    startsAt:
+      event.dates.start.dateTime ?? `${event.dates.start.localDate}T00:00:00Z`,
     endsAt: event.dates.end?.dateTime,
     venueName: venue?.name,
     address: venue?.address?.line1,
@@ -168,7 +179,9 @@ export function createTicketmasterConnector(
         }
         const body = (await response.json()) as TicketmasterResponse;
         const pageEvents = body._embedded?.events ?? [];
-        events.push(...pageEvents.map((event) => mapTicketmasterEvent(event, observedAt)));
+        events.push(
+          ...pageEvents.map((event) => mapTicketmasterEvent(event, observedAt))
+        );
 
         const totalPages = body.page?.totalPages ?? 1;
         if (page + 1 >= totalPages) break;

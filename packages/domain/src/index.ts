@@ -58,7 +58,10 @@ export const FORUM_CATEGORIES = [
   'find_someone'
 ] as const;
 
-export const FORUM_CATEGORY_LABELS: Record<(typeof FORUM_CATEGORIES)[number], string> = {
+export const FORUM_CATEGORY_LABELS: Record<
+  (typeof FORUM_CATEGORIES)[number],
+  string
+> = {
   find_partners: 'Trouver des partenaires',
   general: 'Discussion générale',
   ticket_resale: 'Revente de place',
@@ -328,7 +331,9 @@ export function createFilteredDiscoveryWindow(
       throw new Error('A selected Montréal date is required.');
     }
     const start = parseLocalDate(filters.customStartDate);
-    const end = parseLocalDate(filters.customEndDate ?? filters.customStartDate);
+    const end = parseLocalDate(
+      filters.customEndDate ?? filters.customStartDate
+    );
     const custom: DiscoveryWindow = {
       startsAt: montrealLocalToInstant(atLocalTime(start, 0)),
       endsAt: montrealLocalToInstant(atLocalTime(end, 23, 59, 59, 999))

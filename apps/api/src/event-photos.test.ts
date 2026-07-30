@@ -28,8 +28,15 @@ const eventId = '00000000-0000-4000-8000-000000000014';
 // platform's own FormData/Request rather than hand-rolling boundaries.
 async function buildPhotoUpload(mimeType: string, bytes: number[]) {
   const form = new FormData();
-  form.append('file', new Blob([new Uint8Array(bytes)], { type: mimeType }), 'photo');
-  const request = new Request('http://local/upload', { method: 'POST', body: form });
+  form.append(
+    'file',
+    new Blob([new Uint8Array(bytes)], { type: mimeType }),
+    'photo'
+  );
+  const request = new Request('http://local/upload', {
+    method: 'POST',
+    body: form
+  });
   return {
     contentType: request.headers.get('content-type')!,
     payload: Buffer.from(await request.arrayBuffer())
@@ -39,14 +46,20 @@ async function buildPhotoUpload(mimeType: string, bytes: number[]) {
 describe('event photos API', () => {
   it('rejects listing photos without a bearer token', async () => {
     const app = buildApp(event, accountRepositories());
-    const response = await app.inject({ method: 'GET', url: `/events/${eventId}/photos` });
+    const response = await app.inject({
+      method: 'GET',
+      url: `/events/${eventId}/photos`
+    });
     expect(response.statusCode).toBe(401);
     await app.close();
   });
 
   it('rejects uploading a photo without a bearer token', async () => {
     const app = buildApp(event, accountRepositories());
-    const { contentType, payload } = await buildPhotoUpload('image/jpeg', [1, 2, 3]);
+    const { contentType, payload } = await buildPhotoUpload(
+      'image/jpeg',
+      [1, 2, 3]
+    );
     const response = await app.inject({
       method: 'POST',
       url: `/events/${eventId}/photos`,
@@ -92,11 +105,17 @@ describe('event photos API', () => {
 
   it('rejects an unsupported file type', async () => {
     const app = buildApp(event, accountRepositories());
-    const { contentType, payload } = await buildPhotoUpload('text/plain', [1, 2, 3]);
+    const { contentType, payload } = await buildPhotoUpload(
+      'text/plain',
+      [1, 2, 3]
+    );
     const response = await app.inject({
       method: 'POST',
       url: `/events/${eventId}/photos`,
-      headers: { authorization: 'Bearer valid-token', 'content-type': contentType },
+      headers: {
+        authorization: 'Bearer valid-token',
+        'content-type': contentType
+      },
       payload
     });
     expect(response.statusCode).toBe(415);
@@ -104,7 +123,11 @@ describe('event photos API', () => {
   });
 
   it('saves an uploaded photo to disk and records it against the event and uploader', async () => {
-    const created: Array<{ eventId: string; uploaderId: string; filePath: string }> = [];
+    const created: Array<{
+      eventId: string;
+      uploaderId: string;
+      filePath: string;
+    }> = [];
     const app = buildApp(
       event,
       accountRepositories({
@@ -121,18 +144,26 @@ describe('event photos API', () => {
       })
     );
     const bytes = [1, 2, 3, 4, 5];
-    const { contentType, payload } = await buildPhotoUpload('image/jpeg', bytes);
+    const { contentType, payload } = await buildPhotoUpload(
+      'image/jpeg',
+      bytes
+    );
     const response = await app.inject({
       method: 'POST',
       url: `/events/${eventId}/photos`,
-      headers: { authorization: 'Bearer valid-token', 'content-type': contentType },
+      headers: {
+        authorization: 'Bearer valid-token',
+        'content-type': contentType
+      },
       payload
     });
     expect(response.statusCode).toBe(201);
     expect(created).toHaveLength(1);
     expect(created[0]!.eventId).toBe(eventId);
     expect(created[0]!.uploaderId).toBe(testUser.id);
-    expect(created[0]!.filePath).toMatch(new RegExp(`^event-photos/${eventId}/.+\\.jpg$`));
+    expect(created[0]!.filePath).toMatch(
+      new RegExp(`^event-photos/${eventId}/.+\\.jpg$`)
+    );
     expect(response.json().data.url).toBe(
       `http://127.0.0.1:3001/uploads/${created[0]!.filePath}`
     );
@@ -140,7 +171,10 @@ describe('event photos API', () => {
     const written = await readFile(join(testUploadDir, created[0]!.filePath));
     expect([...written]).toEqual(bytes);
 
-    await rm(join(testUploadDir, 'event-photos', eventId), { recursive: true, force: true });
+    await rm(join(testUploadDir, 'event-photos', eventId), {
+      recursive: true,
+      force: true
+    });
     await app.close();
   });
 
@@ -155,15 +189,24 @@ describe('event photos API', () => {
         })
       })
     );
-    const { contentType, payload } = await buildPhotoUpload('image/png', [1, 2, 3]);
+    const { contentType, payload } = await buildPhotoUpload(
+      'image/png',
+      [1, 2, 3]
+    );
     const response = await app.inject({
       method: 'POST',
       url: `/events/${eventId}/photos`,
-      headers: { authorization: 'Bearer valid-token', 'content-type': contentType },
+      headers: {
+        authorization: 'Bearer valid-token',
+        'content-type': contentType
+      },
       payload
     });
     expect(response.statusCode).toBe(404);
-    await rm(join(testUploadDir, 'event-photos', eventId), { recursive: true, force: true });
+    await rm(join(testUploadDir, 'event-photos', eventId), {
+      recursive: true,
+      force: true
+    });
     await app.close();
   });
 

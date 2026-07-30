@@ -61,7 +61,11 @@ export interface ForumStats {
 }
 
 export interface ForumRepository {
-  getPosts(eventId: string, category: ForumCategory, viewerId: string): Promise<ForumPost[]>;
+  getPosts(
+    eventId: string,
+    category: ForumCategory,
+    viewerId: string
+  ): Promise<ForumPost[]>;
   createPost(
     eventId: string,
     authorId: string,
@@ -194,10 +198,10 @@ export class PostgresForumRepository implements ForumRepository {
   }
 
   async deletePost(postId: string, authorId: string): Promise<void> {
-    await this.pool.query(`DELETE FROM forum_posts WHERE id = $1 AND author_id = $2`, [
-      postId,
-      authorId
-    ]);
+    await this.pool.query(
+      `DELETE FROM forum_posts WHERE id = $1 AND author_id = $2`,
+      [postId, authorId]
+    );
   }
 
   async likePost(postId: string, userId: string): Promise<void> {
@@ -214,10 +218,10 @@ export class PostgresForumRepository implements ForumRepository {
   }
 
   async unlikePost(postId: string, userId: string): Promise<void> {
-    await this.pool.query(`DELETE FROM forum_post_likes WHERE post_id = $1 AND user_id = $2`, [
-      postId,
-      userId
-    ]);
+    await this.pool.query(
+      `DELETE FROM forum_post_likes WHERE post_id = $1 AND user_id = $2`,
+      [postId, userId]
+    );
   }
 
   async getRecentActivityForEvents(eventIds: string[]): Promise<ActiveForum[]> {
@@ -251,7 +255,9 @@ export class PostgresForumRepository implements ForumRepository {
     }));
   }
 
-  async getForumStatsForEvents(eventIds: string[]): Promise<Map<string, ForumStats>> {
+  async getForumStatsForEvents(
+    eventIds: string[]
+  ): Promise<Map<string, ForumStats>> {
     if (eventIds.length === 0) return new Map();
     const result = await this.pool.query<{
       event_id: string;
@@ -336,10 +342,10 @@ export class PostgresForumRepository implements ForumRepository {
   }
 
   async unfollowForum(eventId: string, userId: string): Promise<void> {
-    await this.pool.query(`DELETE FROM forum_follows WHERE user_id = $1 AND event_id = $2`, [
-      userId,
-      eventId
-    ]);
+    await this.pool.query(
+      `DELETE FROM forum_follows WHERE user_id = $1 AND event_id = $2`,
+      [userId, eventId]
+    );
   }
 
   async isFollowingForum(eventId: string, userId: string): Promise<boolean> {

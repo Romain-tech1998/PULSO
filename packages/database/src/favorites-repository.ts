@@ -25,7 +25,10 @@ export class PostgresFavoritesRepository implements FavoritesRepository {
   // no longer match a real event are silently dropped from the insert rather
   // than rejected, since a stale local id (e.g. a deleted event) shouldn't
   // block the rest of the write.
-  async setFavoriteEventIds(userId: string, eventIds: string[]): Promise<string[]> {
+  async setFavoriteEventIds(
+    userId: string,
+    eventIds: string[]
+  ): Promise<string[]> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -59,7 +62,10 @@ export class PostgresFavoritesRepository implements FavoritesRepository {
     return result.rows.map((row) => row.venue_id);
   }
 
-  async setFavoriteVenueIds(userId: string, venueIds: string[]): Promise<string[]> {
+  async setFavoriteVenueIds(
+    userId: string,
+    venueIds: string[]
+  ): Promise<string[]> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');

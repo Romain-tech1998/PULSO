@@ -24,7 +24,8 @@ const apiBaseUrl = `http://${process.env.API_HOST ?? '127.0.0.1'}:${process.env.
 // matches the project's current pre-deployment stage rather than adding a
 // cloud object store dependency before the product is feature-complete
 // (see DEC-0012 v1.2).
-const uploadDir = process.env.EVENT_PHOTOS_UPLOAD_DIR ?? join(process.cwd(), 'uploads');
+const uploadDir =
+  process.env.EVENT_PHOTOS_UPLOAD_DIR ?? join(process.cwd(), 'uploads');
 const publicUploadUrl = `${apiBaseUrl}/uploads`;
 const google =
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET

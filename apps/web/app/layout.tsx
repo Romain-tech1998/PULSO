@@ -32,7 +32,9 @@ const satoshi = localFont({
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await resolveRequestLocale();
   return {
-    metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL ?? 'https://pulso.app'),
+    metadataBase: new URL(
+      process.env.NEXT_PUBLIC_BASE_URL ?? 'https://pulso.app'
+    ),
     title: `Pulso — ${translate(locale, 'app.title')}`,
     description: translate(locale, 'app.description'),
     openGraph: {
@@ -44,17 +46,17 @@ export async function generateMetadata(): Promise<Metadata> {
         {
           url: '/brand/pulso-favicon-192.png', // Temporary placeholder for OG image
           width: 1200,
-          height: 630,
-        },
+          height: 630
+        }
       ],
       locale: locale === 'fr' ? 'fr_CA' : 'en_US',
-      type: 'website',
+      type: 'website'
     },
     twitter: {
       card: 'summary_large_image',
       title: `Pulso — ${translate(locale, 'app.title')}`,
       description: translate(locale, 'app.description'),
-      images: ['/brand/pulso-favicon-192.png'],
+      images: ['/brand/pulso-favicon-192.png']
     },
     icons: {
       icon: [
@@ -74,7 +76,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export const viewport = {
-  themeColor: '#EA3E81',
+  themeColor: '#EA3E81'
 };
 
 export default async function RootLayout({

@@ -16,7 +16,9 @@ export class CannotFriendSelfError extends Error {
 
 export class FriendshipAlreadyExistsError extends Error {
   constructor() {
-    super('A friendship or pending request already exists between these accounts.');
+    super(
+      'A friendship or pending request already exists between these accounts.'
+    );
   }
 }
 
@@ -141,11 +143,14 @@ export class PostgresFriendsRepository implements FriendsRepository {
     if (existing.rows.length === 0) throw new FriendRequestNotFoundError();
 
     if (action === 'accept') {
-      await this.pool.query(`UPDATE friendships SET status = 'accepted' WHERE id = $1`, [
+      await this.pool.query(
+        `UPDATE friendships SET status = 'accepted' WHERE id = $1`,
+        [requestId]
+      );
+    } else {
+      await this.pool.query(`DELETE FROM friendships WHERE id = $1`, [
         requestId
       ]);
-    } else {
-      await this.pool.query(`DELETE FROM friendships WHERE id = $1`, [requestId]);
     }
   }
 

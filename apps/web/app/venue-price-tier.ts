@@ -18,9 +18,12 @@ export function deriveVenuePriceTier(
 ): VenuePriceTier | undefined {
   const amounts = events
     .filter(
-      (event): event is PublicEvent & {
+      (
+        event
+      ): event is PublicEvent & {
         price: { kind: 'paid'; currency: 'CAD'; minimumAmount: number };
-      } => event.price.kind === 'paid' && event.price.minimumAmount !== undefined
+      } =>
+        event.price.kind === 'paid' && event.price.minimumAmount !== undefined
     )
     .map((event) => event.price.minimumAmount)
     .sort((a, b) => a - b);

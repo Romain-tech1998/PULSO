@@ -8,7 +8,11 @@ import {
   sendFriendRequestSchema,
   setAttendanceRequestSchema
 } from '@pulso/contracts';
-import type { AttendanceRepository, AuthRepository, FriendsRepository } from '@pulso/database';
+import type {
+  AttendanceRepository,
+  AuthRepository,
+  FriendsRepository
+} from '@pulso/database';
 import {
   CannotFriendSelfError,
   EventNotFoundError,

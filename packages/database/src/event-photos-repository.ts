@@ -31,7 +31,11 @@ export interface EventPhoto {
 
 export interface EventPhotosRepository {
   listPhotos(eventId: string): Promise<EventPhoto[]>;
-  createPhoto(eventId: string, uploaderId: string, filePath: string): Promise<EventPhoto>;
+  createPhoto(
+    eventId: string,
+    uploaderId: string,
+    filePath: string
+  ): Promise<EventPhoto>;
   // Returns the deleted row's filePath so the caller can remove the file
   // from disk too, or undefined if the photo didn't exist or didn't belong
   // to uploaderId (silent no-op, same spirit as this project's other
@@ -79,7 +83,11 @@ export class PostgresEventPhotosRepository implements EventPhotosRepository {
     return result.rows.map(toEventPhoto);
   }
 
-  async createPhoto(eventId: string, uploaderId: string, filePath: string): Promise<EventPhoto> {
+  async createPhoto(
+    eventId: string,
+    uploaderId: string,
+    filePath: string
+  ): Promise<EventPhoto> {
     const id = randomUUID();
     try {
       const result = await this.pool.query<PhotoRow>(
@@ -100,7 +108,10 @@ export class PostgresEventPhotosRepository implements EventPhotosRepository {
     }
   }
 
-  async deletePhoto(photoId: string, uploaderId: string): Promise<string | undefined> {
+  async deletePhoto(
+    photoId: string,
+    uploaderId: string
+  ): Promise<string | undefined> {
     const result = await this.pool.query<{ file_path: string }>(
       `DELETE FROM event_photos WHERE id = $1 AND uploader_id = $2 RETURNING file_path`,
       [photoId, uploaderId]
