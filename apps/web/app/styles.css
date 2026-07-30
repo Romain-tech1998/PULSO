@@ -3902,6 +3902,16 @@ h6 {
 .messages-search {
   padding: 0.9rem 1.25rem 0;
 }
+/* Groups page (Phase 4.10 follow-up) reuses the Messages split-view shell
+   with its own create-group form in place of the search box. */
+.messages-list-column .groups-create-form {
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--brand-border);
+  gap: 0.6rem;
+}
+.messages-list-column .groups-create-form input {
+  width: 100%;
+}
 .messages-search input {
   width: 100%;
   padding: 0.6rem 0.9rem;

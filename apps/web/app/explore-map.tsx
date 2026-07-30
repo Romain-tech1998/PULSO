@@ -2429,7 +2429,13 @@ export function ExploreMap({
             locale={locale}
           />
         ) : user && section === 'groupes' ? (
-          <GroupsPage authToken={authToken} userId={user.id} />
+          <GroupsPage
+            authToken={authToken}
+            userId={user.id}
+            onOpenEventForum={(eventId) =>
+              void openDetails(eventId, { asForumPanel: true })
+            }
+          />
         ) : user && section === 'messages' ? (
           <MessagesPage
             authToken={authToken}
@@ -5434,19 +5440,135 @@ function ActiveForumsPage({
   );
 }
 
-// Full-page home for "Mes groupes" (Sidebar nav item) - wraps the same
-// GroupsBlock built in Phase 4.3 rather than duplicating its logic.
+// Full-page home for "Groupes" (Sidebar nav item), redesigned (Phase 4.10
+// follow-up) as a real split view instead of a list that pops a modal:
+// the same list+sub-tabs already built for Messages' Groupes tab on the
+// left, GroupDetailContent as a genuine inline panel on the right - no
+// GroupModal here. GroupsBlock (still a modal) stays as-is for the
+// narrower contexts that still use it (sidebar mini-list, Profil tab).
 function GroupsPage({
   authToken,
-  userId
+  userId,
+  onOpenEventForum
 }: {
   authToken: string | undefined;
   userId: string;
+  onOpenEventForum: (eventId: string) => void;
 }) {
+  const [selectedGroup, setSelectedGroup] = useState<Group>();
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [visibility, setVisibility] = useState<GroupVisibility>('open');
+  const [creating, setCreating] = useState(false);
+  const [listVersion, setListVersion] = useState(0);
+
+  const createGroup = () => {
+    if (!authToken || !name.trim() || creating) return;
+    setCreating(true);
+    fetch(`${API_BASE_URL}/me/groups`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        name: name.trim(),
+        visibility,
+        ...(description.trim() ? { description: description.trim() } : {})
+      })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setName('');
+        setDescription('');
+        setVisibility('open');
+        setListVersion((version) => version + 1);
+        setSelectedGroup(groupResponseSchema.parse(json).data);
+      })
+      .catch(() => {})
+      .finally(() => setCreating(false));
+  };
+
   return (
-    <div className="dashboard-home">
-      <h1>Mes groupes</h1>
-      <GroupsBlock authToken={authToken} userId={userId} />
+    <div className="messages-page">
+      <div className="messages-list-column">
+        <div className="messages-list-header">
+          <h1>Groupes</h1>
+        </div>
+        <form
+          className="friends-add-form groups-create-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createGroup();
+          }}
+        >
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Nom du groupe"
+            maxLength={80}
+          />
+          <input
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Description (optionnel)"
+            maxLength={500}
+          />
+          <div className="groups-visibility-choice">
+            <label>
+              <input
+                type="radio"
+                name="group-visibility"
+                checked={visibility === 'open'}
+                onChange={() => setVisibility('open')}
+              />
+              Accès libre — tout le monde peut rejoindre
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="group-visibility"
+                checked={visibility === 'restricted'}
+                onChange={() => setVisibility('restricted')}
+              />
+              Accès limité — sur demande, approuvée par toi
+            </label>
+          </div>
+          <button
+            type="submit"
+            className="btn-secondary"
+            disabled={creating || !name.trim()}
+          >
+            Créer
+          </button>
+        </form>
+        <MessagesGroupsTab
+          key={listVersion}
+          authToken={authToken}
+          selectedGroupId={selectedGroup?.id}
+          onSelectGroup={setSelectedGroup}
+        />
+      </div>
+
+      <div className="messages-conversation-column">
+        {selectedGroup ? (
+          <GroupDetailContent
+            group={selectedGroup}
+            authToken={authToken}
+            userId={userId}
+            onGroupUpdated={setSelectedGroup}
+            onLeave={() => setSelectedGroup(undefined)}
+            onOpenEventForum={onOpenEventForum}
+          />
+        ) : (
+          <div className="messages-empty-pane">
+            <span className="empty-state-icon" aria-hidden="true">
+              👥
+            </span>
+            <p>Sélectionne un groupe pour l'ouvrir ici.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
