@@ -2715,10 +2715,45 @@ h6 {
   justify-content: center;
   padding: 1.5rem 2.5rem 2.5rem;
 }
-.forum-panel-page > .forum-panel,
-.forum-panel-page > .event-details-content {
+.forum-panel-page > .forum-panel-layout {
   width: 100%;
   max-width: 1200px;
+}
+/* Two-column layout (Phase 4.8 follow-up, matching the reference mockup):
+   main content + a persistent right rail (event summary, real member
+   count, forum rules, quick actions) instead of a single centered column. */
+.forum-panel-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 2rem;
+  align-items: start;
+}
+.forum-panel-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* Standalone, always-visible Retour - live feedback: the version overlaid
+   on the hero image wasn't visible/placed well enough once the panel took
+   over the full page (a bright/busy cover photo could wash it out). */
+.forum-panel-back {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: border-color 0.2s, background 0.2s;
+}
+.forum-panel-back:hover {
+  border-color: var(--brand-purple);
+  background: var(--surface-overlay);
 }
 /* Live feedback: the dedicated forum panel read as cramped once it had
    the whole page to itself - give its hero real presence (tall banner,
@@ -2736,11 +2771,94 @@ h6 {
   font-size: 2rem;
 }
 .forum-panel-page .details-section,
-.forum-panel-page .forum-panel-members-row,
 .forum-panel-page .details-meetup-row,
 .forum-panel-page .details-tabs {
   padding-left: 0.5rem;
   padding-right: 0.5rem;
+}
+
+.forum-panel-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  position: sticky;
+  top: 0;
+}
+.forum-panel-rail-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+.forum-panel-rail-card h3 {
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+.forum-panel-rail-event {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.forum-panel-rail-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 0.6rem;
+  flex-shrink: 0;
+  background: var(--surface-base);
+  overflow: hidden;
+  position: relative;
+}
+.forum-panel-rail-event-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  min-width: 0;
+}
+.forum-panel-rail-event-info span:first-child {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.forum-panel-rail-address {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.forum-panel-rail-rules {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+.forum-panel-rail-action {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--brand-border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.forum-panel-rail-action:last-child {
+  margin-bottom: 0;
+}
+.forum-panel-rail-action:hover {
+  border-color: var(--brand-purple);
+}
+.forum-panel-rail-action.active {
+  background: var(--gradient-primary);
+  border-color: transparent;
+  color: #fff;
 }
 
 /* "À propos" tab (Phase 4.8 follow-up: "trop basique") - a small icon
@@ -2846,11 +2964,14 @@ h6 {
 
 .forum-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   gap: 0.4rem;
   margin-bottom: 0.9rem;
+  padding-bottom: 0.2rem;
 }
 .forum-tabs button {
+  flex-shrink: 0;
   padding: 0.4rem 0.8rem;
   border-radius: 999px;
   border: 1px solid var(--brand-border);
@@ -2858,6 +2979,7 @@ h6 {
   color: var(--text-secondary);
   font-size: 0.8rem;
   font-weight: 500;
+  white-space: nowrap;
   transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
 .forum-tabs button.active {
@@ -4143,5 +4265,12 @@ h6 {
 
   .primary-sidebar-invite {
     display: none;
+  }
+
+  .forum-panel-layout {
+    grid-template-columns: 1fr;
+  }
+  .forum-panel-rail {
+    position: static;
   }
 }

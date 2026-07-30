@@ -131,6 +131,11 @@ export function fakeForumRepository(overrides: Partial<ForumRepository> = {}): F
     getRecentActivityForEvents: async () => [],
     getForumStatsForEvents: async () => new Map(),
     getForumMembers: async () => [],
+    getPostedEventIds: async () => [],
+    followForum: async () => undefined,
+    unfollowForum: async () => undefined,
+    isFollowingForum: async () => false,
+    getFollowedEventIds: async () => [],
     ...overrides
   };
 }

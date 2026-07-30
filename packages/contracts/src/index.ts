@@ -617,6 +617,12 @@ export const forumMembersResponseSchema = z.object({
   data: z.array(publicUserSchema)
 });
 
+// "Suivre ce forum" (Phase 4.8 follow-up) - lets a signed-in user keep a
+// forum in "Mes forums" without posting or favoriting/attending the event.
+export const forumFollowResponseSchema = z.object({
+  following: z.boolean()
+});
+
 // "Photos" tab (Phase 4.8 follow-up) - real photos of the event, distinct
 // from the forum's text-only posts (DEC-0012's "no attachments" boundary
 // is unchanged there, see DEC-0012 v1.2). url is a full, ready-to-use URL
@@ -644,6 +650,7 @@ export type EventListResponse = z.infer<typeof eventListResponseSchema>;
 export type DiscoverForumEntry = z.infer<typeof discoverForumEntrySchema>;
 export type DiscoverForumsResponse = z.infer<typeof discoverForumsResponseSchema>;
 export type ForumMembersResponse = z.infer<typeof forumMembersResponseSchema>;
+export type ForumFollowResponse = z.infer<typeof forumFollowResponseSchema>;
 export type EventPhoto = z.infer<typeof eventPhotoSchema>;
 export type EventPhotosResponse = z.infer<typeof eventPhotosResponseSchema>;
 export type EventDetailsResponse = z.infer<typeof eventDetailsResponseSchema>;

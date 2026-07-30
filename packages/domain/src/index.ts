@@ -49,9 +49,11 @@ export const VENUE_CATEGORIES = [
 // The four per-event forum sub-discussions named explicitly in the
 // original request (DEC-0012) - a fixed, small set of categories, not
 // user-created ones, same pattern as EVENT_CATEGORIES.
+// "general" leads (live feedback: it's the default/most-used category and
+// should be the first tab, not buried second).
 export const FORUM_CATEGORIES = [
-  'find_partners',
   'general',
+  'find_partners',
   'ticket_resale',
   'find_someone'
 ] as const;

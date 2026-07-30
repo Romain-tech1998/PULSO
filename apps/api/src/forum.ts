@@ -3,6 +3,7 @@ import {
   discoverForumsResponseSchema,
   createForumPostRequestSchema,
   forumCategorySchema,
+  forumFollowResponseSchema,
   forumMembersResponseSchema,
   forumPostResponseSchema,
   forumPostsResponseSchema
@@ -150,6 +151,42 @@ export function registerForumRoutes(
     return forumMembersResponseSchema.parse({ data: members });
   });
 
+  // "Suivre ce forum" (Phase 4.8 follow-up) - an explicit bookmark distinct
+  // from favoriting/attending the event or posting a message, so a user
+  // can keep a forum in "Mes forums" just by wanting to follow it.
+  app.get('/events/:eventId/forum/follow', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { eventId } = eventParamsSchema.parse(request.params);
+    const following = await forumRepository.isFollowingForum(eventId, user.id);
+    return forumFollowResponseSchema.parse({ following });
+  });
+
+  app.post('/events/:eventId/forum/follow', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { eventId } = eventParamsSchema.parse(request.params);
+    try {
+      await forumRepository.followForum(eventId, user.id);
+    } catch (error) {
+      if (error instanceof EventNotFoundError) {
+        return reply.status(404).send({
+          error: { code: 'EVENT_NOT_FOUND', message: error.message }
+        });
+      }
+      throw error;
+    }
+    return reply.status(204).send();
+  });
+
+  app.delete('/events/:eventId/forum/follow', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { eventId } = eventParamsSchema.parse(request.params);
+    await forumRepository.unfollowForum(eventId, user.id);
+    return reply.status(204).send();
+  });
+
   // Forums discovery grid (Phase 4.8) - every upcoming event is a forum
   // entry point, not just the caller's own favorited/attended ones (that
   // narrower scope is what /me/forums/active above is for). Still behind
@@ -161,28 +198,37 @@ export function registerForumRoutes(
     const { category, sort, scope } = discoverQuerySchema.parse(request.query);
     const now = new Date();
     const windowEnd = new Date(now.getTime() + DISCOVER_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-    const [allEvents, favoriteEventIds, myAttendance] = await Promise.all([
-      eventRepository.findInBounds(
-        {
-          ...MONTREAL_WIDE_BOUNDS,
-          date: 'custom',
-          categories: category ? [category] : [],
-          price: 'all',
-          dateStart: getMontrealCalendarDate(now),
-          dateEnd: getMontrealCalendarDate(windowEnd)
-        },
-        createFilteredDiscoveryWindow(now, {
-          date: 'custom',
-          customStartDate: getMontrealCalendarDate(now),
-          customEndDate: getMontrealCalendarDate(windowEnd)
-        })
-      ),
-      scope === 'mine' ? favoritesRepository.getFavoriteEventIds(user.id) : Promise.resolve([]),
-      scope === 'mine' ? attendanceRepository.getMyAttendance(user.id) : Promise.resolve([])
-    ]);
+    const [allEvents, favoriteEventIds, myAttendance, followedEventIds, postedEventIds] =
+      await Promise.all([
+        eventRepository.findInBounds(
+          {
+            ...MONTREAL_WIDE_BOUNDS,
+            date: 'custom',
+            categories: category ? [category] : [],
+            price: 'all',
+            dateStart: getMontrealCalendarDate(now),
+            dateEnd: getMontrealCalendarDate(windowEnd)
+          },
+          createFilteredDiscoveryWindow(now, {
+            date: 'custom',
+            customStartDate: getMontrealCalendarDate(now),
+            customEndDate: getMontrealCalendarDate(windowEnd)
+          })
+        ),
+        scope === 'mine' ? favoritesRepository.getFavoriteEventIds(user.id) : Promise.resolve([]),
+        scope === 'mine' ? attendanceRepository.getMyAttendance(user.id) : Promise.resolve([]),
+        // "Mine" also includes forums the caller explicitly followed or
+        // has actually posted in (Phase 4.8 follow-up) - participating in
+        // a forum is real signal that it belongs in "Mes forums", not just
+        // having favorited/attended the underlying event.
+        scope === 'mine' ? forumRepository.getFollowedEventIds(user.id) : Promise.resolve([]),
+        scope === 'mine' ? forumRepository.getPostedEventIds(user.id) : Promise.resolve([])
+      ]);
     const myEventIds = new Set([
       ...favoriteEventIds,
-      ...myAttendance.map((entry) => entry.eventId)
+      ...myAttendance.map((entry) => entry.eventId),
+      ...followedEventIds,
+      ...postedEventIds
     ]);
     const events =
       scope === 'mine' ? allEvents.filter((event) => myEventIds.has(event.id)) : allEvents;

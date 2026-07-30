@@ -13,6 +13,7 @@ import {
   eventListResponseSchema,
   eventPhotoResponseSchema,
   eventPhotosResponseSchema,
+  forumFollowResponseSchema,
   favoriteEventsResponseSchema,
   favoriteVenuesResponseSchema,
   forumMembersResponseSchema,
@@ -2027,6 +2028,11 @@ export function ExploreMap({
           activeSection={(section === 'compte' ? 'decouvrir' : section) as ConnectedSection}
           onNavigate={(nextSection) => {
             setAboutOpen(false);
+            // Sidebar/TopBar navigation always wins over a currently-open
+            // ForumPanel takeover - live feedback: clicking e.g. "Messages"
+            // while a forum was open did nothing until Retour was clicked
+            // first, which read as broken navigation.
+            setForumPanelMode(false);
             setSection(nextSection);
           }}
           authToken={authToken}
@@ -2034,6 +2040,7 @@ export function ExploreMap({
           unreadMessagesCount={unreadMessagesCount}
           onOpenAccount={() => {
             setAboutOpen(false);
+            setForumPanelMode(false);
             setSection('compte');
           }}
         />
@@ -2055,10 +2062,12 @@ export function ExploreMap({
           unreadMessagesCount={unreadMessagesCount}
           onOpenAccount={() => {
             setAboutOpen(false);
+            setForumPanelMode(false);
             setSection('compte');
           }}
           onOpenMessages={() => {
             setAboutOpen(false);
+            setForumPanelMode(false);
             setSection('messages');
           }}
           onOpenAbout={() => setAboutOpen((prev) => !prev)}
@@ -7281,7 +7290,8 @@ function EventHero({
   onBack,
   isFavorite,
   onToggleFavorite,
-  locale
+  locale,
+  hideBackButton
 }: {
   event: PublicEvent;
   presentation: ReturnType<typeof eventDetailsFields>['presentation'];
@@ -7290,6 +7300,11 @@ function EventHero({
   isFavorite: boolean;
   onToggleFavorite: () => void;
   locale: SupportedLocale;
+  // ForumPanel renders its own, more prominent standalone Retour button
+  // above the hero instead (live feedback: the overlaid one wasn't visible
+  // enough against a bright/busy cover image) - EventDetails keeps the
+  // overlaid one as-is, already confirmed working there.
+  hideBackButton?: boolean;
 }) {
   return (
     <div
@@ -7305,10 +7320,12 @@ function EventHero({
       }
     >
       <div className="details-hero-actions">
-        <button type="button" className="back-button" onClick={onBack}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-          Retour
-        </button>
+        {!hideBackButton && (
+          <button type="button" className="back-button" onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            Retour
+          </button>
+        )}
         <div className="details-hero-actions-right">
           <button type="button" className="share-button" onClick={() => void shareEvent(event, locale)}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -7749,184 +7766,277 @@ function ForumPanel({
       .finally(() => setMeetupLoading(false));
   };
 
+  // "Suivre ce forum" (Phase 4.8 follow-up) - a real, explicit bookmark
+  // distinct from posting or favoriting/attending the event, so someone
+  // can keep a forum in "Mes forums" just by wanting to follow it.
+  const [following, setFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/events/${event.id}/forum/follow`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setFollowing(forumFollowResponseSchema.parse(json).following))
+      .catch(() => {});
+  }, [authToken, event.id]);
+  const toggleFollow = () => {
+    if (!authToken || followLoading) return;
+    setFollowLoading(true);
+    const nextFollowing = !following;
+    setFollowing(nextFollowing);
+    fetch(`${API_BASE_URL}/events/${event.id}/forum/follow`, {
+      method: nextFollowing ? 'POST' : 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .catch(() => setFollowing(!nextFollowing))
+      .finally(() => setFollowLoading(false));
+  };
+
   return (
-    <div className="event-details-content forum-panel" aria-label="Forum de l'événement">
-      <EventHero
-        event={event}
-        presentation={presentation}
-        onBack={onBack}
-        isFavorite={isFavorite}
-        onToggleFavorite={onToggleFavorite}
-        locale={locale}
-      />
-
-      {membersState === 'success' && members.length > 0 && (
-        <div className="forum-panel-members-row">
-          <div className="forum-members-avatars">
-            {members.slice(0, 8).map((member) => (
-              <span className="friends-row-avatar" key={member.id} title={member.displayName}>
-                {member.avatarUrl ? (
-                  <img src={member.avatarUrl} alt="" />
-                ) : (
-                  member.displayName.slice(0, 1).toUpperCase()
-                )}
-              </span>
-            ))}
-          </div>
-          <span className="forum-members-count">
-            {members.length} membre{members.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-      )}
-
-      {user && (
-        <div className="details-meetup-row">
-          <button
-            type="button"
-            className="meetup-btn"
-            onClick={openMeetupGroup}
-            disabled={meetupLoading}
-          >
-            🤝 {meetupLoading ? 'Un instant…' : "Rencontrer avant l'événement"}
-          </button>
-        </div>
-      )}
-
-      <div className="details-tabs">
-        <button type="button" className={tab === 'discussion' ? 'active' : ''} onClick={() => setTab('discussion')}>
-          Discussion
+    <div className="forum-panel-layout" aria-label="Forum de l'événement">
+      <div className="forum-panel-main">
+        <button type="button" className="forum-panel-back" onClick={onBack}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+          Retour
         </button>
-        <button type="button" className={tab === 'evenement' ? 'active' : ''} onClick={() => setTab('evenement')}>
-          Événement
-        </button>
-        <button type="button" className={tab === 'membres' ? 'active' : ''} onClick={() => setTab('membres')}>
-          Membres
-        </button>
-        <button type="button" className={tab === 'photos' ? 'active' : ''} onClick={() => setTab('photos')}>
-          Photos
-        </button>
-        <button type="button" className={tab === 'apropos' ? 'active' : ''} onClick={() => setTab('apropos')}>
-          À propos
-        </button>
-      </div>
 
-      {tab === 'discussion' && (
-        <div className="details-section">
-          {!user ? (
-            <SignInPrompt
-              message="Connectez-vous pour lire et participer au forum de cet événement."
-              onLogin={onLogin}
-            />
-          ) : (
-            <EventForum eventId={event.id} authToken={authToken} userId={user.id} />
-          )}
-        </div>
-      )}
-
-      {tab === 'evenement' && (
-        <EventAboutContent
+        <EventHero
           event={event}
           presentation={presentation}
           isFavorite={isFavorite}
           onToggleFavorite={onToggleFavorite}
-          externalHref={externalHref}
+          locale={locale}
+          onBack={onBack}
+          hideBackButton
         />
-      )}
 
-      {tab === 'membres' && (
-        <div className="details-section">
-          {membersState === 'loading' && <p className="list-view-empty">Chargement…</p>}
-          {membersState === 'error' && (
-            <p className="list-view-empty">Impossible de charger les membres pour le moment.</p>
-          )}
-          {membersState === 'success' && members.length === 0 && (
-            <p className="list-view-empty">
-              Personne n'a encore écrit ici. Lance la discussion dans l'onglet Discussion !
-            </p>
-          )}
-          {membersState === 'success' && members.length > 0 && (
-            <div className="forum-members-list">
-              {members.map((member) => (
-                <div className="friends-row" key={member.id}>
-                  <span className="friends-row-avatar">
+        {user && (
+          <div className="details-meetup-row">
+            <button
+              type="button"
+              className="meetup-btn"
+              onClick={openMeetupGroup}
+              disabled={meetupLoading}
+            >
+              🤝 {meetupLoading ? 'Un instant…' : "Rencontrer avant l'événement"}
+            </button>
+          </div>
+        )}
+
+        <div className="details-tabs">
+          <button type="button" className={tab === 'discussion' ? 'active' : ''} onClick={() => setTab('discussion')}>
+            Discussion
+          </button>
+          <button type="button" className={tab === 'evenement' ? 'active' : ''} onClick={() => setTab('evenement')}>
+            Événement
+          </button>
+          <button type="button" className={tab === 'membres' ? 'active' : ''} onClick={() => setTab('membres')}>
+            Membres
+          </button>
+          <button type="button" className={tab === 'photos' ? 'active' : ''} onClick={() => setTab('photos')}>
+            Photos
+          </button>
+          <button type="button" className={tab === 'apropos' ? 'active' : ''} onClick={() => setTab('apropos')}>
+            À propos
+          </button>
+        </div>
+
+        {tab === 'discussion' && (
+          <div className="details-section">
+            {!user ? (
+              <SignInPrompt
+                message="Connectez-vous pour lire et participer au forum de cet événement."
+                onLogin={onLogin}
+              />
+            ) : (
+              <EventForum eventId={event.id} authToken={authToken} userId={user.id} />
+            )}
+          </div>
+        )}
+
+        {tab === 'evenement' && (
+          <EventAboutContent
+            event={event}
+            presentation={presentation}
+            isFavorite={isFavorite}
+            onToggleFavorite={onToggleFavorite}
+            externalHref={externalHref}
+          />
+        )}
+
+        {tab === 'membres' && (
+          <div className="details-section">
+            {membersState === 'loading' && <p className="list-view-empty">Chargement…</p>}
+            {membersState === 'error' && (
+              <p className="list-view-empty">Impossible de charger les membres pour le moment.</p>
+            )}
+            {membersState === 'success' && members.length === 0 && (
+              <p className="list-view-empty">
+                Personne n'a encore écrit ici. Lance la discussion dans l'onglet Discussion !
+              </p>
+            )}
+            {membersState === 'success' && members.length > 0 && (
+              <div className="forum-members-list">
+                {members.map((member) => (
+                  <div className="friends-row" key={member.id}>
+                    <span className="friends-row-avatar">
+                      {member.avatarUrl ? (
+                        <img src={member.avatarUrl} alt="" />
+                      ) : (
+                        member.displayName.slice(0, 1).toUpperCase()
+                      )}
+                    </span>
+                    <span className="friends-row-name">{member.displayName}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'photos' && (
+          <div className="details-section">
+            {!user ? (
+              <SignInPrompt
+                message="Connectez-vous pour voir et partager des photos de cet événement."
+                onLogin={onLogin}
+              />
+            ) : (
+              <EventPhotosTab eventId={event.id} authToken={authToken} userId={user.id} />
+            )}
+          </div>
+        )}
+
+        {tab === 'apropos' && (
+          <div className="details-section forum-about-grid">
+            <div className="forum-about-card">
+              <span className="forum-about-icon" aria-hidden="true">💬</span>
+              <div>
+                <strong>Un espace pour cet événement</strong>
+                <p>
+                  Discutez de « {event.title} », posez vos questions et trouvez des partenaires
+                  pour la soirée.
+                </p>
+              </div>
+            </div>
+            <div className="forum-about-card">
+              <span className="forum-about-icon" aria-hidden="true">✏️</span>
+              <div>
+                <strong>Un message, une fois</strong>
+                <p>
+                  Un message publié n'est pas modifiable après coup — seulement supprimable par
+                  son auteur.
+                </p>
+              </div>
+            </div>
+            <div className="forum-about-card">
+              <span className="forum-about-icon" aria-hidden="true">🎟️</span>
+              <div>
+                <strong>Revente entre particuliers</strong>
+                <p>
+                  La revente de billets entre participants reste entièrement pair-à-pair — Pulso
+                  n'y est jamais partie prenante.
+                </p>
+              </div>
+            </div>
+            <div className="forum-about-card">
+              <span className="forum-about-icon" aria-hidden="true">🚩</span>
+              <div>
+                <strong>Signalement</strong>
+                <p>Chaque message peut être signalé. Restez courtois·e envers les autres participants.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {meetupGroup && user && (
+          <GroupModal
+            group={meetupGroup}
+            authToken={authToken}
+            userId={user.id}
+            onClose={() => setMeetupGroup(undefined)}
+            onLeft={() => setMeetupGroup(undefined)}
+          />
+        )}
+      </div>
+
+      <aside className="forum-panel-rail">
+        <div className="forum-panel-rail-card">
+          <h3>À propos de l'événement</h3>
+          <div className="forum-panel-rail-event">
+            <div
+              className="forum-panel-rail-thumb"
+              style={
+                event.imageUrl
+                  ? { backgroundImage: `url(${event.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                  : undefined
+              }
+            >
+              {!event.imageUrl && <EventImageFallback category={event.category} />}
+            </div>
+            <div className="forum-panel-rail-event-info">
+              <span>{presentation.dateTime}</span>
+              <span>{event.venue.name}</span>
+              <span className="forum-panel-rail-address">{event.venue.address}</span>
+            </div>
+          </div>
+          <button type="button" className="text-btn" onClick={() => setTab('evenement')}>
+            Voir l'événement
+          </button>
+        </div>
+
+        <div className="forum-panel-rail-card">
+          <h3>Membres</h3>
+          {membersState === 'success' && members.length > 0 ? (
+            <div className="forum-panel-members-row">
+              <div className="forum-members-avatars">
+                {members.slice(0, 8).map((member) => (
+                  <span className="friends-row-avatar" key={member.id} title={member.displayName}>
                     {member.avatarUrl ? (
                       <img src={member.avatarUrl} alt="" />
                     ) : (
                       member.displayName.slice(0, 1).toUpperCase()
                     )}
                   </span>
-                  <span className="friends-row-name">{member.displayName}</span>
-                </div>
-              ))}
+                ))}
+              </div>
+              <span className="forum-members-count">
+                {members.length} membre{members.length !== 1 ? 's' : ''}
+              </span>
             </div>
-          )}
-        </div>
-      )}
-
-      {tab === 'photos' && (
-        <div className="details-section">
-          {!user ? (
-            <SignInPrompt
-              message="Connectez-vous pour voir et partager des photos de cet événement."
-              onLogin={onLogin}
-            />
           ) : (
-            <EventPhotosTab eventId={event.id} authToken={authToken} userId={user.id} />
+            <p className="list-view-empty">Personne n'a encore écrit ici.</p>
           )}
         </div>
-      )}
 
-      {tab === 'apropos' && (
-        <div className="details-section forum-about-grid">
-          <div className="forum-about-card">
-            <span className="forum-about-icon" aria-hidden="true">💬</span>
-            <div>
-              <strong>Un espace pour cet événement</strong>
-              <p>
-                Discutez de « {event.title} », posez vos questions et trouvez des partenaires
-                pour la soirée.
-              </p>
-            </div>
-          </div>
-          <div className="forum-about-card">
-            <span className="forum-about-icon" aria-hidden="true">✏️</span>
-            <div>
-              <strong>Un message, une fois</strong>
-              <p>
-                Un message publié n'est pas modifiable après coup — seulement supprimable par son
-                auteur.
-              </p>
-            </div>
-          </div>
-          <div className="forum-about-card">
-            <span className="forum-about-icon" aria-hidden="true">🎟️</span>
-            <div>
-              <strong>Revente entre particuliers</strong>
-              <p>
-                La revente de billets entre participants reste entièrement pair-à-pair — Pulso
-                n'y est jamais partie prenante.
-              </p>
-            </div>
-          </div>
-          <div className="forum-about-card">
-            <span className="forum-about-icon" aria-hidden="true">🚩</span>
-            <div>
-              <strong>Signalement</strong>
-              <p>Chaque message peut être signalé. Restez courtois·e envers les autres participants.</p>
-            </div>
-          </div>
+        <div className="forum-panel-rail-card">
+          <h3>Règles du forum</h3>
+          <ul className="forum-panel-rail-rules">
+            <li>Respect et bienveillance avant tout</li>
+            <li>Pas de spam ni de publicité</li>
+            <li>Revente de billets uniquement pair-à-pair</li>
+            <li>Reste sur le sujet de l'événement</li>
+          </ul>
         </div>
-      )}
 
-      {meetupGroup && user && (
-        <GroupModal
-          group={meetupGroup}
-          authToken={authToken}
-          userId={user.id}
-          onClose={() => setMeetupGroup(undefined)}
-          onLeft={() => setMeetupGroup(undefined)}
-        />
-      )}
+        {user && (
+          <div className="forum-panel-rail-card">
+            <h3>Actions rapides</h3>
+            <button
+              type="button"
+              className={`forum-panel-rail-action ${following ? 'active' : ''}`}
+              onClick={toggleFollow}
+              disabled={followLoading}
+            >
+              {following ? '✓ Forum suivi' : '+ Suivre ce forum'}
+            </button>
+            <button type="button" className="forum-panel-rail-action" onClick={() => setTab('membres')}>
+              Voir les membres
+            </button>
+          </div>
+        )}
+      </aside>
     </div>
   );
 }

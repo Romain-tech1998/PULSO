@@ -85,6 +85,20 @@ export interface ForumRepository {
   // Distinct authors across all categories for one event's forum - backs
   // the "Membres" tab (Phase 4.8).
   getForumMembers(eventId: string): Promise<PublicUser[]>;
+  // Real events the user has actually posted in - part of what "Mes
+  // forums" means (Phase 4.8 follow-up): having participated in a forum
+  // should count as "mine" even if the underlying event was never
+  // favorited or marked attended.
+  getPostedEventIds(userId: string): Promise<string[]>;
+  // Explicit "Suivre ce forum" bookmark (Phase 4.8 follow-up) - lets
+  // someone keep a forum in "Mes forums" without posting a message or
+  // favoriting/attending the event, a distinct intent from either of
+  // those. Idempotent (following twice, or unfollowing when not
+  // following, are both no-ops).
+  followForum(eventId: string, userId: string): Promise<void>;
+  unfollowForum(eventId: string, userId: string): Promise<void>;
+  isFollowingForum(eventId: string, userId: string): Promise<boolean>;
+  getFollowedEventIds(userId: string): Promise<string[]>;
 }
 
 interface PostRow {
@@ -298,5 +312,49 @@ export class PostgresForumRepository implements ForumRepository {
       displayName: row.display_name,
       ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
     }));
+  }
+
+  async getPostedEventIds(userId: string): Promise<string[]> {
+    const result = await this.pool.query<{ event_id: string }>(
+      `SELECT DISTINCT event_id FROM forum_posts WHERE author_id = $1`,
+      [userId]
+    );
+    return result.rows.map((row) => row.event_id);
+  }
+
+  async followForum(eventId: string, userId: string): Promise<void> {
+    try {
+      await this.pool.query(
+        `INSERT INTO forum_follows (user_id, event_id) VALUES ($1, $2)
+         ON CONFLICT (user_id, event_id) DO NOTHING`,
+        [userId, eventId]
+      );
+    } catch (error) {
+      if (isForeignKeyViolation(error)) throw new EventNotFoundError();
+      throw error;
+    }
+  }
+
+  async unfollowForum(eventId: string, userId: string): Promise<void> {
+    await this.pool.query(`DELETE FROM forum_follows WHERE user_id = $1 AND event_id = $2`, [
+      userId,
+      eventId
+    ]);
+  }
+
+  async isFollowingForum(eventId: string, userId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT 1 FROM forum_follows WHERE user_id = $1 AND event_id = $2`,
+      [userId, eventId]
+    );
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async getFollowedEventIds(userId: string): Promise<string[]> {
+    const result = await this.pool.query<{ event_id: string }>(
+      `SELECT event_id FROM forum_follows WHERE user_id = $1`,
+      [userId]
+    );
+    return result.rows.map((row) => row.event_id);
   }
 }

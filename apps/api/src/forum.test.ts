@@ -440,4 +440,144 @@ describe('event forum API', () => {
     expect(response.json().data).toEqual([{ event: myEvent, postCount: 0, memberCount: 0 }]);
     await app.close();
   });
+
+  it('scope=mine also includes events the caller has posted in or explicitly followed', async () => {
+    const postedEventId = '00000000-0000-4000-8000-000000000022';
+    const followedEventId = '00000000-0000-4000-8000-000000000023';
+    const baseEvent = {
+      id: eventId,
+      title: 'Charlotte Cardin',
+      category: 'music',
+      status: 'scheduled',
+      startsAt: '2026-08-01T23:00:00.000Z',
+      timezone: 'America/Toronto',
+      price: { kind: 'unknown', currency: 'CAD' },
+      accessInformation: 'Billets en vente sur le site officiel.',
+      venue: {
+        id: '00000000-0000-4000-8000-000000000031',
+        name: 'MTELUS',
+        address: '59 Rue Sainte-Catherine E, Montréal',
+        point: { longitude: -73.5605, latitude: 45.5088 }
+      },
+      source: {
+        name: 'ticketmaster',
+        url: 'https://example.com/event',
+        observedAt: '2026-07-01T00:00:00.000Z'
+      },
+      trust: { label: 'confirmed', freshness: 'fresh', locationConfidence: 'confirmed' }
+    };
+    const postedEvent = { ...baseEvent, id: postedEventId, title: 'Posté sans favori' };
+    const followedEvent = { ...baseEvent, id: followedEventId, title: 'Suivi sans favori' };
+    const eventWithForum: EventRepository = {
+      ...event,
+      findInBounds: async () =>
+        [postedEvent, followedEvent] as unknown as Awaited<
+          ReturnType<EventRepository['findInBounds']>
+        >
+    };
+    const app = buildApp(
+      eventWithForum,
+      accountRepositories({
+        forumRepository: fakeForumRepository({
+          getForumStatsForEvents: async () => new Map(),
+          getPostedEventIds: async () => [postedEventId],
+          getFollowedEventIds: async () => [followedEventId]
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/forums/discover?scope=mine',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([
+      { event: postedEvent, postCount: 0, memberCount: 0 },
+      { event: followedEvent, postCount: 0, memberCount: 0 }
+    ]);
+    await app.close();
+  });
+
+  it('rejects reading/changing forum follow status without a bearer token', async () => {
+    const app = buildApp(event, accountRepositories());
+    const getResponse = await app.inject({ method: 'GET', url: `/events/${eventId}/forum/follow` });
+    expect(getResponse.statusCode).toBe(401);
+    const postResponse = await app.inject({
+      method: 'POST',
+      url: `/events/${eventId}/forum/follow`
+    });
+    expect(postResponse.statusCode).toBe(401);
+    const deleteResponse = await app.inject({
+      method: 'DELETE',
+      url: `/events/${eventId}/forum/follow`
+    });
+    expect(deleteResponse.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('follows and unfollows a forum, and reports the current status', async () => {
+    let following = false;
+    const app = buildApp(
+      event,
+      accountRepositories({
+        forumRepository: fakeForumRepository({
+          isFollowingForum: async () => following,
+          followForum: async () => {
+            following = true;
+          },
+          unfollowForum: async () => {
+            following = false;
+          }
+        })
+      })
+    );
+    const before = await app.inject({
+      method: 'GET',
+      url: `/events/${eventId}/forum/follow`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(before.json()).toEqual({ following: false });
+
+    const follow = await app.inject({
+      method: 'POST',
+      url: `/events/${eventId}/forum/follow`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(follow.statusCode).toBe(204);
+
+    const after = await app.inject({
+      method: 'GET',
+      url: `/events/${eventId}/forum/follow`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(after.json()).toEqual({ following: true });
+
+    const unfollow = await app.inject({
+      method: 'DELETE',
+      url: `/events/${eventId}/forum/follow`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(unfollow.statusCode).toBe(204);
+    await app.close();
+  });
+
+  it('returns 404 when following a forum for an event that does not exist', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        forumRepository: fakeForumRepository({
+          followForum: async () => {
+            throw new EventNotFoundError();
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/events/${eventId}/forum/follow`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
 });
