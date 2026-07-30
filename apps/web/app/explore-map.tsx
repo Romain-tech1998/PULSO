@@ -2153,7 +2153,35 @@ export function ExploreMap({
       </header>
       )}
 
-      {user && section === 'decouvrir' ? (
+      {user && forumPanelMode && showingDetails ? (
+        <div className="forum-panel-page">
+          {details.kind === 'success' && (
+            <ForumPanel
+              event={details.event}
+              onBack={returnToMap}
+              isFavorite={favorites.includes(details.event.id)}
+              onToggleFavorite={() => toggleFavorite(details.event.id)}
+              locale={locale}
+              user={user}
+              authToken={authToken}
+              onLogin={login}
+            />
+          )}
+          {details.kind === 'loading' && <p className="list-view-empty">Chargement…</p>}
+          {details.kind === 'error' && (
+            <div style={{ padding: '2rem' }}>
+              Erreur de chargement.
+              <button
+                className="btn-secondary"
+                onClick={() => void openDetails(details.eventId, { asForumPanel: true })}
+                style={{ marginTop: '1rem' }}
+              >
+                Réessayer
+              </button>
+            </div>
+          )}
+        </div>
+      ) : user && section === 'decouvrir' ? (
         <DashboardHome
           user={user}
           carouselEvents={carouselEvents}
@@ -2807,18 +2835,7 @@ export function ExploreMap({
            <div className={`sidebar-right panel-transition ${rightPanelMount.visible ? 'panel-visible' : ''}`}>
              {shownRightPanelContent.kind === 'details' && shownRightPanelContent.state.kind === 'success' && (() => {
                const shownEvent = shownRightPanelContent.state.event;
-               return forumPanelMode ? (
-                 <ForumPanel
-                   event={shownEvent}
-                   onBack={returnToMap}
-                   isFavorite={favorites.includes(shownEvent.id)}
-                   onToggleFavorite={() => toggleFavorite(shownEvent.id)}
-                   locale={locale}
-                   user={user}
-                   authToken={authToken}
-                   onLogin={login}
-                 />
-               ) : (
+               return (
                  <EventDetails
                    event={shownEvent}
                    headingRef={detailsHeading}
@@ -4577,7 +4594,7 @@ function DashboardHome({
 
 // Full-page version of the "Forums actifs" widget above - same data (Sidebar
 // "Forums" nav item), just without the top-5 cap.
-type ForumDiscoverFilter = 'mine' | 'all' | 'popular' | EventCategory;
+type ForumDiscoverFilter = 'mine' | 'popular' | EventCategory;
 
 // Forums discovery grid (Phase 4.8) - every upcoming event is a forum entry
 // point, not just the caller's own favorited/attended ones - except for the
@@ -4594,7 +4611,7 @@ function useDiscoverForums(authToken: string | undefined, filter: ForumDiscoverF
     const params = new URLSearchParams();
     if (filter === 'mine') params.set('scope', 'mine');
     else if (filter === 'popular') params.set('sort', 'popular');
-    else if (filter !== 'all') params.set('category', filter);
+    else params.set('category', filter);
     fetch(`${API_BASE_URL}/me/forums/discover?${params.toString()}`, {
       headers: { authorization: `Bearer ${authToken}` }
     })
@@ -4680,9 +4697,6 @@ function ActiveForumsPage({
       <div className="forum-discover-filters">
         <button type="button" className={filter === 'mine' ? 'active' : ''} onClick={() => setFilter('mine')}>
           Mes forums
-        </button>
-        <button type="button" className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>
-          Tous
         </button>
         <button
           type="button"

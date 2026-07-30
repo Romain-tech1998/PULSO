@@ -2702,6 +2702,25 @@ h6 {
   font-weight: 600;
 }
 
+/* Full-width takeover page for the dedicated forum (Phase 4.8 follow-up) -
+   ForumPanel used to be squeezed into the 380px map sidebar slot, which
+   also meant it silently never rendered at all from non-map sections like
+   the Forums grid (that slot only exists inside the map-based branch).
+   Giving it its own top-level page fixes both: it now opens from every
+   entry point, and its hero/tabs get real width instead of a narrow column. */
+.forum-panel-page {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 2rem 2rem;
+}
+.forum-panel-page > .forum-panel,
+.forum-panel-page > .event-details-content {
+  width: 100%;
+  max-width: 960px;
+}
+
 .forum-teaser {
   display: flex;
   flex-direction: column;
