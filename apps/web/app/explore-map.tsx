@@ -1400,11 +1400,21 @@ export function ExploreMap({
       keepPickerList?: boolean;
       initialTab?: EventDetailsTab;
       asForumPanel?: boolean;
+      // Live feedback: opening a forum "feels slow" - most of that was a
+      // full GET /events/:id round trip we didn't need, since the caller
+      // (the Forums discovery grid) already has the complete PublicEvent
+      // in hand. Skip the fetch entirely when it's provided.
+      knownEvent?: PublicEvent;
     } = {}
   ) {
     if (!options.keepPickerList) setPickerList(undefined);
     setDetailsInitialTab(options.initialTab);
     setForumPanelMode(options.asForumPanel ?? false);
+    if (options.knownEvent) {
+      setDetails({ kind: 'success', event: options.knownEvent });
+      requestAnimationFrame(() => detailsHeading.current?.focus());
+      return;
+    }
     setDetails({ kind: 'loading', eventId });
     try {
       const response = await fetch(`${API_BASE_URL}/events/${eventId}`);
@@ -2196,7 +2206,9 @@ export function ExploreMap({
       ) : user && section === 'forums' ? (
         <ActiveForumsPage
           authToken={authToken}
-          onOpenDetails={(eventId) => openDetails(eventId, { asForumPanel: true })}
+          onOpenDetails={(eventId, knownEvent) =>
+            openDetails(eventId, { asForumPanel: true, knownEvent })
+          }
           locale={locale}
         />
       ) : user && section === 'groupes' ? (
@@ -4685,7 +4697,7 @@ function ActiveForumsPage({
   locale
 }: {
   authToken: string | undefined;
-  onOpenDetails: (eventId: string) => void;
+  onOpenDetails: (eventId: string, knownEvent: PublicEvent) => void;
   locale: SupportedLocale;
 }) {
   const [filter, setFilter] = useState<ForumDiscoverFilter>('mine');
@@ -4735,7 +4747,7 @@ function ActiveForumsPage({
             key={entry.event.id}
             entry={entry}
             locale={locale}
-            onOpen={() => onOpenDetails(entry.event.id)}
+            onOpen={() => onOpenDetails(entry.event.id, entry.event)}
           />
         ))}
       </div>
@@ -6456,115 +6468,94 @@ function GroupPostRow({
   onSubmitReply: () => void;
   posting: boolean;
 }) {
-  return (
-    <div className="forum-post">
-      <span className="friends-row-avatar">
-        {post.author.avatarUrl ? (
-          <img src={post.author.avatarUrl} alt="" />
-        ) : (
-          post.author.displayName.slice(0, 1).toUpperCase()
+  // Groups are a small, personal space between people who already know
+  // each other (unlike the public, categorized Forum) - real chat bubbles
+  // with a clear "mine vs. theirs" color/side distinction read as personal
+  // in a way the Forum's public post-card feed deliberately doesn't.
+  const renderBubble = (item: GroupPost, isReply: boolean) => {
+    const mine = item.author.id === userId;
+    return (
+      <div key={item.id} className={`group-bubble-row ${mine ? 'mine' : 'theirs'}`}>
+        {!mine && (
+          <span className="friends-row-avatar group-bubble-avatar">
+            {item.author.avatarUrl ? (
+              <img src={item.author.avatarUrl} alt="" />
+            ) : (
+              item.author.displayName.slice(0, 1).toUpperCase()
+            )}
+          </span>
         )}
-      </span>
-      <div className="forum-post-body">
-        <div className="forum-post-meta">
-          <strong>{post.author.displayName}</strong>
-          {post.author.id === userId ? (
-            <button type="button" className="text-btn" onClick={() => onDelete(post.id)}>
-              Supprimer
-            </button>
-          ) : (
+        <div className="group-bubble-col">
+          {!mine && <span className="group-bubble-author">{item.author.displayName}</span>}
+          <div className="group-bubble">
+            <p>{item.body}</p>
+          </div>
+          <div className="group-bubble-actions">
             <button
               type="button"
-              className="text-btn"
-              onClick={() => reportContent(authToken, 'group_post', post.id)}
+              className={`forum-like-btn ${item.likedByMe ? 'active' : ''}`}
+              onClick={() => onLike(item)}
             >
-              Signaler
+              <HeartIcon filled={item.likedByMe} />
+              {item.likeCount > 0 && item.likeCount}
             </button>
-          )}
-        </div>
-        <p>{post.body}</p>
-        <div className="forum-post-actions">
-          <button
-            type="button"
-            className={`forum-like-btn ${post.likedByMe ? 'active' : ''}`}
-            onClick={() => onLike(post)}
-          >
-            <HeartIcon filled={post.likedByMe} />
-            {post.likeCount > 0 && post.likeCount}
-          </button>
-          <button type="button" className="text-btn" onClick={onToggleExpanded}>
-            {post.replyCount === 0
-              ? 'Répondre'
-              : `${post.replyCount} réponse${post.replyCount !== 1 ? 's' : ''}`}
-          </button>
-        </div>
-
-        {expanded && (
-          <div className="forum-replies">
-            {replies.map((reply) => (
-              <div className="forum-post forum-reply" key={reply.id}>
-                <span className="friends-row-avatar">
-                  {reply.author.avatarUrl ? (
-                    <img src={reply.author.avatarUrl} alt="" />
-                  ) : (
-                    reply.author.displayName.slice(0, 1).toUpperCase()
-                  )}
-                </span>
-                <div className="forum-post-body">
-                  <div className="forum-post-meta">
-                    <strong>{reply.author.displayName}</strong>
-                    {reply.author.id === userId ? (
-                      <button type="button" className="text-btn" onClick={() => onDelete(reply.id)}>
-                        Supprimer
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="text-btn"
-                        onClick={() => reportContent(authToken, 'group_post', reply.id)}
-                      >
-                        Signaler
-                      </button>
-                    )}
-                  </div>
-                  <p>{reply.body}</p>
-                  <button
-                    type="button"
-                    className={`forum-like-btn ${reply.likedByMe ? 'active' : ''}`}
-                    onClick={() => onLike(reply)}
-                  >
-                    <HeartIcon filled={reply.likedByMe} />
-                    {reply.likeCount > 0 && reply.likeCount}
-                  </button>
-                </div>
-              </div>
-            ))}
-            <form
-              className="forum-composer forum-reply-composer"
-              onSubmit={(event) => {
-                event.preventDefault();
-                onSubmitReply();
-              }}
-            >
-              <textarea
-                value={replyDraft}
-                onChange={(event) => onReplyDraftChange(event.target.value)}
-                placeholder="Répondre…"
-                maxLength={2000}
-                rows={1}
-              />
-              <button
-                type="submit"
-                className="btn-secondary"
-                disabled={posting || !replyDraft.trim()}
-              >
-                Répondre
+            {!isReply && (
+              <button type="button" className="text-btn" onClick={onToggleExpanded}>
+                {item.replyCount === 0
+                  ? 'Répondre'
+                  : `${item.replyCount} réponse${item.replyCount !== 1 ? 's' : ''}`}
               </button>
-            </form>
+            )}
+            {mine ? (
+              <button type="button" className="text-btn" onClick={() => onDelete(item.id)}>
+                Supprimer
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => reportContent(authToken, 'group_post', item.id)}
+              >
+                Signaler
+              </button>
+            )}
           </div>
-        )}
+        </div>
       </div>
-    </div>
+    );
+  };
+
+  return (
+    <>
+      {renderBubble(post, false)}
+      {expanded && (
+        <div className="group-bubble-replies">
+          {replies.map((reply) => renderBubble(reply, true))}
+          <form
+            className="forum-composer forum-reply-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSubmitReply();
+            }}
+          >
+            <textarea
+              value={replyDraft}
+              onChange={(event) => onReplyDraftChange(event.target.value)}
+              placeholder="Répondre…"
+              maxLength={2000}
+              rows={1}
+            />
+            <button
+              type="submit"
+              className="btn-secondary"
+              disabled={posting || !replyDraft.trim()}
+            >
+              Répondre
+            </button>
+          </form>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -7689,7 +7680,7 @@ function ForumTeaser({
   );
 }
 
-type ForumPanelTab = 'discussion' | 'evenement' | 'membres' | 'fichiers' | 'apropos';
+type ForumPanelTab = 'discussion' | 'evenement' | 'membres' | 'photos' | 'apropos';
 
 // The dedicated Forum panel (Phase 4.8 follow-up) - opened specifically
 // from the Forums discovery grid, not from Carte/Événements/Lieux (those
@@ -7808,8 +7799,8 @@ function ForumPanel({
         <button type="button" className={tab === 'membres' ? 'active' : ''} onClick={() => setTab('membres')}>
           Membres
         </button>
-        <button type="button" className={tab === 'fichiers' ? 'active' : ''} onClick={() => setTab('fichiers')}>
-          Fichiers
+        <button type="button" className={tab === 'photos' ? 'active' : ''} onClick={() => setTab('photos')}>
+          Photos
         </button>
         <button type="button" className={tab === 'apropos' ? 'active' : ''} onClick={() => setTab('apropos')}>
           À propos
@@ -7869,23 +7860,54 @@ function ForumPanel({
         </div>
       )}
 
-      {tab === 'fichiers' && (
+      {tab === 'photos' && (
         <div className="details-section">
           <ComingSoonTab
-            icon="📎"
-            message="Le partage de fichiers arrive dans une prochaine mise à jour."
+            icon="📷"
+            message="Le partage de photos de la soirée arrive dans une prochaine mise à jour."
           />
         </div>
       )}
 
       {tab === 'apropos' && (
-        <div className="details-section">
-          <p className="details-description">
-            Cette discussion accompagne l'événement « {event.title} ». Reste courtois·e : un seul
-            message n'est pas modifiable après publication, seulement supprimable par son auteur.
-            La revente de billets entre participants reste entièrement pair-à-pair — Pulso n'y est
-            jamais partie prenante.
-          </p>
+        <div className="details-section forum-about-grid">
+          <div className="forum-about-card">
+            <span className="forum-about-icon" aria-hidden="true">💬</span>
+            <div>
+              <strong>Un espace pour cet événement</strong>
+              <p>
+                Discutez de « {event.title} », posez vos questions et trouvez des partenaires
+                pour la soirée.
+              </p>
+            </div>
+          </div>
+          <div className="forum-about-card">
+            <span className="forum-about-icon" aria-hidden="true">✏️</span>
+            <div>
+              <strong>Un message, une fois</strong>
+              <p>
+                Un message publié n'est pas modifiable après coup — seulement supprimable par son
+                auteur.
+              </p>
+            </div>
+          </div>
+          <div className="forum-about-card">
+            <span className="forum-about-icon" aria-hidden="true">🎟️</span>
+            <div>
+              <strong>Revente entre particuliers</strong>
+              <p>
+                La revente de billets entre participants reste entièrement pair-à-pair — Pulso
+                n'y est jamais partie prenante.
+              </p>
+            </div>
+          </div>
+          <div className="forum-about-card">
+            <span className="forum-about-icon" aria-hidden="true">🚩</span>
+            <div>
+              <strong>Signalement</strong>
+              <p>Chaque message peut être signalé. Restez courtois·e envers les autres participants.</p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -8152,7 +8174,7 @@ function ForumPostRow({
   posting: boolean;
 }) {
   return (
-    <div className="forum-post">
+    <div className={`forum-post ${post.author.id === userId ? 'mine' : ''}`}>
       <span className="friends-row-avatar">
         {post.author.avatarUrl ? (
           <img src={post.author.avatarUrl} alt="" />
@@ -8187,7 +8209,10 @@ function ForumPostRow({
         {expanded && (
           <div className="forum-replies">
             {replies.map((reply) => (
-              <div className="forum-post forum-reply" key={reply.id}>
+              <div
+                className={`forum-post forum-reply ${reply.author.id === userId ? 'mine' : ''}`}
+                key={reply.id}
+              >
                 <span className="friends-row-avatar">
                   {reply.author.avatarUrl ? (
                     <img src={reply.author.avatarUrl} alt="" />

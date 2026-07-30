@@ -2713,12 +2713,71 @@ h6 {
   overflow-y: auto;
   display: flex;
   justify-content: center;
-  padding: 1.5rem 2rem 2rem;
+  padding: 1.5rem 2.5rem 2.5rem;
 }
 .forum-panel-page > .forum-panel,
 .forum-panel-page > .event-details-content {
   width: 100%;
-  max-width: 960px;
+  max-width: 1200px;
+}
+/* Live feedback: the dedicated forum panel read as cramped once it had
+   the whole page to itself - give its hero real presence (tall banner,
+   text anchored at the bottom) instead of the compact strip that made
+   sense in the old 380px map sidebar. */
+.forum-panel-page .details-hero {
+  min-height: 320px;
+  padding: 2.5rem 2.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  border-radius: 1.5rem;
+}
+.forum-panel-page .details-title {
+  font-size: 2rem;
+}
+.forum-panel-page .details-section,
+.forum-panel-page .forum-panel-members-row,
+.forum-panel-page .details-meetup-row,
+.forum-panel-page .details-tabs {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+/* "À propos" tab (Phase 4.8 follow-up: "trop basique") - a small icon
+   card grid instead of one plain paragraph, restating the same rules
+   (no edits, peer-to-peer resale, reporting) with real visual hierarchy. */
+.forum-about-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+.forum-about-card {
+  display: flex;
+  gap: 0.9rem;
+  padding: 1.1rem 1.25rem;
+  border-radius: 1rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.forum-about-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.forum-about-card strong {
+  display: block;
+  color: var(--text-primary);
+  margin-bottom: 0.3rem;
+  font-size: 0.95rem;
+}
+.forum-about-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .forum-teaser {
@@ -2775,6 +2834,19 @@ h6 {
 .forum-post {
   display: flex;
   gap: 0.65rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+/* Own post gets a subtle brand-tinted accent rather than a full bubble -
+   the Forum stays a public, categorized feed (everyone's post looks like
+   a post); Groups (below) get the intimate chat-bubble treatment instead
+   so the two never read as the same interface. */
+.forum-post.mine {
+  border-color: rgba(91, 63, 224, 0.55);
+  background: linear-gradient(180deg, rgba(91, 63, 224, 0.16), var(--surface-raised) 65%);
 }
 .forum-post-body {
   flex: 1;
@@ -2865,6 +2937,12 @@ h6 {
 }
 .forum-post.forum-reply {
   gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  box-shadow: none;
+  background: var(--surface-base);
+}
+.forum-post.forum-reply.mine {
+  background: linear-gradient(180deg, rgba(91, 63, 224, 0.16), var(--surface-base) 65%);
 }
 .forum-reply-composer {
   margin-top: 0.3rem;
@@ -2968,10 +3046,83 @@ h6 {
   flex: 1;
   overflow-y: auto;
   padding: 1rem 1.25rem;
+  gap: 0.5rem;
 }
 .group-modal .forum-composer {
   padding: 0.9rem 1.25rem;
   border-top: 1px solid var(--brand-border);
+}
+
+/* Groups' own chat-bubble language (Phase 4.8 follow-up) - deliberately
+   distinct from the Forum's public post-card feed above: a group is a
+   small circle of people who already know each other, so "mine vs.
+   theirs" bubbles read as personal the way a post-card feed doesn't. */
+.group-bubble-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+.group-bubble-row.mine {
+  flex-direction: row-reverse;
+}
+.group-bubble-avatar {
+  flex-shrink: 0;
+}
+.group-bubble-col {
+  display: flex;
+  flex-direction: column;
+  max-width: 78%;
+  min-width: 0;
+}
+.group-bubble-row.mine .group-bubble-col {
+  align-items: flex-end;
+}
+.group-bubble-author {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 0.2rem 0.3rem;
+}
+.group-bubble {
+  padding: 0.6rem 0.9rem;
+  border-radius: 1.1rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+.group-bubble-row.theirs .group-bubble {
+  background: var(--surface-base);
+  border: 1px solid var(--brand-border);
+  border-bottom-left-radius: 0.3rem;
+}
+.group-bubble-row.mine .group-bubble {
+  background: var(--gradient-primary);
+  border-bottom-right-radius: 0.3rem;
+}
+.group-bubble p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  word-break: break-word;
+  color: var(--text-primary);
+}
+.group-bubble-row.mine .group-bubble p {
+  color: #fff;
+}
+.group-bubble-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  padding: 0 0.3rem;
+}
+.group-bubble-row.mine .group-bubble-actions {
+  flex-direction: row-reverse;
+}
+.group-bubble-replies {
+  margin: 0.3rem 0 0.7rem 2.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 .conversation-messages {
   flex: 1;
@@ -2984,17 +3135,19 @@ h6 {
 }
 .conversation-message {
   max-width: 80%;
-  padding: 0.5rem 0.8rem;
-  border-radius: 0.9rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 1rem;
   font-size: 0.9rem;
-  line-height: 1.4;
+  line-height: 1.45;
   word-break: break-word;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 }
 .conversation-message.incoming {
   align-self: flex-start;
-  background: var(--surface-base);
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
   color: var(--text-primary);
-  border-bottom-left-radius: 0.25rem;
+  border-bottom-left-radius: 0.3rem;
   display: flex;
   align-items: baseline;
   gap: 0.6rem;
@@ -3011,9 +3164,9 @@ h6 {
 }
 .conversation-message.outgoing {
   align-self: flex-end;
-  background: rgba(91, 63, 224, 0.45);
-  color: var(--text-primary);
-  border-bottom-right-radius: 0.25rem;
+  background: var(--gradient-primary);
+  color: #fff;
+  border-bottom-right-radius: 0.3rem;
 }
 .conversation-modal .forum-composer {
   padding: 0.9rem 1.25rem;
