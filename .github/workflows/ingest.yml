@@ -53,7 +53,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
       - name: Build packages
-        run: pnpm run build --filter="@pulso/database..."
+        run: pnpm --filter "@pulso/database..." run build
       - name: Run Events Ingestion
         run: pnpm run --filter=@pulso/database db:ingest
         env:
@@ -80,7 +80,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
       - name: Build packages
-        run: pnpm run build --filter="@pulso/database..."
+        run: pnpm --filter "@pulso/database..." run build
       - name: Run Venues Ingestion
         run: pnpm run --filter=@pulso/database db:ingest -- --venues
         env:
@@ -107,7 +107,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
       - name: Build packages
-        run: pnpm run build --filter="@pulso/database..."
+        run: pnpm --filter "@pulso/database..." run build
       - name: Run Eventbrite Ingestion
         run: pnpm run --filter=@pulso/database db:ingest -- --eventbrite
         env:
@@ -134,7 +134,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
       - name: Build packages
-        run: pnpm run build --filter="@pulso/database..."
+        run: pnpm --filter "@pulso/database..." run build
       - name: Run Instagram Scout pipeline
         run: pnpm run --filter=@pulso/database instagram:scout:pipeline
         env:
