@@ -11,6 +11,7 @@ import {
   discoverForumsResponseSchema,
   discoverGroupsResponseSchema,
   eventDetailsResponseSchema,
+  eventEngagementResponseSchema,
   eventListResponseSchema,
   eventPhotoResponseSchema,
   eventPhotosResponseSchema,
@@ -49,6 +50,7 @@ import {
   type DiscoverGroupEntry,
   type AttendanceVisibility,
   type ConversationSummary,
+  type EventEngagementEntry,
   type EventPhoto,
   type ForumCategory,
   type ForumPost,
@@ -2462,6 +2464,17 @@ export function ExploreMap({
             mode="past"
             attendance={attendance}
             onOpenDetails={openDetails}
+            locale={locale}
+          />
+        ) : user && section === 'evenement' ? (
+          <EventsPage
+            authToken={authToken}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
+            onOpenEventForum={(eventId) =>
+              void openDetails(eventId, { asForumPanel: true })
+            }
+            onNavigateToMap={() => setSection('explorer')}
             locale={locale}
           />
         ) : (
@@ -5108,6 +5121,551 @@ function TopBar({
   );
 }
 
+// Real date-window buckets available server-side (createFilteredDiscoveryWindow
+// in @pulso/domain) - 'next7' is the only "beyond this weekend" filter that
+// actually exists, so it doubles as "À venir" rather than inventing a
+// fourth, undistinguishable bucket.
+type EventsPeriod = 'today' | 'weekend' | 'next7';
+
+const EVENTS_PERIOD_TABS: Array<{ value: EventsPeriod; label: string }> = [
+  { value: 'today', label: "Aujourd'hui" },
+  { value: 'weekend', label: 'Ce week-end' },
+  { value: 'next7', label: 'À venir' }
+];
+
+const EVENTS_PAGE_SIZE = 12;
+// A "NOUVEAU" badge threshold - a real, defined window on the event's real
+// source.observedAt timestamp (when ingestion first recorded it), not a
+// fabricated "new" flag.
+const NEW_EVENT_WINDOW_MS = 72 * 60 * 60 * 1000;
+
+function isEventCategory(value: string): value is EventCategory {
+  return (EVENT_CATEGORIES as readonly string[]).includes(value);
+}
+
+// Full-page, card-grid "Événements" home for the connected sidebar (Phase
+// 4.11) - distinct from the anonymous top-navbar's "Événement" map/list/
+// calendar Explorer, which keeps its own unchanged behavior (the sidebar's
+// separate "Carte" item covers map browsing for signed-in users instead).
+// Every number here is real: attendeeCount/friendsAttending come from the
+// batched /events/engagement endpoint (Phase 4.11 backend), "NOUVEAU" is a
+// real recency threshold on source.observedAt, and "Groupes actifs" reuses
+// the real event-linked group directory from Phase 4.10. No popularity %,
+// no capacity/"presque complet" bar - neither has any real backing data.
+function EventsPage({
+  authToken,
+  favorites,
+  onToggleFavorite,
+  onOpenEventForum,
+  onNavigateToMap,
+  locale
+}: {
+  authToken: string | undefined;
+  favorites: string[];
+  onToggleFavorite: (eventId: string) => void;
+  onOpenEventForum: (eventId: string) => void;
+  onNavigateToMap: () => void;
+  locale: SupportedLocale;
+}) {
+  const [period, setPeriod] = useState<EventsPeriod>('today');
+  const [activeChip, setActiveChip] = useState<'all' | EventCategory | 'free'>(
+    'all'
+  );
+  const [query, setQuery] = useState('');
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [visibleCount, setVisibleCount] = useState(EVENTS_PAGE_SIZE);
+  const [periodCounts, setPeriodCounts] = useState<
+    Partial<Record<EventsPeriod, number>>
+  >({});
+  const [engagement, setEngagement] = useState<
+    Map<string, EventEngagementEntry>
+  >(new Map());
+  const [activeGroups, setActiveGroups] = useState<DiscoverGroupEntry[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      EVENTS_PERIOD_TABS.map(({ value }) =>
+        fetch(
+          `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, { date: value, categories: [], price: 'all' })}`
+        )
+          .then((response) =>
+            response.ok ? response.json() : Promise.reject()
+          )
+          .then(
+            (json) =>
+              [value, eventListResponseSchema.parse(json).data.length] as [
+                EventsPeriod,
+                number
+              ]
+          )
+      )
+    )
+      .then((entries) => {
+        if (!cancelled) setPeriodCounts(Object.fromEntries(entries));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setState('loading');
+    setVisibleCount(EVENTS_PAGE_SIZE);
+    const filters: DiscoveryFilters = {
+      date: period,
+      categories: isEventCategory(activeChip) ? [activeChip] : [],
+      price: activeChip === 'free' ? 'free' : 'all'
+    };
+    fetch(
+      `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, filters)}`
+    )
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        if (cancelled) return;
+        setEvents(eventListResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => {
+        if (!cancelled) setState('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [period, activeChip]);
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/groups/discover?scope=event`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setActiveGroups(discoverGroupsResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+  }, [authToken]);
+
+  const filtered = query.trim()
+    ? events.filter((event) =>
+        `${event.title} ${event.venue.name}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase())
+      )
+    : events;
+  const visible = filtered.slice(0, visibleCount);
+  const visibleIdsKey = visible
+    .map((event) => event.id)
+    .slice(0, 100)
+    .join(',');
+
+  useEffect(() => {
+    if (!visibleIdsKey) {
+      setEngagement(new Map());
+      return;
+    }
+    const headers: Record<string, string> = {};
+    if (authToken) headers.authorization = `Bearer ${authToken}`;
+    fetch(`${API_BASE_URL}/events/engagement?ids=${visibleIdsKey}`, {
+      headers
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const data = eventEngagementResponseSchema.parse(json).data;
+        setEngagement(new Map(data.map((entry) => [entry.eventId, entry])));
+      })
+      .catch(() => {});
+  }, [visibleIdsKey, authToken]);
+
+  const popular = [...visible]
+    .filter((event) => (engagement.get(event.id)?.attendeeCount ?? 0) > 0)
+    .sort(
+      (a, b) =>
+        (engagement.get(b.id)?.attendeeCount ?? 0) -
+        (engagement.get(a.id)?.attendeeCount ?? 0)
+    )
+    .slice(0, 4);
+
+  const recentlyAdded = [...visible]
+    .filter(
+      (event) =>
+        Date.now() - new Date(event.source.observedAt).getTime() <
+        NEW_EVENT_WINDOW_MS
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.source.observedAt).getTime() -
+        new Date(a.source.observedAt).getTime()
+    )
+    .slice(0, 3);
+
+  const friendsGoingById = new Map<string, PublicUser>();
+  for (const event of visible) {
+    for (const person of engagement.get(event.id)?.friendsAttending ?? []) {
+      friendsGoingById.set(person.id, person);
+    }
+  }
+  const friendsGoingList = Array.from(friendsGoingById.values());
+
+  return (
+    <div className="events-page">
+      <div className="events-page-main">
+        <div className="events-hero">
+          <div className="events-hero-text">
+            <p className="events-hero-eyebrow">Les événements à Montréal ✨</p>
+            <div className="events-hero-stats">
+              {EVENTS_PERIOD_TABS.map(({ value, label }) => (
+                <span className="events-hero-stat" key={value}>
+                  <strong>{periodCounts[value] ?? '…'}</strong>{' '}
+                  {label.toLowerCase()}
+                </span>
+              ))}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary events-hero-map-btn"
+            onClick={onNavigateToMap}
+          >
+            🗺️ Voir la carte
+          </button>
+        </div>
+
+        <div className="details-tabs events-period-tabs">
+          {EVENTS_PERIOD_TABS.map(({ value, label }) => (
+            <button
+              type="button"
+              key={value}
+              className={period === value ? 'active' : ''}
+              onClick={() => setPeriod(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="messages-search events-search">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Rechercher un événement, un lieu…"
+          />
+        </div>
+
+        <div className="events-category-chips">
+          <button
+            type="button"
+            className={activeChip === 'all' ? 'active' : ''}
+            onClick={() => setActiveChip('all')}
+          >
+            Tous
+          </button>
+          {EVENT_CATEGORIES.map((cat) => (
+            <button
+              type="button"
+              key={cat}
+              className={activeChip === cat ? 'active' : ''}
+              onClick={() => setActiveChip(cat)}
+            >
+              {SHORT_CATEGORY_LABELS[locale][cat]}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={activeChip === 'free' ? 'active' : ''}
+            onClick={() => setActiveChip('free')}
+          >
+            ★ Gratuit
+          </button>
+        </div>
+
+        {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+        {state === 'error' && (
+          <p className="list-view-empty">
+            Impossible de charger les événements pour le moment.
+          </p>
+        )}
+        {state === 'success' && filtered.length === 0 && (
+          <p className="list-view-empty">Aucun événement trouvé.</p>
+        )}
+
+        <div className="events-grid">
+          {visible.map((event) => (
+            <EventGridCard
+              key={event.id}
+              event={event}
+              locale={locale}
+              isFavorite={favorites.includes(event.id)}
+              onToggleFavorite={() => onToggleFavorite(event.id)}
+              onOpen={() => onOpenEventForum(event.id)}
+              attendeeCount={engagement.get(event.id)?.attendeeCount ?? 0}
+              friendsAttending={
+                engagement.get(event.id)?.friendsAttending ?? []
+              }
+            />
+          ))}
+        </div>
+
+        {visibleCount < filtered.length && (
+          <button
+            type="button"
+            className="events-load-more"
+            onClick={() => setVisibleCount((count) => count + EVENTS_PAGE_SIZE)}
+          >
+            Charger plus d'événements ↓
+          </button>
+        )}
+      </div>
+
+      <aside className="events-trends">
+        <h2>🔥 Tendances</h2>
+
+        <div className="events-trends-section">
+          <h3>Les plus populaires</h3>
+          {popular.length === 0 ? (
+            <p className="list-view-empty">
+              Pas encore de données de fréquentation.
+            </p>
+          ) : (
+            <ol className="events-trends-list">
+              {popular.map((event, index) => (
+                <li key={event.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenEventForum(event.id)}
+                  >
+                    <span className="events-trends-rank">{index + 1}</span>
+                    <span className="events-trends-thumb">
+                      {event.imageUrl ? (
+                        <img src={event.imageUrl} alt="" />
+                      ) : (
+                        <EventImageFallback category={event.category} />
+                      )}
+                    </span>
+                    <span className="events-trends-info">
+                      <strong>{event.title}</strong>
+                      <span>{event.venue.name}</span>
+                    </span>
+                    <span className="events-trends-hotness">
+                      🔥 {engagement.get(event.id)?.attendeeCount}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+
+        <div className="events-trends-section">
+          <h3>Nouveaux événements</h3>
+          {recentlyAdded.length === 0 ? (
+            <p className="list-view-empty">Rien de neuf pour l'instant.</p>
+          ) : (
+            <ul className="events-trends-list">
+              {recentlyAdded.map((event) => (
+                <li key={event.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenEventForum(event.id)}
+                  >
+                    <span className="events-trends-thumb">
+                      {event.imageUrl ? (
+                        <img src={event.imageUrl} alt="" />
+                      ) : (
+                        <EventImageFallback category={event.category} />
+                      )}
+                    </span>
+                    <span className="events-trends-info">
+                      <strong>{event.title}</strong>
+                      <span>
+                        {SHORT_CATEGORY_LABELS[locale][event.category]} -{' '}
+                        {event.venue.name}
+                      </span>
+                    </span>
+                    <span className="events-trends-badge">NOUVEAU</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {authToken && (
+          <div className="events-trends-section">
+            <h3>Tes amis y vont</h3>
+            {friendsGoingList.length === 0 ? (
+              <p className="list-view-empty">
+                Aucun ami n'a encore de présence prévue.
+              </p>
+            ) : (
+              <>
+                <div className="forum-members-avatars">
+                  {friendsGoingList.slice(0, 8).map((person) => (
+                    <span
+                      className="friends-row-avatar"
+                      key={person.id}
+                      title={person.displayName}
+                    >
+                      {person.avatarUrl ? (
+                        <img src={person.avatarUrl} alt="" />
+                      ) : (
+                        person.displayName.slice(0, 1).toUpperCase()
+                      )}
+                    </span>
+                  ))}
+                </div>
+                <p className="events-trends-caption">
+                  {friendsGoingList.length} ami
+                  {friendsGoingList.length > 1 ? 's' : ''}{' '}
+                  {friendsGoingList.length > 1 ? 'ont' : 'a'} une place.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
+        {authToken && (
+          <div className="events-trends-section">
+            <h3>Groupes actifs</h3>
+            {activeGroups.length === 0 ? (
+              <p className="list-view-empty">
+                Aucun groupe d'événement actif pour l'instant.
+              </p>
+            ) : (
+              <ul className="events-trends-groups">
+                {activeGroups.slice(0, 4).map(({ group, event }) => (
+                  <li key={group.id}>
+                    <button
+                      type="button"
+                      onClick={() => event && onOpenEventForum(event.id)}
+                    >
+                      <span>{group.name}</span>
+                      <span className="conversation-list-badge">
+                        {group.memberCount}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function EventGridCard({
+  event,
+  locale,
+  isFavorite,
+  onToggleFavorite,
+  onOpen,
+  attendeeCount,
+  friendsAttending
+}: {
+  event: PublicEvent;
+  locale: SupportedLocale;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+  onOpen: () => void;
+  attendeeCount: number;
+  friendsAttending: PublicUser[];
+}) {
+  const priceLabel = formatEventPrice(event.price);
+  return (
+    <div
+      className="events-grid-card"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(keyEvent) => {
+        if (keyEvent.key === 'Enter') onOpen();
+      }}
+    >
+      <div
+        className="events-grid-card-img"
+        style={
+          event.imageUrl
+            ? {
+                backgroundImage: `url(${event.imageUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }
+            : undefined
+        }
+      >
+        {!event.imageUrl && <EventImageFallback category={event.category} />}
+        <div
+          className="card-badge"
+          style={{
+            background:
+              CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']
+          }}
+        >
+          {SHORT_CATEGORY_LABELS[locale][event.category]}
+        </div>
+        <button
+          type="button"
+          className="card-fav"
+          onClick={(clickEvent) => {
+            clickEvent.stopPropagation();
+            onToggleFavorite();
+          }}
+        >
+          {isFavorite ? '❤️' : '🤍'}
+        </button>
+      </div>
+      <div className="events-grid-card-content">
+        <h3>{event.title}</h3>
+        <p className="events-grid-card-venue">📍 {event.venue.name}</p>
+        <p className="events-grid-card-time">
+          🕐 {formatEventTimeRange(event.startsAt, event.endsAt)}
+        </p>
+        <p
+          className={`events-grid-card-price ${event.price.kind === 'free' ? 'free' : ''}`}
+        >
+          {priceLabel}
+        </p>
+        <div className="events-grid-card-footer">
+          {friendsAttending.length > 0 ? (
+            <div className="events-grid-card-avatars">
+              {friendsAttending.slice(0, 3).map((person) => (
+                <span
+                  className="friends-row-avatar"
+                  key={person.id}
+                  title={person.displayName}
+                >
+                  {person.avatarUrl ? (
+                    <img src={person.avatarUrl} alt="" />
+                  ) : (
+                    person.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+              ))}
+              {friendsAttending.length > 3 && (
+                <span className="events-grid-card-avatars-more">
+                  +{friendsAttending.length - 3}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span />
+          )}
+          {attendeeCount > 0 && (
+            <span className="events-grid-card-hotness">🔥 {attendeeCount}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Landing view for connected users (Phase 4.4) - reuses the same nearby-
 // events data already computed for the anonymous carousel and the same
 // active-forums signal as the dedicated "Forums" page, rather than
@@ -6492,6 +7050,33 @@ function formatMessageTimestamp(iso: string): string {
     return label.charAt(0).toUpperCase() + label.slice(1);
   }
   return date.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+}
+
+// Événements page (Phase 4.11) - real price display for a PublicEvent's
+// price object. 'unknown' (source never stated a price) is deliberately
+// distinct from 'free': showing "Gratuit" for an unknown price would be a
+// fabricated claim, so it renders nothing instead.
+function formatEventPrice(price: PublicEvent['price']): string {
+  if (price.kind === 'free') return 'Gratuit';
+  if (price.kind === 'paid') {
+    return price.minimumAmount !== undefined
+      ? `À partir de ${price.minimumAmount % 1 === 0 ? price.minimumAmount : price.minimumAmount.toFixed(2)} $`
+      : 'Payant';
+  }
+  return '';
+}
+
+// Compact "20:00 - 23:00" clock-time range in the event's real timezone -
+// distinct from formatMontrealDateTime's fuller weekday/date rendering,
+// which is too long for a grid card.
+function formatEventTimeRange(startsAt: string, endsAt: string | undefined) {
+  const format = (iso: string) =>
+    new Date(iso).toLocaleTimeString('fr-CA', {
+      timeZone: 'America/Toronto',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  return endsAt ? `${format(startsAt)} - ${format(endsAt)}` : format(startsAt);
 }
 
 function formatMemberSince(iso: string): string {
