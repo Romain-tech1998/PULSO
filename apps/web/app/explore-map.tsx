@@ -7292,6 +7292,7 @@ function EventHero({
   onToggleFavorite,
   locale,
   hideBackButton,
+  inlineBadge,
   user,
   authToken
 }: {
@@ -7307,6 +7308,11 @@ function EventHero({
   // enough against a bright/busy cover image) - EventDetails keeps the
   // overlaid one as-is, already confirmed working there.
   hideBackButton?: boolean;
+  // Live feedback: the category badge doesn't need its own "banner" row -
+  // put it on the same row as Partager/Envoyer/Favori instead, badge on
+  // the left where Retour used to sit. Only used by ForumPanel (paired
+  // with hideBackButton) - EventDetails keeps its own confirmed layout.
+  inlineBadge?: boolean;
   // "Envoyer à un ami" (live feedback: external share is fine, but also
   // want to re-share within the app) - undefined since an anonymous
   // visitor viewing this hero has no signed-in user to share as.
@@ -7327,12 +7333,17 @@ function EventHero({
           : undefined
       }
     >
-      <div className={`details-hero-actions${hideBackButton ? ' details-hero-actions-solo' : ''}`}>
+      <div className="details-hero-actions">
         {!hideBackButton && (
           <button type="button" className="back-button" onClick={onBack}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
             Retour
           </button>
+        )}
+        {inlineBadge && (
+          <div className="details-badge details-badge-inline">
+            {SHORT_CATEGORY_LABELS[locale][event.category]}
+          </div>
         )}
         <div className="details-hero-actions-right">
           <button type="button" className="share-button" onClick={() => void shareEvent(event, locale)}>
@@ -7373,7 +7384,9 @@ function EventHero({
           </button>
         </div>
       </div>
-      <div className="details-badge">{SHORT_CATEGORY_LABELS[locale][event.category]}</div>
+      {!inlineBadge && (
+        <div className="details-badge">{SHORT_CATEGORY_LABELS[locale][event.category]}</div>
+      )}
       <h2 ref={headingRef} tabIndex={-1} className="details-title">
         {event.title}
       </h2>
@@ -7789,6 +7802,33 @@ function ForumTeaser({
       .catch(() => setState('error'));
   }, [authToken, eventId]);
 
+  // "Ajouter ce forum" (live feedback) - lets someone keep a forum in "Mes
+  // forums" straight from the plain event panel's teaser, without opening
+  // the full ForumPanel or posting anything.
+  const [following, setFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/events/${eventId}/forum/follow`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setFollowing(forumFollowResponseSchema.parse(json).following))
+      .catch(() => {});
+  }, [authToken, eventId]);
+  const toggleFollow = () => {
+    if (!authToken || followLoading) return;
+    setFollowLoading(true);
+    const nextFollowing = !following;
+    setFollowing(nextFollowing);
+    fetch(`${API_BASE_URL}/events/${eventId}/forum/follow`, {
+      method: nextFollowing ? 'POST' : 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .catch(() => setFollowing(!nextFollowing))
+      .finally(() => setFollowLoading(false));
+  };
+
   return (
     <div className="forum-teaser">
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
@@ -7816,9 +7856,19 @@ function ForumTeaser({
       {state === 'success' && members.length === 0 && (
         <p className="list-view-empty">Personne n'a encore écrit ici. Sois le premier !</p>
       )}
-      <button type="button" className="meetup-btn" onClick={onOpenForumPanel}>
-        Rejoindre la discussion
-      </button>
+      <div className="forum-teaser-actions">
+        <button type="button" className="meetup-btn" onClick={onOpenForumPanel}>
+          Rejoindre la discussion
+        </button>
+        <button
+          type="button"
+          className={`btn-secondary ${following ? 'active' : ''}`}
+          onClick={toggleFollow}
+          disabled={followLoading}
+        >
+          {following ? '✓ Forum ajouté' : '+ Ajouter ce forum'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -7919,22 +7969,25 @@ function ForumPanel({
   return (
     <div className="forum-panel-layout" aria-label="Forum de l'événement">
       <div className="forum-panel-main">
-        <button type="button" className="forum-panel-back" onClick={onBack}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-          Retour
-        </button>
+        <div className="forum-panel-hero-wrap">
+          <button type="button" className="forum-panel-back" onClick={onBack}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            Retour
+          </button>
 
-        <EventHero
-          event={event}
-          presentation={presentation}
-          isFavorite={isFavorite}
-          onToggleFavorite={onToggleFavorite}
-          locale={locale}
-          onBack={onBack}
-          hideBackButton
-          user={user}
-          authToken={authToken}
-        />
+          <EventHero
+            event={event}
+            presentation={presentation}
+            isFavorite={isFavorite}
+            onToggleFavorite={onToggleFavorite}
+            locale={locale}
+            onBack={onBack}
+            hideBackButton
+            inlineBadge
+            user={user}
+            authToken={authToken}
+          />
+        </div>
 
         {user && (
           <div className="details-meetup-row">

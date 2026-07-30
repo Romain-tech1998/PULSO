@@ -2388,13 +2388,6 @@ h6 {
   align-items: center;
   margin-bottom: 1rem;
 }
-/* ForumPanel hides the overlaid back button (it has its own standalone one
-   above the hero, see .forum-panel-back) - with only one child left,
-   space-between collapses it to the start instead of the end, which
-   pinned Partager/Favori to the left instead of the right. */
-.details-hero-actions-solo {
-  justify-content: flex-end;
-}
 .details-hero-actions-right {
   display: flex;
   align-items: center;
@@ -2493,10 +2486,18 @@ h6 {
   padding: 0.25rem 0.75rem;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   margin-bottom: 0.75rem;
+}
+/* Live feedback: the category badge doesn't need its own "banner" row -
+   sits inline with Partager/Envoyer/Favori instead (ForumPanel only, see
+   EventHero's inlineBadge prop). */
+.details-badge-inline {
+  margin-bottom: 0;
+  flex-shrink: 0;
 }
 .details-title {
   font-size: 1.4rem;
@@ -2780,15 +2781,22 @@ h6 {
   flex-direction: column;
   min-width: 0;
 }
-/* Standalone, always-visible Retour - live feedback: the version overlaid
-   on the hero image wasn't visible/placed well enough once the panel took
-   over the full page (a bright/busy cover photo could wash it out). */
+/* Retour overlays the hero image (live feedback: it should sit on top of
+   the cover photo, not push it down with a gap above) but keeps its own
+   solid, always-legible background rather than the old faint one - the
+   two earlier complaints ("not visible enough" and "image should pass
+   under it") both point at the same fix: overlay it, but make it solid. */
+.forum-panel-hero-wrap {
+  position: relative;
+}
 .forum-panel-back {
+  position: absolute;
+  top: 1.25rem;
+  left: 1.25rem;
+  z-index: 5;
   display: inline-flex;
-  align-self: flex-start;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 1rem;
   padding: 0.6rem 1.1rem;
   border-radius: 999px;
   background: var(--surface-raised);
@@ -2796,6 +2804,7 @@ h6 {
   color: var(--text-primary);
   font-weight: 700;
   font-size: 0.9rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   transition: border-color 0.2s, background 0.2s;
 }
 .forum-panel-back:hover {
@@ -3007,6 +3016,19 @@ h6 {
 }
 .forum-teaser .meetup-btn {
   align-self: center;
+}
+.forum-teaser-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+}
+.forum-teaser-actions .btn-secondary {
+  padding: 0.7rem 1rem;
+}
+.forum-teaser-actions .btn-secondary.active {
+  border-color: var(--brand-purple);
+  color: var(--brand-purple);
 }
 
 .forum-tabs {
