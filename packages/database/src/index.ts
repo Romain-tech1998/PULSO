@@ -52,8 +52,17 @@ export {
   PostgresGroupsRepository,
   GroupNotFoundError,
   NotGroupMemberError,
+  NotGroupModeratorError,
+  type AttendanceResponse,
+  type DiscoverGroupEntry,
   type Group,
+  type GroupAttendanceSummary,
+  type GroupChecklistItem,
+  type GroupMembershipStatus,
+  type GroupMeetupVenue,
   type GroupPost,
+  type GroupScheduleItem,
+  type GroupVisibility,
   type GroupsRepository
 } from './groups-repository.js';
 export {

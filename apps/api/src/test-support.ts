@@ -216,6 +216,10 @@ export function fakeGroup(overrides: Partial<Group> = {}): Group {
     memberCount: 1,
     isMember: true,
     eventId: undefined,
+    visibility: 'open',
+    isModerator: true,
+    myStatus: 'member',
+    pendingRequestCount: undefined,
     ...overrides
   };
 }
@@ -239,12 +243,15 @@ export function fakeGroupsRepository(
   overrides: Partial<GroupsRepository> = {}
 ): GroupsRepository {
   return {
-    createGroup: async (creatorId, name, description) =>
-      fakeGroup({ createdBy: creatorId, name, description }),
+    createGroup: async (creatorId, name, description, visibility) =>
+      fakeGroup({ createdBy: creatorId, name, description, visibility }),
     listMyGroups: async () => [],
     getGroup: async () => fakeGroup(),
-    joinGroup: async () => undefined,
+    joinGroup: async () => 'member',
     leaveGroup: async () => undefined,
+    getJoinRequests: async () => [],
+    respondToJoinRequest: async () => undefined,
+    discoverGroups: async () => [],
     getPosts: async () => [],
     createPost: async (groupId, authorId, body, parentId) =>
       fakeGroupPost({
@@ -262,6 +269,20 @@ export function fakeGroupsRepository(
         name: `Rencontre – ${eventTitle}`,
         createdBy: userId
       }),
+    getScheduleItems: async () => [],
+    addScheduleItem: async () => undefined,
+    deleteScheduleItem: async () => undefined,
+    getAttendanceSummary: async () => ({
+      yes: 0,
+      maybe: 0,
+      no: 0,
+      myResponse: undefined
+    }),
+    setAttendanceResponse: async () => undefined,
+    getChecklistItems: async () => [],
+    addChecklistItem: async () => undefined,
+    toggleChecklistCheck: async () => undefined,
+    deleteChecklistItem: async () => undefined,
     ...overrides
   };
 }

@@ -484,12 +484,25 @@ export const createReportRequestSchema = z.object({
   reason: z.string().max(500).optional()
 });
 
-// DEC-0013: open membership (join/leave freely, no invitation or approval
-// step), no group-level moderation role beyond the same author-only post
-// delete already used by the event forum. `eventId` (Phase 4.8) is set only
-// for the one meetup group findOrCreateEventGroup creates/finds per event
-// ("Rencontrer avant l'événement") - undefined for every group created the
-// normal way.
+// DEC-0013 v1.2: open OR restricted membership (restricted = join creates
+// a pending request the moderator must approve, same shape as friend
+// requests), and a moderator role narrowly scoped to that approval - never
+// content moderation, never removing a member. `eventId` (Phase 4.8) is
+// set only for the one meetup group findOrCreateEventGroup creates/finds
+// per event ("Rencontrer avant l'événement") - undefined for every group
+// created the normal way. `meetupVenue` (Phase 4.10) is derived from that
+// same linked event's real venue, never entered by hand.
+export const groupVisibilitySchema = z.enum(['open', 'restricted']);
+export const groupMembershipStatusSchema = z.enum(['member', 'pending']);
+export const attendanceResponseSchema = z.enum(['yes', 'maybe', 'no']);
+
+export const groupMeetupVenueSchema = z.object({
+  name: z.string().min(1),
+  address: z.string().min(1),
+  longitude: z.number(),
+  latitude: z.number()
+});
+
 export const groupSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
@@ -498,12 +511,18 @@ export const groupSchema = z.object({
   createdAt: z.iso.datetime(),
   memberCount: z.number().int().min(0),
   isMember: z.boolean(),
-  eventId: z.uuid().optional()
+  eventId: z.uuid().optional(),
+  visibility: groupVisibilitySchema,
+  isModerator: z.boolean(),
+  myStatus: groupMembershipStatusSchema.optional(),
+  pendingRequestCount: z.number().int().min(0).optional(),
+  meetupVenue: groupMeetupVenueSchema.optional()
 });
 
 export const createGroupRequestSchema = z.object({
   name: z.string().min(1).max(80),
-  description: z.string().min(1).max(500).optional()
+  description: z.string().min(1).max(500).optional(),
+  visibility: groupVisibilitySchema.optional()
 });
 
 export const groupsResponseSchema = z.object({
@@ -512,6 +531,88 @@ export const groupsResponseSchema = z.object({
 
 export const groupResponseSchema = z.object({
   data: groupSchema
+});
+
+// "Demandes" for a restricted group (Phase 4.10) - moderator-only.
+export const groupJoinRequestsResponseSchema = z.object({
+  data: z.array(publicUserSchema)
+});
+export const respondGroupJoinRequestSchema = z.object({
+  action: z.enum(['accept', 'decline'])
+});
+// What joinGroup actually did - immediate membership (open group) or a
+// pending request now awaiting the moderator (restricted group).
+export const joinGroupResponseSchema = z.object({
+  status: groupMembershipStatusSchema
+});
+
+// "Découvrir" (Phase 4.10, fulfills DEC-0013 v1.1's principle approval) -
+// permanent groups (no event tie-in) or event-linked groups, never mixed
+// in the same request.
+export const discoverGroupEntrySchema = z.object({
+  group: groupSchema,
+  event: z
+    .object({
+      id: z.uuid(),
+      title: z.string().min(1),
+      startsAt: z.iso.datetime(),
+      category: z.enum(EVENT_CATEGORIES)
+    })
+    .optional()
+});
+export const discoverGroupsResponseSchema = z.object({
+  data: z.array(discoverGroupEntrySchema)
+});
+
+// "Programme" (Phase 4.10) - real items added by members, sorted by time.
+export const groupScheduleItemSchema = z.object({
+  id: z.uuid(),
+  groupId: z.uuid(),
+  label: z.string().min(1),
+  scheduledAt: z.iso.datetime(),
+  createdBy: z.uuid(),
+  createdAt: z.iso.datetime()
+});
+export const createGroupScheduleItemRequestSchema = z.object({
+  label: z.string().min(1).max(120),
+  scheduledAt: z.iso.datetime()
+});
+export const groupScheduleItemsResponseSchema = z.object({
+  data: z.array(groupScheduleItemSchema)
+});
+
+// "Qui vient ?" (Phase 4.10) - real votes from real members, percentages
+// computed client-side from these real counts, never simulated.
+export const groupAttendanceSummarySchema = z.object({
+  yes: z.number().int().min(0),
+  maybe: z.number().int().min(0),
+  no: z.number().int().min(0),
+  myResponse: attendanceResponseSchema.optional()
+});
+export const setGroupAttendanceRequestSchema = z.object({
+  response: attendanceResponseSchema
+});
+
+// "Checklist" (Phase 4.10) - checkedCount/totalMembers is real: how many
+// of the group's real members have personally checked this item off.
+export const groupChecklistItemSchema = z.object({
+  id: z.uuid(),
+  groupId: z.uuid(),
+  label: z.string().min(1),
+  createdBy: z.uuid(),
+  createdAt: z.iso.datetime(),
+  checkedCount: z.number().int().min(0),
+  totalMembers: z.number().int().min(0),
+  checkedByMe: z.boolean()
+});
+export const createGroupChecklistItemRequestSchema = z.object({
+  label: z.string().min(1).max(120)
+});
+export const setGroupChecklistCheckRequestSchema = z.object({
+  checked: z.boolean()
+});
+export const groupChecklistItemsResponseSchema = z.object({
+  data: z.array(groupChecklistItemSchema)
 });
 
 // Same content model as the event forum (DEC-0012 v1.1): one level of
@@ -738,6 +839,44 @@ export type CreateGroupPostRequest = z.infer<
 >;
 export type GroupPostsResponse = z.infer<typeof groupPostsResponseSchema>;
 export type GroupPostResponse = z.infer<typeof groupPostResponseSchema>;
+export type GroupVisibility = z.infer<typeof groupVisibilitySchema>;
+export type GroupMembershipStatus = z.infer<typeof groupMembershipStatusSchema>;
+export type AttendanceResponse = z.infer<typeof attendanceResponseSchema>;
+export type GroupMeetupVenue = z.infer<typeof groupMeetupVenueSchema>;
+export type GroupJoinRequestsResponse = z.infer<
+  typeof groupJoinRequestsResponseSchema
+>;
+export type RespondGroupJoinRequest = z.infer<
+  typeof respondGroupJoinRequestSchema
+>;
+export type JoinGroupResponse = z.infer<typeof joinGroupResponseSchema>;
+export type DiscoverGroupEntry = z.infer<typeof discoverGroupEntrySchema>;
+export type DiscoverGroupsResponse = z.infer<
+  typeof discoverGroupsResponseSchema
+>;
+export type GroupScheduleItem = z.infer<typeof groupScheduleItemSchema>;
+export type CreateGroupScheduleItemRequest = z.infer<
+  typeof createGroupScheduleItemRequestSchema
+>;
+export type GroupScheduleItemsResponse = z.infer<
+  typeof groupScheduleItemsResponseSchema
+>;
+export type GroupAttendanceSummary = z.infer<
+  typeof groupAttendanceSummarySchema
+>;
+export type SetGroupAttendanceRequest = z.infer<
+  typeof setGroupAttendanceRequestSchema
+>;
+export type GroupChecklistItem = z.infer<typeof groupChecklistItemSchema>;
+export type CreateGroupChecklistItemRequest = z.infer<
+  typeof createGroupChecklistItemRequestSchema
+>;
+export type SetGroupChecklistCheckRequest = z.infer<
+  typeof setGroupChecklistCheckRequestSchema
+>;
+export type GroupChecklistItemsResponse = z.infer<
+  typeof groupChecklistItemsResponseSchema
+>;
 
 export const searchConstraintKeySchema = z.enum([
   'date',

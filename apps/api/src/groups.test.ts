@@ -1,5 +1,9 @@
 import type { EventRepository } from '@pulso/database';
-import { GroupNotFoundError, NotGroupMemberError } from '@pulso/database';
+import {
+  GroupNotFoundError,
+  NotGroupMemberError,
+  NotGroupModeratorError
+} from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
@@ -8,6 +12,7 @@ import {
   fakeGroup,
   fakeGroupPost,
   fakeGroupsRepository,
+  friend,
   testUser
 } from './test-support.js';
 
@@ -104,7 +109,7 @@ describe('groups API', () => {
     await app.close();
   });
 
-  it('joins a group', async () => {
+  it('joins an open group immediately', async () => {
     let received: { groupId: string; userId: string } | undefined;
     const app = buildApp(
       event,
@@ -112,6 +117,7 @@ describe('groups API', () => {
         groupsRepository: fakeGroupsRepository({
           joinGroup: async (id, userId) => {
             received = { groupId: id, userId };
+            return 'member';
           }
         })
       })
@@ -121,8 +127,28 @@ describe('groups API', () => {
       url: `/groups/${groupId}/members`,
       headers: { authorization: 'Bearer valid-token' }
     });
-    expect(response.statusCode).toBe(204);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: 'member' });
     expect(received).toEqual({ groupId, userId: testUser.id });
+    await app.close();
+  });
+
+  it('joining a restricted group records a pending request instead', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          joinGroup: async () => 'pending'
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/groups/${groupId}/members`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: 'pending' });
     await app.close();
   });
 
@@ -385,6 +411,282 @@ describe('groups API', () => {
       eventId,
       eventTitle: 'Charlotte Cardin',
       userId: testUser.id
+    });
+    await app.close();
+  });
+
+  it('lists pending join requests as the moderator', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          getJoinRequests: async () => [friend]
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/groups/${groupId}/join-requests`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([friend]);
+    await app.close();
+  });
+
+  it('rejects listing join requests when not the moderator', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          getJoinRequests: async () => {
+            throw new NotGroupModeratorError();
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/groups/${groupId}/join-requests`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe('NOT_GROUP_MODERATOR');
+    await app.close();
+  });
+
+  it('accepts a join request as the moderator', async () => {
+    let received:
+      | {
+          groupId: string;
+          moderatorId: string;
+          targetUserId: string;
+          action: string;
+        }
+      | undefined;
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          respondToJoinRequest: async (
+            id,
+            moderatorId,
+            targetUserId,
+            action
+          ) => {
+            received = { groupId: id, moderatorId, targetUserId, action };
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/groups/${groupId}/join-requests/${friend.id}`,
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { action: 'accept' }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(received).toEqual({
+      groupId,
+      moderatorId: testUser.id,
+      targetUserId: friend.id,
+      action: 'accept'
+    });
+    await app.close();
+  });
+
+  it('discovers permanent groups not already joined', async () => {
+    const entry = {
+      group: fakeGroup({ eventId: undefined }),
+      event: undefined
+    };
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          discoverGroups: async (_viewerId, scope) =>
+            scope === 'permanent' ? [entry] : []
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: '/groups/discover?scope=permanent',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([entry]);
+    await app.close();
+  });
+
+  it('discovers event-linked groups with their event attached', async () => {
+    const eventEntry = {
+      group: fakeGroup({ eventId: '00000000-0000-4000-8000-000000000020' }),
+      event: {
+        id: '00000000-0000-4000-8000-000000000020',
+        title: 'Charlotte Cardin',
+        startsAt: '2026-08-01T23:00:00.000Z',
+        category: 'music' as const
+      }
+    };
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          discoverGroups: async (_viewerId, scope) =>
+            scope === 'event' ? [eventEntry] : []
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: '/groups/discover?scope=event',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([eventEntry]);
+    await app.close();
+  });
+
+  it('adds and lists schedule items', async () => {
+    let received:
+      | {
+          groupId: string;
+          authorId: string;
+          label: string;
+          scheduledAt: string;
+        }
+      | undefined;
+    const item = {
+      id: '00000000-0000-4000-8000-000000000030',
+      groupId,
+      label: 'Rendez-vous au bar',
+      scheduledAt: '2026-08-01T23:00:00.000Z',
+      createdBy: testUser.id,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    };
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          addScheduleItem: async (id, authorId, label, scheduledAt) => {
+            received = { groupId: id, authorId, label, scheduledAt };
+          },
+          getScheduleItems: async () => [item]
+        })
+      })
+    );
+    const addResponse = await app.inject({
+      method: 'POST',
+      url: `/groups/${groupId}/schedule`,
+      headers: { authorization: 'Bearer valid-token' },
+      payload: {
+        label: 'Rendez-vous au bar',
+        scheduledAt: '2026-08-01T23:00:00.000Z'
+      }
+    });
+    expect(addResponse.statusCode).toBe(204);
+    expect(received).toEqual({
+      groupId,
+      authorId: testUser.id,
+      label: 'Rendez-vous au bar',
+      scheduledAt: '2026-08-01T23:00:00.000Z'
+    });
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: `/groups/${groupId}/schedule`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(listResponse.json().data).toEqual([item]);
+    await app.close();
+  });
+
+  it('reads and sets an attendance response', async () => {
+    let received:
+      { groupId: string; userId: string; response: string } | undefined;
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          getAttendanceSummary: async () => ({
+            yes: 4,
+            maybe: 1,
+            no: 1,
+            myResponse: 'yes'
+          }),
+          setAttendanceResponse: async (id, userId, response) => {
+            received = { groupId: id, userId, response };
+          }
+        })
+      })
+    );
+    const getResponse = await app.inject({
+      method: 'GET',
+      url: `/groups/${groupId}/attendance`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(getResponse.json()).toEqual({
+      yes: 4,
+      maybe: 1,
+      no: 1,
+      myResponse: 'yes'
+    });
+    const putResponse = await app.inject({
+      method: 'PUT',
+      url: `/groups/${groupId}/attendance`,
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { response: 'maybe' }
+    });
+    expect(putResponse.statusCode).toBe(204);
+    expect(received).toEqual({
+      groupId,
+      userId: testUser.id,
+      response: 'maybe'
+    });
+    await app.close();
+  });
+
+  it('adds, checks, and lists checklist items', async () => {
+    const item = {
+      id: '00000000-0000-4000-8000-000000000031',
+      groupId,
+      label: 'Tickets',
+      createdBy: testUser.id,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      checkedCount: 1,
+      totalMembers: 2,
+      checkedByMe: true
+    };
+    let toggled:
+      { itemId: string; userId: string; checked: boolean } | undefined;
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          getChecklistItems: async () => [item],
+          toggleChecklistCheck: async (itemId, userId, checked) => {
+            toggled = { itemId, userId, checked };
+          }
+        })
+      })
+    );
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: `/groups/${groupId}/checklist`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(listResponse.json().data).toEqual([item]);
+    const putResponse = await app.inject({
+      method: 'PUT',
+      url: `/groups/${groupId}/checklist/${item.id}`,
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { checked: true }
+    });
+    expect(putResponse.statusCode).toBe(204);
+    expect(toggled).toEqual({
+      itemId: item.id,
+      userId: testUser.id,
+      checked: true
     });
     await app.close();
   });
