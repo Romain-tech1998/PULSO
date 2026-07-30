@@ -385,6 +385,21 @@ export const friendsAttendingResponseSchema = z.object({
   data: z.array(publicUserSchema)
 });
 
+// Batched version of the above (Phase 4.11's Événements page) - one real
+// attendee count + one real friends-attending list per event, for a whole
+// grid at once instead of one request per card. attendeeCount is the raw
+// total (both visibilities counted, never who); friendsAttending keeps the
+// same accepted-friends/visibility='friends' privacy rule as the
+// single-event route.
+export const eventEngagementEntrySchema = z.object({
+  eventId: z.uuid(),
+  attendeeCount: z.number().int().min(0),
+  friendsAttending: z.array(publicUserSchema)
+});
+export const eventEngagementResponseSchema = z.object({
+  data: z.array(eventEngagementEntrySchema)
+});
+
 // DEC-0012 v1.1: user-generated content, not editable after posting (only
 // deletable by its author). A reply is a post with a parentId - one level
 // of nesting only, no recursive threads.
@@ -818,6 +833,10 @@ export type SetAttendanceRequest = z.infer<typeof setAttendanceRequestSchema>;
 export type MyAttendanceResponse = z.infer<typeof myAttendanceResponseSchema>;
 export type FriendsAttendingResponse = z.infer<
   typeof friendsAttendingResponseSchema
+>;
+export type EventEngagementEntry = z.infer<typeof eventEngagementEntrySchema>;
+export type EventEngagementResponse = z.infer<
+  typeof eventEngagementResponseSchema
 >;
 export type ForumCategory = z.infer<typeof forumCategorySchema>;
 export type ForumPost = z.infer<typeof forumPostSchema>;

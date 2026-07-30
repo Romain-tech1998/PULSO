@@ -159,4 +159,58 @@ describe('participation visibility API', () => {
     expect(response.json().data).toEqual([friend]);
     await app.close();
   });
+
+  const otherEventId = '00000000-0000-4000-8000-000000000021';
+
+  it('returns real attendee counts, no friends, for an anonymous caller on batched engagement', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        attendanceRepository: fakeAttendanceRepository({
+          getAttendanceCountsForEvents: async () =>
+            new Map([
+              [eventId, 5],
+              [otherEventId, 2]
+            ]),
+          getFriendsAttendingForEvents: async () => {
+            throw new Error('must not be called for an anonymous caller');
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/events/engagement?ids=${eventId},${otherEventId}`
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([
+      { eventId, attendeeCount: 5, friendsAttending: [] },
+      { eventId: otherEventId, attendeeCount: 2, friendsAttending: [] }
+    ]);
+    await app.close();
+  });
+
+  it('returns real counts and friends attending, batched, for a signed-in viewer', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        attendanceRepository: fakeAttendanceRepository({
+          getAttendanceCountsForEvents: async () => new Map([[eventId, 3]]),
+          getFriendsAttendingForEvents: async () =>
+            new Map([[eventId, [friend]]])
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/events/engagement?ids=${eventId},${otherEventId}`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([
+      { eventId, attendeeCount: 3, friendsAttending: [friend] },
+      { eventId: otherEventId, attendeeCount: 0, friendsAttending: [] }
+    ]);
+    await app.close();
+  });
 });

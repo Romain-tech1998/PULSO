@@ -22,6 +22,19 @@ export interface AttendanceRepository {
   // Only ever returns friends of `viewerId` - never a stranger, regardless
   // of what visibility other attendees chose.
   getFriendsAttending(viewerId: string, eventId: string): Promise<PublicUser[]>;
+  // Real total attendance per event (both visibilities counted - only an
+  // aggregate number is exposed, never who) - the Événements page's "🔥"
+  // signal (Phase 4.11), batched for a whole grid of events in one query.
+  getAttendanceCountsForEvents(
+    eventIds: string[]
+  ): Promise<Map<string, number>>;
+  // Same privacy semantics as getFriendsAttending above (accepted friends
+  // only, visibility='friends' rows only), just batched across many events
+  // for the Événements page's grid avatars + "Tes amis y vont" widget.
+  getFriendsAttendingForEvents(
+    viewerId: string,
+    eventIds: string[]
+  ): Promise<Map<string, PublicUser[]>>;
 }
 
 const FOREIGN_KEY_VIOLATION = '23503';
@@ -103,5 +116,55 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
       displayName: row.display_name,
       ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
     }));
+  }
+
+  async getAttendanceCountsForEvents(
+    eventIds: string[]
+  ): Promise<Map<string, number>> {
+    if (eventIds.length === 0) return new Map();
+    const result = await this.pool.query<{ event_id: string; count: string }>(
+      `SELECT event_id, COUNT(*) AS count
+       FROM event_attendance
+       WHERE event_id = ANY($1::uuid[])
+       GROUP BY event_id`,
+      [eventIds]
+    );
+    return new Map(result.rows.map((row) => [row.event_id, Number(row.count)]));
+  }
+
+  async getFriendsAttendingForEvents(
+    viewerId: string,
+    eventIds: string[]
+  ): Promise<Map<string, PublicUser[]>> {
+    if (eventIds.length === 0) return new Map();
+    const result = await this.pool.query<{
+      event_id: string;
+      id: string;
+      display_name: string;
+      avatar_url: string | null;
+    }>(
+      `SELECT ea.event_id, u.id, u.display_name, u.avatar_url
+       FROM event_attendance ea
+       JOIN friendships f
+         ON f.status = 'accepted'
+        AND ((f.requester_id = $1 AND f.addressee_id = ea.user_id)
+          OR (f.addressee_id = $1 AND f.requester_id = ea.user_id))
+       JOIN users u ON u.id = ea.user_id
+       WHERE ea.event_id = ANY($2::uuid[]) AND ea.visibility = 'friends'
+       ORDER BY u.display_name ASC`,
+      [viewerId, eventIds]
+    );
+    const byEvent = new Map<string, PublicUser[]>();
+    for (const row of result.rows) {
+      const friend: PublicUser = {
+        id: row.id,
+        displayName: row.display_name,
+        ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
+      };
+      const existing = byEvent.get(row.event_id);
+      if (existing) existing.push(friend);
+      else byEvent.set(row.event_id, [friend]);
+    }
+    return byEvent;
   }
 }

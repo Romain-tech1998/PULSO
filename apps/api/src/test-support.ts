@@ -113,6 +113,8 @@ export function fakeAttendanceRepository(
     clearAttendance: async () => undefined,
     getMyAttendance: async () => [],
     getFriendsAttending: async () => [],
+    getAttendanceCountsForEvents: async () => new Map(),
+    getFriendsAttendingForEvents: async () => new Map(),
     ...overrides
   };
 }

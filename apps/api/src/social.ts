@@ -1,4 +1,6 @@
 import {
+  eventEngagementResponseSchema,
+  eventIdsQuerySchema,
   friendCodeResponseSchema,
   friendRequestsResponseSchema,
   friendsAttendingResponseSchema,
@@ -162,5 +164,28 @@ export function registerSocialRoutes(
       ? await attendanceRepository.getFriendsAttending(user.id, eventId)
       : [];
     return friendsAttendingResponseSchema.parse({ data: friends });
+  });
+
+  // Batched version of the route above (Phase 4.11's Événements page grid)
+  // - same "empty rather than 401 for an anonymous caller" rule, since this
+  // is a page enrichment, not an account action. Real attendee counts are
+  // returned regardless of sign-in state; friendsAttending is only ever
+  // populated for a signed-in viewer.
+  app.get('/events/engagement', async (request) => {
+    const user = await resolveBearerUser(request, authRepository);
+    const { ids } = eventIdsQuerySchema.parse(request.query);
+    const [counts, friendsByEvent] = await Promise.all([
+      attendanceRepository.getAttendanceCountsForEvents(ids),
+      user
+        ? attendanceRepository.getFriendsAttendingForEvents(user.id, ids)
+        : Promise.resolve(new Map<string, never[]>())
+    ]);
+    return eventEngagementResponseSchema.parse({
+      data: ids.map((eventId) => ({
+        eventId,
+        attendeeCount: counts.get(eventId) ?? 0,
+        friendsAttending: friendsByEvent.get(eventId) ?? []
+      }))
+    });
   });
 }
