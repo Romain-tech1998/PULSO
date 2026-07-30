@@ -2418,7 +2418,7 @@ export function ExploreMap({
         ) : user && section === 'groupes' ? (
           <GroupsPage authToken={authToken} userId={user.id} />
         ) : user && section === 'messages' ? (
-          <MessagesPage authToken={authToken} />
+          <MessagesPage authToken={authToken} user={user} />
         ) : user && section === 'amis' ? (
           <AmisPage authToken={authToken} />
         ) : user && section === 'mes-evenements' ? (
@@ -5435,12 +5435,33 @@ function GroupsPage({
 // Full-page conversations list (Phase 4.5) - one row per accepted friend
 // (GET /me/conversations), opening the same ConversationModal built for
 // the per-friend "Message" button in FriendsBlock, unmodified.
-function MessagesPage({ authToken }: { authToken: string | undefined }) {
+type MessagesTab = 'discussions' | 'demandes' | 'groupes';
+
+// Redesigned to match the reference mockup: a persistent split view
+// (conversation list + selected conversation inline, not a modal) with
+// Discussions/Demandes/Groupes tabs, search, and a compose button. Every
+// number/timestamp/checkmark shown is real, already-existing data
+// (unreadCount, message.readAt, memberCount, pending friend requests) -
+// no online-presence dot, no call icons, no location-sharing message
+// type: none of those are real capabilities Pulso has today, so they're
+// left out rather than faked (same principle applied to Forums' "membres
+// en ligne" earlier).
+function MessagesPage({
+  authToken,
+  user
+}: {
+  authToken: string | undefined;
+  user: User;
+}) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
   );
-  const [openWith, setOpenWith] = useState<PublicUser>();
+  const [tab, setTab] = useState<MessagesTab>('discussions');
+  const [query, setQuery] = useState('');
+  const [selectedFriend, setSelectedFriend] = useState<PublicUser>();
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const refresh = useCallback(() => {
     if (!authToken) return;
@@ -5450,7 +5471,373 @@ function MessagesPage({ authToken }: { authToken: string | undefined }) {
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
-        setConversations(conversationsResponseSchema.parse(json).data);
+        const data = conversationsResponseSchema.parse(json).data;
+        setConversations(data);
+        setState('success');
+        // Keep the open pane's badge/preview in sync once its unread
+        // count is cleared server-side, without re-selecting anything.
+        setSelectedFriend((current) =>
+          current
+            ? (data.find((entry) => entry.friend.id === current.id)?.friend ??
+              current)
+            : current
+        );
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const filtered = query.trim()
+    ? conversations.filter((entry) =>
+        entry.friend.displayName
+          .toLowerCase()
+          .includes(query.trim().toLowerCase())
+      )
+    : conversations;
+  const existingFriendIds = new Set(
+    conversations.map((entry) => entry.friend.id)
+  );
+
+  return (
+    <div className="messages-page">
+      <div className="messages-list-column">
+        <div className="messages-list-header">
+          <h1>Messages</h1>
+          <button
+            type="button"
+            className="messages-compose-btn"
+            aria-label="Nouveau message"
+            title="Nouveau message"
+            onClick={() => setComposeOpen(true)}
+          >
+            ✏️
+          </button>
+        </div>
+        <div className="details-tabs">
+          <button
+            type="button"
+            className={tab === 'discussions' ? 'active' : ''}
+            onClick={() => setTab('discussions')}
+          >
+            Discussions
+          </button>
+          <button
+            type="button"
+            className={tab === 'demandes' ? 'active' : ''}
+            onClick={() => setTab('demandes')}
+          >
+            Demandes{pendingCount > 0 ? ` (${pendingCount})` : ''}
+          </button>
+          <button
+            type="button"
+            className={tab === 'groupes' ? 'active' : ''}
+            onClick={() => setTab('groupes')}
+          >
+            Groupes
+          </button>
+        </div>
+
+        {tab === 'discussions' && (
+          <>
+            <div className="messages-search">
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Rechercher dans vos messages"
+              />
+            </div>
+            {state === 'loading' && (
+              <p className="list-view-empty">Chargement…</p>
+            )}
+            {state === 'error' && (
+              <p className="list-view-empty">
+                Impossible de charger vos messages pour le moment.
+              </p>
+            )}
+            {state === 'success' && conversations.length === 0 && (
+              <div className="empty-state-card">
+                <span className="empty-state-icon" aria-hidden="true">
+                  💬
+                </span>
+                <p>Aucune conversation pour l'instant</p>
+                <p>Ajoute des amis pour commencer à discuter avec eux.</p>
+              </div>
+            )}
+            {state === 'success' &&
+              conversations.length > 0 &&
+              filtered.length === 0 && (
+                <p className="list-view-empty">Aucun résultat.</p>
+              )}
+            <div className="conversation-list">
+              {filtered.map((conversation) => (
+                <button
+                  type="button"
+                  className={`conversation-list-row ${conversation.unreadCount > 0 ? 'unread' : ''} ${selectedFriend?.id === conversation.friend.id ? 'selected' : ''}`}
+                  key={conversation.friend.id}
+                  onClick={() => setSelectedFriend(conversation.friend)}
+                >
+                  <span className="friends-row-avatar friends-row-avatar-lg">
+                    {conversation.friend.avatarUrl ? (
+                      <img src={conversation.friend.avatarUrl} alt="" />
+                    ) : (
+                      conversation.friend.displayName.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  <span className="conversation-list-info">
+                    <span className="conversation-list-row-top">
+                      <strong>{conversation.friend.displayName}</strong>
+                      {conversation.lastMessage && (
+                        <span className="conversation-list-time">
+                          {formatMessageTimestamp(
+                            conversation.lastMessage.createdAt
+                          )}
+                        </span>
+                      )}
+                    </span>
+                    <span>
+                      {conversation.lastMessage?.body ?? 'Dites bonjour !'}
+                    </span>
+                  </span>
+                  {conversation.unreadCount > 0 && (
+                    <span className="conversation-list-badge">
+                      {conversation.unreadCount}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {tab === 'demandes' && (
+          <MessagesRequestsTab
+            authToken={authToken}
+            onPendingCount={setPendingCount}
+          />
+        )}
+
+        {tab === 'groupes' && (
+          <MessagesGroupsTab authToken={authToken} userId={user.id} />
+        )}
+      </div>
+
+      <div className="messages-conversation-column">
+        {selectedFriend ? (
+          <ConversationPane
+            friend={selectedFriend}
+            authToken={authToken}
+            onActivity={refresh}
+          />
+        ) : (
+          <div className="messages-empty-pane">
+            <span className="empty-state-icon" aria-hidden="true">
+              💬
+            </span>
+            <p>Sélectionne une discussion pour l'ouvrir ici.</p>
+          </div>
+        )}
+      </div>
+
+      {composeOpen && (
+        <ComposeMessageModal
+          authToken={authToken}
+          existingFriendIds={existingFriendIds}
+          onSelect={(friend) => {
+            setSelectedFriend(friend);
+            setComposeOpen(false);
+          }}
+          onClose={() => setComposeOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Inline conversation header + thread (Phase 4.9) - deliberately omits
+// "En ligne" (no presence infra exists) and video/voice call icons (no
+// calling feature exists); keeps "Signaler" per-message, already real.
+function ConversationPane({
+  friend,
+  authToken,
+  onActivity
+}: {
+  friend: PublicUser;
+  authToken: string | undefined;
+  onActivity: () => void;
+}) {
+  return (
+    <>
+      <div className="conversation-pane-header">
+        <span className="conversation-modal-friend">
+          <span className="friends-row-avatar friends-row-avatar-md">
+            {friend.avatarUrl ? (
+              <img src={friend.avatarUrl} alt="" />
+            ) : (
+              friend.displayName.slice(0, 1).toUpperCase()
+            )}
+          </span>
+          <strong>{friend.displayName}</strong>
+        </span>
+      </div>
+      <ConversationThread
+        friend={friend}
+        authToken={authToken}
+        onActivity={onActivity}
+      />
+    </>
+  );
+}
+
+// "Demandes" tab - the same pending-friend-requests data already shown on
+// the Amis page (GET /me/friends/requests), surfaced here too since
+// deciding who you can message starts with who you're friends with
+// (DEC-0012: messaging is friends-only). Not a separate "message
+// request from a stranger" concept, which doesn't exist in Pulso.
+function MessagesRequestsTab({
+  authToken,
+  onPendingCount
+}: {
+  authToken: string | undefined;
+  onPendingCount: (count: number) => void;
+}) {
+  const [requests, setRequests] = useState<FriendRequestEntry[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/friends/requests`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const data = friendRequestsResponseSchema.parse(json).data;
+        setRequests(data);
+        onPendingCount(
+          data.filter((request) => request.direction === 'incoming').length
+        );
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, onPendingCount]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const respond = (requestId: string, action: 'accept' | 'decline') => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/me/friends/requests/${requestId}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ action })
+    }).then(() => refresh());
+  };
+
+  const incoming = requests.filter(
+    (request) => request.direction === 'incoming'
+  );
+  const outgoing = requests.filter(
+    (request) => request.direction === 'outgoing'
+  );
+
+  return (
+    <div className="messages-tab-panel">
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">
+          Impossible de charger vos demandes pour le moment.
+        </p>
+      )}
+      {state === 'success' && requests.length === 0 && (
+        <p className="list-view-empty">Aucune demande en attente.</p>
+      )}
+      {incoming.length > 0 && (
+        <div className="amis-list">
+          {incoming.map((request) => (
+            <div className="amis-row" key={request.id}>
+              <span className="friends-row-avatar friends-row-avatar-lg">
+                {request.user.avatarUrl ? (
+                  <img src={request.user.avatarUrl} alt="" />
+                ) : (
+                  request.user.displayName.slice(0, 1).toUpperCase()
+                )}
+              </span>
+              <span className="amis-row-name">{request.user.displayName}</span>
+              <div className="amis-row-actions">
+                <button
+                  type="button"
+                  className="amis-btn-accept"
+                  onClick={() => respond(request.id, 'accept')}
+                >
+                  Accepter
+                </button>
+                <button
+                  type="button"
+                  className="amis-btn-ghost"
+                  onClick={() => respond(request.id, 'decline')}
+                >
+                  Refuser
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {outgoing.length > 0 && (
+        <div className="amis-list">
+          {outgoing.map((request) => (
+            <div className="amis-row" key={request.id}>
+              <span className="friends-row-avatar friends-row-avatar-lg">
+                {request.user.avatarUrl ? (
+                  <img src={request.user.avatarUrl} alt="" />
+                ) : (
+                  request.user.displayName.slice(0, 1).toUpperCase()
+                )}
+              </span>
+              <span className="amis-row-name">{request.user.displayName}</span>
+              <span className="amis-row-pending">En attente</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// "Groupes" tab - same real data as GroupsBlock (GET /me/groups), just a
+// second, convenient entry point into the same GroupModal rather than a
+// separate group-messaging concept.
+function MessagesGroupsTab({
+  authToken,
+  userId
+}: {
+  authToken: string | undefined;
+  userId: string;
+}) {
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [openGroup, setOpenGroup] = useState<Group>();
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/groups`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setGroups(groupsResponseSchema.parse(json).data);
         setState('success');
       })
       .catch(() => setState('error'));
@@ -5461,60 +5848,134 @@ function MessagesPage({ authToken }: { authToken: string | undefined }) {
   }, [refresh]);
 
   return (
-    <div className="dashboard-home">
-      <h1>Messages</h1>
+    <div className="messages-tab-panel">
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger vos messages pour le moment.
+          Impossible de charger vos groupes pour le moment.
         </p>
       )}
-      {state === 'success' && conversations.length === 0 && (
-        <div className="empty-state-card">
-          <span className="empty-state-icon" aria-hidden="true">
-            💬
-          </span>
-          <p>Aucune conversation pour l'instant</p>
-          <p>Ajoute des amis pour commencer à discuter avec eux.</p>
-        </div>
+      {state === 'success' && groups.length === 0 && (
+        <p className="list-view-empty">
+          Aucun groupe pour le moment. Rejoins-en un depuis "Rencontrer avant
+          l'événement" sur un forum.
+        </p>
       )}
-      <div className="conversation-list">
-        {conversations.map((conversation) => (
-          <button
-            type="button"
-            className={`conversation-list-row ${conversation.unreadCount > 0 ? 'unread' : ''}`}
-            key={conversation.friend.id}
-            onClick={() => setOpenWith(conversation.friend)}
-          >
-            <span className="friends-row-avatar friends-row-avatar-lg">
-              {conversation.friend.avatarUrl ? (
-                <img src={conversation.friend.avatarUrl} alt="" />
-              ) : (
-                conversation.friend.displayName.slice(0, 1).toUpperCase()
-              )}
+      <div className="friends-list">
+        {groups.map((group) => (
+          <div className="friends-row" key={group.id}>
+            <span className="friends-row-name">
+              {group.name}
+              <span className="compte-trends-count">{group.memberCount}</span>
             </span>
-            <span className="conversation-list-info">
-              <strong>{conversation.friend.displayName}</strong>
-              <span>{conversation.lastMessage?.body ?? 'Dites bonjour !'}</span>
-            </span>
-            {conversation.unreadCount > 0 && (
-              <span className="conversation-list-badge">
-                {conversation.unreadCount}
-              </span>
-            )}
-          </button>
+            <button
+              type="button"
+              className="text-btn"
+              onClick={() => setOpenGroup(group)}
+            >
+              Ouvrir
+            </button>
+          </div>
         ))}
       </div>
-      {openWith && (
-        <ConversationModal
-          friend={openWith}
+      {openGroup && (
+        <GroupModal
+          group={openGroup}
           authToken={authToken}
-          onClose={() => {
-            setOpenWith(undefined);
+          userId={userId}
+          onClose={() => setOpenGroup(undefined)}
+          onLeft={() => {
+            setOpenGroup(undefined);
             refresh();
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Compose picker (Phase 4.9) - starting a new conversation is just
+// picking an existing friend (DEC-0012: messaging is friends-only, no
+// stranger inbox). Reuses the same friends-fetch pattern as
+// ShareToFriendModal.
+function ComposeMessageModal({
+  authToken,
+  existingFriendIds,
+  onSelect,
+  onClose
+}: {
+  authToken: string | undefined;
+  existingFriendIds: Set<string>;
+  onSelect: (friend: PublicUser) => void;
+  onClose: () => void;
+}) {
+  const [friends, setFriends] = useState<PublicUser[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+
+  useEffect(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/friends`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setFriends(friendsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="share-friend-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="conversation-modal-header">
+          <strong>Nouveau message</strong>
+          <button type="button" className="text-btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        <div className="share-friend-list">
+          {state === 'loading' && (
+            <p className="list-view-empty">Chargement…</p>
+          )}
+          {state === 'error' && (
+            <p className="list-view-empty">
+              Impossible de charger vos amis pour le moment.
+            </p>
+          )}
+          {state === 'success' && friends.length === 0 && (
+            <p className="list-view-empty">
+              Ajoute des amis pour pouvoir leur écrire.
+            </p>
+          )}
+          {state === 'success' &&
+            friends.map((friend) => (
+              <div className="friends-row" key={friend.id}>
+                <span className="friends-row-avatar">
+                  {friend.avatarUrl ? (
+                    <img src={friend.avatarUrl} alt="" />
+                  ) : (
+                    friend.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <span className="friends-row-name">{friend.displayName}</span>
+                <button
+                  type="button"
+                  className="text-btn"
+                  onClick={() => onSelect(friend)}
+                >
+                  {existingFriendIds.has(friend.id) ? 'Reprendre' : 'Écrire'}
+                </button>
+              </div>
+            ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -5759,6 +6220,40 @@ function formatRelativeTime(iso: string): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `il y a ${days}j`;
   return new Date(iso).toLocaleDateString('fr-CA');
+}
+
+// Messaging's own timestamp convention (clock time / "Hier" / weekday),
+// distinct from formatRelativeTime's "il y a Xh" used elsewhere (forum
+// posts, etc.) - matches how the conversation list and message bubbles
+// actually read in the reference mockup.
+function formatMessageTimestamp(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
+  const startOfDate = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
+  const dayDiff = Math.round(
+    (startOfToday.getTime() - startOfDate.getTime()) / 86400000
+  );
+  if (dayDiff <= 0) {
+    return date.toLocaleTimeString('fr-CA', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+  if (dayDiff === 1) return 'Hier';
+  if (dayDiff < 7) {
+    const label = date.toLocaleDateString('fr-CA', { weekday: 'short' });
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+  return date.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
 }
 
 function formatMemberSince(iso: string): string {
@@ -6808,14 +7303,24 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
   );
 }
 
-function ConversationModal({
+// Shared by ConversationModal (Amis page's per-friend "Message" button,
+// unchanged) and the Messages page's inline conversation pane (Phase 4.9
+// redesign) - same fetch/send/read logic and message list, just mounted
+// inside different chrome (a modal overlay vs. a persistent split-view
+// column). Read receipts (✓ sent / ✓✓ read) use the real `readAt` field
+// that already existed on Message - never simulated.
+function ConversationThread({
   friend,
   authToken,
-  onClose
+  onActivity
 }: {
   friend: PublicUser;
   authToken: string | undefined;
-  onClose: () => void;
+  // Fired after a message is sent or the conversation is marked read, so
+  // a parent showing a conversation LIST (unread badges, last-message
+  // preview) can refresh itself - ConversationModal has no such list, so
+  // it simply omits this prop.
+  onActivity?: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
@@ -6841,10 +7346,14 @@ function ConversationModal({
   useEffect(() => {
     refresh();
     if (!authToken) return;
-    void fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages/read`, {
+    fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages/read`, {
       method: 'PUT',
       headers: { authorization: `Bearer ${authToken}` }
-    });
+    }).then(() => onActivity?.());
+    // onActivity is intentionally excluded - it's a fresh closure each
+    // render from inline callers and would otherwise re-fire this PUT on
+    // every parent re-render instead of once per friend switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh, authToken, friend.id]);
 
   const sendMessage = () => {
@@ -6862,11 +7371,96 @@ function ConversationModal({
       .then(() => {
         setDraft('');
         refresh();
+        onActivity?.();
       })
       .catch(() => {})
       .finally(() => setSending(false));
   };
 
+  return (
+    <>
+      <div className="conversation-messages">
+        {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+        {state === 'error' && (
+          <p className="list-view-empty">
+            Impossible de charger la conversation.
+          </p>
+        )}
+        {state === 'success' && messages.length === 0 && (
+          <p className="list-view-empty">Aucun message pour l'instant.</p>
+        )}
+        {state === 'success' &&
+          messages.map((message) => {
+            const incoming = message.senderId === friend.id;
+            return (
+              <div
+                key={message.id}
+                className={`conversation-message ${incoming ? 'incoming' : 'outgoing'}`}
+              >
+                <span className="conversation-message-body">
+                  {message.body}
+                </span>
+                <span className="conversation-message-meta">
+                  {formatMessageTimestamp(message.createdAt)}
+                  {!incoming && (
+                    <span
+                      className={`conversation-message-receipt ${message.readAt ? 'read' : ''}`}
+                      aria-label={message.readAt ? 'Lu' : 'Envoyé'}
+                    >
+                      {message.readAt ? '✓✓' : '✓'}
+                    </span>
+                  )}
+                </span>
+                {incoming && (
+                  <button
+                    type="button"
+                    className="conversation-message-report"
+                    onClick={() =>
+                      reportContent(authToken, 'message', message.id)
+                    }
+                  >
+                    Signaler
+                  </button>
+                )}
+              </div>
+            );
+          })}
+      </div>
+      <form
+        className="forum-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          sendMessage();
+        }}
+      >
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Écrire un message…"
+          maxLength={2000}
+          rows={2}
+        />
+        <button
+          type="submit"
+          className="btn-secondary"
+          disabled={sending || !draft.trim()}
+        >
+          Envoyer
+        </button>
+      </form>
+    </>
+  );
+}
+
+function ConversationModal({
+  friend,
+  authToken,
+  onClose
+}: {
+  friend: PublicUser;
+  authToken: string | undefined;
+  onClose: () => void;
+}) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
@@ -6888,64 +7482,7 @@ function ConversationModal({
             Fermer
           </button>
         </div>
-        <div className="conversation-messages">
-          {state === 'loading' && (
-            <p className="list-view-empty">Chargement…</p>
-          )}
-          {state === 'error' && (
-            <p className="list-view-empty">
-              Impossible de charger la conversation.
-            </p>
-          )}
-          {state === 'success' && messages.length === 0 && (
-            <p className="list-view-empty">Aucun message pour l'instant.</p>
-          )}
-          {state === 'success' &&
-            messages.map((message) => {
-              const incoming = message.senderId === friend.id;
-              return (
-                <div
-                  key={message.id}
-                  className={`conversation-message ${incoming ? 'incoming' : 'outgoing'}`}
-                >
-                  {message.body}
-                  {incoming && (
-                    <button
-                      type="button"
-                      className="conversation-message-report"
-                      onClick={() =>
-                        reportContent(authToken, 'message', message.id)
-                      }
-                    >
-                      Signaler
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-        </div>
-        <form
-          className="forum-composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            sendMessage();
-          }}
-        >
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Écrire un message…"
-            maxLength={2000}
-            rows={2}
-          />
-          <button
-            type="submit"
-            className="btn-secondary"
-            disabled={sending || !draft.trim()}
-          >
-            Envoyer
-          </button>
-        </form>
+        <ConversationThread friend={friend} authToken={authToken} />
       </div>
     </div>
   );

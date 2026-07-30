@@ -1314,6 +1314,11 @@ h6 {
   color: var(--text-primary);
 }
 
+.conversation-list-row.selected {
+  border-color: var(--brand-purple);
+  background: var(--surface-raised);
+}
+
 .conversation-list-info {
   flex: 1;
   min-width: 0;
@@ -1333,6 +1338,21 @@ h6 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.conversation-list-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  overflow: visible;
+  white-space: normal;
+}
+
+.conversation-list-time {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }
 
 .conversation-list-badge {
@@ -3444,6 +3464,9 @@ h6 {
   gap: 0.5rem;
 }
 .conversation-message {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
   max-width: 80%;
   padding: 0.55rem 0.85rem;
   border-radius: 1rem;
@@ -3452,18 +3475,36 @@ h6 {
   word-break: break-word;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 }
+.conversation-message-body {
+  white-space: pre-wrap;
+}
+/* Timestamp + read receipt (real message.readAt, see ConversationThread) -
+   tucked under the bubble like most chat apps, not a separate row. */
+.conversation-message-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  align-self: flex-end;
+  font-size: 0.68rem;
+  opacity: 0.75;
+}
+.conversation-message-receipt.read {
+  color: #7dd3fc;
+}
 .conversation-message.incoming {
   align-self: flex-start;
   background: var(--surface-raised);
   border: 1px solid var(--brand-border);
   color: var(--text-primary);
   border-bottom-left-radius: 0.3rem;
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
+}
+.conversation-message.incoming .conversation-message-meta {
+  align-self: flex-start;
+  color: var(--text-muted);
 }
 .conversation-message-report {
   flex-shrink: 0;
+  align-self: flex-start;
   color: var(--text-muted);
   font-size: 0.7rem;
   opacity: 0.7;
@@ -3479,6 +3520,99 @@ h6 {
   border-bottom-right-radius: 0.3rem;
 }
 .conversation-modal .forum-composer {
+  padding: 0.9rem 1.25rem;
+  border-top: 1px solid var(--brand-border);
+}
+
+/* Messages page redesign (Phase 4.9) - persistent split view (list +
+   inline conversation pane) instead of the list-opens-a-modal pattern,
+   matching the reference mockup. */
+.messages-page {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+.messages-list-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--brand-border);
+  overflow-y: auto;
+}
+.messages-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem 1.25rem 1rem;
+}
+.messages-list-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+.messages-compose-btn {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: 1px solid var(--brand-border);
+  background: var(--surface-raised);
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+.messages-compose-btn:hover {
+  border-color: var(--brand-purple);
+}
+.messages-search {
+  padding: 0.9rem 1.25rem 0;
+}
+.messages-search input {
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--brand-border);
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+.messages-search input:focus {
+  outline: none;
+  border-color: var(--brand-purple);
+}
+.messages-list-column .conversation-list {
+  padding: 0.75rem 1rem 1.25rem;
+}
+.messages-tab-panel {
+  padding: 0.9rem 1.25rem 1.25rem;
+}
+.messages-conversation-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.messages-empty-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.messages-empty-pane .empty-state-icon {
+  font-size: 2.5rem;
+}
+.conversation-pane-header {
+  display: flex;
+  align-items: center;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--brand-border);
+}
+.messages-conversation-column .conversation-messages {
+  flex: 1;
+}
+.messages-conversation-column .forum-composer {
   padding: 0.9rem 1.25rem;
   border-top: 1px solid var(--brand-border);
 }
