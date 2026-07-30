@@ -651,10 +651,17 @@ export function ExploreMap({
   const [basemapState, setBasemapState] = useState<BasemapState>('loading');
   const [details, setDetails] = useState<DetailsState>({ kind: 'closed' });
   // Set when an event is opened from a context that implies which tab
-  // matters (the Forums discovery grid always means "discussion") - a
-  // separate piece of state rather than folded into DetailsState so a plain
-  // openDetails() call elsewhere doesn't have to think about it.
+  // matters - a separate piece of state rather than folded into
+  // DetailsState so a plain openDetails() call elsewhere doesn't have to
+  // think about it.
   const [detailsInitialTab, setDetailsInitialTab] = useState<EventDetailsTab>();
+  // Live feedback (Phase 4.8 follow-up): the Forums discovery grid opens a
+  // dedicated, richer ForumPanel instead of the plain EventDetails - full
+  // category pills + composer live only there, centralizing the real forum
+  // experience in one place. EventDetails' own "Forum" tab (reached from
+  // Carte/Événements/Lieux) becomes a lightweight teaser that links into
+  // this same panel rather than duplicating the full posting UI.
+  const [forumPanelMode, setForumPanelMode] = useState(false);
   const [pickerList, setPickerList] = useState<
     { title: string; events: PublicEvent[] } | undefined
   >();
@@ -1389,10 +1396,15 @@ export function ExploreMap({
   // it keeps the old clear-on-open behavior.
   async function openDetails(
     eventId: string,
-    options: { keepPickerList?: boolean; initialTab?: EventDetailsTab } = {}
+    options: {
+      keepPickerList?: boolean;
+      initialTab?: EventDetailsTab;
+      asForumPanel?: boolean;
+    } = {}
   ) {
     if (!options.keepPickerList) setPickerList(undefined);
     setDetailsInitialTab(options.initialTab);
+    setForumPanelMode(options.asForumPanel ?? false);
     setDetails({ kind: 'loading', eventId });
     try {
       const response = await fetch(`${API_BASE_URL}/events/${eventId}`);
@@ -2156,7 +2168,7 @@ export function ExploreMap({
       ) : user && section === 'forums' ? (
         <ActiveForumsPage
           authToken={authToken}
-          onOpenDetails={(eventId) => openDetails(eventId, { initialTab: 'forum' })}
+          onOpenDetails={(eventId) => openDetails(eventId, { asForumPanel: true })}
           locale={locale}
         />
       ) : user && section === 'groupes' ? (
@@ -2795,7 +2807,18 @@ export function ExploreMap({
            <div className={`sidebar-right panel-transition ${rightPanelMount.visible ? 'panel-visible' : ''}`}>
              {shownRightPanelContent.kind === 'details' && shownRightPanelContent.state.kind === 'success' && (() => {
                const shownEvent = shownRightPanelContent.state.event;
-               return (
+               return forumPanelMode ? (
+                 <ForumPanel
+                   event={shownEvent}
+                   onBack={returnToMap}
+                   isFavorite={favorites.includes(shownEvent.id)}
+                   onToggleFavorite={() => toggleFavorite(shownEvent.id)}
+                   locale={locale}
+                   user={user}
+                   authToken={authToken}
+                   onLogin={login}
+                 />
+               ) : (
                  <EventDetails
                    event={shownEvent}
                    headingRef={detailsHeading}
@@ -2810,6 +2833,7 @@ export function ExploreMap({
                    onSetAttendance={(visibility) => setAttendance(shownEvent.id, visibility)}
                    onClearAttendance={() => clearAttendance(shownEvent.id)}
                    initialTab={detailsInitialTab}
+                   onOpenForumPanel={() => setForumPanelMode(true)}
                  />
                );
              })()}
@@ -4553,12 +4577,13 @@ function DashboardHome({
 
 // Full-page version of the "Forums actifs" widget above - same data (Sidebar
 // "Forums" nav item), just without the top-5 cap.
-type ForumDiscoverFilter = 'all' | 'popular' | EventCategory;
+type ForumDiscoverFilter = 'mine' | 'all' | 'popular' | EventCategory;
 
 // Forums discovery grid (Phase 4.8) - every upcoming event is a forum entry
-// point, not just the caller's own favorited/attended ones (that narrower
-// scope is what the "Forums actifs" DashboardHome widget/useActiveForums
-// above is still for - untouched by this pass, different purpose).
+// point, not just the caller's own favorited/attended ones - except for the
+// "mine" filter itself, which reuses that narrower scope (same idea as the
+// "Forums actifs" DashboardHome widget/useActiveForums above, just as a
+// filter chip here instead of a separate page).
 function useDiscoverForums(authToken: string | undefined, filter: ForumDiscoverFilter) {
   const [entries, setEntries] = useState<DiscoverForumEntry[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
@@ -4567,7 +4592,8 @@ function useDiscoverForums(authToken: string | undefined, filter: ForumDiscoverF
     if (!authToken) return;
     setState('loading');
     const params = new URLSearchParams();
-    if (filter === 'popular') params.set('sort', 'popular');
+    if (filter === 'mine') params.set('scope', 'mine');
+    else if (filter === 'popular') params.set('sort', 'popular');
     else if (filter !== 'all') params.set('category', filter);
     fetch(`${API_BASE_URL}/me/forums/discover?${params.toString()}`, {
       headers: { authorization: `Bearer ${authToken}` }
@@ -4645,13 +4671,16 @@ function ActiveForumsPage({
   onOpenDetails: (eventId: string) => void;
   locale: SupportedLocale;
 }) {
-  const [filter, setFilter] = useState<ForumDiscoverFilter>('all');
+  const [filter, setFilter] = useState<ForumDiscoverFilter>('mine');
   const { entries, state } = useDiscoverForums(authToken, filter);
 
   return (
     <div className="dashboard-home">
       <h1>Forums</h1>
       <div className="forum-discover-filters">
+        <button type="button" className={filter === 'mine' ? 'active' : ''} onClick={() => setFilter('mine')}>
+          Mes forums
+        </button>
         <button type="button" className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>
           Tous
         </button>
@@ -4677,7 +4706,13 @@ function ActiveForumsPage({
       {state === 'error' && (
         <p className="list-view-empty">Impossible de charger les forums pour le moment.</p>
       )}
-      {state === 'success' && entries.length === 0 && (
+      {state === 'success' && entries.length === 0 && filter === 'mine' && (
+        <p className="list-view-empty">
+          Aucun forum pour l'instant. Ajoute des favoris ou marque ta participation à un événement
+          pour en voir apparaître ici.
+        </p>
+      )}
+      {state === 'success' && entries.length === 0 && filter !== 'mine' && (
         <p className="list-view-empty">Aucun événement à venir pour le moment.</p>
       )}
       <div className="forum-discover-grid">
@@ -7207,6 +7242,192 @@ function EventPreview({
   );
 }
 
+// Shared by EventDetails and the dedicated ForumPanel (Phase 4.8 follow-up) -
+// both open on the same event and need the same share action.
+async function shareEvent(event: PublicEvent, locale: SupportedLocale) {
+  const url = `${window.location.origin}/events/${event.id}`;
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: event.title,
+        text: translate(locale, 'details.shareText', { title: event.title }),
+        url
+      });
+    } catch (err) {
+      console.warn('Share failed', err);
+    }
+  } else {
+    await navigator.clipboard.writeText(url);
+    alert(translate(locale, 'details.linkCopied'));
+  }
+}
+
+// The cover-to-edge hero (Phase 4.8 live feedback: back/share/favorite
+// overlay the image itself rather than sitting in a separate row above it)
+// - shared by EventDetails and ForumPanel so both panels look identical at
+// the top regardless of which one is showing.
+function EventHero({
+  event,
+  presentation,
+  headingRef,
+  onBack,
+  isFavorite,
+  onToggleFavorite,
+  locale
+}: {
+  event: PublicEvent;
+  presentation: ReturnType<typeof eventDetailsFields>['presentation'];
+  headingRef?: RefObject<HTMLHeadingElement | null>;
+  onBack: () => void;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+  locale: SupportedLocale;
+}) {
+  return (
+    <div
+      className="details-hero"
+      style={
+        event.imageUrl
+          ? {
+              backgroundImage: `linear-gradient(180deg, rgba(13,11,20,0.35), rgba(13,11,20,0.85)), url(${event.imageUrl})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center'
+            }
+          : undefined
+      }
+    >
+      <div className="details-hero-actions">
+        <button type="button" className="back-button" onClick={onBack}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+          Retour
+        </button>
+        <div className="details-hero-actions-right">
+          <button type="button" className="share-button" onClick={() => void shareEvent(event, locale)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+            {translate(locale, 'details.share')}
+          </button>
+          <button
+            type="button"
+            className="favorite-button"
+            aria-pressed={isFavorite}
+            aria-label={translate(
+              locale,
+              isFavorite ? 'favorites.remove' : 'favorites.add'
+            )}
+            onClick={onToggleFavorite}
+          >
+            <HeartIcon filled={isFavorite} />
+          </button>
+        </div>
+      </div>
+      <div className="details-badge">{presentation.category}</div>
+      <h2 ref={headingRef} tabIndex={-1} className="details-title">
+        {event.title}
+      </h2>
+      {presentation.organizer && (
+        <p className="details-subtitle">{presentation.organizer}</p>
+      )}
+    </div>
+  );
+}
+
+// Event date/venue/price/description + primary ticket-or-info action -
+// shared by EventDetails' "À propos" tab and ForumPanel's "Événement" tab
+// (Phase 4.8 follow-up: the dedicated forum panel needs a light peek at the
+// event too, without duplicating this whole block by hand).
+function EventAboutContent({
+  event,
+  presentation,
+  isFavorite,
+  onToggleFavorite,
+  externalHref
+}: {
+  event: PublicEvent;
+  presentation: ReturnType<typeof eventDetailsFields>['presentation'];
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+  externalHref: string;
+}) {
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const DESCRIPTION_PREVIEW_LENGTH = 180;
+  const description = presentation.description ?? '';
+  const descriptionIsLong = description.length > DESCRIPTION_PREVIEW_LENGTH;
+  const visibleDescription =
+    descriptionIsLong && !descriptionExpanded
+      ? `${description.slice(0, DESCRIPTION_PREVIEW_LENGTH).trimEnd()}…`
+      : description;
+
+  return (
+    <>
+      <div className="details-info-list">
+        <div className="info-item">
+          <span className="info-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </span>
+          <div>
+            <strong>Date et heure</strong>
+            <p>{presentation.dateTime}</p>
+          </div>
+        </div>
+        <div className="info-item">
+          <span className="info-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          </span>
+          <div>
+            <strong>Lieu</strong>
+            <p>{event.venue.name}</p>
+            <p className="info-sub">{event.venue.address}</p>
+          </div>
+        </div>
+        <div className="info-item">
+          <span className="info-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+          </span>
+          <div>
+            <strong>Prix</strong>
+            <p>{presentation.price}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="details-actions-main">
+        {presentation.externalAction ? (
+          <a className="primary-action-btn glow-purple" href={externalHref} target="_blank" rel="noopener noreferrer">
+            {presentation.externalAction}
+          </a>
+        ) : (
+          <button className="primary-action-btn disabled" disabled>
+            {presentation.externalUnavailable}
+          </button>
+        )}
+        <button className="secondary-action-btn" onClick={onToggleFavorite}>
+          <HeartIcon filled={isFavorite} />
+          {isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+        </button>
+      </div>
+
+      <div className="details-section">
+        <p className="details-description">{visibleDescription}</p>
+        {descriptionIsLong && (
+          <button
+            type="button"
+            className="text-btn"
+            onClick={() => setDescriptionExpanded((prev) => !prev)}
+          >
+            {descriptionExpanded ? 'Voir moins' : 'Voir plus'}
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
 function EventDetails({
   event,
   headingRef,
@@ -7220,7 +7441,8 @@ function EventDetails({
   attendanceVisibility,
   onSetAttendance,
   onClearAttendance,
-  initialTab
+  initialTab,
+  onOpenForumPanel
 }: {
   event: PublicEvent;
   headingRef: RefObject<HTMLHeadingElement | null>;
@@ -7235,6 +7457,12 @@ function EventDetails({
   onSetAttendance: (visibility: AttendanceVisibility) => void;
   onClearAttendance: () => void;
   initialTab: EventDetailsTab | undefined;
+  // Live feedback (Phase 4.8 follow-up): this panel's own "Forum" tab is
+  // now just a teaser (member count + last message + a button) rather than
+  // the full posting UI - clicking through switches the parent into
+  // ForumPanel mode for the same event instead of duplicating that
+  // experience here.
+  onOpenForumPanel: () => void;
 }) {
   const [tab, setTab] = useState<EventDetailsTab>(initialTab ?? 'about');
   // EventDetails stays mounted across different events (see rightPanelMount)
@@ -7245,49 +7473,8 @@ function EventDetails({
     setTab(initialTab ?? 'about');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event.id, initialTab]);
-  const [meetupGroup, setMeetupGroup] = useState<Group>();
-  const [meetupLoading, setMeetupLoading] = useState(false);
-
-  const openMeetupGroup = () => {
-    if (!authToken || meetupLoading) return;
-    setMeetupLoading(true);
-    fetch(`${API_BASE_URL}/events/${event.id}/meetup-group`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setMeetupGroup(groupResponseSchema.parse(json).data))
-      .catch(() => {})
-      .finally(() => setMeetupLoading(false));
-  };
   const { presentation } = eventDetailsFields(event, locale);
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
-  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
-  const DESCRIPTION_PREVIEW_LENGTH = 180;
-  const description = presentation.description ?? '';
-  const descriptionIsLong = description.length > DESCRIPTION_PREVIEW_LENGTH;
-  const visibleDescription =
-    descriptionIsLong && !descriptionExpanded
-      ? `${description.slice(0, DESCRIPTION_PREVIEW_LENGTH).trimEnd()}…`
-      : description;
-
-  const onShare = async () => {
-    const url = `${window.location.origin}/events/${event.id}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: event.title,
-          text: translate(locale, 'details.shareText', { title: event.title }),
-          url
-        });
-      } catch (err) {
-        console.warn('Share failed', err);
-      }
-    } else {
-      await navigator.clipboard.writeText(url);
-      alert(translate(locale, 'details.linkCopied'));
-    }
-  };
 
   const [friendsAttending, setFriendsAttending] = useState<PublicUser[]>([]);
   useEffect(() => {
@@ -7308,69 +7495,15 @@ function EventDetails({
       className="event-details-content"
       aria-label={translate(locale, 'details.label')}
     >
-      <div
-        className="details-hero"
-        style={
-          event.imageUrl
-            ? {
-                backgroundImage: `linear-gradient(180deg, rgba(13,11,20,0.35), rgba(13,11,20,0.85)), url(${event.imageUrl})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center'
-              }
-            : undefined
-        }
-      >
-        <div className="details-hero-actions">
-          <button type="button" className="back-button" onClick={onBack}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-            Retour
-          </button>
-          <div className="details-hero-actions-right">
-            <button type="button" className="share-button" onClick={onShare}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="18" cy="5" r="3"/>
-                <circle cx="6" cy="12" r="3"/>
-                <circle cx="18" cy="19" r="3"/>
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-              </svg>
-              {translate(locale, 'details.share')}
-            </button>
-            <button
-              type="button"
-              className="favorite-button"
-              aria-pressed={isFavorite}
-              aria-label={translate(
-                locale,
-                isFavorite ? 'favorites.remove' : 'favorites.add'
-              )}
-              onClick={onToggleFavorite}
-            >
-              <HeartIcon filled={isFavorite} />
-            </button>
-          </div>
-        </div>
-        <div className="details-badge">{presentation.category}</div>
-        <h2 ref={headingRef} tabIndex={-1} className="details-title">
-          {event.title}
-        </h2>
-        {presentation.organizer && (
-          <p className="details-subtitle">{presentation.organizer}</p>
-        )}
-      </div>
-
-      {user && (
-        <div className="details-meetup-row">
-          <button
-            type="button"
-            className="meetup-btn"
-            onClick={openMeetupGroup}
-            disabled={meetupLoading}
-          >
-            🤝 {meetupLoading ? 'Un instant…' : "Rencontrer avant l'événement"}
-          </button>
-        </div>
-      )}
+      <EventHero
+        event={event}
+        presentation={presentation}
+        headingRef={headingRef}
+        onBack={onBack}
+        isFavorite={isFavorite}
+        onToggleFavorite={onToggleFavorite}
+        locale={locale}
+      />
 
       <div className="details-tabs">
         <button type="button" className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>
@@ -7389,67 +7522,13 @@ function EventDetails({
       </div>
 
       {tab === 'about' && (
-        <>
-          <div className="details-info-list">
-            <div className="info-item">
-              <span className="info-icon">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              </span>
-              <div>
-                <strong>Date et heure</strong>
-                <p>{presentation.dateTime}</p>
-              </div>
-            </div>
-            <div className="info-item">
-              <span className="info-icon">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              </span>
-              <div>
-                <strong>Lieu</strong>
-                <p>{event.venue.name}</p>
-                <p className="info-sub">{event.venue.address}</p>
-              </div>
-            </div>
-            <div className="info-item">
-              <span className="info-icon">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-              </span>
-              <div>
-                <strong>Prix</strong>
-                <p>{presentation.price}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="details-actions-main">
-            {presentation.externalAction ? (
-              <a className="primary-action-btn glow-purple" href={externalHref} target="_blank" rel="noopener noreferrer">
-                {presentation.externalAction}
-              </a>
-            ) : (
-              <button className="primary-action-btn disabled" disabled>
-                {presentation.externalUnavailable}
-              </button>
-            )}
-            <button className="secondary-action-btn" onClick={onToggleFavorite}>
-              <HeartIcon filled={isFavorite} />
-              {isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-            </button>
-          </div>
-
-          <div className="details-section">
-            <p className="details-description">{visibleDescription}</p>
-            {descriptionIsLong && (
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() => setDescriptionExpanded((prev) => !prev)}
-              >
-                {descriptionExpanded ? 'Voir moins' : 'Voir plus'}
-              </button>
-            )}
-          </div>
-        </>
+        <EventAboutContent
+          event={event}
+          presentation={presentation}
+          isFavorite={isFavorite}
+          onToggleFavorite={onToggleFavorite}
+          externalHref={externalHref}
+        />
       )}
 
       {tab === 'participants' && (
@@ -7519,8 +7598,280 @@ function EventDetails({
               onLogin={onLogin}
             />
           ) : (
+            <ForumTeaser
+              eventId={event.id}
+              authToken={authToken}
+              onOpenForumPanel={onOpenForumPanel}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Live feedback (Phase 4.8 follow-up): this panel's "Forum" tab should only
+// let you quickly reach/join the discussion, not post directly - the full
+// posting UI (categories, composer) lives solely in the dedicated
+// ForumPanel now, so the real forum experience stays centralized in one
+// place instead of duplicated here.
+function ForumTeaser({
+  eventId,
+  authToken,
+  onOpenForumPanel
+}: {
+  eventId: string;
+  authToken: string | undefined;
+  onOpenForumPanel: () => void;
+}) {
+  const [members, setMembers] = useState<PublicUser[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
+
+  useEffect(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/events/${eventId}/forum/members`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setMembers(forumMembersResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, eventId]);
+
+  return (
+    <div className="forum-teaser">
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">Impossible de charger le forum pour le moment.</p>
+      )}
+      {state === 'success' && members.length > 0 && (
+        <div className="forum-teaser-members">
+          <div className="forum-members-avatars">
+            {members.slice(0, 6).map((member) => (
+              <span className="friends-row-avatar" key={member.id} title={member.displayName}>
+                {member.avatarUrl ? (
+                  <img src={member.avatarUrl} alt="" />
+                ) : (
+                  member.displayName.slice(0, 1).toUpperCase()
+                )}
+              </span>
+            ))}
+          </div>
+          <span className="forum-members-count">
+            {members.length} membre{members.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
+      {state === 'success' && members.length === 0 && (
+        <p className="list-view-empty">Personne n'a encore écrit ici. Sois le premier !</p>
+      )}
+      <button type="button" className="meetup-btn" onClick={onOpenForumPanel}>
+        Rejoindre la discussion
+      </button>
+    </div>
+  );
+}
+
+type ForumPanelTab = 'discussion' | 'evenement' | 'membres' | 'fichiers' | 'apropos';
+
+// The dedicated Forum panel (Phase 4.8 follow-up) - opened specifically
+// from the Forums discovery grid, not from Carte/Événements/Lieux (those
+// keep the plainer EventDetails with its lightweight ForumTeaser). This is
+// where the full, rich forum experience lives: category pills + composer,
+// real member list, "Rencontrer avant l'événement" - centralized here
+// rather than duplicated across panels, matching the reference mockup.
+function ForumPanel({
+  event,
+  onBack,
+  isFavorite,
+  onToggleFavorite,
+  locale,
+  user,
+  authToken,
+  onLogin
+}: {
+  event: PublicEvent;
+  onBack: () => void;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+  locale: SupportedLocale;
+  user: User | undefined;
+  authToken: string | undefined;
+  onLogin: () => void;
+}) {
+  const [tab, setTab] = useState<ForumPanelTab>('discussion');
+  useEffect(() => {
+    setTab('discussion');
+  }, [event.id]);
+
+  const { presentation } = eventDetailsFields(event, locale);
+  const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
+
+  const [members, setMembers] = useState<PublicUser[]>([]);
+  const [membersState, setMembersState] = useState<'loading' | 'success' | 'error'>('loading');
+  useEffect(() => {
+    if (!authToken) return;
+    setMembersState('loading');
+    fetch(`${API_BASE_URL}/events/${event.id}/forum/members`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setMembers(forumMembersResponseSchema.parse(json).data);
+        setMembersState('success');
+      })
+      .catch(() => setMembersState('error'));
+  }, [authToken, event.id]);
+
+  const [meetupGroup, setMeetupGroup] = useState<Group>();
+  const [meetupLoading, setMeetupLoading] = useState(false);
+  const openMeetupGroup = () => {
+    if (!authToken || meetupLoading) return;
+    setMeetupLoading(true);
+    fetch(`${API_BASE_URL}/events/${event.id}/meetup-group`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setMeetupGroup(groupResponseSchema.parse(json).data))
+      .catch(() => {})
+      .finally(() => setMeetupLoading(false));
+  };
+
+  return (
+    <div className="event-details-content forum-panel" aria-label="Forum de l'événement">
+      <EventHero
+        event={event}
+        presentation={presentation}
+        onBack={onBack}
+        isFavorite={isFavorite}
+        onToggleFavorite={onToggleFavorite}
+        locale={locale}
+      />
+
+      {membersState === 'success' && members.length > 0 && (
+        <div className="forum-panel-members-row">
+          <div className="forum-members-avatars">
+            {members.slice(0, 8).map((member) => (
+              <span className="friends-row-avatar" key={member.id} title={member.displayName}>
+                {member.avatarUrl ? (
+                  <img src={member.avatarUrl} alt="" />
+                ) : (
+                  member.displayName.slice(0, 1).toUpperCase()
+                )}
+              </span>
+            ))}
+          </div>
+          <span className="forum-members-count">
+            {members.length} membre{members.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
+
+      {user && (
+        <div className="details-meetup-row">
+          <button
+            type="button"
+            className="meetup-btn"
+            onClick={openMeetupGroup}
+            disabled={meetupLoading}
+          >
+            🤝 {meetupLoading ? 'Un instant…' : "Rencontrer avant l'événement"}
+          </button>
+        </div>
+      )}
+
+      <div className="details-tabs">
+        <button type="button" className={tab === 'discussion' ? 'active' : ''} onClick={() => setTab('discussion')}>
+          Discussion
+        </button>
+        <button type="button" className={tab === 'evenement' ? 'active' : ''} onClick={() => setTab('evenement')}>
+          Événement
+        </button>
+        <button type="button" className={tab === 'membres' ? 'active' : ''} onClick={() => setTab('membres')}>
+          Membres
+        </button>
+        <button type="button" className={tab === 'fichiers' ? 'active' : ''} onClick={() => setTab('fichiers')}>
+          Fichiers
+        </button>
+        <button type="button" className={tab === 'apropos' ? 'active' : ''} onClick={() => setTab('apropos')}>
+          À propos
+        </button>
+      </div>
+
+      {tab === 'discussion' && (
+        <div className="details-section">
+          {!user ? (
+            <SignInPrompt
+              message="Connectez-vous pour lire et participer au forum de cet événement."
+              onLogin={onLogin}
+            />
+          ) : (
             <EventForum eventId={event.id} authToken={authToken} userId={user.id} />
           )}
+        </div>
+      )}
+
+      {tab === 'evenement' && (
+        <EventAboutContent
+          event={event}
+          presentation={presentation}
+          isFavorite={isFavorite}
+          onToggleFavorite={onToggleFavorite}
+          externalHref={externalHref}
+        />
+      )}
+
+      {tab === 'membres' && (
+        <div className="details-section">
+          {membersState === 'loading' && <p className="list-view-empty">Chargement…</p>}
+          {membersState === 'error' && (
+            <p className="list-view-empty">Impossible de charger les membres pour le moment.</p>
+          )}
+          {membersState === 'success' && members.length === 0 && (
+            <p className="list-view-empty">
+              Personne n'a encore écrit ici. Lance la discussion dans l'onglet Discussion !
+            </p>
+          )}
+          {membersState === 'success' && members.length > 0 && (
+            <div className="forum-members-list">
+              {members.map((member) => (
+                <div className="friends-row" key={member.id}>
+                  <span className="friends-row-avatar">
+                    {member.avatarUrl ? (
+                      <img src={member.avatarUrl} alt="" />
+                    ) : (
+                      member.displayName.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  <span className="friends-row-name">{member.displayName}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'fichiers' && (
+        <div className="details-section">
+          <ComingSoonTab
+            icon="📎"
+            message="Le partage de fichiers arrive dans une prochaine mise à jour."
+          />
+        </div>
+      )}
+
+      {tab === 'apropos' && (
+        <div className="details-section">
+          <p className="details-description">
+            Cette discussion accompagne l'événement « {event.title} ». Reste courtois·e : un seul
+            message n'est pas modifiable après publication, seulement supprimable par son auteur.
+            La revente de billets entre participants reste entièrement pair-à-pair — Pulso n'y est
+            jamais partie prenante.
+          </p>
         </div>
       )}
 
@@ -7571,20 +7922,6 @@ function EventForum({
   const [posting, setPosting] = useState(false);
   const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-  // Real, derived from actual posts - never a membership list (no join
-  // concept exists, DEC-0012 unchanged). Shown inline at the top of the
-  // forum rather than as its own tab, matching the reference mockup.
-  const [members, setMembers] = useState<PublicUser[]>([]);
-
-  useEffect(() => {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/events/${eventId}/forum/members`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setMembers(forumMembersResponseSchema.parse(json).data))
-      .catch(() => {});
-  }, [authToken, eventId]);
 
   const refresh = useCallback(() => {
     if (!authToken) return;
@@ -7670,25 +8007,6 @@ function EventForum({
 
   return (
     <div className="event-forum">
-      {members.length > 0 && (
-        <div className="forum-members-row">
-          <div className="forum-members-avatars">
-            {members.slice(0, 8).map((member) => (
-              <span className="friends-row-avatar" key={member.id} title={member.displayName}>
-                {member.avatarUrl ? (
-                  <img src={member.avatarUrl} alt="" />
-                ) : (
-                  member.displayName.slice(0, 1).toUpperCase()
-                )}
-              </span>
-            ))}
-          </div>
-          <span className="forum-members-count">
-            {members.length} membre{members.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-      )}
-
       <div className="forum-tabs">
         {FORUM_CATEGORIES.map((option) => (
           <button

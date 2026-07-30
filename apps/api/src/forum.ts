@@ -30,7 +30,11 @@ const postParamsSchema = z.object({ postId: z.uuid() });
 const eventParamsSchema = z.object({ eventId: z.uuid() });
 const discoverQuerySchema = z.object({
   category: z.enum(EVENT_CATEGORIES).optional(),
-  sort: z.enum(['recent', 'popular']).optional().default('recent')
+  sort: z.enum(['recent', 'popular']).optional().default('recent'),
+  // 'mine' = only events the caller already favorited/is attending - same
+  // scope as /me/forums/active, but for the discovery grid's own filter
+  // chip rather than a separate widget.
+  scope: z.enum(['all', 'mine']).optional().default('all')
 });
 
 // Broad Montréal-wide bounds (same city-wide default used on the web side's
@@ -154,24 +158,34 @@ export function registerForumRoutes(
   app.get('/me/forums/discover', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
-    const { category, sort } = discoverQuerySchema.parse(request.query);
+    const { category, sort, scope } = discoverQuerySchema.parse(request.query);
     const now = new Date();
     const windowEnd = new Date(now.getTime() + DISCOVER_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-    const events = await eventRepository.findInBounds(
-      {
-        ...MONTREAL_WIDE_BOUNDS,
-        date: 'custom',
-        categories: category ? [category] : [],
-        price: 'all',
-        dateStart: getMontrealCalendarDate(now),
-        dateEnd: getMontrealCalendarDate(windowEnd)
-      },
-      createFilteredDiscoveryWindow(now, {
-        date: 'custom',
-        customStartDate: getMontrealCalendarDate(now),
-        customEndDate: getMontrealCalendarDate(windowEnd)
-      })
-    );
+    const [allEvents, favoriteEventIds, myAttendance] = await Promise.all([
+      eventRepository.findInBounds(
+        {
+          ...MONTREAL_WIDE_BOUNDS,
+          date: 'custom',
+          categories: category ? [category] : [],
+          price: 'all',
+          dateStart: getMontrealCalendarDate(now),
+          dateEnd: getMontrealCalendarDate(windowEnd)
+        },
+        createFilteredDiscoveryWindow(now, {
+          date: 'custom',
+          customStartDate: getMontrealCalendarDate(now),
+          customEndDate: getMontrealCalendarDate(windowEnd)
+        })
+      ),
+      scope === 'mine' ? favoritesRepository.getFavoriteEventIds(user.id) : Promise.resolve([]),
+      scope === 'mine' ? attendanceRepository.getMyAttendance(user.id) : Promise.resolve([])
+    ]);
+    const myEventIds = new Set([
+      ...favoriteEventIds,
+      ...myAttendance.map((entry) => entry.eventId)
+    ]);
+    const events =
+      scope === 'mine' ? allEvents.filter((event) => myEventIds.has(event.id)) : allEvents;
     const stats = await forumRepository.getForumStatsForEvents(events.map((event) => event.id));
     const entries = events.map((event) => {
       const eventStats = stats.get(event.id);

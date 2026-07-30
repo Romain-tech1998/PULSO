@@ -388,4 +388,56 @@ describe('event forum API', () => {
     ]);
     await app.close();
   });
+
+  it('scope=mine restricts the discovery grid to favorited/attended events only', async () => {
+    const otherEventId = '00000000-0000-4000-8000-000000000021';
+    const baseEvent = {
+      id: eventId,
+      title: 'Charlotte Cardin',
+      category: 'music',
+      status: 'scheduled',
+      startsAt: '2026-08-01T23:00:00.000Z',
+      timezone: 'America/Toronto',
+      price: { kind: 'unknown', currency: 'CAD' },
+      accessInformation: 'Billets en vente sur le site officiel.',
+      venue: {
+        id: '00000000-0000-4000-8000-000000000031',
+        name: 'MTELUS',
+        address: '59 Rue Sainte-Catherine E, Montréal',
+        point: { longitude: -73.5605, latitude: 45.5088 }
+      },
+      source: {
+        name: 'ticketmaster',
+        url: 'https://example.com/event',
+        observedAt: '2026-07-01T00:00:00.000Z'
+      },
+      trust: { label: 'confirmed', freshness: 'fresh', locationConfidence: 'confirmed' }
+    };
+    const myEvent = baseEvent;
+    const someoneElsesEvent = { ...baseEvent, id: otherEventId, title: 'Un autre événement' };
+    const eventWithForum: EventRepository = {
+      ...event,
+      findInBounds: async () =>
+        [myEvent, someoneElsesEvent] as unknown as Awaited<
+          ReturnType<EventRepository['findInBounds']>
+        >
+    };
+    const app = buildApp(
+      eventWithForum,
+      accountRepositories({
+        forumRepository: fakeForumRepository({ getForumStatsForEvents: async () => new Map() }),
+        favoritesRepository: fakeFavoritesRepository({
+          getFavoriteEventIds: async () => [eventId]
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/forums/discover?scope=mine',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([{ event: myEvent, postCount: 0, memberCount: 0 }]);
+    await app.close();
+  });
 });
