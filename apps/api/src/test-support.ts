@@ -249,6 +249,7 @@ export function fakeGroupsRepository(
     getGroup: async () => fakeGroup(),
     joinGroup: async () => 'member',
     leaveGroup: async () => undefined,
+    getMembers: async () => [],
     getJoinRequests: async () => [],
     respondToJoinRequest: async () => undefined,
     discoverGroups: async () => [],

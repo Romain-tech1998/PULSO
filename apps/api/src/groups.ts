@@ -7,6 +7,7 @@ import {
   groupAttendanceSummarySchema,
   groupChecklistItemsResponseSchema,
   groupJoinRequestsResponseSchema,
+  groupMembersResponseSchema,
   groupPostResponseSchema,
   groupPostsResponseSchema,
   groupResponseSchema,
@@ -130,6 +131,14 @@ export function registerGroupsRoutes(
     const { id } = groupParamsSchema.parse(request.params);
     await groupsRepository.leaveGroup(id, user.id);
     return reply.status(204).send();
+  });
+
+  app.get('/groups/:id/members', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id } = groupParamsSchema.parse(request.params);
+    const members = await groupsRepository.getMembers(id);
+    return groupMembersResponseSchema.parse({ data: members });
   });
 
   // Moderator-only (Phase 4.10, DEC-0013 v1.2) - who's waiting to join a

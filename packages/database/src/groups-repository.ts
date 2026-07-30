@@ -74,6 +74,10 @@ export interface Group {
   // only present for event-linked groups whose event still resolves to a
   // venue.
   meetupVenue?: GroupMeetupVenue;
+  // Same event, its title/date - powers the "Groupe lié à {événement}"
+  // header badge without a second round trip.
+  eventTitle?: string;
+  eventStartsAt?: string;
 }
 
 export interface GroupPost {
@@ -142,6 +146,9 @@ export interface GroupsRepository {
   // (a join request was recorded, awaiting the moderator).
   joinGroup(groupId: string, userId: string): Promise<GroupMembershipStatus>;
   leaveGroup(groupId: string, userId: string): Promise<void>;
+  // Real accepted members (Phase 4.10's avatar stack) - never a fabricated
+  // count, always the actual people who joined.
+  getMembers(groupId: string): Promise<PublicUser[]>;
   getJoinRequests(groupId: string, moderatorId: string): Promise<PublicUser[]>;
   respondToJoinRequest(
     groupId: string,
@@ -225,6 +232,8 @@ interface GroupRow {
   venue_address: string | null;
   venue_longitude: number | null;
   venue_latitude: number | null;
+  event_title: string | null;
+  event_starts_at: string | null;
 }
 
 function toGroup(row: GroupRow): Group {
@@ -256,6 +265,10 @@ function toGroup(row: GroupRow): Group {
             latitude: row.venue_latitude
           }
         }
+      : {}),
+    ...(row.event_title !== null ? { eventTitle: row.event_title } : {}),
+    ...(row.event_starts_at !== null
+      ? { eventStartsAt: new Date(row.event_starts_at).toISOString() }
       : {})
   };
 }
@@ -270,7 +283,8 @@ const GROUP_SELECT_FIELDS = `
     ELSE NULL
   END AS pending_request_count,
   v.name AS venue_name, v.address AS venue_address,
-  ST_X(v.location) AS venue_longitude, ST_Y(v.location) AS venue_latitude
+  ST_X(v.location) AS venue_longitude, ST_Y(v.location) AS venue_latitude,
+  e.title AS event_title, e.starts_at AS event_starts_at
 `;
 
 interface PostRow {
@@ -347,7 +361,9 @@ export class PostgresGroupsRepository implements GroupsRepository {
         venue_name: null,
         venue_address: null,
         venue_longitude: null,
-        venue_latitude: null
+        venue_latitude: null,
+        event_title: null,
+        event_starts_at: null
       });
     } catch (error) {
       await client.query('ROLLBACK');
@@ -450,6 +466,26 @@ export class PostgresGroupsRepository implements GroupsRepository {
       `DELETE FROM group_memberships WHERE group_id = $1 AND user_id = $2`,
       [groupId, userId]
     );
+  }
+
+  async getMembers(groupId: string): Promise<PublicUser[]> {
+    const result = await this.pool.query<{
+      id: string;
+      display_name: string;
+      avatar_url: string | null;
+    }>(
+      `SELECT u.id, u.display_name, u.avatar_url
+       FROM group_memberships gm
+       JOIN users u ON u.id = gm.user_id
+       WHERE gm.group_id = $1 AND gm.status = 'member'
+       ORDER BY gm.joined_at ASC`,
+      [groupId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      displayName: row.display_name,
+      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
+    }));
   }
 
   async getJoinRequests(

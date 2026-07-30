@@ -516,7 +516,9 @@ export const groupSchema = z.object({
   isModerator: z.boolean(),
   myStatus: groupMembershipStatusSchema.optional(),
   pendingRequestCount: z.number().int().min(0).optional(),
-  meetupVenue: groupMeetupVenueSchema.optional()
+  meetupVenue: groupMeetupVenueSchema.optional(),
+  eventTitle: z.string().min(1).optional(),
+  eventStartsAt: z.iso.datetime().optional()
 });
 
 export const createGroupRequestSchema = z.object({
@@ -531,6 +533,12 @@ export const groupsResponseSchema = z.object({
 
 export const groupResponseSchema = z.object({
   data: groupSchema
+});
+
+// Real accepted members (Phase 4.10's avatar stack) - never a fabricated
+// count, always the actual people who joined.
+export const groupMembersResponseSchema = z.object({
+  data: z.array(publicUserSchema)
 });
 
 // "Demandes" for a restricted group (Phase 4.10) - moderator-only.
@@ -843,6 +851,7 @@ export type GroupVisibility = z.infer<typeof groupVisibilitySchema>;
 export type GroupMembershipStatus = z.infer<typeof groupMembershipStatusSchema>;
 export type AttendanceResponse = z.infer<typeof attendanceResponseSchema>;
 export type GroupMeetupVenue = z.infer<typeof groupMeetupVenueSchema>;
+export type GroupMembersResponse = z.infer<typeof groupMembersResponseSchema>;
 export type GroupJoinRequestsResponse = z.infer<
   typeof groupJoinRequestsResponseSchema
 >;
