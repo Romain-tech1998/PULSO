@@ -1,10 +1,16 @@
 import {
+  activityResponseSchema,
   eventEngagementResponseSchema,
   eventIdsQuerySchema,
   friendCodeResponseSchema,
+  friendMutualCountsResponseSchema,
+  friendProfileResponseSchema,
   friendRequestsResponseSchema,
   friendsAttendingResponseSchema,
+  friendsMapResponseSchema,
   friendsResponseSchema,
+  friendSuggestionsResponseSchema,
+  mutualEventIdsResponseSchema,
   myAttendanceResponseSchema,
   respondFriendRequestSchema,
   sendFriendRequestSchema,
@@ -13,7 +19,8 @@ import {
 import type {
   AttendanceRepository,
   AuthRepository,
-  FriendsRepository
+  FriendsRepository,
+  ProfileRepository
 } from '@pulso/database';
 import {
   CannotFriendSelfError,
@@ -30,6 +37,19 @@ import { resolveBearerUser, sendUnauthenticated } from './auth.js';
 const requestParamsSchema = z.object({ id: z.uuid() });
 const friendParamsSchema = z.object({ friendUserId: z.uuid() });
 const eventParamsSchema = z.object({ eventId: z.uuid() });
+const mutualCountsQuerySchema = z.object({
+  ids: z
+    .string()
+    .min(1)
+    .transform((value) => value.split(','))
+    .pipe(z.array(z.uuid()).min(1).max(100))
+});
+const suggestionsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(10)
+});
+const friendActivityQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20)
+});
 
 /**
  * Registers the friends and participation-visibility surface of the
@@ -41,7 +61,8 @@ export function registerSocialRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
   friendsRepository: FriendsRepository,
-  attendanceRepository: AttendanceRepository
+  attendanceRepository: AttendanceRepository,
+  profileRepository: ProfileRepository
 ) {
   app.get('/me/friend-code', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -115,6 +136,107 @@ export function registerSocialRoutes(
     const { friendUserId } = friendParamsSchema.parse(request.params);
     await friendsRepository.removeFriend(user.id, friendUserId);
     return reply.status(204).send();
+  });
+
+  // Real, batched "N amis en commun" (Phase 4.15) - shown next to friends,
+  // requests, and suggestions alike.
+  app.get('/me/friends/mutual-counts', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { ids } = mutualCountsQuerySchema.parse(request.query);
+    const counts = await friendsRepository.getMutualFriendCounts(user.id, ids);
+    return friendMutualCountsResponseSchema.parse({
+      data: ids.map((userId) => ({
+        userId,
+        mutualFriendCount: counts.get(userId) ?? 0
+      }))
+    });
+  });
+
+  // "Suggestions pour toi" (Phase 4.15) - friends-of-friends, ranked by real
+  // mutual-friend count, never collaborative filtering.
+  app.get('/me/friends/suggestions', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { limit } = suggestionsQuerySchema.parse(request.query);
+    const suggestions = await friendsRepository.getSuggestions(user.id, limit);
+    return friendSuggestionsResponseSchema.parse({ data: suggestions });
+  });
+
+  // A friend's public profile (Phase 4.15) - real bio/createdAt, only ever
+  // for an accepted friend.
+  app.get('/me/friends/:friendUserId/profile', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { friendUserId } = friendParamsSchema.parse(request.params);
+    const profile = await friendsRepository.getFriendProfile(
+      user.id,
+      friendUserId
+    );
+    if (!profile) {
+      return reply.status(404).send({
+        error: {
+          code: 'FRIEND_NOT_FOUND',
+          message: 'This account is not one of your accepted friends.'
+        }
+      });
+    }
+    return friendProfileResponseSchema.parse({ data: profile });
+  });
+
+  // A friend's activity feed (Phase 4.15) - only real, friends-visible
+  // attendance entries (see ProfileRepository.getFriendActivity's own
+  // comment on why favorites/group-joins are never included here).
+  app.get('/me/friends/:friendUserId/activity', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { friendUserId } = friendParamsSchema.parse(request.params);
+    const { limit } = friendActivityQuerySchema.parse(request.query);
+    if (!(await friendsRepository.isFriend(user.id, friendUserId))) {
+      return reply.status(404).send({
+        error: {
+          code: 'FRIEND_NOT_FOUND',
+          message: 'This account is not one of your accepted friends.'
+        }
+      });
+    }
+    const activity = await profileRepository.getFriendActivity(
+      friendUserId,
+      limit
+    );
+    return activityResponseSchema.parse({ data: activity });
+  });
+
+  // "Événements en commun" (Phase 4.15) - real event ids both accounts
+  // attend, respecting the friend's own visibility choice.
+  app.get('/me/friends/:friendUserId/mutual-events', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { friendUserId } = friendParamsSchema.parse(request.params);
+    if (!(await friendsRepository.isFriend(user.id, friendUserId))) {
+      return reply.status(404).send({
+        error: {
+          code: 'FRIEND_NOT_FOUND',
+          message: 'This account is not one of your accepted friends.'
+        }
+      });
+    }
+    const eventIds = await attendanceRepository.getMutualEventIds(
+      user.id,
+      friendUserId
+    );
+    return mutualEventIdsResponseSchema.parse({ data: eventIds });
+  });
+
+  // "Amis sur la carte" (Phase 4.15) - real upcoming, friends-visible
+  // attendance across every accepted friend, never a live position.
+  app.get('/me/friends/map', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const entries = await attendanceRepository.getFriendsUpcomingAttendance(
+      user.id
+    );
+    return friendsMapResponseSchema.parse({ data: entries });
   });
 
   app.put('/me/attendance/:eventId', async (request, reply) => {

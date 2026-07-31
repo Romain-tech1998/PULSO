@@ -35,6 +35,18 @@ export interface AttendanceRepository {
     viewerId: string,
     eventIds: string[]
   ): Promise<Map<string, PublicUser[]>>;
+  // "Événements en commun" (Phase 4.15) - real events both accounts attend.
+  // The viewer's own row counts regardless of visibility (it's their own
+  // attendance, they already know it); the friend's row must be
+  // visibility='friends' - same privacy rule as getFriendsAttending, just
+  // applied to one specific friend instead of "anyone attending this event".
+  getMutualEventIds(viewerId: string, friendId: string): Promise<string[]>;
+  // "Amis sur la carte" (Phase 4.15) - every accepted friend's real,
+  // upcoming, friends-visible attendance, for plotting real venues on a
+  // map. Never a live/last-known position - there is no such data.
+  getFriendsUpcomingAttendance(
+    viewerId: string
+  ): Promise<Array<{ friend: PublicUser; eventId: string }>>;
 }
 
 const FOREIGN_KEY_VIOLATION = '23503';
@@ -166,5 +178,50 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
       else byEvent.set(row.event_id, [friend]);
     }
     return byEvent;
+  }
+
+  async getMutualEventIds(
+    viewerId: string,
+    friendId: string
+  ): Promise<string[]> {
+    const result = await this.pool.query<{ event_id: string }>(
+      `SELECT ea1.event_id
+       FROM event_attendance ea1
+       JOIN event_attendance ea2 ON ea2.event_id = ea1.event_id
+       WHERE ea1.user_id = $1 AND ea2.user_id = $2 AND ea2.visibility = 'friends'`,
+      [viewerId, friendId]
+    );
+    return result.rows.map((row) => row.event_id);
+  }
+
+  async getFriendsUpcomingAttendance(
+    viewerId: string
+  ): Promise<Array<{ friend: PublicUser; eventId: string }>> {
+    const result = await this.pool.query<{
+      event_id: string;
+      id: string;
+      display_name: string;
+      avatar_url: string | null;
+    }>(
+      `SELECT ea.event_id, u.id, u.display_name, u.avatar_url
+       FROM event_attendance ea
+       JOIN users u ON u.id = ea.user_id
+       JOIN events e ON e.id = ea.event_id
+       JOIN friendships f
+         ON f.status = 'accepted'
+        AND ((f.requester_id = $1 AND f.addressee_id = ea.user_id)
+          OR (f.addressee_id = $1 AND f.requester_id = ea.user_id))
+       WHERE ea.visibility = 'friends' AND e.starts_at > now()
+       ORDER BY e.starts_at ASC`,
+      [viewerId]
+    );
+    return result.rows.map((row) => ({
+      friend: {
+        id: row.id,
+        displayName: row.display_name,
+        ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
+      },
+      eventId: row.event_id
+    }));
   }
 }

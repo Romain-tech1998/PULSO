@@ -118,7 +118,8 @@ export function buildApp(
       app,
       options.authRepository,
       options.friendsRepository,
-      options.attendanceRepository
+      options.attendanceRepository,
+      options.profileRepository
     );
     registerForumRoutes(
       app,

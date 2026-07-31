@@ -22,7 +22,9 @@ export {
   CannotFriendSelfError,
   FriendshipAlreadyExistsError,
   FriendRequestNotFoundError,
+  type FriendProfile,
   type FriendRequest,
+  type FriendSuggestion,
   type FriendsRepository
 } from './friends-repository.js';
 export {

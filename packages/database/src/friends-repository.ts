@@ -35,6 +35,21 @@ export interface FriendRequest {
   createdAt: string;
 }
 
+// Phase 4.15's friend-detail panel: real, already-existing profile fields
+// (bio/createdAt) that simply weren't shared with anyone before - never a
+// new field invented for this. Only ever returned for an accepted friend.
+export interface FriendProfile extends PublicUser {
+  bio: string | undefined;
+  createdAt: string;
+}
+
+export interface FriendSuggestion {
+  user: PublicUser;
+  // Always >= 1 by construction (see getSuggestions) - a real, explainable
+  // graph metric ("friends of your friends"), never an inferred/ML score.
+  mutualFriendCount: number;
+}
+
 export interface FriendsRepository {
   getFriendCode(userId: string): Promise<string>;
   sendRequest(requesterId: string, friendCode: string): Promise<void>;
@@ -46,6 +61,25 @@ export interface FriendsRepository {
   ): Promise<void>;
   getFriends(userId: string): Promise<PublicUser[]>;
   removeFriend(userId: string, friendUserId: string): Promise<void>;
+  // Guards the new friend-scoped routes below (profile, activity, mutual
+  // events) - none of them should answer anything about an arbitrary user
+  // id, only an actual accepted friend.
+  isFriend(userId: string, otherId: string): Promise<boolean>;
+  // Real mutual-friend count per candidate, batched (friend rows, requests,
+  // suggestions all show this) - never a fabricated "3 amis en commun".
+  getMutualFriendCounts(
+    userId: string,
+    candidateIds: string[]
+  ): Promise<Map<string, number>>;
+  // "Suggestions pour toi" (Phase 4.15) - friends-of-friends only, ranked by
+  // real mutual-friend count, excluding the viewer, existing friends, and
+  // anyone with a pending request either direction. Never collaborative
+  // filtering or any inferred signal.
+  getSuggestions(userId: string, limit: number): Promise<FriendSuggestion[]>;
+  getFriendProfile(
+    viewerId: string,
+    friendUserId: string
+  ): Promise<FriendProfile | undefined>;
 }
 
 interface PublicUserRow {
@@ -173,5 +207,130 @@ export class PostgresFriendsRepository implements FriendsRepository {
          AND ((requester_id = $1 AND addressee_id = $2) OR (requester_id = $2 AND addressee_id = $1))`,
       [userId, friendUserId]
     );
+  }
+
+  async isFriend(userId: string, otherId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT 1 FROM friendships
+       WHERE status = 'accepted'
+         AND ((requester_id = $1 AND addressee_id = $2) OR (requester_id = $2 AND addressee_id = $1))`,
+      [userId, otherId]
+    );
+    return result.rows.length > 0;
+  }
+
+  async getMutualFriendCounts(
+    userId: string,
+    candidateIds: string[]
+  ): Promise<Map<string, number>> {
+    if (candidateIds.length === 0) return new Map();
+    const result = await this.pool.query<{ candidate: string; count: string }>(
+      `WITH my_friends AS (
+         SELECT CASE WHEN requester_id = $1 THEN addressee_id ELSE requester_id END AS friend_id
+         FROM friendships
+         WHERE status = 'accepted' AND (requester_id = $1 OR addressee_id = $1)
+       ),
+       candidate_friend_pairs AS (
+         SELECT requester_id AS candidate, addressee_id AS their_friend
+         FROM friendships
+         WHERE status = 'accepted' AND requester_id = ANY($2::uuid[])
+         UNION ALL
+         SELECT addressee_id AS candidate, requester_id AS their_friend
+         FROM friendships
+         WHERE status = 'accepted' AND addressee_id = ANY($2::uuid[])
+       )
+       SELECT cfp.candidate, COUNT(*) AS count
+       FROM candidate_friend_pairs cfp
+       JOIN my_friends mf ON mf.friend_id = cfp.their_friend
+       GROUP BY cfp.candidate`,
+      [userId, candidateIds]
+    );
+    return new Map(
+      result.rows.map((row) => [row.candidate, Number(row.count)])
+    );
+  }
+
+  async getSuggestions(
+    userId: string,
+    limit: number
+  ): Promise<FriendSuggestion[]> {
+    const result = await this.pool.query<{
+      id: string;
+      display_name: string;
+      avatar_url: string | null;
+      mutual_count: string;
+    }>(
+      `WITH my_friends AS (
+         SELECT CASE WHEN requester_id = $1 THEN addressee_id ELSE requester_id END AS friend_id
+         FROM friendships
+         WHERE status = 'accepted' AND (requester_id = $1 OR addressee_id = $1)
+       ),
+       excluded AS (
+         SELECT friend_id FROM my_friends
+         UNION
+         SELECT $1
+         UNION
+         SELECT CASE WHEN requester_id = $1 THEN addressee_id ELSE requester_id END
+         FROM friendships
+         WHERE status = 'pending' AND (requester_id = $1 OR addressee_id = $1)
+       ),
+       friends_of_friends AS (
+         SELECT CASE WHEN f.requester_id = mf.friend_id THEN f.addressee_id ELSE f.requester_id END AS candidate
+         FROM friendships f
+         JOIN my_friends mf ON f.requester_id = mf.friend_id OR f.addressee_id = mf.friend_id
+         WHERE f.status = 'accepted'
+       )
+       SELECT u.id, u.display_name, u.avatar_url, COUNT(*) AS mutual_count
+       FROM friends_of_friends fof
+       JOIN users u ON u.id = fof.candidate
+       WHERE fof.candidate NOT IN (SELECT friend_id FROM excluded)
+       GROUP BY u.id, u.display_name, u.avatar_url
+       ORDER BY mutual_count DESC, u.display_name ASC
+       LIMIT $2`,
+      [userId, limit]
+    );
+    return result.rows.map((row) => ({
+      user: toPublicUser({
+        id: row.id,
+        display_name: row.display_name,
+        avatar_url: row.avatar_url
+      }),
+      mutualFriendCount: Number(row.mutual_count)
+    }));
+  }
+
+  async getFriendProfile(
+    viewerId: string,
+    friendUserId: string
+  ): Promise<FriendProfile | undefined> {
+    const result = await this.pool.query<{
+      id: string;
+      display_name: string;
+      avatar_url: string | null;
+      bio: string | null;
+      created_at: string;
+    }>(
+      `SELECT u.id, u.display_name, u.avatar_url, u.bio, u.created_at
+       FROM users u
+       WHERE u.id = $2
+         AND EXISTS (
+           SELECT 1 FROM friendships f
+           WHERE f.status = 'accepted'
+             AND ((f.requester_id = $1 AND f.addressee_id = $2)
+               OR (f.requester_id = $2 AND f.addressee_id = $1))
+         )`,
+      [viewerId, friendUserId]
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      ...toPublicUser({
+        id: row.id,
+        display_name: row.display_name,
+        avatar_url: row.avatar_url
+      }),
+      bio: row.bio ?? undefined,
+      createdAt: new Date(row.created_at).toISOString()
+    };
   }
 }

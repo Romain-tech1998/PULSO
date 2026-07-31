@@ -11,6 +11,16 @@ export interface ProfileStats {
 export interface ProfileRepository {
   getStats(userId: string): Promise<ProfileStats>;
   getRecentActivity(userId: string, limit: number): Promise<ActivityEntry[]>;
+  // A friend's activity feed (Phase 4.15) - deliberately narrower than
+  // getRecentActivity above: only 'attended_event' entries, and only where
+  // that attendance is visibility='friends'. Favorites and group joins have
+  // no visibility control at all today, so they're never shown on someone
+  // else's feed - only the one activity kind that already carries an
+  // explicit, per-event sharing choice.
+  getFriendActivity(
+    friendUserId: string,
+    limit: number
+  ): Promise<ActivityEntry[]>;
 }
 
 // Backs the profile page's Stats card (Phase 4.7) - four real, derived
@@ -125,5 +135,30 @@ export class PostgresProfileRepository implements ProfileRepository {
           };
       }
     });
+  }
+
+  async getFriendActivity(
+    friendUserId: string,
+    limit: number
+  ): Promise<ActivityEntry[]> {
+    const result = await this.pool.query<{
+      occurred_at: Date;
+      ref_id: string;
+      label: string;
+    }>(
+      `SELECT ea.created_at AS occurred_at, e.id AS ref_id, e.title AS label
+       FROM event_attendance ea
+       JOIN events e ON e.id = ea.event_id
+       WHERE ea.user_id = $1 AND ea.visibility = 'friends'
+       ORDER BY ea.created_at DESC
+       LIMIT $2`,
+      [friendUserId, limit]
+    );
+    return result.rows.map((row): ActivityEntry => ({
+      kind: 'attended_event',
+      occurredAt: row.occurred_at.toISOString(),
+      eventId: row.ref_id,
+      eventTitle: row.label
+    }));
   }
 }

@@ -10,8 +10,10 @@ import { describe, expect, it } from 'vitest';
 import { buildApp } from './app.js';
 import {
   accountRepositories,
+  fakeAttendanceRepository,
   fakeFriendRequest,
   fakeFriendsRepository,
+  fakeProfileRepository,
   friend,
   testUser
 } from './test-support.js';
@@ -258,6 +260,212 @@ describe('friends list API', () => {
     });
     expect(response.statusCode).toBe(204);
     expect(received).toEqual({ userId: testUser.id, friendUserId: friend.id });
+    await app.close();
+  });
+});
+
+describe('friend mutual counts API', () => {
+  it('returns real batched mutual-friend counts', async () => {
+    const otherId = '00000000-0000-4000-8000-000000000030';
+    const app = buildApp(
+      event,
+      accountRepositories({
+        friendsRepository: fakeFriendsRepository({
+          getMutualFriendCounts: async () => new Map([[friend.id, 3]])
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/me/friends/mutual-counts?ids=${friend.id},${otherId}`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([
+      { userId: friend.id, mutualFriendCount: 3 },
+      { userId: otherId, mutualFriendCount: 0 }
+    ]);
+    await app.close();
+  });
+});
+
+describe('friend suggestions API', () => {
+  it('returns real friends-of-friends suggestions', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        friendsRepository: fakeFriendsRepository({
+          getSuggestions: async () => [{ user: friend, mutualFriendCount: 2 }]
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/friends/suggestions',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([
+      { user: friend, mutualFriendCount: 2 }
+    ]);
+    await app.close();
+  });
+});
+
+describe('friend profile API', () => {
+  it('returns a real accepted friend profile', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        friendsRepository: fakeFriendsRepository({
+          getFriendProfile: async () => ({
+            ...friend,
+            bio: 'Amoureuse de musique électronique',
+            createdAt: '2026-01-01T00:00:00.000Z'
+          })
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/me/friends/${friend.id}/profile`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual({
+      ...friend,
+      bio: 'Amoureuse de musique électronique',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    });
+    await app.close();
+  });
+
+  it('returns 404 for a non-friend profile', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        friendsRepository: fakeFriendsRepository({
+          getFriendProfile: async () => undefined
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/me/friends/${friend.id}/profile`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+});
+
+describe('friend activity API', () => {
+  it("returns a friend's real friends-visible activity", async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        profileRepository: fakeProfileRepository({
+          getFriendActivity: async () => [
+            {
+              kind: 'attended_event',
+              occurredAt: '2026-01-01T00:00:00.000Z',
+              eventId: '00000000-0000-4000-8000-000000000014',
+              eventTitle: 'Solomun Extended Set'
+            }
+          ]
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/me/friends/${friend.id}/activity`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toHaveLength(1);
+    await app.close();
+  });
+
+  it('returns 404 for a non-friend activity feed', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        friendsRepository: fakeFriendsRepository({
+          isFriend: async () => false
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/me/friends/${friend.id}/activity`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+});
+
+describe('mutual events API', () => {
+  it('returns real mutual event ids', async () => {
+    const eventId = '00000000-0000-4000-8000-000000000014';
+    const app = buildApp(
+      event,
+      accountRepositories({
+        attendanceRepository: fakeAttendanceRepository({
+          getMutualEventIds: async () => [eventId]
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/me/friends/${friend.id}/mutual-events`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([eventId]);
+    await app.close();
+  });
+
+  it('returns 404 for a non-friend', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        friendsRepository: fakeFriendsRepository({
+          isFriend: async () => false
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/me/friends/${friend.id}/mutual-events`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+});
+
+describe('friends map API', () => {
+  it("returns friends' real upcoming friends-visible attendance", async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        attendanceRepository: fakeAttendanceRepository({
+          getFriendsUpcomingAttendance: async () => [
+            { friend, eventId: '00000000-0000-4000-8000-000000000014' }
+          ]
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me/friends/map',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([
+      { friend, eventId: '00000000-0000-4000-8000-000000000014' }
+    ]);
     await app.close();
   });
 });

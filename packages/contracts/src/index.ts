@@ -386,6 +386,52 @@ export const friendsResponseSchema = z.object({
   data: z.array(publicUserSchema)
 });
 
+// Real, batched "N amis en commun" (Phase 4.15) - shown next to friends,
+// requests, and suggestions alike. Never a fabricated count.
+export const friendMutualCountsResponseSchema = z.object({
+  data: z.array(
+    z.object({ userId: z.uuid(), mutualFriendCount: z.number().int().min(0) })
+  )
+});
+
+// "Suggestions pour toi" (Phase 4.15) - friends-of-friends only, ranked by
+// the same real mutual-friend count above. Never collaborative filtering.
+export const friendSuggestionSchema = z.object({
+  user: publicUserSchema,
+  mutualFriendCount: z.number().int().min(1)
+});
+export const friendSuggestionsResponseSchema = z.object({
+  data: z.array(friendSuggestionSchema)
+});
+
+// A friend's public profile (Phase 4.15) - bio/createdAt already existed on
+// the account, just never shared with anyone before. Only ever returned for
+// an accepted friend (enforced server-side, not by this schema).
+export const friendProfileSchema = publicUserSchema.extend({
+  bio: z.string().max(280).optional(),
+  createdAt: z.iso.datetime()
+});
+export const friendProfileResponseSchema = z.object({
+  data: friendProfileSchema
+});
+
+// "Événements en commun" (Phase 4.15) - real event ids both accounts
+// attend; the caller hydrates full PublicEvent objects via /events/by-ids.
+export const mutualEventIdsResponseSchema = z.object({
+  data: z.array(z.uuid())
+});
+
+// "Amis sur la carte" (Phase 4.15) - real upcoming, friends-visible
+// attendance across every accepted friend, for plotting real event venues -
+// never a live/last-known position (no such data exists).
+export const friendsMapEntrySchema = z.object({
+  friend: publicUserSchema,
+  eventId: z.uuid()
+});
+export const friendsMapResponseSchema = z.object({
+  data: z.array(friendsMapEntrySchema)
+});
+
 // Private by default (DEC-0011): nothing about a user's plans is shared
 // until they explicitly set visibility to "friends" for that event.
 export const attendanceVisibilitySchema = z.enum(['private', 'friends']);
@@ -858,6 +904,20 @@ export type FriendRequestsResponse = z.infer<
 >;
 export type RespondFriendRequest = z.infer<typeof respondFriendRequestSchema>;
 export type FriendsResponse = z.infer<typeof friendsResponseSchema>;
+export type FriendMutualCountsResponse = z.infer<
+  typeof friendMutualCountsResponseSchema
+>;
+export type FriendSuggestion = z.infer<typeof friendSuggestionSchema>;
+export type FriendSuggestionsResponse = z.infer<
+  typeof friendSuggestionsResponseSchema
+>;
+export type FriendProfile = z.infer<typeof friendProfileSchema>;
+export type FriendProfileResponse = z.infer<typeof friendProfileResponseSchema>;
+export type MutualEventIdsResponse = z.infer<
+  typeof mutualEventIdsResponseSchema
+>;
+export type FriendsMapEntry = z.infer<typeof friendsMapEntrySchema>;
+export type FriendsMapResponse = z.infer<typeof friendsMapResponseSchema>;
 export type AttendanceVisibility = z.infer<typeof attendanceVisibilitySchema>;
 export type SetAttendanceRequest = z.infer<typeof setAttendanceRequestSchema>;
 export type MyAttendanceResponse = z.infer<typeof myAttendanceResponseSchema>;

@@ -85,6 +85,10 @@ export function fakeFriendsRepository(
     respondToRequest: async () => undefined,
     getFriends: async () => [],
     removeFriend: async () => undefined,
+    isFriend: async () => true,
+    getMutualFriendCounts: async () => new Map(),
+    getSuggestions: async () => [],
+    getFriendProfile: async () => undefined,
     ...overrides
   };
 }
@@ -116,6 +120,8 @@ export function fakeAttendanceRepository(
     getFriendsAttending: async () => [],
     getAttendanceCountsForEvents: async () => new Map(),
     getFriendsAttendingForEvents: async () => new Map(),
+    getMutualEventIds: async () => [],
+    getFriendsUpcomingAttendance: async () => [],
     ...overrides
   };
 }
@@ -304,6 +310,7 @@ export function fakeProfileRepository(
       favoritesCount: 0
     }),
     getRecentActivity: async () => [],
+    getFriendActivity: async () => [],
     ...overrides
   };
 }
