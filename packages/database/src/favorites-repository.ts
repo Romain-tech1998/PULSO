@@ -5,6 +5,9 @@ export interface FavoritesRepository {
   setFavoriteEventIds(userId: string, eventIds: string[]): Promise<string[]>;
   getFavoriteVenueIds(userId: string): Promise<string[]>;
   setFavoriteVenueIds(userId: string, venueIds: string[]): Promise<string[]>;
+  // Real, aggregate-only per-venue popularity (Phase 4.12's Lieux page) -
+  // how many users favorited each venue, batched. Never who.
+  getFavoriteCountsForVenues(venueIds: string[]): Promise<Map<string, number>>;
 }
 
 export class PostgresFavoritesRepository implements FavoritesRepository {
@@ -89,5 +92,19 @@ export class PostgresFavoritesRepository implements FavoritesRepository {
       client.release();
     }
     return this.getFavoriteVenueIds(userId);
+  }
+
+  async getFavoriteCountsForVenues(
+    venueIds: string[]
+  ): Promise<Map<string, number>> {
+    if (venueIds.length === 0) return new Map();
+    const result = await this.pool.query<{ venue_id: string; count: string }>(
+      `SELECT venue_id, COUNT(*) AS count
+       FROM user_favorite_venues
+       WHERE venue_id = ANY($1::uuid[])
+       GROUP BY venue_id`,
+      [venueIds]
+    );
+    return new Map(result.rows.map((row) => [row.venue_id, Number(row.count)]));
   }
 }

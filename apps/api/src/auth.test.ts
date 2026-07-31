@@ -188,6 +188,29 @@ describe('account favorites API', () => {
     });
     await app.close();
   });
+
+  it('returns real batched favorite counts for venues, no auth required', async () => {
+    const venueId = '00000000-0000-4000-8000-000000000004';
+    const otherVenueId = '00000000-0000-4000-8000-000000000005';
+    const app = buildApp(
+      event,
+      accountRepositories({
+        favoritesRepository: fakeFavoritesRepository({
+          getFavoriteCountsForVenues: async () => new Map([[venueId, 7]])
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'GET',
+      url: `/venues/favorite-counts?ids=${venueId},${otherVenueId}`
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual([
+      { venueId, favoriteCount: 7 },
+      { venueId: otherVenueId, favoriteCount: 0 }
+    ]);
+    await app.close();
+  });
 });
 
 describe('account trends API', () => {

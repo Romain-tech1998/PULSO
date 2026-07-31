@@ -4,7 +4,9 @@ import {
   favoriteVenuesRequestSchema,
   favoriteVenuesResponseSchema,
   meResponseSchema,
-  trendsResponseSchema
+  trendsResponseSchema,
+  venueFavoriteCountsResponseSchema,
+  venueIdsQuerySchema
 } from '@pulso/contracts';
 import type {
   AuthRepository,
@@ -151,6 +153,20 @@ export function registerAuthRoutes(
       body.venueIds
     );
     return favoriteVenuesResponseSchema.parse({ data: { venueIds } });
+  });
+
+  // Real, aggregate-only per-venue popularity (Phase 4.12's Lieux page) -
+  // works for an anonymous caller too, same "it's a page enrichment, not an
+  // account action" rule as /events/engagement.
+  app.get('/venues/favorite-counts', async (request) => {
+    const { ids } = venueIdsQuerySchema.parse(request.query);
+    const counts = await favoritesRepository.getFavoriteCountsForVenues(ids);
+    return venueFavoriteCountsResponseSchema.parse({
+      data: ids.map((venueId) => ({
+        venueId,
+        favoriteCount: counts.get(venueId) ?? 0
+      }))
+    });
   });
 
   app.get('/me/trends', async (request, reply) => {

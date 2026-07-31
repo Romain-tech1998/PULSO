@@ -191,6 +191,25 @@ export const venueListResponseSchema = z.object({
   data: z.array(publicVenueSchema)
 });
 
+// Real, aggregate-only "popularity" for a venue (Phase 4.12's Lieux page) -
+// how many users have this venue in their favorites. Never who, and never a
+// venue-scoped attendee list (no such data exists) - just a count, batched
+// for a whole grid at once, same shape/spirit as eventEngagementResponseSchema.
+export const venueIdsQuerySchema = z
+  .object({
+    ids: z
+      .string()
+      .min(1)
+      .transform((value) => value.split(','))
+      .pipe(z.array(z.uuid()).min(1).max(100))
+  })
+  .strict();
+export const venueFavoriteCountsResponseSchema = z.object({
+  data: z.array(
+    z.object({ venueId: z.uuid(), favoriteCount: z.number().int().min(0) })
+  )
+});
+
 // The account itself. `bio`/`coverStyle`/`avatarStyle` (Phase 4.7) are the
 // only user-authored profile fields - everything else is either provided by
 // Google or derived on demand (see /me/trends), never a stored preference
@@ -804,6 +823,10 @@ export type EventIdsQuery = z.infer<typeof eventIdsQuerySchema>;
 export type VenuesQuery = z.infer<typeof venuesQuerySchema>;
 export type PublicVenue = z.infer<typeof publicVenueSchema>;
 export type VenueListResponse = z.infer<typeof venueListResponseSchema>;
+export type VenueIdsQuery = z.infer<typeof venueIdsQuerySchema>;
+export type VenueFavoriteCountsResponse = z.infer<
+  typeof venueFavoriteCountsResponseSchema
+>;
 export type User = z.infer<typeof userSchema>;
 export type MeResponse = z.infer<typeof meResponseSchema>;
 export type FavoriteEventsRequest = z.infer<typeof favoriteEventsRequestSchema>;

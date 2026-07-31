@@ -64,6 +64,7 @@ export function fakeFavoritesRepository(
     setFavoriteEventIds: async (_userId, eventIds) => eventIds,
     getFavoriteVenueIds: async () => [],
     setFavoriteVenueIds: async (_userId, venueIds) => venueIds,
+    getFavoriteCountsForVenues: async () => new Map(),
     ...overrides
   };
 }
