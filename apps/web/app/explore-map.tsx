@@ -718,6 +718,12 @@ export function ExploreMap({
   const lieuMap = useRef<maplibregl.Map | null>(null);
   const explorerMapContainer = useRef<HTMLDivElement>(null);
   const explorerMap = useRef<maplibregl.Map | null>(null);
+  // Phase 4.13 - the connected sidebar's own "Carte" page gets its own map
+  // instance (same pattern as lieuMap/explorerMap each having their own),
+  // rather than modifying explorerMap's setup/click-handling - explorerMap
+  // keeps serving the anonymous top-navbar's "Explorer" exactly unchanged.
+  const connectedMapContainer = useRef<HTMLDivElement>(null);
+  const connectedMap = useRef<maplibregl.Map | null>(null);
   const currentBounds = useRef(INITIAL_BOUNDS);
   const activeSearch = useRef<ActiveSearch | undefined>(undefined);
   const localeRef = useRef(initialLocale);
@@ -857,6 +863,14 @@ export function ExploreMap({
   const [explorerPinKind, setExplorerPinKind] = useState<'event' | 'venue'>(
     'event'
   );
+  // The connected Carte page's own selected-pin state (Phase 4.13) - a
+  // small floating card, not the full EventDetails panel or a picker list
+  // (those stay exactly as they are for the anonymous map).
+  const [mapSelection, setMapSelection] = useState<
+    { kind: 'event'; event: PublicEvent } | { kind: 'venue'; group: VenueGroup }
+  >();
+  const [selectionEngagement, setSelectionEngagement] =
+    useState<EventEngagementEntry>();
   const [venueCategoryFilter, setVenueCategoryFilter] = useState<
     VenueCategory[]
   >([]);
@@ -1899,6 +1913,7 @@ export function ExploreMap({
   useEffect(() => {
     if (section === 'explorer') {
       requestAnimationFrame(() => explorerMap.current?.resize());
+      requestAnimationFrame(() => connectedMap.current?.resize());
     }
   }, [section]);
 
@@ -2198,6 +2213,373 @@ export function ExploreMap({
   useEffect(() => {
     if (explorerMap.current) pushExplorerDataToMap(explorerMap.current);
   }, [events, venueGroups, pushExplorerDataToMap]);
+
+  // Phase 4.13 "Carte" page - same bounds-driven events/venueGroups data as
+  // every other map instance in this file, its own source/layer names so it
+  // never touches explorerMap's. Full real clustering (glow + badge + count
+  // text) for BOTH events and venues, unlike explorerMap (whose event side
+  // never got cluster layers - venues only).
+  const pushConnectedDataToMap = useCallback((instance: maplibregl.Map) => {
+    const eventSource = instance.getSource('connected-events-source') as
+      maplibregl.GeoJSONSource | undefined;
+    if (eventSource) {
+      eventSource.setData({
+        type: 'FeatureCollection',
+        features: eventsRef.current.map((event) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [
+              event.venue.point.longitude,
+              event.venue.point.latitude
+            ]
+          },
+          properties: {
+            id: event.id,
+            color: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
+            category: event.category
+          }
+        }))
+      });
+    }
+    const venueSource = instance.getSource('connected-venues-source') as
+      maplibregl.GeoJSONSource | undefined;
+    if (venueSource) {
+      venueSource.setData({
+        type: 'FeatureCollection',
+        features: explorerVenueGroupsRef.current.map((group) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [group.point.longitude, group.point.latitude]
+          },
+          properties: { id: group.id }
+        }))
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!connectedMapContainer.current) return;
+    const instance = new maplibregl.Map({
+      container: connectedMapContainer.current,
+      center: MONTREAL_CENTER,
+      zoom: 11,
+      style: MAP_STYLE_URL
+    });
+
+    instance.on('load', () => {
+      for (const [category, color] of Object.entries(CATEGORY_COLORS)) {
+        instance.addImage(
+          `connected-pin-${category}`,
+          buildPinImageData(color),
+          { pixelRatio: PIN_SCALE }
+        );
+      }
+      instance.addImage(
+        'connected-cluster-badge',
+        buildClusterBadgeImageData(),
+        { pixelRatio: PIN_SCALE }
+      );
+      instance.addImage(
+        'connected-pin-venue',
+        buildPinImageData(VENUE_PIN_COLOR),
+        { pixelRatio: PIN_SCALE }
+      );
+
+      instance.addSource('connected-events-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        cluster: true,
+        clusterMaxZoom: 14,
+        clusterRadius: 50
+      });
+      instance.addSource('connected-venues-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        cluster: true,
+        clusterMaxZoom: 14,
+        clusterRadius: 40
+      });
+
+      const eventVisible = () =>
+        explorerPinKindRef.current === 'event' ? 'visible' : 'none';
+      const venueVisible = () =>
+        explorerPinKindRef.current === 'venue' ? 'visible' : 'none';
+
+      instance.addLayer({
+        id: 'connected-events-clusters-glow',
+        type: 'circle',
+        source: 'connected-events-source',
+        filter: ['has', 'point_count'],
+        layout: { visibility: eventVisible() },
+        paint: {
+          'circle-color': '#7058ff',
+          'circle-radius': ['step', ['get', 'point_count'], 30, 10, 42, 50, 54],
+          'circle-blur': 1,
+          'circle-opacity': 0.45
+        }
+      });
+      instance.addLayer({
+        id: 'connected-events-clusters',
+        type: 'symbol',
+        source: 'connected-events-source',
+        filter: ['has', 'point_count'],
+        layout: {
+          visibility: eventVisible(),
+          'icon-image': 'connected-cluster-badge',
+          'icon-size': [
+            'step',
+            ['get', 'point_count'],
+            0.56,
+            10,
+            0.83,
+            50,
+            1.1
+          ],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+      instance.addLayer({
+        id: 'connected-events-cluster-count',
+        type: 'symbol',
+        source: 'connected-events-source',
+        filter: ['has', 'point_count'],
+        layout: {
+          visibility: eventVisible(),
+          'text-field': '{point_count_abbreviated}',
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 13
+        },
+        paint: { 'text-color': '#ffffff' }
+      });
+      instance.addLayer({
+        id: 'connected-events-glow',
+        type: 'circle',
+        source: 'connected-events-source',
+        filter: ['!', ['has', 'point_count']],
+        layout: { visibility: eventVisible() },
+        paint: {
+          'circle-radius': 18,
+          'circle-color': ['get', 'color'],
+          'circle-blur': 1,
+          'circle-opacity': 0.5
+        }
+      });
+      instance.addLayer({
+        id: 'connected-events-circles',
+        type: 'symbol',
+        source: 'connected-events-source',
+        filter: ['!', ['has', 'point_count']],
+        layout: {
+          visibility: eventVisible(),
+          'icon-image': ['concat', 'connected-pin-', ['get', 'category']],
+          'icon-size': 0.85,
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+
+      instance.addLayer({
+        id: 'connected-venues-clusters-glow',
+        type: 'circle',
+        source: 'connected-venues-source',
+        filter: ['has', 'point_count'],
+        layout: { visibility: venueVisible() },
+        paint: {
+          'circle-color': VENUE_PIN_COLOR,
+          'circle-radius': ['step', ['get', 'point_count'], 26, 10, 36],
+          'circle-blur': 1,
+          'circle-opacity': 0.4
+        }
+      });
+      instance.addLayer({
+        id: 'connected-venues-clusters',
+        type: 'symbol',
+        source: 'connected-venues-source',
+        filter: ['has', 'point_count'],
+        layout: {
+          visibility: venueVisible(),
+          'icon-image': 'connected-cluster-badge',
+          'icon-size': ['step', ['get', 'point_count'], 0.5, 10, 0.7],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+      instance.addLayer({
+        id: 'connected-venues-cluster-count',
+        type: 'symbol',
+        source: 'connected-venues-source',
+        filter: ['has', 'point_count'],
+        layout: {
+          visibility: venueVisible(),
+          'text-field': '{point_count_abbreviated}',
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 12
+        },
+        paint: { 'text-color': '#ffffff' }
+      });
+      instance.addLayer({
+        id: 'connected-venues-circles',
+        type: 'symbol',
+        source: 'connected-venues-source',
+        filter: ['!', ['has', 'point_count']],
+        layout: {
+          visibility: venueVisible(),
+          'icon-image': 'connected-pin-venue',
+          'icon-size': 0.85,
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+
+      // A single pin (or the first of an unclusterable same-spot stack)
+      // opens the small floating card below - never the full EventDetails
+      // panel or a picker list, both specific to the anonymous/legacy map.
+      instance.on('click', 'connected-events-circles', (e) => {
+        const id = e.features?.[0]?.properties?.id as string | undefined;
+        const event = id && eventsRef.current.find((ev) => ev.id === id);
+        if (event) setMapSelection({ kind: 'event', event });
+      });
+      instance.on('click', 'connected-venues-circles', (e) => {
+        const id = e.features?.[0]?.properties?.id as string | undefined;
+        const group =
+          id && explorerVenueGroupsRef.current.find((g) => g.id === id);
+        if (group) setMapSelection({ kind: 'venue', group });
+      });
+      instance.on('click', 'connected-events-clusters', (e) => {
+        const feature = e.features?.[0];
+        const clusterId = feature?.properties?.cluster_id;
+        const source = instance.getSource('connected-events-source') as
+          maplibregl.GeoJSONSource | undefined;
+        if (clusterId === undefined || !source || !feature) return;
+        const coordinates = (
+          feature.geometry as { type: 'Point'; coordinates: [number, number] }
+        ).coordinates;
+        source.getClusterExpansionZoom(clusterId).then((zoom) => {
+          if (zoom > instance.getMaxZoom() - 0.5) {
+            // Can't zoom in any further to split this cluster apart (all
+            // its events sit at ~the same coordinate) - fall back to the
+            // first real leaf's own id (a cluster feature itself carries no
+            // `id` property, only individual points do).
+            source.getClusterLeaves(clusterId, 1, 0).then((leaves) => {
+              const id = leaves[0]?.properties?.id as string | undefined;
+              const event = id && eventsRef.current.find((ev) => ev.id === id);
+              if (event) setMapSelection({ kind: 'event', event });
+            });
+            return;
+          }
+          instance.easeTo({ center: coordinates, zoom });
+        });
+      });
+      instance.on('click', 'connected-venues-clusters', (e) => {
+        const feature = e.features?.[0];
+        const clusterId = feature?.properties?.cluster_id;
+        const source = instance.getSource('connected-venues-source') as
+          maplibregl.GeoJSONSource | undefined;
+        if (clusterId === undefined || !source || !feature) return;
+        const coordinates = (
+          feature.geometry as { type: 'Point'; coordinates: [number, number] }
+        ).coordinates;
+        source.getClusterExpansionZoom(clusterId).then((zoom) => {
+          if (zoom > instance.getMaxZoom() - 0.5) {
+            source.getClusterLeaves(clusterId, 1, 0).then((leaves) => {
+              const id = leaves[0]?.properties?.id as string | undefined;
+              const group =
+                id && explorerVenueGroupsRef.current.find((g) => g.id === id);
+              if (group) setMapSelection({ kind: 'venue', group });
+            });
+            return;
+          }
+          instance.easeTo({ center: coordinates, zoom });
+        });
+      });
+
+      for (const layer of [
+        'connected-events-circles',
+        'connected-events-clusters',
+        'connected-venues-circles',
+        'connected-venues-clusters'
+      ]) {
+        instance.on('mouseenter', layer, () => {
+          instance.getCanvas().style.cursor = 'pointer';
+        });
+        instance.on('mouseleave', layer, () => {
+          instance.getCanvas().style.cursor = '';
+        });
+      }
+
+      pushConnectedDataToMap(instance);
+    });
+
+    const onMoveEnd = () => {
+      const bounds = instance.getBounds();
+      void loadEvents({
+        west: bounds.getWest(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        north: bounds.getNorth()
+      });
+    };
+    instance.on('moveend', onMoveEnd);
+    connectedMap.current = instance;
+    return () => {
+      instance.off('moveend', onMoveEnd);
+      instance.remove();
+    };
+  }, [pushConnectedDataToMap, loadEvents]);
+
+  useEffect(() => {
+    if (connectedMap.current) pushConnectedDataToMap(connectedMap.current);
+  }, [events, venueGroups, pushConnectedDataToMap]);
+
+  // Toggling event/venue pins re-applies layer visibility on the already-
+  // built map (layers are created once in the 'load' handler above).
+  useEffect(() => {
+    const instance = connectedMap.current;
+    if (!instance || !instance.getLayer('connected-events-circles')) return;
+    const eventVisibility = explorerPinKind === 'event' ? 'visible' : 'none';
+    const venueVisibility = explorerPinKind === 'venue' ? 'visible' : 'none';
+    for (const layer of [
+      'connected-events-clusters-glow',
+      'connected-events-clusters',
+      'connected-events-cluster-count',
+      'connected-events-glow',
+      'connected-events-circles'
+    ]) {
+      instance.setLayoutProperty(layer, 'visibility', eventVisibility);
+    }
+    for (const layer of [
+      'connected-venues-clusters-glow',
+      'connected-venues-clusters',
+      'connected-venues-cluster-count',
+      'connected-venues-circles'
+    ]) {
+      instance.setLayoutProperty(layer, 'visibility', venueVisibility);
+    }
+    setMapSelection(undefined);
+  }, [explorerPinKind]);
+
+  // Real attendee count for whichever event is currently selected on the
+  // connected Carte page's popup card - same batched endpoint as the
+  // Événements page (Phase 4.11), just a single id here.
+  useEffect(() => {
+    if (mapSelection?.kind !== 'event') {
+      setSelectionEngagement(undefined);
+      return;
+    }
+    const eventId = mapSelection.event.id;
+    fetch(`${API_BASE_URL}/events/engagement?ids=${eventId}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const entry = eventEngagementResponseSchema.parse(json).data[0];
+        if (entry) setSelectionEngagement(entry);
+      })
+      .catch(() => {});
+  }, [mapSelection]);
 
   // Prefer real-distance nearby results; fall back to the bounds-based list
   // when geolocation was denied/unsupported or hasn't resolved yet.
@@ -3154,10 +3536,14 @@ export function ExploreMap({
                 </div>
               </section>
 
-              {/* Explorer map - same always-mounted rationale. */}
+              {/* Explorer map - same always-mounted rationale. Only for the
+                  anonymous top-navbar's "Explorer" now (Phase 4.13) - signed-
+                  in users get the dedicated section right below instead. */}
               <section
                 className="map-container-wrapper"
-                style={{ display: section === 'explorer' ? undefined : 'none' }}
+                style={{
+                  display: !user && section === 'explorer' ? undefined : 'none'
+                }}
               >
                 <div className="map-shell">
                   <div ref={explorerMapContainer} className="map" />
@@ -3177,6 +3563,134 @@ export function ExploreMap({
                       Lieux
                     </button>
                   </div>
+                </div>
+              </section>
+
+              {/* Connected "Carte" (Phase 4.13) - its own map instance
+                  (connectedMap/connectedMapContainer), real clustering with
+                  visible counts for both events and venues, a real filter
+                  bar (reuses MapFilterBar as-is), a real recenter/zoom
+                  control, and a small floating card on pin selection
+                  instead of the full EventDetails panel. explorerMap above
+                  is untouched - anonymous "Explorer" behaves exactly as
+                  before. */}
+              <section
+                className="map-container-wrapper"
+                style={{
+                  display: user && section === 'explorer' ? undefined : 'none'
+                }}
+              >
+                <div className="map-shell connected-map-shell">
+                  <MapFilterBar
+                    filters={filters}
+                    onChange={applyFilters}
+                    onOpenMore={() => setFiltersOpen((prev) => !prev)}
+                    locale={locale}
+                  />
+
+                  <div ref={connectedMapContainer} className="map" />
+
+                  <div className="map-floating-pin-toggle">
+                    <button
+                      type="button"
+                      className={explorerPinKind === 'event' ? 'active' : ''}
+                      onClick={() => setExplorerPinKind('event')}
+                    >
+                      Événements
+                    </button>
+                    <button
+                      type="button"
+                      className={explorerPinKind === 'venue' ? 'active' : ''}
+                      onClick={() => setExplorerPinKind('venue')}
+                    >
+                      Lieux
+                    </button>
+                  </div>
+
+                  <div className="map-zoom-controls">
+                    <button
+                      type="button"
+                      className="map-zoom-btn"
+                      aria-label={translate(locale, 'map.zoomIn')}
+                      onClick={() => connectedMap.current?.zoomIn()}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="map-zoom-btn"
+                      aria-label={translate(locale, 'map.zoomOut')}
+                      onClick={() => connectedMap.current?.zoomOut()}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="map-zoom-btn map-recenter-btn"
+                      aria-label="Ma position"
+                      title="Ma position"
+                      disabled={!userLocation}
+                      onClick={() => {
+                        if (!userLocation) return;
+                        connectedMap.current?.flyTo({
+                          center: [
+                            userLocation.longitude,
+                            userLocation.latitude
+                          ],
+                          zoom: 14
+                        });
+                      }}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {mapSelection && (
+                    <MapSelectionCard
+                      selection={mapSelection}
+                      attendeeCount={
+                        mapSelection.kind === 'event' &&
+                        selectionEngagement?.eventId === mapSelection.event.id
+                          ? selectionEngagement.attendeeCount
+                          : undefined
+                      }
+                      onClose={() => setMapSelection(undefined)}
+                      onOpenEvent={(eventId) => {
+                        setMapSelection(undefined);
+                        void openDetails(eventId, { asForumPanel: true });
+                      }}
+                      locale={locale}
+                    />
+                  )}
                 </div>
               </section>
 
@@ -6059,6 +6573,161 @@ function EventGridCard({
           )}
           {attendeeCount > 0 && (
             <span className="events-grid-card-hotness">🔥 {attendeeCount}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Connected "Carte" page's floating card (Phase 4.13) - a small, real
+// summary of whichever single pin was clicked, not the full EventDetails
+// panel. attendeeCount is real (batched /events/engagement, single id here)
+// and only shown once it's actually loaded for this exact selection - no
+// placeholder/guessed number while in flight.
+function MapSelectionCard({
+  selection,
+  attendeeCount,
+  onClose,
+  onOpenEvent,
+  locale
+}: {
+  selection:
+    | { kind: 'event'; event: PublicEvent }
+    | { kind: 'venue'; group: VenueGroup };
+  attendeeCount: number | undefined;
+  onClose: () => void;
+  onOpenEvent: (eventId: string) => void;
+  locale: SupportedLocale;
+}) {
+  if (selection.kind === 'event') {
+    const { event } = selection;
+    const start = new Date(event.startsAt);
+    const isToday = start.toDateString() === new Date().toDateString();
+    const whenLabel = isToday
+      ? "Aujourd'hui"
+      : start.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+    return (
+      <div className="map-selection-card">
+        <div
+          className="map-selection-card-media"
+          style={
+            event.imageUrl
+              ? {
+                  backgroundImage: `url(${event.imageUrl})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center'
+                }
+              : undefined
+          }
+        >
+          {!event.imageUrl && <EventImageFallback category={event.category} />}
+          <span className="map-selection-card-when">
+            {whenLabel} ·{' '}
+            {start.toLocaleTimeString('fr-CA', {
+              hour: '2-digit',
+              minute: '2-digit'
+            })}
+          </span>
+          <button
+            type="button"
+            className="map-selection-card-close"
+            onClick={onClose}
+            aria-label="Fermer"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="map-selection-card-body">
+          <h3>{event.title}</h3>
+          <p className="map-selection-card-venue">
+            📍 {event.venue.name} · {event.venue.address}
+          </p>
+          <div className="map-selection-card-footer">
+            <span
+              className="map-selection-card-tag"
+              style={{
+                background:
+                  CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']
+              }}
+            >
+              {SHORT_CATEGORY_LABELS[locale][event.category]}
+            </span>
+            {attendeeCount !== undefined && attendeeCount > 0 && (
+              <span className="map-selection-card-count">
+                🔥 +{attendeeCount} intéressé{attendeeCount > 1 ? 's' : ''}
+              </span>
+            )}
+            <button
+              type="button"
+              className="primary-action-btn map-selection-card-cta"
+              onClick={() => onOpenEvent(event.id)}
+            >
+              Voir l'événement
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { group } = selection;
+  const nextEvent = [...group.events].sort(
+    (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+  )[0];
+  return (
+    <div className="map-selection-card">
+      <div
+        className="map-selection-card-media"
+        style={
+          group.imageUrl
+            ? {
+                backgroundImage: `url(${group.imageUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }
+            : undefined
+        }
+      >
+        {!group.imageUrl && (
+          <EventImageFallback category={group.categories[0] ?? 'other'} />
+        )}
+        {group.venueCategory && (
+          <span className="map-selection-card-when">
+            {VENUE_CATEGORY_LABELS[locale][group.venueCategory]}
+          </span>
+        )}
+        <button
+          type="button"
+          className="map-selection-card-close"
+          onClick={onClose}
+          aria-label="Fermer"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="map-selection-card-body">
+        <h3>{group.name}</h3>
+        <p className="map-selection-card-venue">📍 {group.address}</p>
+        <div className="map-selection-card-footer">
+          {group.priceTier && (
+            <span className="map-selection-card-tag map-selection-card-tag-price">
+              {group.priceTier}
+            </span>
+          )}
+          <span className="map-selection-card-count">
+            {group.events.length > 0
+              ? `${group.events.length} événement${group.events.length > 1 ? 's' : ''} à venir`
+              : 'Aucun événement à venir'}
+          </span>
+          {nextEvent && (
+            <button
+              type="button"
+              className="primary-action-btn map-selection-card-cta"
+              onClick={() => onOpenEvent(nextEvent.id)}
+            >
+              Voir l'événement
+            </button>
           )}
         </div>
       </div>

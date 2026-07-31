@@ -2534,6 +2534,123 @@ a.venue-detail-info-row:hover {
   color: var(--text-primary);
 }
 
+/* Connected "Carte" page (Phase 4.13) - reuses .map-filter-bar/.map-zoom-
+   controls/.map-floating-pin-toggle as-is, just relocates the filter bar
+   to top-left (its default bottom-center slot is already taken by the
+   pin-kind toggle here, unlike the anonymous Explorer/evenement maps which
+   only ever show one of the two). */
+.map-shell.connected-map-shell .map-filter-bar {
+  top: 1.5rem;
+  bottom: auto;
+  left: 1.5rem;
+  transform: none;
+  flex-wrap: wrap;
+  max-width: calc(100% - 3rem);
+}
+
+/* The connected Carte page's own floating card (Phase 4.13) - a compact,
+   real summary of one selected pin, distinct from .event-preview-card
+   (search-result preview, unrelated feature) and never the full
+   EventDetails panel. */
+.map-selection-card {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 1.5rem;
+  z-index: 15;
+  width: min(340px, calc(100% - 3rem));
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  border-radius: 1.25rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+.map-selection-card-media {
+  position: relative;
+  height: 110px;
+  background: var(--surface-overlay);
+}
+.map-selection-card-when {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.map-selection-card-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+}
+.map-selection-card-body {
+  padding: 0.9rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.map-selection-card-body h3 {
+  margin: 0;
+  font-size: 1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-selection-card-venue {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-selection-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.map-selection-card-tag {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.map-selection-card-tag-price {
+  background: var(--surface-base);
+  color: var(--text-secondary);
+  border: 1px solid var(--brand-border);
+}
+.map-selection-card-count {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.map-selection-card-cta {
+  margin-left: auto;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.82rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
 /* Event Preview Card (on map) */
 .event-preview-card {
   background: var(--surface-raised);
