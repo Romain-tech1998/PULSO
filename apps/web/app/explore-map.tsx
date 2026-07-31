@@ -2883,7 +2883,13 @@ export function ExploreMap({
             carouselEmpty={carouselEmpty}
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
-            onOpenDetails={openDetails}
+            onOpenDetails={(eventId, options) =>
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true,
+                ...options
+              })
+            }
             locale={locale}
             authToken={authToken}
             onNavigate={setSection}
@@ -2937,7 +2943,12 @@ export function ExploreMap({
             emptyMessage="Aucun événement à venir pour l'instant. Marquez votre présence sur un événement pour le voir apparaître ici."
             mode="upcoming"
             attendance={attendance}
-            onOpenDetails={openDetails}
+            onOpenDetails={(eventId) =>
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true
+              })
+            }
             locale={locale}
           />
         ) : user && section === 'historique' ? (
@@ -2946,7 +2957,12 @@ export function ExploreMap({
             emptyMessage="Aucun événement passé pour l'instant."
             mode="past"
             attendance={attendance}
-            onOpenDetails={openDetails}
+            onOpenDetails={(eventId) =>
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true
+              })
+            }
             locale={locale}
           />
         ) : user && section === 'evenement' ? (
@@ -6843,10 +6859,26 @@ function MapSelectionCard({
   );
 }
 
-// Landing view for connected users (Phase 4.4) - reuses the same nearby-
-// events data already computed for the anonymous carousel and the same
-// active-forums signal as the dedicated "Forums" page, rather than
-// building a second data source for what is the same information.
+// Top filter pills (Phase 4.16) shared by the hero's "Voir ce soir" shortcut,
+// the pill row and the rail's "Catégories populaires" - real category
+// taxonomy and a real "tonight" date check only, no invented sub-genres.
+type DashboardFilter = 'all' | 'tonight' | 'free' | EventCategory;
+
+function isEventTonight(event: PublicEvent): boolean {
+  const toMontrealDateKey = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-CA', {
+      timeZone: 'America/Toronto'
+    });
+  return (
+    toMontrealDateKey(event.startsAt) ===
+    toMontrealDateKey(new Date().toISOString())
+  );
+}
+
+// Landing view for connected users (Phase 4.4, reworked Phase 4.16) - reuses
+// the same nearby-events data already computed for the anonymous carousel
+// and the same active-forums signal as the dedicated "Forums" page, rather
+// than building a second data source for what is the same information.
 function DashboardHome({
   user,
   carouselEvents,
@@ -6863,20 +6895,46 @@ function DashboardHome({
   carouselEmpty: boolean;
   favorites: string[];
   onToggleFavorite: (eventId: string) => void;
-  onOpenDetails: (eventId: string) => void;
+  onOpenDetails: (
+    eventId: string,
+    options?: { forumEventFirst?: boolean }
+  ) => void;
   locale: SupportedLocale;
   authToken: string | undefined;
   onNavigate: (section: ConnectedSection) => void;
 }) {
   const { forums, state: forumsState } = useActiveForums(authToken);
   const { trends } = useTrends(authToken);
+  const [activeFilter, setActiveFilter] = useState<DashboardFilter>('all');
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [friendCode, setFriendCode] = useState<string>();
+  const newCarouselRef = useRef<HTMLDivElement>(null);
+  const nearbyCarouselRef = useRef<HTMLDivElement>(null);
+
+  // "Invite tes amis" (Phase 4.16) - same real friend-code mechanism as the
+  // persistent sidebar widget and the Amis page, i.e. inviting someone onto
+  // Pulso itself, never a per-event share (that flow already exists
+  // separately as EventHero/GroupModal's "Envoyer à un ami").
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/friend-code`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setFriendCode(friendCodeResponseSchema.parse(json).data.friendCode)
+      )
+      .catch(() => {});
+  }, [authToken]);
 
   // "Nouveautés" (Phase 4.14) - real recency (source.observedAt, same 72h
   // threshold as Événements' own "Nouveaux événements" widget) combined
   // with the account's own real favorite categories when it has any
   // (useTrends - never an inferred/ML recommendation). A citywide fetch,
   // not carouselEvents above (that one is scoped to the map viewport/
-  // nearby radius, too narrow a pool for "what's new in Montréal").
+  // nearby radius, too narrow a pool for "what's new in Montréal"). Also
+  // doubles as the pool for "Ce soir à Montréal" and the top filter pills
+  // (Phase 4.16) rather than adding further citywide fetches to this page.
   const [recentEvents, setRecentEvents] = useState<PublicEvent[]>([]);
   useEffect(() => {
     fetch(
@@ -6887,15 +6945,53 @@ function DashboardHome({
       .catch(() => {});
   }, []);
 
+  // "Recommandé pour vous" (Phase 4.16) - real attendee counts (same
+  // /events/engagement endpoint as Événements' "Les plus populaires"), never
+  // an inferred/ML pick.
+  const engagementIdsKey = Array.from(
+    new Set([...recentEvents, ...carouselEvents].map((event) => event.id))
+  )
+    .slice(0, 100)
+    .join(',');
+  const [engagement, setEngagement] = useState<
+    Map<string, EventEngagementEntry>
+  >(new Map());
+  useEffect(() => {
+    if (!engagementIdsKey) {
+      setEngagement(new Map());
+      return;
+    }
+    const headers: Record<string, string> = {};
+    if (authToken) headers.authorization = `Bearer ${authToken}`;
+    fetch(`${API_BASE_URL}/events/engagement?ids=${engagementIdsKey}`, {
+      headers
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const data = eventEngagementResponseSchema.parse(json).data;
+        setEngagement(new Map(data.map((entry) => [entry.eventId, entry])));
+      })
+      .catch(() => {});
+  }, [engagementIdsKey, authToken]);
+
   const favoriteEventCategories = new Set(
     trends?.eventCategories.map((entry) => entry.category) ?? []
   );
+
+  const matchesFilter = (event: PublicEvent) => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'tonight') return isEventTonight(event);
+    if (activeFilter === 'free') return event.price.kind === 'free';
+    return event.category === activeFilter;
+  };
+
   const newEvents = recentEvents
     .filter(
       (event) =>
         Date.now() - new Date(event.source.observedAt).getTime() <
         NEW_EVENT_WINDOW_MS
     )
+    .filter(matchesFilter)
     .sort((a, b) => {
       if (favoriteEventCategories.size > 0) {
         const aMatch = favoriteEventCategories.has(a.category) ? 1 : 0;
@@ -6912,202 +7008,462 @@ function DashboardHome({
     favoriteEventCategories.size > 0 &&
     newEvents.some((event) => favoriteEventCategories.has(event.category));
 
+  const nearbyEvents = carouselEvents.filter(matchesFilter).slice(0, 10);
+
+  const tonightEvents = recentEvents
+    .filter(isEventTonight)
+    .sort(
+      (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+    )
+    .slice(0, 5);
+
+  const recommendedPool = Array.from(
+    new Map(
+      [...recentEvents, ...carouselEvents].map((event) => [event.id, event])
+    ).values()
+  ).filter((event) => (engagement.get(event.id)?.attendeeCount ?? 0) > 0);
+  const recommendedFavorites =
+    favoriteEventCategories.size > 0
+      ? recommendedPool.filter((event) =>
+          favoriteEventCategories.has(event.category)
+        )
+      : [];
+  const recommended = (
+    recommendedFavorites.length > 0 ? recommendedFavorites : recommendedPool
+  )
+    .sort(
+      (a, b) =>
+        (engagement.get(b.id)?.attendeeCount ?? 0) -
+        (engagement.get(a.id)?.attendeeCount ?? 0)
+    )
+    .slice(0, 3);
+  const recommendedPersonalized = recommendedFavorites.length > 0;
+
   return (
-    <div className="dashboard-home">
-      <h1>Bonjour {user.displayName.split(' ')[0]}</h1>
+    <div className="dashboard-home-page">
+      <div className="dashboard-home">
+        <div className="dashboard-home-hero">
+          <p className="dashboard-home-hero-eyebrow">
+            Bonjour {user.displayName.split(' ')[0]} 👋
+          </p>
+          <h1>Découvrez le meilleur de Montréal</h1>
+          <p className="dashboard-home-hero-subtitle">
+            Événements, lieux et communautés qui font vibrer ta ville.
+          </p>
+          <div className="dashboard-home-hero-actions">
+            <button
+              type="button"
+              className="primary-action-btn"
+              onClick={() => onNavigate('explorer')}
+            >
+              🧭 Explorer la carte
+            </button>
+            <button
+              type="button"
+              className={`dashboard-home-hero-btn ${activeFilter === 'tonight' ? 'active' : ''}`}
+              onClick={() =>
+                setActiveFilter((current) =>
+                  current === 'tonight' ? 'all' : 'tonight'
+                )
+              }
+            >
+              🌙 Voir ce soir
+            </button>
+          </div>
+        </div>
 
-      <button
-        type="button"
-        className="dashboard-home-map-card"
-        onClick={() => onNavigate('explorer')}
-      >
-        <span className="dashboard-home-map-card-icon" aria-hidden="true">
-          🗺️
-        </span>
-        <span>
-          <strong>Explorer la carte</strong>
-          <span>Voir les événements et lieux autour de vous</span>
-        </span>
-      </button>
+        <div className="events-category-chips">
+          <button
+            type="button"
+            className={activeFilter === 'all' ? 'active' : ''}
+            onClick={() => setActiveFilter('all')}
+          >
+            Tous
+          </button>
+          <button
+            type="button"
+            className={activeFilter === 'tonight' ? 'active' : ''}
+            onClick={() => setActiveFilter('tonight')}
+          >
+            Ce soir
+          </button>
+          {EVENT_CATEGORIES.map((cat) => (
+            <button
+              type="button"
+              key={cat}
+              className={activeFilter === cat ? 'active' : ''}
+              onClick={() => setActiveFilter(cat)}
+            >
+              {SHORT_CATEGORY_LABELS[locale][cat]}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={activeFilter === 'free' ? 'active' : ''}
+            onClick={() => setActiveFilter('free')}
+          >
+            ★ Gratuit
+          </button>
+        </div>
 
-      {newEvents.length > 0 && (
+        {newEvents.length > 0 && (
+          <div className="dashboard-home-section">
+            <div className="section-header">
+              <h2>✨ Nouveautés</h2>
+              <span className="dashboard-home-section-subtitle">
+                {newEventsPersonalized
+                  ? 'Ajoutés récemment, dans tes catégories favorites'
+                  : 'Ajoutés récemment à Montréal'}
+              </span>
+            </div>
+            <div className="event-carousel-wrap">
+              <div className="event-carousel" ref={newCarouselRef}>
+                {newEvents.map((evt) => (
+                  <DashboardEventCard
+                    key={evt.id}
+                    evt={evt}
+                    locale={locale}
+                    isFavorite={favorites.includes(evt.id)}
+                    onToggleFavorite={() => onToggleFavorite(evt.id)}
+                    onOpen={() => onOpenDetails(evt.id)}
+                    isNew
+                  />
+                ))}
+              </div>
+              {newEvents.length > 3 && (
+                <>
+                  <button
+                    type="button"
+                    className="event-carousel-arrow event-carousel-arrow-prev"
+                    onClick={() =>
+                      newCarouselRef.current?.scrollBy({
+                        left: -320,
+                        behavior: 'smooth'
+                      })
+                    }
+                    aria-label="Précédent"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    className="event-carousel-arrow event-carousel-arrow-next"
+                    onClick={() =>
+                      newCarouselRef.current?.scrollBy({
+                        left: 320,
+                        behavior: 'smooth'
+                      })
+                    }
+                    aria-label="Suivant"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="dashboard-home-section">
           <div className="section-header">
-            <h2>✨ Nouveautés</h2>
-            <span className="dashboard-home-section-subtitle">
-              {newEventsPersonalized
-                ? 'Ajoutés récemment, dans tes catégories favorites'
-                : 'Ajoutés récemment à Montréal'}
-            </span>
+            <h2>Événements autour de vous</h2>
+            <button
+              type="button"
+              className="view-all"
+              onClick={() => onNavigate('evenement')}
+            >
+              Voir tous les événements
+            </button>
           </div>
-          <div className="event-carousel">
-            {newEvents.map((evt) => (
-              <div
-                className="event-card"
-                key={evt.id}
-                onClick={() => onOpenDetails(evt.id)}
-                style={{ cursor: 'pointer' }}
-              >
-                <div
-                  className="event-card-img"
-                  style={
-                    evt.imageUrl
-                      ? {
-                          backgroundImage: `url(${evt.imageUrl})`,
-                          backgroundSize: 'cover',
-                          backgroundPosition: 'center'
-                        }
-                      : undefined
+          <div className="event-carousel-wrap">
+            <div className="event-carousel" ref={nearbyCarouselRef}>
+              {nearbyEvents.map((evt) => (
+                <DashboardEventCard
+                  key={evt.id}
+                  evt={evt}
+                  locale={locale}
+                  isFavorite={favorites.includes(evt.id)}
+                  onToggleFavorite={() => onToggleFavorite(evt.id)}
+                  onOpen={() => onOpenDetails(evt.id)}
+                />
+              ))}
+              {nearbyEvents.length === 0 && (
+                <p>
+                  {carouselEmpty
+                    ? 'Aucun événement trouvé.'
+                    : 'Aucun événement ne correspond à ce filtre.'}
+                </p>
+              )}
+            </div>
+            {nearbyEvents.length > 3 && (
+              <>
+                <button
+                  type="button"
+                  className="event-carousel-arrow event-carousel-arrow-prev"
+                  onClick={() =>
+                    nearbyCarouselRef.current?.scrollBy({
+                      left: -320,
+                      behavior: 'smooth'
+                    })
                   }
+                  aria-label="Précédent"
                 >
-                  {!evt.imageUrl && (
-                    <EventImageFallback category={evt.category} />
-                  )}
-                  <div
-                    className="card-badge"
-                    style={{
-                      background:
-                        CATEGORY_COLORS[evt.category] ??
-                        CATEGORY_COLORS['other']
-                    }}
-                  >
-                    {SHORT_CATEGORY_LABELS[locale][evt.category]}
-                  </div>
-                  <span className="dashboard-home-new-badge">NOUVEAU</span>
-                  <button
-                    className="card-fav"
-                    onClick={(clickEvent) => {
-                      clickEvent.stopPropagation();
-                      onToggleFavorite(evt.id);
-                    }}
-                  >
-                    {favorites.includes(evt.id) ? '❤️' : '🤍'}
-                  </button>
-                </div>
-                <div className="event-card-content">
-                  <h3>{evt.title}</h3>
-                  <p>{evt.venue?.name}</p>
-                  <p className="card-price">
-                    {evt.startsAt
-                      ? new Date(evt.startsAt).toLocaleDateString()
-                      : ''}
-                  </p>
-                </div>
-              </div>
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className="event-carousel-arrow event-carousel-arrow-next"
+                  onClick={() =>
+                    nearbyCarouselRef.current?.scrollBy({
+                      left: 320,
+                      behavior: 'smooth'
+                    })
+                  }
+                  aria-label="Suivant"
+                >
+                  ›
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="dashboard-home-section">
+          <div className="section-header">
+            <h2>Forums actifs</h2>
+            <button
+              type="button"
+              className="view-all"
+              onClick={() => onNavigate('forums')}
+            >
+              Voir tous les forums
+            </button>
+          </div>
+          {forumsState === 'loading' && (
+            <p className="list-view-empty">Chargement…</p>
+          )}
+          {forumsState === 'success' && forums.length === 0 && (
+            <p className="list-view-empty">
+              Aucune activité récente dans vos forums. Ajoutez des favoris ou
+              marquez votre participation à un événement pour en voir apparaître
+              ici.
+            </p>
+          )}
+          <div className="active-forums-list">
+            {forums.slice(0, 5).map((forum) => (
+              <button
+                type="button"
+                className="active-forum-row"
+                key={`${forum.eventId}-${forum.category}`}
+                onClick={() =>
+                  onOpenDetails(forum.eventId, { forumEventFirst: false })
+                }
+              >
+                <span className="active-forum-row-title">
+                  {forum.eventTitle}
+                </span>
+                <span className="active-forum-row-excerpt">
+                  {forum.lastPostExcerpt}
+                </span>
+                <span className="active-forum-row-meta">
+                  {FORUM_CATEGORY_LABELS[forum.category]} · {forum.postCount}{' '}
+                  message
+                  {forum.postCount !== 1 ? 's' : ''}
+                </span>
+              </button>
             ))}
           </div>
         </div>
-      )}
-
-      <div className="dashboard-home-section">
-        <div className="section-header">
-          <h2>Événements autour de vous</h2>
-          <button
-            type="button"
-            className="view-all"
-            onClick={() => onNavigate('evenement')}
-          >
-            Voir tous les événements
-          </button>
-        </div>
-        <div className="event-carousel">
-          {carouselEvents.slice(0, 10).map((evt) => (
-            <div
-              className="event-card"
-              key={evt.id}
-              onClick={() => onOpenDetails(evt.id)}
-              style={{ cursor: 'pointer' }}
-            >
-              <div
-                className="event-card-img"
-                style={
-                  evt.imageUrl
-                    ? {
-                        backgroundImage: `url(${evt.imageUrl})`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center'
-                      }
-                    : undefined
-                }
-              >
-                {!evt.imageUrl && (
-                  <EventImageFallback category={evt.category} />
-                )}
-                <div
-                  className="card-badge"
-                  style={{
-                    background:
-                      CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']
-                  }}
-                >
-                  {SHORT_CATEGORY_LABELS[locale][evt.category]}
-                </div>
-                <button
-                  className="card-fav"
-                  onClick={(clickEvent) => {
-                    clickEvent.stopPropagation();
-                    onToggleFavorite(evt.id);
-                  }}
-                >
-                  {favorites.includes(evt.id) ? '❤️' : '🤍'}
-                </button>
-              </div>
-              <div className="event-card-content">
-                <h3>{evt.title}</h3>
-                <p>{evt.venue?.name}</p>
-                <p className="card-price">
-                  {evt.startsAt
-                    ? new Date(evt.startsAt).toLocaleDateString()
-                    : ''}
-                </p>
-              </div>
-            </div>
-          ))}
-          {carouselEmpty && <p>Aucun événement trouvé.</p>}
-        </div>
       </div>
 
-      <div className="dashboard-home-section">
-        <div className="section-header">
-          <h2>Forums actifs</h2>
-          <button
-            type="button"
-            className="view-all"
-            onClick={() => onNavigate('forums')}
-          >
-            Voir tous les forums
-          </button>
-        </div>
-        {forumsState === 'loading' && (
-          <p className="list-view-empty">Chargement…</p>
-        )}
-        {forumsState === 'success' && forums.length === 0 && (
-          <p className="list-view-empty">
-            Aucune activité récente dans vos forums. Ajoutez des favoris ou
-            marquez votre participation à un événement pour en voir apparaître
-            ici.
-          </p>
-        )}
-        <div className="active-forums-list">
-          {forums.slice(0, 5).map((forum) => (
+      <aside className="dashboard-home-rail">
+        <div className="events-trends-section">
+          <div className="section-header">
+            <h3>🌙 Ce soir à Montréal</h3>
             <button
               type="button"
-              className="active-forum-row"
-              key={`${forum.eventId}-${forum.category}`}
-              onClick={() => onOpenDetails(forum.eventId)}
+              className="view-all"
+              onClick={() => setActiveFilter('tonight')}
             >
-              <span className="active-forum-row-title">{forum.eventTitle}</span>
-              <span className="active-forum-row-excerpt">
-                {forum.lastPostExcerpt}
-              </span>
-              <span className="active-forum-row-meta">
-                {FORUM_CATEGORY_LABELS[forum.category]} · {forum.postCount}{' '}
-                message
-                {forum.postCount !== 1 ? 's' : ''}
-              </span>
+              Voir tout
             </button>
-          ))}
+          </div>
+          {tonightEvents.length === 0 ? (
+            <p className="list-view-empty">
+              Rien de programmé ce soir pour l'instant.
+            </p>
+          ) : (
+            <ul className="events-trends-list">
+              {tonightEvents.map((event) => (
+                <li key={event.id}>
+                  <button type="button" onClick={() => onOpenDetails(event.id)}>
+                    <span className="events-trends-thumb">
+                      {event.imageUrl ? (
+                        <img src={event.imageUrl} alt="" />
+                      ) : (
+                        <EventImageFallback category={event.category} />
+                      )}
+                    </span>
+                    <span className="events-trends-info">
+                      <strong>{event.title}</strong>
+                      <span>
+                        {formatEventTimeRange(event.startsAt, event.endsAt)} ·{' '}
+                        {event.venue?.name}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
+
+        <div className="events-trends-section">
+          <h3>Catégories populaires</h3>
+          <div className="events-category-chips dashboard-home-rail-chips">
+            {EVENT_CATEGORIES.map((cat) => (
+              <button
+                type="button"
+                key={cat}
+                className={activeFilter === cat ? 'active' : ''}
+                onClick={() =>
+                  setActiveFilter((current) => (current === cat ? 'all' : cat))
+                }
+              >
+                <span
+                  className="dashboard-home-category-dot"
+                  style={{ background: CATEGORY_COLORS[cat] }}
+                  aria-hidden="true"
+                />
+                {SHORT_CATEGORY_LABELS[locale][cat]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="dashboard-invite-card">
+          <strong>Invite tes amis</strong>
+          <p>Plus on est de Pulso, plus on découvre.</p>
+          <button
+            type="button"
+            className="dashboard-invite-card-btn"
+            onClick={() => setInviteOpen(true)}
+          >
+            Inviter des amis
+          </button>
+        </div>
+
+        {recommended.length > 0 && (
+          <div className="events-trends-section">
+            <div className="section-header">
+              <h3>Recommandé pour vous</h3>
+              <button
+                type="button"
+                className="view-all"
+                onClick={() => onNavigate('evenement')}
+              >
+                Voir tout
+              </button>
+            </div>
+            <span className="dashboard-home-section-subtitle">
+              {recommendedPersonalized
+                ? 'Populaire dans tes catégories favorites'
+                : 'Événements populaires en ce moment'}
+            </span>
+            <ul className="events-trends-list">
+              {recommended.map((event) => (
+                <li key={event.id}>
+                  <button type="button" onClick={() => onOpenDetails(event.id)}>
+                    <span className="events-trends-thumb">
+                      {event.imageUrl ? (
+                        <img src={event.imageUrl} alt="" />
+                      ) : (
+                        <EventImageFallback category={event.category} />
+                      )}
+                    </span>
+                    <span className="events-trends-info">
+                      <strong>{event.title}</strong>
+                      <span>{event.venue?.name}</span>
+                    </span>
+                    <span className="events-trends-hotness">
+                      🔥 {engagement.get(event.id)?.attendeeCount}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </aside>
+
+      {inviteOpen && (
+        <InviteFriendModal
+          friendCode={friendCode}
+          authToken={authToken}
+          onSent={() => setInviteOpen(false)}
+          onClose={() => setInviteOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function DashboardEventCard({
+  evt,
+  locale,
+  isFavorite,
+  onToggleFavorite,
+  onOpen,
+  isNew
+}: {
+  evt: PublicEvent;
+  locale: SupportedLocale;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+  onOpen: () => void;
+  isNew?: boolean;
+}) {
+  return (
+    <div className="event-card" onClick={onOpen} style={{ cursor: 'pointer' }}>
+      <div
+        className="event-card-img"
+        style={
+          evt.imageUrl
+            ? {
+                backgroundImage: `url(${evt.imageUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }
+            : undefined
+        }
+      >
+        {!evt.imageUrl && <EventImageFallback category={evt.category} />}
+        <div
+          className="card-badge"
+          style={{
+            background:
+              CATEGORY_COLORS[evt.category] ?? CATEGORY_COLORS['other']
+          }}
+        >
+          {SHORT_CATEGORY_LABELS[locale][evt.category]}
+        </div>
+        {isNew && <span className="dashboard-home-new-badge">NOUVEAU</span>}
+        <button
+          className="card-fav"
+          onClick={(clickEvent) => {
+            clickEvent.stopPropagation();
+            onToggleFavorite();
+          }}
+        >
+          {isFavorite ? '❤️' : '🤍'}
+        </button>
+      </div>
+      <div className="event-card-content">
+        <h3>{evt.title}</h3>
+        <p>{evt.venue?.name}</p>
+        <p className="card-price">
+          {evt.startsAt ? new Date(evt.startsAt).toLocaleDateString() : ''}
+        </p>
       </div>
     </div>
   );
