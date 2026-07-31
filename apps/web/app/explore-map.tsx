@@ -42,6 +42,7 @@ import {
   trendsResponseSchema,
   unreadCountResponseSchema,
   VENUE_CATEGORY_FILTER_OPTIONS,
+  venueFavoriteCountsResponseSchema,
   venueListResponseSchema,
   type ActiveForum,
   type ActivityEntry,
@@ -2477,6 +2478,16 @@ export function ExploreMap({
             onNavigateToMap={() => setSection('explorer')}
             locale={locale}
           />
+        ) : user && section === 'lieu' ? (
+          <LieuxPage
+            favoriteVenues={favoriteVenues}
+            onToggleFavoriteVenue={toggleFavoriteVenue}
+            onOpenEventForum={(eventId) =>
+              void openDetails(eventId, { asForumPanel: true })
+            }
+            onNavigateToMap={() => setSection('explorer')}
+            locale={locale}
+          />
         ) : (
           <Fragment>
             <div className="dashboard-main">
@@ -4338,6 +4349,395 @@ function VenueListView({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Full-page, card-grid "Lieux" home for the connected sidebar (Phase 4.12)
+// - same split-view treatment as Événements (Phase 4.11) and Groupes
+// (Phase 4.10 follow-up): a real list on the left, a real inline detail
+// panel on the right, no modal, no map (the separate "Carte" item already
+// covers map browsing). Reuses groupEventsByVenue/VenueGroup/VenueListView
+// as-is rather than a second grouping/card implementation.
+//
+// Deliberately absent, per this session's real-data-only rule (confirmed
+// with the user): star ratings/review counts (no review system exists
+// anywhere - the profile's Avis tab is still an explicit "Coming Soon"),
+// opening hours ("Ouvert maintenant"), "Ambiance" tag words, neighborhood
+// names, phone/website, and a venue-scoped "Rejoindre le groupe" button
+// (groups have no venue_id). The one popularity signal shown - favorite
+// count - is real (GET /venues/favorite-counts, Phase 4.12 backend), shown
+// only when > 0.
+function LieuxPage({
+  favoriteVenues,
+  onToggleFavoriteVenue,
+  onOpenEventForum,
+  onNavigateToMap,
+  locale
+}: {
+  favoriteVenues: string[];
+  onToggleFavoriteVenue: (id: string) => void;
+  onOpenEventForum: (eventId: string) => void;
+  onNavigateToMap: () => void;
+  locale: SupportedLocale;
+}) {
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [activeCategory, setActiveCategory] = useState<VenueCategory | 'all'>(
+    'all'
+  );
+  const [query, setQuery] = useState('');
+  const [selectedVenueId, setSelectedVenueId] = useState<string>();
+  const [favoriteCounts, setFavoriteCounts] = useState<Map<string, number>>(
+    new Map()
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(
+      `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, { date: 'next7', categories: [], price: 'all' })}`
+    )
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        if (cancelled) return;
+        setEvents(eventListResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => {
+        if (!cancelled) setState('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const allGroups = groupEventsByVenue(events);
+  const availableCategories = Array.from(
+    new Set(
+      allGroups
+        .map((group) => group.venueCategory)
+        .filter((category): category is VenueCategory => category !== undefined)
+    )
+  );
+
+  const filteredGroups = allGroups
+    .filter(
+      (group) =>
+        activeCategory === 'all' || group.venueCategory === activeCategory
+    )
+    .filter(
+      (group) =>
+        !query.trim() ||
+        `${group.name} ${group.address}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase())
+    );
+
+  const idsKey = filteredGroups
+    .map((group) => group.id)
+    .slice(0, 100)
+    .join(',');
+
+  useEffect(() => {
+    if (!idsKey) {
+      setFavoriteCounts(new Map());
+      return;
+    }
+    fetch(`${API_BASE_URL}/venues/favorite-counts?ids=${idsKey}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const data = venueFavoriteCountsResponseSchema.parse(json).data;
+        setFavoriteCounts(
+          new Map(data.map((entry) => [entry.venueId, entry.favoriteCount]))
+        );
+      })
+      .catch(() => {});
+  }, [idsKey]);
+
+  const selectedGroup = allGroups.find((group) => group.id === selectedVenueId);
+
+  return (
+    <div className="events-page">
+      <div className="events-page-main">
+        <div className="events-hero">
+          <div className="events-hero-text">
+            <p className="events-hero-eyebrow">Les lieux à Montréal ✨</p>
+            <div className="events-hero-stats">
+              <span className="events-hero-stat">
+                <strong>{allGroups.length}</strong> lieux avec des événements à
+                venir
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary events-hero-map-btn"
+            onClick={onNavigateToMap}
+          >
+            🗺️ Voir la carte
+          </button>
+        </div>
+
+        <div className="messages-search events-search">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Rechercher un lieu, une adresse…"
+          />
+        </div>
+
+        <div className="events-category-chips">
+          <button
+            type="button"
+            className={activeCategory === 'all' ? 'active' : ''}
+            onClick={() => setActiveCategory('all')}
+          >
+            Tous
+          </button>
+          {availableCategories.map((category) => (
+            <button
+              type="button"
+              key={category}
+              className={activeCategory === category ? 'active' : ''}
+              onClick={() => setActiveCategory(category)}
+            >
+              {VENUE_CATEGORY_LABELS[locale][category]}
+            </button>
+          ))}
+        </div>
+
+        {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+        {state === 'error' && (
+          <p className="list-view-empty">
+            Impossible de charger les lieux pour le moment.
+          </p>
+        )}
+
+        <VenueListView
+          groups={filteredGroups}
+          onSelectVenue={(group) => setSelectedVenueId(group.id)}
+          favoriteVenues={favoriteVenues}
+          onToggleFavoriteVenue={onToggleFavoriteVenue}
+          locale={locale}
+        />
+      </div>
+
+      <aside className="venue-detail-pane">
+        {selectedGroup ? (
+          <VenueDetailContent
+            group={selectedGroup}
+            favoriteVenues={favoriteVenues}
+            onToggleFavoriteVenue={onToggleFavoriteVenue}
+            favoriteCount={favoriteCounts.get(selectedGroup.id) ?? 0}
+            onOpenEventForum={onOpenEventForum}
+            locale={locale}
+          />
+        ) : (
+          <div className="messages-empty-pane">
+            <span className="empty-state-icon" aria-hidden="true">
+              📍
+            </span>
+            <p>Sélectionne un lieu pour l'ouvrir ici.</p>
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function VenueDetailContent({
+  group,
+  favoriteVenues,
+  onToggleFavoriteVenue,
+  favoriteCount,
+  onOpenEventForum,
+  locale
+}: {
+  group: VenueGroup;
+  favoriteVenues: string[];
+  onToggleFavoriteVenue: (id: string) => void;
+  favoriteCount: number;
+  onOpenEventForum: (eventId: string) => void;
+  locale: SupportedLocale;
+}) {
+  const [tab, setTab] = useState<'infos' | 'evenements'>('infos');
+  const isFavorite = favoriteVenues.includes(group.id);
+  const sortedEvents = [...group.events].sort(
+    (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+  );
+  const nextEvent = sortedEvents[0];
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${group.point.latitude},${group.point.longitude}`;
+
+  return (
+    <div className="venue-detail">
+      <div
+        className="venue-detail-hero"
+        style={
+          group.imageUrl
+            ? {
+                backgroundImage: `url(${group.imageUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }
+            : undefined
+        }
+      >
+        {!group.imageUrl && (
+          <EventImageFallback category={group.categories[0] ?? 'other'} />
+        )}
+        <button
+          type="button"
+          className={`card-fav venue-detail-fav ${isFavorite ? 'card-fav-following' : ''}`}
+          aria-pressed={isFavorite}
+          aria-label={isFavorite ? 'Ne plus suivre ce lieu' : 'Suivre ce lieu'}
+          title={isFavorite ? 'Suivi' : 'Suivre ce lieu'}
+          onClick={() => onToggleFavoriteVenue(group.id)}
+        >
+          <BellIcon />
+        </button>
+      </div>
+
+      <div className="venue-detail-header">
+        {group.venueCategory && (
+          <span
+            className="venue-card-type-badge"
+            style={{
+              background: VENUE_CATEGORY_COLORS[group.venueCategory],
+              borderColor: VENUE_CATEGORY_COLORS[group.venueCategory],
+              color: '#fff'
+            }}
+          >
+            {VENUE_CATEGORY_LABELS[locale][group.venueCategory]}
+          </span>
+        )}
+        <h2>{group.name}</h2>
+        <p className="venue-detail-address">📍 {group.address}</p>
+        {favoriteCount > 0 && (
+          <p className="venue-detail-popularity">
+            🔥 {favoriteCount} personne{favoriteCount > 1 ? 's' : ''}{' '}
+            {favoriteCount > 1 ? 'ont' : 'a'} ce lieu en favori
+          </p>
+        )}
+      </div>
+
+      <div className="details-tabs venue-detail-tabs">
+        <button
+          type="button"
+          className={tab === 'infos' ? 'active' : ''}
+          onClick={() => setTab('infos')}
+        >
+          Infos
+        </button>
+        <button
+          type="button"
+          className={tab === 'evenements' ? 'active' : ''}
+          onClick={() => setTab('evenements')}
+        >
+          Événements
+          {sortedEvents.length > 0 ? ` (${sortedEvents.length})` : ''}
+        </button>
+      </div>
+
+      {tab === 'infos' && (
+        <div className="venue-detail-infos">
+          <a
+            className="venue-detail-info-row"
+            href={mapsUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span aria-hidden="true">📍</span>
+            <span>{group.address}</span>
+            <span className="venue-detail-info-link" aria-hidden="true">
+              ↗
+            </span>
+          </a>
+          {group.priceTier && (
+            <div className="venue-detail-info-row">
+              <span aria-hidden="true">💰</span>
+              <span>
+                Gamme de prix estimée : {group.priceTier}
+                <span className="venue-detail-info-hint">
+                  {' '}
+                  (basée sur les événements payants à venir)
+                </span>
+              </span>
+            </div>
+          )}
+          {nextEvent && (
+            <div className="venue-detail-upcoming-card">
+              <h3>À ne pas manquer</h3>
+              <button
+                type="button"
+                className="venue-detail-event-row"
+                onClick={() => onOpenEventForum(nextEvent.id)}
+              >
+                <span
+                  className="card-badge"
+                  style={{
+                    background:
+                      CATEGORY_COLORS[nextEvent.category] ??
+                      CATEGORY_COLORS['other']
+                  }}
+                >
+                  {SHORT_CATEGORY_LABELS[locale][nextEvent.category]}
+                </span>
+                <span className="venue-detail-event-info">
+                  <strong>{nextEvent.title}</strong>
+                  <span>
+                    {new Date(nextEvent.startsAt).toLocaleDateString('fr-CA', {
+                      day: 'numeric',
+                      month: 'short'
+                    })}{' '}
+                    ·{' '}
+                    {formatEventTimeRange(nextEvent.startsAt, nextEvent.endsAt)}
+                  </span>
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'evenements' && (
+        <div className="venue-detail-events-list">
+          {sortedEvents.length === 0 && (
+            <p className="list-view-empty">
+              Aucun événement à venir pour ce lieu.
+            </p>
+          )}
+          {sortedEvents.map((event) => (
+            <button
+              type="button"
+              key={event.id}
+              className="venue-detail-event-row"
+              onClick={() => onOpenEventForum(event.id)}
+            >
+              <span
+                className="card-badge"
+                style={{
+                  background:
+                    CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']
+                }}
+              >
+                {SHORT_CATEGORY_LABELS[locale][event.category]}
+              </span>
+              <span className="venue-detail-event-info">
+                <strong>{event.title}</strong>
+                <span>
+                  {new Date(event.startsAt).toLocaleDateString('fr-CA', {
+                    day: 'numeric',
+                    month: 'short'
+                  })}{' '}
+                  · {formatEventTimeRange(event.startsAt, event.endsAt)}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

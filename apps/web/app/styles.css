@@ -2047,6 +2047,154 @@ h6 {
   margin-top: 0.3rem;
 }
 
+/* Lieux page (Phase 4.12) - VenueListView/.venue-view was built for a
+   fixed-height map-sidebar slot (height:100%, its own scroll/padding); this
+   neutralizes that so it flows naturally inside .events-page-main's own
+   already-scrollable, already-padded column instead of nesting a second
+   scroll container. */
+.events-page-main .venue-view {
+  height: auto;
+  overflow-y: visible;
+  padding: 0;
+  background: transparent;
+}
+
+.venue-detail-pane {
+  width: 380px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--brand-border);
+  display: flex;
+  flex-direction: column;
+}
+.venue-detail {
+  display: flex;
+  flex-direction: column;
+}
+.venue-detail-hero {
+  position: relative;
+  height: 180px;
+  flex-shrink: 0;
+  background: var(--surface-raised);
+}
+.venue-detail-fav {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  width: 34px;
+  height: 34px;
+}
+.venue-detail-header {
+  padding: 1rem 1.25rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+.venue-detail-header h2 {
+  margin: 0.2rem 0 0;
+  font-size: 1.2rem;
+}
+.venue-detail-address {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+.venue-detail-popularity {
+  margin: 0.1rem 0 0;
+  color: var(--brand-orange);
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+.venue-detail-pane .venue-detail-tabs {
+  margin-top: 0.9rem;
+  padding: 0 1.25rem;
+}
+.venue-detail-infos {
+  padding: 1.1rem 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.venue-detail-info-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+a.venue-detail-info-row {
+  text-decoration: none;
+}
+a.venue-detail-info-row:hover {
+  color: var(--brand-purple);
+}
+.venue-detail-info-link {
+  color: var(--brand-blue);
+}
+.venue-detail-info-hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.venue-detail-upcoming-card {
+  padding: 1rem 1.1rem;
+  border-radius: 0.9rem;
+  background: var(--surface-base);
+  border: 1px solid var(--brand-border);
+}
+.venue-detail-upcoming-card h3 {
+  margin: 0 0 0.6rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.venue-detail-events-list {
+  padding: 1.1rem 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.venue-detail-event-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.6rem;
+  border-radius: 0.7rem;
+  background: var(--surface-base);
+  border: 1px solid transparent;
+  text-align: left;
+  transition: border-color 0.2s;
+}
+.venue-detail-event-row:hover {
+  border-color: var(--brand-border);
+}
+.venue-detail-event-row .card-badge {
+  position: static;
+  flex-shrink: 0;
+}
+.venue-detail-event-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.venue-detail-event-info strong {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.venue-detail-event-info span {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
 /* Calendar view */
 .calendar-view {
   height: 100%;
