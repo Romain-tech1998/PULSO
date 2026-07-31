@@ -223,6 +223,7 @@ export function fakeGroup(overrides: Partial<Group> = {}): Group {
     isModerator: true,
     myStatus: 'member',
     pendingRequestCount: undefined,
+    pinned: false,
     ...overrides
   };
 }
@@ -252,6 +253,7 @@ export function fakeGroupsRepository(
     getGroup: async () => fakeGroup(),
     joinGroup: async () => 'member',
     leaveGroup: async () => undefined,
+    setGroupPinned: async () => undefined,
     getMembers: async () => [],
     getJoinRequests: async () => [],
     respondToJoinRequest: async () => undefined,

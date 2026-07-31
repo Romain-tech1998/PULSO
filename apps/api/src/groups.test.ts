@@ -194,6 +194,41 @@ describe('groups API', () => {
     await app.close();
   });
 
+  it('pins a group to the sidebar shortcut list', async () => {
+    let received:
+      { groupId: string; userId: string; pinned: boolean } | undefined;
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          setGroupPinned: async (id, userId, pinned) => {
+            received = { groupId: id, userId, pinned };
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/groups/${groupId}/pin`,
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { pinned: true }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(received).toEqual({ groupId, userId: testUser.id, pinned: true });
+    await app.close();
+  });
+
+  it('rejects pinning a group without a bearer token', async () => {
+    const app = buildApp(event, accountRepositories());
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/groups/${groupId}/pin`,
+      payload: { pinned: true }
+    });
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
   it('lists posts for a group', async () => {
     const post = fakeGroupPost();
     const app = buildApp(

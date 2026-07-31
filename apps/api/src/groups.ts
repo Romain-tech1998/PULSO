@@ -16,7 +16,8 @@ import {
   joinGroupResponseSchema,
   respondGroupJoinRequestSchema,
   setGroupAttendanceRequestSchema,
-  setGroupChecklistCheckRequestSchema
+  setGroupChecklistCheckRequestSchema,
+  setGroupPinnedRequestSchema
 } from '@pulso/contracts';
 import type {
   AuthRepository,
@@ -130,6 +131,18 @@ export function registerGroupsRoutes(
     if (!user) return sendUnauthenticated(reply);
     const { id } = groupParamsSchema.parse(request.params);
     await groupsRepository.leaveGroup(id, user.id);
+    return reply.status(204).send();
+  });
+
+  // Phase 4.14: a member's own choice to show/hide this group in their
+  // sidebar shortcut list - a no-op if they're not an accepted member
+  // (leaveGroup-style, not an error worth surfacing).
+  app.put('/groups/:id/pin', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id } = groupParamsSchema.parse(request.params);
+    const { pinned } = setGroupPinnedRequestSchema.parse(request.body);
+    await groupsRepository.setGroupPinned(id, user.id, pinned);
     return reply.status(204).send();
   });
 

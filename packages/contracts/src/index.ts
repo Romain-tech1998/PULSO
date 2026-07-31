@@ -552,13 +552,20 @@ export const groupSchema = z.object({
   pendingRequestCount: z.number().int().min(0).optional(),
   meetupVenue: groupMeetupVenueSchema.optional(),
   eventTitle: z.string().min(1).optional(),
-  eventStartsAt: z.iso.datetime().optional()
+  eventStartsAt: z.iso.datetime().optional(),
+  // Phase 4.14: this viewer's own choice to show this group in their
+  // sidebar shortcut list - always false for a group they haven't joined.
+  pinned: z.boolean()
 });
 
 export const createGroupRequestSchema = z.object({
   name: z.string().min(1).max(80),
   description: z.string().min(1).max(500).optional(),
   visibility: groupVisibilitySchema.optional()
+});
+
+export const setGroupPinnedRequestSchema = z.object({
+  pinned: z.boolean()
 });
 
 export const groupsResponseSchema = z.object({
@@ -881,6 +888,7 @@ export type ReportTargetType = z.infer<typeof reportTargetTypeSchema>;
 export type CreateReportRequest = z.infer<typeof createReportRequestSchema>;
 export type Group = z.infer<typeof groupSchema>;
 export type CreateGroupRequest = z.infer<typeof createGroupRequestSchema>;
+export type SetGroupPinnedRequest = z.infer<typeof setGroupPinnedRequestSchema>;
 export type GroupsResponse = z.infer<typeof groupsResponseSchema>;
 export type GroupResponse = z.infer<typeof groupResponseSchema>;
 export type GroupPost = z.infer<typeof groupPostSchema>;

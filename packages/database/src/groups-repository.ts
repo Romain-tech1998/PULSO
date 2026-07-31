@@ -78,6 +78,11 @@ export interface Group {
   // header badge without a second round trip.
   eventTitle?: string;
   eventStartsAt?: string;
+  // Phase 4.14: whether THIS viewer chose to show this group in their
+  // sidebar shortcut list - false (never true) for a group they haven't
+  // joined, since pinning is a per-membership preference, not a group
+  // property.
+  pinned: boolean;
 }
 
 export interface GroupPost {
@@ -146,6 +151,13 @@ export interface GroupsRepository {
   // (a join request was recorded, awaiting the moderator).
   joinGroup(groupId: string, userId: string): Promise<GroupMembershipStatus>;
   leaveGroup(groupId: string, userId: string): Promise<void>;
+  // Phase 4.14: a member's own choice to show/hide this group in their
+  // sidebar shortcut list - a no-op if they're not an accepted member.
+  setGroupPinned(
+    groupId: string,
+    userId: string,
+    pinned: boolean
+  ): Promise<void>;
   // Real accepted members (Phase 4.10's avatar stack) - never a fabricated
   // count, always the actual people who joined.
   getMembers(groupId: string): Promise<PublicUser[]>;
@@ -234,6 +246,7 @@ interface GroupRow {
   venue_latitude: number | null;
   event_title: string | null;
   event_starts_at: string | null;
+  pinned: boolean;
 }
 
 function toGroup(row: GroupRow): Group {
@@ -269,7 +282,8 @@ function toGroup(row: GroupRow): Group {
     ...(row.event_title !== null ? { eventTitle: row.event_title } : {}),
     ...(row.event_starts_at !== null
       ? { eventStartsAt: new Date(row.event_starts_at).toISOString() }
-      : {})
+      : {}),
+    pinned: row.pinned
   };
 }
 
@@ -284,7 +298,8 @@ const GROUP_SELECT_FIELDS = `
   END AS pending_request_count,
   v.name AS venue_name, v.address AS venue_address,
   ST_X(v.location) AS venue_longitude, ST_Y(v.location) AS venue_latitude,
-  e.title AS event_title, e.starts_at AS event_starts_at
+  e.title AS event_title, e.starts_at AS event_starts_at,
+  COALESCE((SELECT gm5.pinned FROM group_memberships gm5 WHERE gm5.group_id = g.id AND gm5.user_id = $VIEWER), false) AS pinned
 `;
 
 interface PostRow {
@@ -363,7 +378,8 @@ export class PostgresGroupsRepository implements GroupsRepository {
         venue_longitude: null,
         venue_latitude: null,
         event_title: null,
-        event_starts_at: null
+        event_starts_at: null,
+        pinned: false
       });
     } catch (error) {
       await client.query('ROLLBACK');
@@ -465,6 +481,18 @@ export class PostgresGroupsRepository implements GroupsRepository {
     await this.pool.query(
       `DELETE FROM group_memberships WHERE group_id = $1 AND user_id = $2`,
       [groupId, userId]
+    );
+  }
+
+  async setGroupPinned(
+    groupId: string,
+    userId: string,
+    pinned: boolean
+  ): Promise<void> {
+    await this.pool.query(
+      `UPDATE group_memberships SET pinned = $3
+       WHERE group_id = $1 AND user_id = $2 AND status = 'member'`,
+      [groupId, userId, pinned]
     );
   }
 
