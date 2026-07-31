@@ -2851,6 +2851,11 @@ export function ExploreMap({
                 authToken={authToken}
                 onLogin={login}
                 eventFirst={forumEventFirst}
+                attendanceVisibility={attendance[details.event.id]}
+                onSetAttendance={(visibility) =>
+                  setAttendance(details.event.id, visibility)
+                }
+                onClearAttendance={() => clearAttendance(details.event.id)}
               />
             )}
             {details.kind === 'loading' && (
@@ -13232,7 +13237,10 @@ function ForumPanel({
   user,
   authToken,
   onLogin,
-  eventFirst
+  eventFirst,
+  attendanceVisibility,
+  onSetAttendance,
+  onClearAttendance
 }: {
   event: PublicEvent;
   onBack: () => void;
@@ -13248,10 +13256,33 @@ function ForumPanel({
   // there - "Événement" first everywhere else (Événements, Lieux, Groupes,
   // Messages, the connected Carte page's pin popup).
   eventFirst?: boolean;
+  // Live feedback: this is now the panel almost every real entry point
+  // opens (Carte, Événements, Lieux, Forums, Groupes, Messages all pass
+  // asForumPanel:true) - it had no "J'y vais" control at all, only the
+  // rarer plain EventDetails did. Same real attendance state/handlers as
+  // EventDetails, just threaded here too.
+  attendanceVisibility: AttendanceVisibility | undefined;
+  onSetAttendance: (visibility: AttendanceVisibility) => void;
+  onClearAttendance: () => void;
 }) {
   const [tab, setTab] = useState<ForumPanelTab>(
     eventFirst ? 'evenement' : 'discussion'
   );
+  const [friendsAttending, setFriendsAttending] = useState<PublicUser[]>([]);
+  useEffect(() => {
+    if (!authToken) {
+      setFriendsAttending([]);
+      return;
+    }
+    fetch(`${API_BASE_URL}/events/${event.id}/friends-attending`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setFriendsAttending(friendsAttendingResponseSchema.parse(json).data)
+      )
+      .catch(() => setFriendsAttending([]));
+  }, [authToken, event.id]);
   useEffect(() => {
     setTab(eventFirst ? 'evenement' : 'discussion');
   }, [event.id, eventFirst]);
@@ -13357,6 +13388,32 @@ function ForumPanel({
           <div className="details-meetup-row">
             <button
               type="button"
+              className={`forum-follow-cta attendance-cta ${attendanceVisibility ? 'active' : ''}`}
+              onClick={() =>
+                attendanceVisibility
+                  ? onClearAttendance()
+                  : onSetAttendance('private')
+              }
+            >
+              {attendanceVisibility ? '✓ Vous y allez' : "🎟️ J'y vais"}
+            </button>
+            {attendanceVisibility && (
+              <select
+                className="attendance-visibility-select"
+                value={attendanceVisibility}
+                onChange={(changeEvent) =>
+                  onSetAttendance(
+                    changeEvent.target.value as AttendanceVisibility
+                  )
+                }
+                aria-label="Visibilité de votre participation"
+              >
+                <option value="private">Visible par vous seul</option>
+                <option value="friends">Visible par vos amis</option>
+              </select>
+            )}
+            <button
+              type="button"
               className="meetup-btn"
               onClick={openMeetupGroup}
               disabled={meetupLoading}
@@ -13364,6 +13421,25 @@ function ForumPanel({
               🤝{' '}
               {meetupLoading ? 'Un instant…' : "Rencontrer avant l'événement"}
             </button>
+          </div>
+        )}
+        {user && friendsAttending.length > 0 && (
+          <div className="attendance-friends forum-panel-attendance-friends">
+            {friendsAttending.map((attendee) => (
+              <span className="attendance-friend" key={attendee.id}>
+                <span className="friends-row-avatar">
+                  {attendee.avatarUrl ? (
+                    <img src={attendee.avatarUrl} alt="" />
+                  ) : (
+                    attendee.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                {attendee.displayName}
+              </span>
+            ))}
+            <span className="attendance-friends-label">
+              {friendsAttending.length === 1 ? 'y va aussi' : 'y vont aussi'}
+            </span>
           </div>
         )}
 

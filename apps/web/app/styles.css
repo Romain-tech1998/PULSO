@@ -5745,9 +5745,26 @@ a.venue-detail-info-row:hover {
   font-style: italic;
 }
 
-/* "Rencontrer avant l'événement" (Phase 4.8, reuses Groups/DEC-0013) */
+/* "Rencontrer avant l'événement" (Phase 4.8, reuses Groups/DEC-0013), now
+   sharing this row with the real "J'y vais" attendance CTA (live feedback:
+   ForumPanel - the panel almost every real entry point opens - had no
+   attendance control at all, only the rarer plain EventDetails did). */
 .details-meetup-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
   padding: 1rem 1.25rem 0;
+}
+.details-meetup-row .attendance-cta {
+  width: auto;
+}
+.details-meetup-row .attendance-visibility-select {
+  flex: 0 1 auto;
+  min-width: 10rem;
+}
+.forum-panel-attendance-friends {
+  margin: 0.6rem 1.25rem 0;
 }
 .meetup-btn {
   padding: 0.65rem 1.25rem;
