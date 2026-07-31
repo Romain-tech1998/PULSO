@@ -3182,13 +3182,16 @@ a.venue-detail-info-row:hover {
 /* Live feedback: the dedicated forum panel read as cramped once it had
    the whole page to itself - give its hero real presence (tall banner,
    text anchored at the bottom) instead of the compact strip that made
-   sense in the old 380px map sidebar. */
+   sense in the old 380px map sidebar. `space-between`, not `flex-end`:
+   .details-hero-actions (Partager/Envoyer à un ami/Favoris) is the FIRST
+   child - flex-end packed it down next to the title instead of pinning it
+   to the top of the tall banner as intended (live feedback again).*/
 .forum-panel-page .details-hero {
   min-height: 320px;
   padding: 2.5rem 2.5rem 2rem;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: space-between;
   border-radius: 1.5rem;
 }
 .forum-panel-page .details-title {
@@ -3281,11 +3284,6 @@ a.venue-detail-info-row:hover {
 }
 .forum-panel-rail-action:hover {
   border-color: var(--brand-purple);
-}
-.forum-panel-rail-action.active {
-  background: var(--gradient-primary);
-  border-color: transparent;
-  color: #fff;
 }
 
 /* "À propos" tab (Phase 4.8 follow-up: "trop basique") - a small icon
@@ -3394,12 +3392,43 @@ a.venue-detail-info-row:hover {
   gap: 0.6rem;
   width: 100%;
 }
-.forum-teaser-actions .btn-secondary {
-  padding: 0.7rem 1rem;
+/* "Ajouter/Suivre ce forum" (Phase 4.14) - live feedback: this was the
+   quiet .btn-secondary/.forum-panel-rail-action next to a bold gradient
+   CTA, making it easy to miss entirely. It's a real, meaningful action
+   (bookmarks the forum into "Mes forums"), so it gets its own prominent
+   treatment - gradient before following, a calm confirmed state after
+   (the reverse of the old .forum-panel-rail-action.active, which put the
+   gradient on the already-done state instead of the actual call to action). */
+.forum-follow-cta {
+  padding: 0.75rem 1.1rem;
+  border-radius: 0.75rem;
+  border: none;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  width: 100%;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s,
+    background 0.2s;
 }
-.forum-teaser-actions .btn-secondary.active {
-  border-color: var(--brand-purple);
-  color: var(--brand-purple);
+.forum-follow-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(167, 62, 232, 0.35);
+}
+.forum-follow-cta.active {
+  background: var(--surface-base);
+  border: 1px solid var(--brand-green);
+  color: var(--brand-green);
+  box-shadow: none;
+  transform: none;
+}
+.forum-follow-cta:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
 }
 
 .forum-tabs {
@@ -3686,6 +3715,21 @@ a.venue-detail-info-row:hover {
 .group-detail-header-top .text-btn {
   margin-top: 0.15rem;
   flex-shrink: 0;
+}
+.group-detail-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-shrink: 0;
+}
+.group-detail-header-actions .text-btn {
+  margin-top: 0;
+  white-space: nowrap;
+}
+/* Épingler dans les raccourcis (Phase 4.14) - a member's own choice of
+   which groups show in the sidebar shortcut list. */
+.text-btn.active {
+  color: var(--brand-green);
 }
 .group-detail-event-badge {
   color: var(--text-secondary);
@@ -4410,6 +4454,25 @@ a.venue-detail-info-row:hover {
 
 .section-header h2 {
   font-size: 1.8rem;
+}
+
+/* "Nouveautés" (Phase 4.14) - real recency + real favorite-category match,
+   see DashboardHome. */
+.dashboard-home-section-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+.dashboard-home-new-badge {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--brand-green);
+  color: #04140c;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .view-all {

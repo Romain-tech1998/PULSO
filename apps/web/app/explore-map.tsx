@@ -476,6 +476,33 @@ function useFavoriteVenues(authToken: string | undefined) {
   return { favoriteVenues, toggleFavoriteVenue };
 }
 
+// A real aggregation of the account's own favorites (category frequency),
+// never an inferred/ML-derived recommendation (see /me/trends). Extracted
+// from ProfilTrendsCard so DashboardHome's "Nouveautés" section (Phase
+// 4.14) can reuse the exact same real signal instead of a second fetch.
+function useTrends(authToken: string | undefined) {
+  const [trends, setTrends] = useState<TrendsResponse['data']>();
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+
+  useEffect(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/me/trends`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setTrends(trendsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  return { trends, state };
+}
+
 // Unlike favorites, attendance has no local-storage/anonymous mode - it's
 // account-only (DEC-0011: marking "j'y vais" is meaningless without an
 // account to attach visibility to), so this only ever fetches once signed
@@ -751,6 +778,10 @@ export function ExploreMap({
   // Carte/Événements/Lieux) becomes a lightweight teaser that links into
   // this same panel rather than duplicating the full posting UI.
   const [forumPanelMode, setForumPanelMode] = useState(false);
+  // Which tab ForumPanel opens on/orders first (Phase 4.14) - true from
+  // every entry point except the Forums section itself, since Forums is
+  // the one place "Discussion first" is actually the point.
+  const [forumEventFirst, setForumEventFirst] = useState(false);
   const [pickerList, setPickerList] = useState<
     { title: string; events: PublicEvent[] } | undefined
   >();
@@ -1550,6 +1581,10 @@ export function ExploreMap({
       keepPickerList?: boolean;
       initialTab?: EventDetailsTab;
       asForumPanel?: boolean;
+      // ForumPanel's tab order/default (Phase 4.14): true everywhere except
+      // the Forums section's own entry point, which keeps "Discussion"
+      // first (its whole point) rather than "Événement" first.
+      forumEventFirst?: boolean;
       // Live feedback: opening a forum "feels slow" - most of that was a
       // full GET /events/:id round trip we didn't need, since the caller
       // (the Forums discovery grid) already has the complete PublicEvent
@@ -1560,6 +1595,7 @@ export function ExploreMap({
     if (!options.keepPickerList) setPickerList(undefined);
     setDetailsInitialTab(options.initialTab);
     setForumPanelMode(options.asForumPanel ?? false);
+    setForumEventFirst(options.forumEventFirst ?? false);
     if (options.knownEvent) {
       setDetails({ kind: 'success', event: options.knownEvent });
       requestAnimationFrame(() => detailsHeading.current?.focus());
@@ -2806,6 +2842,7 @@ export function ExploreMap({
                 user={user}
                 authToken={authToken}
                 onLogin={login}
+                eventFirst={forumEventFirst}
               />
             )}
             {details.kind === 'loading' && (
@@ -2851,7 +2888,10 @@ export function ExploreMap({
             authToken={authToken}
             userId={user.id}
             onOpenEventForum={(eventId) =>
-              void openDetails(eventId, { asForumPanel: true })
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true
+              })
             }
           />
         ) : user && section === 'messages' ? (
@@ -2859,7 +2899,10 @@ export function ExploreMap({
             authToken={authToken}
             user={user}
             onOpenEventForum={(eventId) =>
-              void openDetails(eventId, { asForumPanel: true })
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true
+              })
             }
           />
         ) : user && section === 'amis' ? (
@@ -2888,7 +2931,10 @@ export function ExploreMap({
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
             onOpenEventForum={(eventId) =>
-              void openDetails(eventId, { asForumPanel: true })
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true
+              })
             }
             onNavigateToMap={() => setSection('explorer')}
             locale={locale}
@@ -2898,7 +2944,10 @@ export function ExploreMap({
             favoriteVenues={favoriteVenues}
             onToggleFavoriteVenue={toggleFavoriteVenue}
             onOpenEventForum={(eventId) =>
-              void openDetails(eventId, { asForumPanel: true })
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true
+              })
             }
             onNavigateToMap={() => setSection('explorer')}
             locale={locale}
@@ -3719,7 +3768,10 @@ export function ExploreMap({
                       onClose={() => setMapSelection(undefined)}
                       onOpenEvent={(eventId) => {
                         setMapSelection(undefined);
-                        void openDetails(eventId, { asForumPanel: true });
+                        void openDetails(eventId, {
+                          asForumPanel: true,
+                          forumEventFirst: true
+                        });
                       }}
                       locale={locale}
                     />
@@ -5771,6 +5823,7 @@ const SIDEBAR_NAV_ITEMS: Array<{
   { section: 'evenement', label: 'Événements', icon: '🎟️' },
   { section: 'lieu', label: 'Lieux', icon: '📍' },
   { section: 'forums', label: 'Forums', icon: '💬' },
+  { section: 'groupes', label: 'Groupes', icon: '👥' },
   { section: 'messages', label: 'Messages', icon: '✉️' },
   { section: 'amis', label: 'Amis', icon: '🧑‍🤝‍🧑' },
   { section: 'favoris', label: 'Favoris', icon: '❤️' }
@@ -5838,6 +5891,8 @@ function Sidebar({
     refreshGroups();
   }, [refreshGroups]);
 
+  const pinnedGroups = myGroups.filter((group) => group.pinned);
+
   return (
     <aside className="primary-sidebar">
       <button
@@ -5887,32 +5942,28 @@ function Sidebar({
         ))}
       </div>
 
-      <div className="primary-sidebar-group">
-        <h3 className="primary-sidebar-group-title">Mes groupes</h3>
-        {myGroups.map((group) => (
-          <button
-            type="button"
-            key={group.id}
-            className="primary-sidebar-nav-item"
-            onClick={() => setOpenGroup(group)}
-          >
-            <span className="primary-sidebar-group-avatar" aria-hidden="true">
-              {group.name.slice(0, 1).toUpperCase()}
-            </span>
-            {group.name}
-          </button>
-        ))}
-        <button
-          type="button"
-          className="primary-sidebar-nav-item primary-sidebar-nav-item-muted"
-          onClick={() => onNavigate('groupes')}
-        >
-          <span className="primary-sidebar-nav-icon" aria-hidden="true">
-            +
-          </span>
-          Créer un groupe
-        </button>
-      </div>
+      {/* No "Mes groupes" heading (live feedback) - the groups themselves
+          are the label. Only groups the user pinned show up here at all
+          (see Group.pinned, Phase 4.14) - "Groupes" above is the real
+          entry point to the full panel (and its own create-group form),
+          not a "Créer un groupe" shortcut duplicated down here. */}
+      {pinnedGroups.length > 0 && (
+        <div className="primary-sidebar-group">
+          {pinnedGroups.map((group) => (
+            <button
+              type="button"
+              key={group.id}
+              className="primary-sidebar-nav-item"
+              onClick={() => setOpenGroup(group)}
+            >
+              <span className="primary-sidebar-group-avatar" aria-hidden="true">
+                {group.name.slice(0, 1).toUpperCase()}
+              </span>
+              {group.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {openGroup && (
         <GroupModal
@@ -6794,6 +6845,48 @@ function DashboardHome({
   onNavigate: (section: ConnectedSection) => void;
 }) {
   const { forums, state: forumsState } = useActiveForums(authToken);
+  const { trends } = useTrends(authToken);
+
+  // "Nouveautés" (Phase 4.14) - real recency (source.observedAt, same 72h
+  // threshold as Événements' own "Nouveaux événements" widget) combined
+  // with the account's own real favorite categories when it has any
+  // (useTrends - never an inferred/ML recommendation). A citywide fetch,
+  // not carouselEvents above (that one is scoped to the map viewport/
+  // nearby radius, too narrow a pool for "what's new in Montréal").
+  const [recentEvents, setRecentEvents] = useState<PublicEvent[]>([]);
+  useEffect(() => {
+    fetch(
+      `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, { date: 'next7', categories: [], price: 'all' })}`
+    )
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setRecentEvents(eventListResponseSchema.parse(json).data))
+      .catch(() => {});
+  }, []);
+
+  const favoriteEventCategories = new Set(
+    trends?.eventCategories.map((entry) => entry.category) ?? []
+  );
+  const newEvents = recentEvents
+    .filter(
+      (event) =>
+        Date.now() - new Date(event.source.observedAt).getTime() <
+        NEW_EVENT_WINDOW_MS
+    )
+    .sort((a, b) => {
+      if (favoriteEventCategories.size > 0) {
+        const aMatch = favoriteEventCategories.has(a.category) ? 1 : 0;
+        const bMatch = favoriteEventCategories.has(b.category) ? 1 : 0;
+        if (aMatch !== bMatch) return bMatch - aMatch;
+      }
+      return (
+        new Date(b.source.observedAt).getTime() -
+        new Date(a.source.observedAt).getTime()
+      );
+    })
+    .slice(0, 8);
+  const newEventsPersonalized =
+    favoriteEventCategories.size > 0 &&
+    newEvents.some((event) => favoriteEventCategories.has(event.category));
 
   return (
     <div className="dashboard-home">
@@ -6812,6 +6905,75 @@ function DashboardHome({
           <span>Voir les événements et lieux autour de vous</span>
         </span>
       </button>
+
+      {newEvents.length > 0 && (
+        <div className="dashboard-home-section">
+          <div className="section-header">
+            <h2>✨ Nouveautés</h2>
+            <span className="dashboard-home-section-subtitle">
+              {newEventsPersonalized
+                ? 'Ajoutés récemment, dans tes catégories favorites'
+                : 'Ajoutés récemment à Montréal'}
+            </span>
+          </div>
+          <div className="event-carousel">
+            {newEvents.map((evt) => (
+              <div
+                className="event-card"
+                key={evt.id}
+                onClick={() => onOpenDetails(evt.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div
+                  className="event-card-img"
+                  style={
+                    evt.imageUrl
+                      ? {
+                          backgroundImage: `url(${evt.imageUrl})`,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center'
+                        }
+                      : undefined
+                  }
+                >
+                  {!evt.imageUrl && (
+                    <EventImageFallback category={evt.category} />
+                  )}
+                  <div
+                    className="card-badge"
+                    style={{
+                      background:
+                        CATEGORY_COLORS[evt.category] ??
+                        CATEGORY_COLORS['other']
+                    }}
+                  >
+                    {SHORT_CATEGORY_LABELS[locale][evt.category]}
+                  </div>
+                  <span className="dashboard-home-new-badge">NOUVEAU</span>
+                  <button
+                    className="card-fav"
+                    onClick={(clickEvent) => {
+                      clickEvent.stopPropagation();
+                      onToggleFavorite(evt.id);
+                    }}
+                  >
+                    {favorites.includes(evt.id) ? '❤️' : '🤍'}
+                  </button>
+                </div>
+                <div className="event-card-content">
+                  <h3>{evt.title}</h3>
+                  <p>{evt.venue?.name}</p>
+                  <p className="card-price">
+                    {evt.startsAt
+                      ? new Date(evt.startsAt).toLocaleDateString()
+                      : ''}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="dashboard-home-section">
         <div className="section-header">
@@ -8516,24 +8678,7 @@ function ProfilBadgesCard() {
 // compte" card into its own side card - a real aggregation of the account's
 // own favorites, not simulated data.
 function ProfilTrendsCard({ authToken }: { authToken: string | undefined }) {
-  const [trends, setTrends] = useState<TrendsResponse['data']>();
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-
-  useEffect(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/me/trends`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setTrends(trendsResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken]);
+  const { trends, state } = useTrends(authToken);
 
   const hasTrends =
     trends &&
@@ -9677,6 +9822,31 @@ function GroupDetailContent({
     });
   };
 
+  // Phase 4.14 - which groups show in the sidebar shortcut list is the
+  // member's own choice, not "every group I've joined". Optimistic: the
+  // route returns 204, there's nothing to reconcile against.
+  const [pinning, setPinning] = useState(false);
+  const togglePin = () => {
+    if (!authToken || pinning) return;
+    setPinning(true);
+    const nextPinned = !group.pinned;
+    fetch(`${API_BASE_URL}/groups/${group.id}/pin`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ pinned: nextPinned })
+    })
+      .then((response) =>
+        response.ok
+          ? onGroupUpdated({ ...group, pinned: nextPinned })
+          : Promise.reject()
+      )
+      .catch(() => {})
+      .finally(() => setPinning(false));
+  };
+
   const submitPost = (parentId?: string) => {
     const body = (parentId ? replyDrafts[parentId] : draft)?.trim();
     if (!authToken || !body || posting) return;
@@ -9776,13 +9946,28 @@ function GroupDetailContent({
             )}
           </div>
           {group.isMember && (
-            <button
-              type="button"
-              className="text-btn"
-              onClick={leaveGroupAction}
-            >
-              Quitter
-            </button>
+            <div className="group-detail-header-actions">
+              <button
+                type="button"
+                className={`text-btn ${group.pinned ? 'active' : ''}`}
+                onClick={togglePin}
+                disabled={pinning}
+                title={
+                  group.pinned
+                    ? 'Retirer des raccourcis'
+                    : 'Épingler dans les raccourcis'
+                }
+              >
+                {group.pinned ? '📌 Épinglé' : '📌 Épingler'}
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={leaveGroupAction}
+              >
+                Quitter
+              </button>
+            </div>
           )}
         </div>
         {group.description && (
@@ -12197,7 +12382,7 @@ function ForumTeaser({
         </button>
         <button
           type="button"
-          className={`btn-secondary ${following ? 'active' : ''}`}
+          className={`forum-follow-cta ${following ? 'active' : ''}`}
           onClick={toggleFollow}
           disabled={followLoading}
         >
@@ -12210,6 +12395,14 @@ function ForumTeaser({
 
 type ForumPanelTab =
   'discussion' | 'evenement' | 'membres' | 'photos' | 'apropos';
+
+const FORUM_PANEL_TAB_LABELS: Record<ForumPanelTab, string> = {
+  discussion: 'Discussion',
+  evenement: 'Événement',
+  membres: 'Membres',
+  photos: 'Photos',
+  apropos: 'À propos'
+};
 
 // The dedicated Forum panel (Phase 4.8 follow-up) - opened specifically
 // from the Forums discovery grid, not from Carte/Événements/Lieux (those
@@ -12225,7 +12418,8 @@ function ForumPanel({
   locale,
   user,
   authToken,
-  onLogin
+  onLogin,
+  eventFirst
 }: {
   event: PublicEvent;
   onBack: () => void;
@@ -12235,11 +12429,19 @@ function ForumPanel({
   user: User | undefined;
   authToken: string | undefined;
   onLogin: () => void;
+  // Phase 4.14: which tab this panel opens on/lists first. True from every
+  // entry point except the Forums section itself (ActiveForumsPage), which
+  // keeps "Discussion" first since browsing forums is the whole point
+  // there - "Événement" first everywhere else (Événements, Lieux, Groupes,
+  // Messages, the connected Carte page's pin popup).
+  eventFirst?: boolean;
 }) {
-  const [tab, setTab] = useState<ForumPanelTab>('discussion');
+  const [tab, setTab] = useState<ForumPanelTab>(
+    eventFirst ? 'evenement' : 'discussion'
+  );
   useEffect(() => {
-    setTab('discussion');
-  }, [event.id]);
+    setTab(eventFirst ? 'evenement' : 'discussion');
+  }, [event.id, eventFirst]);
 
   const { presentation } = eventDetailsFields(event, locale);
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
@@ -12353,41 +12555,25 @@ function ForumPanel({
         )}
 
         <div className="details-tabs">
-          <button
-            type="button"
-            className={tab === 'discussion' ? 'active' : ''}
-            onClick={() => setTab('discussion')}
-          >
-            Discussion
-          </button>
-          <button
-            type="button"
-            className={tab === 'evenement' ? 'active' : ''}
-            onClick={() => setTab('evenement')}
-          >
-            Événement
-          </button>
-          <button
-            type="button"
-            className={tab === 'membres' ? 'active' : ''}
-            onClick={() => setTab('membres')}
-          >
-            Membres
-          </button>
-          <button
-            type="button"
-            className={tab === 'photos' ? 'active' : ''}
-            onClick={() => setTab('photos')}
-          >
-            Photos
-          </button>
-          <button
-            type="button"
-            className={tab === 'apropos' ? 'active' : ''}
-            onClick={() => setTab('apropos')}
-          >
-            À propos
-          </button>
+          {(
+            [
+              ...(eventFirst
+                ? (['evenement', 'discussion'] as const)
+                : (['discussion', 'evenement'] as const)),
+              'membres',
+              'photos',
+              'apropos'
+            ] as ForumPanelTab[]
+          ).map((tabId) => (
+            <button
+              key={tabId}
+              type="button"
+              className={tab === tabId ? 'active' : ''}
+              onClick={() => setTab(tabId)}
+            >
+              {FORUM_PANEL_TAB_LABELS[tabId]}
+            </button>
+          ))}
         </div>
 
         {tab === 'discussion' && (
@@ -12615,7 +12801,7 @@ function ForumPanel({
             <h3>Actions rapides</h3>
             <button
               type="button"
-              className={`forum-panel-rail-action ${following ? 'active' : ''}`}
+              className={`forum-follow-cta ${following ? 'active' : ''}`}
               onClick={toggleFollow}
               disabled={followLoading}
             >
