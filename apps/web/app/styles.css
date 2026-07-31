@@ -638,16 +638,6 @@ h6 {
   font-style: italic;
 }
 
-/* Amis page (Phase 4.5+) - a full dedicated page, not a cramped card inside
-   Mon compte, so it gets its own richer treatment rather than reusing
-   .compte-block/.friends-row (still used as-is by GroupsBlock and the
-   sidebar's invite card). */
-.amis-page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.75rem;
-}
-
 .amis-code-card {
   display: flex;
   align-items: center;
@@ -832,32 +822,241 @@ h6 {
   border-color: var(--text-secondary);
   color: var(--text-primary);
 }
-.amis-btn-message {
-  padding: 0.45rem 1rem;
-  border-radius: 999px;
-  border: 1px solid var(--brand-purple);
-  background: rgba(91, 63, 224, 0.12);
-  color: var(--text-primary);
-  font-weight: 600;
-  font-size: 0.8rem;
+.amis-row-mutual {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* Amis page (Phase 4.15) - a real split view (list/search/tabs, a selected
+   friend's detail panel, a right rail), same shell shape as Messages/
+   Événements. No online/offline anywhere - no realtime infra exists. */
+.amis-page-layout {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+.amis-list-column {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--brand-border);
+  overflow-y: auto;
+}
+.amis-list-header {
+  padding: 1.5rem 1.25rem 1rem;
+}
+.amis-list-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.5rem;
+}
+.amis-list-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.amis-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 1.25rem 0.9rem;
+}
+.amis-search-row .amis-search {
+  flex: 1;
+  padding: 0;
+}
+.amis-invite-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 0.6rem 1.1rem;
+  font-size: 0.85rem;
+}
+.amis-friends-list {
+  padding: 0.5rem 1rem 1.25rem;
+  gap: 0.4rem;
+}
+.amis-friend-row {
+  cursor: pointer;
+}
+.amis-row-icon-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition:
     background 0.2s,
-    border-color 0.2s;
+    color 0.2s;
 }
-.amis-btn-message:hover {
-  background: rgba(91, 63, 224, 0.24);
+.amis-row-icon-btn:hover {
+  background: var(--surface-overlay);
+  color: var(--text-primary);
 }
-.amis-btn-ghost-muted {
-  padding: 0.45rem 0.9rem;
-  border: none;
-  background: transparent;
+
+.amis-detail-column {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.amis-rail {
+  width: 300px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 1.5rem 1.25rem;
+  border-left: 1px solid var(--brand-border);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.amis-rail-section .amis-row {
+  padding: 0.55rem 0.7rem;
+}
+.amis-rail-header {
+  margin-bottom: 0.6rem;
+}
+.amis-rail-header h3 {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.amis-quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.amis-invite-modal-body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* A friend's real detail panel (Phase 4.15) */
+.friends-row-avatar-xl {
+  width: 76px;
+  height: 76px;
+  font-size: 1.8rem;
+}
+.friend-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 2rem 2rem 2.5rem;
+}
+.friend-detail-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.5rem;
+}
+.friend-detail-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+.friend-detail-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+.friend-detail-bio {
+  max-width: 32rem;
+  margin: 0.2rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.friend-detail-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
+.friend-detail-cta {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+}
+.friend-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+/* "Amis sur la carte" (Phase 4.15) */
+.friends-map-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 520px;
+  max-height: 80vh;
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  border-radius: 1rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+.friends-map-canvas {
+  height: 260px;
+  flex-shrink: 0;
+}
+.friends-map-list {
+  padding: 0.75rem 1.25rem 1.25rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.friends-map-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.7rem;
+  background: var(--surface-base);
+  border: 1px solid transparent;
+  text-align: left;
+  transition: border-color 0.2s;
+}
+.friends-map-row:hover {
+  border-color: var(--brand-border);
+}
+.friends-map-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.friends-map-row-info strong {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+}
+.friends-map-row-info span {
   color: var(--text-muted);
-  font-weight: 600;
-  font-size: 0.8rem;
-  transition: color 0.2s;
-}
-.amis-btn-ghost-muted:hover {
-  color: #f87171;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Reusable "nothing here yet" card - Messages/Amis empty states, same

@@ -21,9 +21,13 @@ import {
   forumMembersResponseSchema,
   forumPostsResponseSchema,
   friendCodeResponseSchema,
+  friendMutualCountsResponseSchema,
+  friendProfileResponseSchema,
   friendRequestsResponseSchema,
   friendsAttendingResponseSchema,
+  friendsMapResponseSchema,
   friendsResponseSchema,
+  friendSuggestionsResponseSchema,
   groupAttendanceSummarySchema,
   groupChecklistItemsResponseSchema,
   groupJoinRequestsResponseSchema,
@@ -34,6 +38,7 @@ import {
   groupsResponseSchema,
   intelligentSearchResponseSchema,
   meResponseSchema,
+  mutualEventIdsResponseSchema,
   myAttendanceResponseSchema,
   PRICE_FILTER_OPTIONS,
   PROFILE_AVATAR_STYLES,
@@ -55,7 +60,10 @@ import {
   type EventPhoto,
   type ForumCategory,
   type ForumPost,
+  type FriendProfile,
   type FriendRequestEntry,
+  type FriendsMapEntry,
+  type FriendSuggestion,
   type Group,
   type GroupAttendanceSummary,
   type GroupChecklistItem,
@@ -2906,7 +2914,18 @@ export function ExploreMap({
             }
           />
         ) : user && section === 'amis' ? (
-          <AmisPage authToken={authToken} />
+          <AmisPage
+            authToken={authToken}
+            attendance={attendance}
+            locale={locale}
+            onOpenEventForum={(eventId) =>
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true
+              })
+            }
+            onNavigate={setSection}
+          />
         ) : user && section === 'mes-evenements' ? (
           <AttendanceEventsPage
             title="Mes événements"
@@ -8043,11 +8062,600 @@ function ComposeMessageModal({
 // Full-page version of the friends block already built in Phase 2 - no
 // change to FriendsBlock itself, just a dedicated home for it instead of
 // living inside Mon compte.
-function AmisPage({ authToken }: { authToken: string | undefined }) {
+type AmisTab = 'tous' | 'demandes' | 'suggestions';
+
+// Phase 4.15 redesign - a real split view (list/search/tabs, a selected
+// friend's real detail panel, a right rail) instead of the old single
+// scrolling list. No online/offline presence anywhere (no realtime
+// infrastructure exists) - every subtitle/badge here is a real, derived
+// fact: a friend's real next friends-visible upcoming event when they have
+// one, otherwise a real mutual-friend count.
+function AmisPage({
+  authToken,
+  attendance,
+  locale,
+  onOpenEventForum,
+  onNavigate
+}: {
+  authToken: string | undefined;
+  attendance: Record<string, AttendanceVisibility>;
+  locale: SupportedLocale;
+  onOpenEventForum: (eventId: string) => void;
+  onNavigate: (section: ConnectedSection) => void;
+}) {
+  const [friendCode, setFriendCode] = useState<string>();
+  const [requests, setRequests] = useState<FriendRequestEntry[]>([]);
+  const [friends, setFriends] = useState<PublicUser[]>([]);
+  const [suggestions, setSuggestions] = useState<FriendSuggestion[]>([]);
+  const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [tab, setTab] = useState<AmisTab>('tous');
+  const [query, setQuery] = useState('');
+  const [selectedFriend, setSelectedFriend] = useState<PublicUser>();
+  const [conversationWith, setConversationWith] = useState<PublicUser>();
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [mutualCounts, setMutualCounts] = useState<Map<string, number>>(
+    new Map()
+  );
+  const [friendsUpcoming, setFriendsUpcoming] = useState<FriendsMapEntry[]>([]);
+  const [upcomingEventsById, setUpcomingEventsById] = useState<
+    Map<string, PublicEvent>
+  >(new Map());
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    const headers = { authorization: `Bearer ${authToken}` };
+    setLoadState('loading');
+    Promise.all([
+      fetch(`${API_BASE_URL}/me/friend-code`, { headers }).then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      ),
+      fetch(`${API_BASE_URL}/me/friends/requests`, { headers }).then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      ),
+      fetch(`${API_BASE_URL}/me/friends`, { headers }).then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      ),
+      fetch(`${API_BASE_URL}/me/friends/suggestions`, { headers }).then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      )
+    ])
+      .then(([codeJson, requestsJson, friendsJson, suggestionsJson]) => {
+        setFriendCode(friendCodeResponseSchema.parse(codeJson).data.friendCode);
+        setRequests(friendRequestsResponseSchema.parse(requestsJson).data);
+        setFriends(friendsResponseSchema.parse(friendsJson).data);
+        setSuggestions(
+          friendSuggestionsResponseSchema.parse(suggestionsJson).data
+        );
+        setLoadState('success');
+      })
+      .catch(() => setLoadState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  // Real, batched "N amis en commun" for everyone currently shown (friends,
+  // requests, suggestions alike) - one request instead of one per row.
+  const mutualCandidateIds = [
+    ...new Set([
+      ...friends.map((f) => f.id),
+      ...requests.map((r) => r.user.id),
+      ...suggestions.map((s) => s.user.id)
+    ])
+  ];
+  const mutualCandidateIdsKey = mutualCandidateIds.join(',');
+  useEffect(() => {
+    if (!authToken || !mutualCandidateIdsKey) {
+      setMutualCounts(new Map());
+      return;
+    }
+    fetch(
+      `${API_BASE_URL}/me/friends/mutual-counts?ids=${mutualCandidateIdsKey}`,
+      { headers: { authorization: `Bearer ${authToken}` } }
+    )
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((json) => {
+        const data = friendMutualCountsResponseSchema.parse(json).data;
+        setMutualCounts(
+          new Map(data.map((entry) => [entry.userId, entry.mutualFriendCount]))
+        );
+      })
+      .catch(() => {});
+  }, [mutualCandidateIdsKey, authToken]);
+
+  // Real "Va à <événement>" per friend row + the map feature below - one
+  // fetch serves both, real friends-visible upcoming attendance only.
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/friends/map`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((json) =>
+        setFriendsUpcoming(friendsMapResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+  }, [authToken]);
+
+  const upcomingEventIdsKey = [
+    ...new Set(friendsUpcoming.map((entry) => entry.eventId))
+  ].join(',');
+  useEffect(() => {
+    if (!upcomingEventIdsKey) {
+      setUpcomingEventsById(new Map());
+      return;
+    }
+    fetch(`${API_BASE_URL}/events/by-ids?ids=${upcomingEventIdsKey}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((json) => {
+        const events = eventListResponseSchema.parse(json).data;
+        setUpcomingEventsById(new Map(events.map((evt) => [evt.id, evt])));
+      })
+      .catch(() => {});
+  }, [upcomingEventIdsKey]);
+
+  const respond = (requestId: string, action: 'accept' | 'decline') => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/me/friends/requests/${requestId}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ action })
+    }).then(() => refresh());
+  };
+
+  const removeFriendAction = (friendUserId: string) => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/me/friends/${friendUserId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).then(() => {
+      if (selectedFriend?.id === friendUserId) setSelectedFriend(undefined);
+      refresh();
+    });
+  };
+
+  const addSuggestion = (userId: string) => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/me/friends/${userId}/request`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).then((response) => {
+      if (response.ok) refresh();
+    });
+  };
+
+  const incoming = requests.filter((r) => r.direction === 'incoming');
+  const outgoing = requests.filter((r) => r.direction === 'outgoing');
+  const filteredFriends = query.trim()
+    ? friends.filter((f) =>
+        f.displayName.toLowerCase().includes(query.trim().toLowerCase())
+      )
+    : friends;
+
+  const friendRowSubtitle = (friendUserId: string): string | undefined => {
+    const upcoming = friendsUpcoming.find(
+      (entry) => entry.friend.id === friendUserId
+    );
+    const upcomingEvent = upcoming && upcomingEventsById.get(upcoming.eventId);
+    if (upcomingEvent) return `Va à ${upcomingEvent.title}`;
+    const mutual = mutualCounts.get(friendUserId) ?? 0;
+    return mutual > 0
+      ? `${mutual} ami${mutual > 1 ? 's' : ''} en commun`
+      : undefined;
+  };
+
   return (
-    <div className="dashboard-home">
-      <h1>Amis</h1>
-      <FriendsBlock authToken={authToken} />
+    <div className="amis-page-layout">
+      <div className="amis-list-column">
+        <div className="amis-list-header">
+          <h1>Amis</h1>
+          <p>
+            Retrouve tes amis, vois leurs sorties et organise vos prochaines
+            expériences.
+          </p>
+        </div>
+
+        <div className="amis-search-row">
+          <div className="messages-search amis-search">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Rechercher un ami"
+            />
+          </div>
+          <button
+            type="button"
+            className="btn-secondary amis-invite-btn"
+            onClick={() => setInviteOpen(true)}
+          >
+            👤 Inviter
+          </button>
+        </div>
+
+        <div className="details-tabs">
+          <button
+            type="button"
+            className={tab === 'tous' ? 'active' : ''}
+            onClick={() => setTab('tous')}
+          >
+            Tous
+          </button>
+          <button
+            type="button"
+            className={tab === 'demandes' ? 'active' : ''}
+            onClick={() => setTab('demandes')}
+          >
+            Demandes{incoming.length > 0 ? ` (${incoming.length})` : ''}
+          </button>
+          <button
+            type="button"
+            className={tab === 'suggestions' ? 'active' : ''}
+            onClick={() => setTab('suggestions')}
+          >
+            Suggestions
+          </button>
+        </div>
+
+        {loadState === 'loading' && (
+          <p className="list-view-empty">Chargement…</p>
+        )}
+        {loadState === 'error' && (
+          <p className="list-view-empty">
+            Impossible de charger vos amis pour le moment.
+          </p>
+        )}
+
+        {loadState === 'success' && tab === 'tous' && (
+          <div className="friends-list amis-friends-list">
+            {filteredFriends.length === 0 && (
+              <div className="empty-state-card">
+                <span className="empty-state-icon" aria-hidden="true">
+                  🧑‍🤝‍🧑
+                </span>
+                <p>Aucun ami pour le moment</p>
+                <p>Partage ton code pour commencer à te connecter.</p>
+              </div>
+            )}
+            {filteredFriends.map((friendUser) => (
+              <div
+                className={`conversation-list-row amis-friend-row ${selectedFriend?.id === friendUser.id ? 'selected' : ''}`}
+                key={friendUser.id}
+                onClick={() => setSelectedFriend(friendUser)}
+              >
+                <span className="friends-row-avatar friends-row-avatar-lg">
+                  {friendUser.avatarUrl ? (
+                    <img src={friendUser.avatarUrl} alt="" />
+                  ) : (
+                    friendUser.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <span className="conversation-list-info">
+                  <strong>{friendUser.displayName}</strong>
+                  <span>{friendRowSubtitle(friendUser.id) ?? ' '}</span>
+                </span>
+                <button
+                  type="button"
+                  className="amis-row-icon-btn"
+                  aria-label="Envoyer un message"
+                  title="Message"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setConversationWith(friendUser);
+                  }}
+                >
+                  💬
+                </button>
+                <button
+                  type="button"
+                  className="amis-row-icon-btn"
+                  aria-label="Retirer cet ami"
+                  title="Retirer"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    removeFriendAction(friendUser.id);
+                  }}
+                >
+                  ⋯
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {loadState === 'success' && tab === 'demandes' && (
+          <div className="messages-tab-panel">
+            {incoming.length === 0 && outgoing.length === 0 && (
+              <p className="list-view-empty">
+                Aucune demande d'ami pour le moment.
+              </p>
+            )}
+            {incoming.length > 0 && (
+              <div className="amis-section">
+                <h3 className="amis-section-title">Demandes reçues</h3>
+                <div className="amis-list">
+                  {incoming.map((request) => (
+                    <div className="amis-row" key={request.id}>
+                      <span className="friends-row-avatar friends-row-avatar-lg">
+                        {request.user.avatarUrl ? (
+                          <img src={request.user.avatarUrl} alt="" />
+                        ) : (
+                          request.user.displayName.slice(0, 1).toUpperCase()
+                        )}
+                      </span>
+                      <span className="amis-row-name">
+                        {request.user.displayName}
+                        {(mutualCounts.get(request.user.id) ?? 0) > 0 && (
+                          <span className="amis-row-mutual">
+                            {mutualCounts.get(request.user.id)} ami
+                            {mutualCounts.get(request.user.id)! > 1
+                              ? 's'
+                              : ''}{' '}
+                            en commun
+                          </span>
+                        )}
+                      </span>
+                      <div className="amis-row-actions">
+                        <button
+                          type="button"
+                          className="amis-btn-accept"
+                          onClick={() => respond(request.id, 'accept')}
+                        >
+                          Accepter
+                        </button>
+                        <button
+                          type="button"
+                          className="amis-btn-ghost"
+                          onClick={() => respond(request.id, 'decline')}
+                        >
+                          Refuser
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {outgoing.length > 0 && (
+              <div className="amis-section">
+                <h3 className="amis-section-title">Demandes envoyées</h3>
+                <div className="amis-list">
+                  {outgoing.map((request) => (
+                    <div className="amis-row" key={request.id}>
+                      <span className="friends-row-avatar friends-row-avatar-lg">
+                        {request.user.avatarUrl ? (
+                          <img src={request.user.avatarUrl} alt="" />
+                        ) : (
+                          request.user.displayName.slice(0, 1).toUpperCase()
+                        )}
+                      </span>
+                      <span className="amis-row-name">
+                        {request.user.displayName}
+                      </span>
+                      <span className="amis-row-pending">En attente</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {loadState === 'success' && tab === 'suggestions' && (
+          <div className="messages-tab-panel">
+            {suggestions.length === 0 ? (
+              <p className="list-view-empty">
+                Pas de suggestion pour l'instant - ajoute des amis pour en
+                découvrir de nouveaux via vos connexions en commun.
+              </p>
+            ) : (
+              <div className="amis-list">
+                {suggestions.map((suggestion) => (
+                  <div className="amis-row" key={suggestion.user.id}>
+                    <span className="friends-row-avatar friends-row-avatar-lg">
+                      {suggestion.user.avatarUrl ? (
+                        <img src={suggestion.user.avatarUrl} alt="" />
+                      ) : (
+                        suggestion.user.displayName.slice(0, 1).toUpperCase()
+                      )}
+                    </span>
+                    <span className="amis-row-name">
+                      {suggestion.user.displayName}
+                      <span className="amis-row-mutual">
+                        {suggestion.mutualFriendCount} ami
+                        {suggestion.mutualFriendCount > 1 ? 's' : ''} en commun
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="amis-btn-accept"
+                      onClick={() => addSuggestion(suggestion.user.id)}
+                    >
+                      + Ajouter
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="amis-detail-column">
+        {selectedFriend ? (
+          <FriendDetailPanel
+            friend={selectedFriend}
+            authToken={authToken}
+            mutualCount={mutualCounts.get(selectedFriend.id) ?? 0}
+            locale={locale}
+            attendance={attendance}
+            onOpenEventForum={onOpenEventForum}
+            onMessage={() => setConversationWith(selectedFriend)}
+          />
+        ) : (
+          <div className="messages-empty-pane">
+            <span className="empty-state-icon" aria-hidden="true">
+              🧑‍🤝‍🧑
+            </span>
+            <p>Sélectionne un ami pour voir son profil.</p>
+          </div>
+        )}
+      </div>
+
+      <aside className="amis-rail">
+        <div className="events-trends-section amis-rail-section">
+          <div className="section-header amis-rail-header">
+            <h3>
+              Demandes d'amis
+              {incoming.length > 0 ? ` (${incoming.length})` : ''}
+            </h3>
+            <button
+              type="button"
+              className="view-all"
+              onClick={() => setTab('demandes')}
+            >
+              Voir tout
+            </button>
+          </div>
+          {incoming.length === 0 ? (
+            <p className="list-view-empty">Aucune demande en attente.</p>
+          ) : (
+            <div className="amis-list">
+              {incoming.slice(0, 3).map((request) => (
+                <div className="amis-row" key={request.id}>
+                  <span className="friends-row-avatar">
+                    {request.user.avatarUrl ? (
+                      <img src={request.user.avatarUrl} alt="" />
+                    ) : (
+                      request.user.displayName.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  <span className="amis-row-name">
+                    {request.user.displayName}
+                  </span>
+                  <div className="amis-row-actions">
+                    <button
+                      type="button"
+                      className="amis-btn-accept"
+                      onClick={() => respond(request.id, 'accept')}
+                    >
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      className="amis-btn-ghost"
+                      onClick={() => respond(request.id, 'decline')}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="events-trends-section amis-rail-section">
+          <div className="section-header amis-rail-header">
+            <h3>Suggestions pour toi</h3>
+            <button
+              type="button"
+              className="view-all"
+              onClick={() => setTab('suggestions')}
+            >
+              Voir tout
+            </button>
+          </div>
+          {suggestions.length === 0 ? (
+            <p className="list-view-empty">Rien pour l'instant.</p>
+          ) : (
+            <div className="amis-list">
+              {suggestions.slice(0, 3).map((suggestion) => (
+                <div className="amis-row" key={suggestion.user.id}>
+                  <span className="friends-row-avatar">
+                    {suggestion.user.avatarUrl ? (
+                      <img src={suggestion.user.avatarUrl} alt="" />
+                    ) : (
+                      suggestion.user.displayName.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  <span className="amis-row-name">
+                    {suggestion.user.displayName}
+                    <span className="amis-row-mutual">
+                      {suggestion.mutualFriendCount} ami
+                      {suggestion.mutualFriendCount > 1 ? 's' : ''} en commun
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="text-btn"
+                    onClick={() => addSuggestion(suggestion.user.id)}
+                  >
+                    +
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="events-trends-section amis-rail-section">
+          <h3>Actions rapides</h3>
+          <div className="amis-quick-actions">
+            <button
+              type="button"
+              className="forum-panel-rail-action"
+              onClick={() => onNavigate('groupes')}
+            >
+              👥 Créer un groupe
+            </button>
+            <button
+              type="button"
+              className="forum-panel-rail-action"
+              onClick={() => onNavigate('evenement')}
+            >
+              🔗 Partager un événement
+            </button>
+            <button
+              type="button"
+              className="forum-panel-rail-action"
+              onClick={() => setMapOpen(true)}
+            >
+              📍 Voir les amis sur la carte
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {conversationWith && (
+        <ConversationModal
+          friend={conversationWith}
+          authToken={authToken}
+          onClose={() => setConversationWith(undefined)}
+        />
+      )}
+      {inviteOpen && (
+        <InviteFriendModal
+          friendCode={friendCode}
+          authToken={authToken}
+          onSent={refresh}
+          onClose={() => setInviteOpen(false)}
+        />
+      )}
+      {mapOpen && (
+        <FriendsMapModal
+          entries={friendsUpcoming}
+          eventsById={upcomingEventsById}
+          onOpenEventForum={onOpenEventForum}
+          onClose={() => setMapOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -9091,56 +9699,298 @@ const FRIEND_REQUEST_ERROR_MESSAGES: Record<string, string> = {
     'Vous êtes déjà amis, ou une demande est déjà en attente.'
 };
 
-// Own block rather than folded into the trends/favoris blocks above - it
-// manages its own fetch/mutate cycle (code, pending requests, friends list
-// all change independently of the rest of Mon compte) and only renders
-// once signed in, same guard as the rest of this page.
-function FriendsBlock({ authToken }: { authToken: string | undefined }) {
-  const [friendCode, setFriendCode] = useState<string>();
-  const [pendingRequests, setPendingRequests] = useState<FriendRequestEntry[]>(
-    []
-  );
-  const [friends, setFriends] = useState<PublicUser[]>([]);
-  const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [codeInput, setCodeInput] = useState('');
-  const [sendError, setSendError] = useState<string>();
-  const [copied, setCopied] = useState(false);
-  const [conversationWith, setConversationWith] = useState<PublicUser>();
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    const headers = { authorization: `Bearer ${authToken}` };
-    setLoadState('loading');
-    Promise.all([
-      fetch(`${API_BASE_URL}/me/friend-code`, { headers }).then((r) =>
-        r.ok ? r.json() : Promise.reject()
-      ),
-      fetch(`${API_BASE_URL}/me/friends/requests`, { headers }).then((r) =>
-        r.ok ? r.json() : Promise.reject()
-      ),
-      fetch(`${API_BASE_URL}/me/friends`, { headers }).then((r) =>
-        r.ok ? r.json() : Promise.reject()
-      )
-    ])
-      .then(([codeJson, requestsJson, friendsJson]) => {
-        setFriendCode(friendCodeResponseSchema.parse(codeJson).data.friendCode);
-        setPendingRequests(
-          friendRequestsResponseSchema.parse(requestsJson).data
-        );
-        setFriends(friendsResponseSchema.parse(friendsJson).data);
-        setLoadState('success');
-      })
-      .catch(() => setLoadState('error'));
-  }, [authToken]);
+// A friend's real detail panel (Phase 4.15) - profile fields (bio/
+// createdAt) that already existed but were never shared before, real
+// mutual events (respecting the friend's own visibility choice), and a
+// real activity feed (friends-visible attendance only). No online/offline
+// status anywhere.
+function FriendDetailPanel({
+  friend,
+  authToken,
+  mutualCount,
+  locale,
+  attendance,
+  onOpenEventForum,
+  onMessage
+}: {
+  friend: PublicUser;
+  authToken: string | undefined;
+  mutualCount: number;
+  locale: SupportedLocale;
+  attendance: Record<string, AttendanceVisibility>;
+  onOpenEventForum: (eventId: string) => void;
+  onMessage: () => void;
+}) {
+  const [profile, setProfile] = useState<FriendProfile>();
+  const [mutualEvents, setMutualEvents] = useState<PublicEvent[]>([]);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [inviteEventOpen, setInviteEventOpen] = useState(false);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/friends/${friend.id}/profile`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setProfile(friendProfileResponseSchema.parse(json).data))
+      .catch(() => setProfile(undefined));
+  }, [authToken, friend.id]);
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/friends/${friend.id}/mutual-events`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const ids = mutualEventIdsResponseSchema.parse(json).data;
+        if (ids.length === 0) {
+          setMutualEvents([]);
+          return;
+        }
+        return fetch(`${API_BASE_URL}/events/by-ids?ids=${ids.join(',')}`)
+          .then((response) =>
+            response.ok ? response.json() : Promise.reject()
+          )
+          .then((eventsJson) =>
+            setMutualEvents(eventListResponseSchema.parse(eventsJson).data)
+          );
+      })
+      .catch(() => setMutualEvents([]));
+  }, [authToken, friend.id]);
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/friends/${friend.id}/activity`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setActivity(activityResponseSchema.parse(json).data))
+      .catch(() => setActivity([]));
+  }, [authToken, friend.id]);
+
+  const now = Date.now();
+  const upcomingMutual = mutualEvents
+    .filter((evt) => new Date(evt.startsAt).getTime() >= now)
+    .sort(
+      (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+    );
+  const nextOuting = upcomingMutual[0];
+
+  return (
+    <div className="friend-detail">
+      <div className="friend-detail-header">
+        <span className="friends-row-avatar friends-row-avatar-xl">
+          {friend.avatarUrl ? (
+            <img src={friend.avatarUrl} alt="" />
+          ) : (
+            friend.displayName.slice(0, 1).toUpperCase()
+          )}
+        </span>
+        <h2>{friend.displayName}</h2>
+        <div className="friend-detail-meta-row">
+          {profile?.createdAt && (
+            <span>📅 Membre depuis {formatMemberSince(profile.createdAt)}</span>
+          )}
+          {mutualCount > 0 && (
+            <span>
+              🧑‍🤝‍🧑 {mutualCount} ami{mutualCount > 1 ? 's' : ''} en commun
+            </span>
+          )}
+        </div>
+        {profile?.bio && <p className="friend-detail-bio">{profile.bio}</p>}
+        <div className="friend-detail-actions">
+          <button
+            type="button"
+            className="primary-action-btn friend-detail-cta"
+            onClick={onMessage}
+          >
+            Envoyer un message
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setInviteEventOpen(true)}
+          >
+            Inviter à un événement
+          </button>
+        </div>
+      </div>
+
+      {nextOuting && (
+        <div className="group-detail-card">
+          <h3>Prochaine sortie</h3>
+          <button
+            type="button"
+            className="venue-detail-event-row"
+            onClick={() => onOpenEventForum(nextOuting.id)}
+          >
+            <span
+              className="card-badge"
+              style={{
+                background:
+                  CATEGORY_COLORS[nextOuting.category] ??
+                  CATEGORY_COLORS['other']
+              }}
+            >
+              {SHORT_CATEGORY_LABELS[locale][nextOuting.category]}
+            </span>
+            <span className="venue-detail-event-info">
+              <strong>{nextOuting.title}</strong>
+              <span>
+                {new Date(nextOuting.startsAt).toLocaleDateString('fr-CA', {
+                  day: 'numeric',
+                  month: 'short'
+                })}{' '}
+                · {nextOuting.venue.name}
+              </span>
+            </span>
+          </button>
+        </div>
+      )}
+
+      <div className="dashboard-home-section friend-detail-section">
+        <div className="section-header">
+          <h2>Événements en commun</h2>
+        </div>
+        {mutualEvents.length === 0 ? (
+          <p className="list-view-empty">
+            Aucun événement en commun pour l'instant.
+          </p>
+        ) : (
+          <EventCarouselRow
+            events={mutualEvents}
+            onOpenDetails={onOpenEventForum}
+            locale={locale}
+          />
+        )}
+      </div>
+
+      <div className="friend-detail-section">
+        <div className="section-header">
+          <h2>Sorties récentes</h2>
+        </div>
+        <ActivityList
+          entries={activity}
+          emptyMessage="Rien à afficher pour l'instant."
+        />
+      </div>
+
+      {inviteEventOpen && (
+        <InviteFriendToEventModal
+          friend={friend}
+          authToken={authToken}
+          attendance={attendance}
+          onClose={() => setInviteEventOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// "Inviter à un événement" (Phase 4.15) - picks from the viewer's own real
+// upcoming events (the same real attendance data as "Mes événements") and
+// sends it as a real message, reusing the exact same send-a-link mechanism
+// as ShareToFriendModal/InviteToGroupModal.
+function InviteFriendToEventModal({
+  friend,
+  authToken,
+  attendance,
+  onClose
+}: {
+  friend: PublicUser;
+  authToken: string | undefined;
+  attendance: Record<string, AttendanceVisibility>;
+  onClose: () => void;
+}) {
+  const { events, state } = useAttendanceEvents(attendance, 'upcoming');
+  const [sentTo, setSentTo] = useState<Set<string>>(new Set());
+  const [sendingId, setSendingId] = useState<string>();
+
+  const sendEvent = (event: PublicEvent) => {
+    if (!authToken || sendingId) return;
+    setSendingId(event.id);
+    const url = `${window.location.origin}/events/${event.id}`;
+    fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ body: `${event.title}\n${url}` })
+    })
+      .then((response) => (response.ok ? undefined : Promise.reject()))
+      .then(() => setSentTo((prev) => new Set(prev).add(event.id)))
+      .catch(() => {})
+      .finally(() => setSendingId(undefined));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="share-friend-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="conversation-modal-header">
+          <strong>Inviter {friend.displayName} à un événement</strong>
+          <button type="button" className="text-btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        <div className="share-friend-list">
+          {state === 'loading' && (
+            <p className="list-view-empty">Chargement…</p>
+          )}
+          {state === 'success' && events.length === 0 && (
+            <p className="list-view-empty">
+              Marque ta présence sur un événement pour pouvoir l'inviter.
+            </p>
+          )}
+          {state === 'success' &&
+            events.map((event) => (
+              <div className="friends-row" key={event.id}>
+                <span className="friends-row-name">{event.title}</span>
+                <button
+                  type="button"
+                  className="text-btn"
+                  onClick={() => sendEvent(event)}
+                  disabled={sendingId === event.id || sentTo.has(event.id)}
+                >
+                  {sentTo.has(event.id)
+                    ? 'Envoyé ✓'
+                    : sendingId === event.id
+                      ? 'Envoi…'
+                      : 'Inviter'}
+                </button>
+              </div>
+            ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// "Ton code ami" (unchanged mechanism, moved into a modal so the friends
+// list isn't permanently cluttered by it) + the existing by-code add form.
+function InviteFriendModal({
+  friendCode,
+  authToken,
+  onSent,
+  onClose
+}: {
+  friendCode: string | undefined;
+  authToken: string | undefined;
+  onSent: () => void;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [codeInput, setCodeInput] = useState('');
+  const [sendError, setSendError] = useState<string>();
+  const [sending, setSending] = useState(false);
 
   const sendRequest = () => {
-    if (!authToken || !codeInput.trim()) return;
+    if (!authToken || !codeInput.trim() || sending) return;
+    setSending(true);
     setSendError(undefined);
     fetch(`${API_BASE_URL}/me/friends/requests`, {
       method: 'POST',
@@ -9149,65 +9999,36 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
         authorization: `Bearer ${authToken}`
       },
       body: JSON.stringify({ friendCode: codeInput.trim() })
-    }).then((response) => {
-      if (response.status === 204) {
-        setCodeInput('');
-        refresh();
-        return;
-      }
-      response
-        .json()
-        .then((json) => {
+    })
+      .then((response) => {
+        if (response.status === 204) {
+          setCodeInput('');
+          onSent();
+          return;
+        }
+        return response.json().then((json) => {
           setSendError(
             FRIEND_REQUEST_ERROR_MESSAGES[json?.error?.code] ??
               "Impossible d'envoyer la demande pour le moment."
           );
-        })
-        .catch(() =>
-          setSendError("Impossible d'envoyer la demande pour le moment.")
-        );
-    });
+        });
+      })
+      .finally(() => setSending(false));
   };
-
-  const respond = (requestId: string, action: 'accept' | 'decline') => {
-    if (!authToken) return;
-    void fetch(`${API_BASE_URL}/me/friends/requests/${requestId}`, {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ action })
-    }).then(() => refresh());
-  };
-
-  const removeFriend = (friendUserId: string) => {
-    if (!authToken) return;
-    void fetch(`${API_BASE_URL}/me/friends/${friendUserId}`, {
-      method: 'DELETE',
-      headers: { authorization: `Bearer ${authToken}` }
-    }).then(() => refresh());
-  };
-
-  const incoming = pendingRequests.filter(
-    (request) => request.direction === 'incoming'
-  );
-  const outgoing = pendingRequests.filter(
-    (request) => request.direction === 'outgoing'
-  );
 
   return (
-    <div className="amis-page">
-      {loadState === 'loading' && (
-        <p className="list-view-empty">Chargement…</p>
-      )}
-      {loadState === 'error' && (
-        <p className="list-view-empty">
-          Impossible de charger vos amis pour le moment.
-        </p>
-      )}
-      {loadState === 'success' && (
-        <>
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="share-friend-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="conversation-modal-header">
+          <strong>Inviter un ami</strong>
+          <button type="button" className="text-btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        <div className="amis-invite-modal-body">
           {friendCode && (
             <div className="amis-code-card">
               <span className="amis-code-icon" aria-hidden="true">
@@ -9230,7 +10051,6 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
               </button>
             </div>
           )}
-
           <form
             className="amis-add-form"
             onSubmit={(event) => {
@@ -9247,128 +10067,121 @@ function FriendsBlock({ authToken }: { authToken: string | undefined }) {
             <button
               type="submit"
               className="amis-add-btn"
-              disabled={!codeInput.trim()}
+              disabled={!codeInput.trim() || sending}
             >
               Ajouter
             </button>
           </form>
           {sendError && <p className="friends-error">{sendError}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-          {incoming.length > 0 && (
-            <div className="amis-section">
-              <h3 className="amis-section-title">Demandes reçues</h3>
-              <div className="amis-list">
-                {incoming.map((request) => (
-                  <div className="amis-row" key={request.id}>
-                    <span className="friends-row-avatar friends-row-avatar-lg">
-                      {request.user.avatarUrl ? (
-                        <img src={request.user.avatarUrl} alt="" />
-                      ) : (
-                        request.user.displayName.slice(0, 1).toUpperCase()
-                      )}
+// "Amis sur la carte" (Phase 4.15) - real venues from friends' real,
+// upcoming, friends-visible attendance. Never a live/last-known position -
+// no such data exists anywhere in Pulso.
+function FriendsMapModal({
+  entries,
+  eventsById,
+  onOpenEventForum,
+  onClose
+}: {
+  entries: FriendsMapEntry[];
+  eventsById: Map<string, PublicEvent>;
+  onOpenEventForum: (eventId: string) => void;
+  onClose: () => void;
+}) {
+  const container = useRef<HTMLDivElement>(null);
+  const points = entries
+    .map((entry) => ({ entry, event: eventsById.get(entry.eventId) }))
+    .filter(
+      (row): row is { entry: FriendsMapEntry; event: PublicEvent } =>
+        row.event !== undefined
+    );
+  const pointsKey = points
+    .map((row) => `${row.entry.friend.id}-${row.event.id}`)
+    .join(',');
+
+  useEffect(() => {
+    if (!container.current || points.length === 0) return;
+    const instance = new maplibregl.Map({
+      container: container.current,
+      center: [
+        points[0]!.event.venue.point.longitude,
+        points[0]!.event.venue.point.latitude
+      ],
+      zoom: 12,
+      style: MAP_STYLE_URL,
+      attributionControl: false
+    });
+    for (const { event } of points) {
+      new maplibregl.Marker({ color: '#c026d3' })
+        .setLngLat([event.venue.point.longitude, event.venue.point.latitude])
+        .addTo(instance);
+    }
+    if (points.length > 1) {
+      const bounds = points.reduce(
+        (acc, { event }) =>
+          acc.extend([event.venue.point.longitude, event.venue.point.latitude]),
+        new maplibregl.LngLatBounds()
+      );
+      instance.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+    }
+    return () => instance.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointsKey]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="friends-map-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="conversation-modal-header">
+          <strong>Amis sur la carte</strong>
+          <button type="button" className="text-btn" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+        {points.length === 0 ? (
+          <p className="list-view-empty">
+            Aucun ami n'a de sortie à venir partagée pour l'instant.
+          </p>
+        ) : (
+          <>
+            <div className="friends-map-canvas" ref={container} />
+            <div className="friends-map-list">
+              {points.map(({ entry, event }) => (
+                <button
+                  type="button"
+                  key={`${entry.friend.id}-${event.id}`}
+                  className="friends-map-row"
+                  onClick={() => {
+                    onOpenEventForum(event.id);
+                    onClose();
+                  }}
+                >
+                  <span className="friends-row-avatar">
+                    {entry.friend.avatarUrl ? (
+                      <img src={entry.friend.avatarUrl} alt="" />
+                    ) : (
+                      entry.friend.displayName.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  <span className="friends-map-row-info">
+                    <strong>{entry.friend.displayName}</strong>
+                    <span>
+                      {event.title} · {event.venue.name}
                     </span>
-                    <span className="amis-row-name">
-                      {request.user.displayName}
-                    </span>
-                    <div className="amis-row-actions">
-                      <button
-                        type="button"
-                        className="amis-btn-accept"
-                        onClick={() => respond(request.id, 'accept')}
-                      >
-                        Accepter
-                      </button>
-                      <button
-                        type="button"
-                        className="amis-btn-ghost"
-                        onClick={() => respond(request.id, 'decline')}
-                      >
-                        Refuser
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  </span>
+                </button>
+              ))}
             </div>
-          )}
-
-          {outgoing.length > 0 && (
-            <div className="amis-section">
-              <h3 className="amis-section-title">Demandes envoyées</h3>
-              <div className="amis-list">
-                {outgoing.map((request) => (
-                  <div className="amis-row" key={request.id}>
-                    <span className="friends-row-avatar friends-row-avatar-lg">
-                      {request.user.avatarUrl ? (
-                        <img src={request.user.avatarUrl} alt="" />
-                      ) : (
-                        request.user.displayName.slice(0, 1).toUpperCase()
-                      )}
-                    </span>
-                    <span className="amis-row-name">
-                      {request.user.displayName}
-                    </span>
-                    <span className="amis-row-pending">En attente</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="amis-section">
-            <h3 className="amis-section-title">Amis ({friends.length})</h3>
-            {friends.length === 0 ? (
-              <div className="empty-state-card">
-                <span className="empty-state-icon" aria-hidden="true">
-                  🧑‍🤝‍🧑
-                </span>
-                <p>Aucun ami pour le moment</p>
-                <p>Partage ton code ci-dessus pour commencer à te connecter.</p>
-              </div>
-            ) : (
-              <div className="amis-list">
-                {friends.map((friendUser) => (
-                  <div className="amis-row" key={friendUser.id}>
-                    <span className="friends-row-avatar friends-row-avatar-lg">
-                      {friendUser.avatarUrl ? (
-                        <img src={friendUser.avatarUrl} alt="" />
-                      ) : (
-                        friendUser.displayName.slice(0, 1).toUpperCase()
-                      )}
-                    </span>
-                    <span className="amis-row-name">
-                      {friendUser.displayName}
-                    </span>
-                    <div className="amis-row-actions">
-                      <button
-                        type="button"
-                        className="amis-btn-message"
-                        onClick={() => setConversationWith(friendUser)}
-                      >
-                        Message
-                      </button>
-                      <button
-                        type="button"
-                        className="amis-btn-ghost-muted"
-                        onClick={() => removeFriend(friendUser.id)}
-                      >
-                        Retirer
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-      {conversationWith && (
-        <ConversationModal
-          friend={conversationWith}
-          authToken={authToken}
-          onClose={() => setConversationWith(undefined)}
-        />
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
