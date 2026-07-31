@@ -2259,278 +2259,311 @@ export function ExploreMap({
     }
   }, []);
 
-  useEffect(() => {
-    if (!connectedMapContainer.current) return;
-    const instance = new maplibregl.Map({
-      container: connectedMapContainer.current,
-      center: MONTREAL_CENTER,
-      zoom: 11,
-      style: MAP_STYLE_URL
-    });
+  // A callback ref, not a mount-once useEffect: a signed-in session starts
+  // with `user` still undefined (async /me check), so the very first render
+  // falls through to this shared Fragment and mounts every map instance
+  // including this one - then, the moment auth resolves, the redirect to
+  // 'decouvrir' below unmounts the Fragment entirely, tearing this map back
+  // down. A useEffect keyed on stable callbacks only ever runs once and
+  // would never recreate the map on a later remount (e.g. navigating back
+  // to "Carte"); a callback ref fires every time this exact DOM node
+  // (dis)appears, so it stays correct across that unmount/remount cycle.
+  const initConnectedMap = useCallback(
+    (container: HTMLDivElement) => {
+      const instance = new maplibregl.Map({
+        container,
+        center: MONTREAL_CENTER,
+        zoom: 11,
+        style: MAP_STYLE_URL
+      });
 
-    instance.on('load', () => {
-      for (const [category, color] of Object.entries(CATEGORY_COLORS)) {
+      instance.on('load', () => {
+        for (const [category, color] of Object.entries(CATEGORY_COLORS)) {
+          instance.addImage(
+            `connected-pin-${category}`,
+            buildPinImageData(color),
+            { pixelRatio: PIN_SCALE }
+          );
+        }
         instance.addImage(
-          `connected-pin-${category}`,
-          buildPinImageData(color),
+          'connected-cluster-badge',
+          buildClusterBadgeImageData(),
           { pixelRatio: PIN_SCALE }
         );
-      }
-      instance.addImage(
-        'connected-cluster-badge',
-        buildClusterBadgeImageData(),
-        { pixelRatio: PIN_SCALE }
-      );
-      instance.addImage(
-        'connected-pin-venue',
-        buildPinImageData(VENUE_PIN_COLOR),
-        { pixelRatio: PIN_SCALE }
-      );
+        instance.addImage(
+          'connected-pin-venue',
+          buildPinImageData(VENUE_PIN_COLOR),
+          { pixelRatio: PIN_SCALE }
+        );
 
-      instance.addSource('connected-events-source', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-        cluster: true,
-        clusterMaxZoom: 14,
-        clusterRadius: 50
-      });
-      instance.addSource('connected-venues-source', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-        cluster: true,
-        clusterMaxZoom: 14,
-        clusterRadius: 40
-      });
+        instance.addSource('connected-events-source', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+          cluster: true,
+          clusterMaxZoom: 14,
+          clusterRadius: 50
+        });
+        instance.addSource('connected-venues-source', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+          cluster: true,
+          clusterMaxZoom: 14,
+          clusterRadius: 40
+        });
 
-      const eventVisible = () =>
-        explorerPinKindRef.current === 'event' ? 'visible' : 'none';
-      const venueVisible = () =>
-        explorerPinKindRef.current === 'venue' ? 'visible' : 'none';
+        const eventVisible = () =>
+          explorerPinKindRef.current === 'event' ? 'visible' : 'none';
+        const venueVisible = () =>
+          explorerPinKindRef.current === 'venue' ? 'visible' : 'none';
 
-      instance.addLayer({
-        id: 'connected-events-clusters-glow',
-        type: 'circle',
-        source: 'connected-events-source',
-        filter: ['has', 'point_count'],
-        layout: { visibility: eventVisible() },
-        paint: {
-          'circle-color': '#7058ff',
-          'circle-radius': ['step', ['get', 'point_count'], 30, 10, 42, 50, 54],
-          'circle-blur': 1,
-          'circle-opacity': 0.45
-        }
-      });
-      instance.addLayer({
-        id: 'connected-events-clusters',
-        type: 'symbol',
-        source: 'connected-events-source',
-        filter: ['has', 'point_count'],
-        layout: {
-          visibility: eventVisible(),
-          'icon-image': 'connected-cluster-badge',
-          'icon-size': [
-            'step',
-            ['get', 'point_count'],
-            0.56,
-            10,
-            0.83,
-            50,
-            1.1
-          ],
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true
-        }
-      });
-      instance.addLayer({
-        id: 'connected-events-cluster-count',
-        type: 'symbol',
-        source: 'connected-events-source',
-        filter: ['has', 'point_count'],
-        layout: {
-          visibility: eventVisible(),
-          'text-field': '{point_count_abbreviated}',
-          'text-font': ['Noto Sans Bold'],
-          'text-size': 13
-        },
-        paint: { 'text-color': '#ffffff' }
-      });
-      instance.addLayer({
-        id: 'connected-events-glow',
-        type: 'circle',
-        source: 'connected-events-source',
-        filter: ['!', ['has', 'point_count']],
-        layout: { visibility: eventVisible() },
-        paint: {
-          'circle-radius': 18,
-          'circle-color': ['get', 'color'],
-          'circle-blur': 1,
-          'circle-opacity': 0.5
-        }
-      });
-      instance.addLayer({
-        id: 'connected-events-circles',
-        type: 'symbol',
-        source: 'connected-events-source',
-        filter: ['!', ['has', 'point_count']],
-        layout: {
-          visibility: eventVisible(),
-          'icon-image': ['concat', 'connected-pin-', ['get', 'category']],
-          'icon-size': 0.85,
-          'icon-anchor': 'bottom',
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true
-        }
-      });
-
-      instance.addLayer({
-        id: 'connected-venues-clusters-glow',
-        type: 'circle',
-        source: 'connected-venues-source',
-        filter: ['has', 'point_count'],
-        layout: { visibility: venueVisible() },
-        paint: {
-          'circle-color': VENUE_PIN_COLOR,
-          'circle-radius': ['step', ['get', 'point_count'], 26, 10, 36],
-          'circle-blur': 1,
-          'circle-opacity': 0.4
-        }
-      });
-      instance.addLayer({
-        id: 'connected-venues-clusters',
-        type: 'symbol',
-        source: 'connected-venues-source',
-        filter: ['has', 'point_count'],
-        layout: {
-          visibility: venueVisible(),
-          'icon-image': 'connected-cluster-badge',
-          'icon-size': ['step', ['get', 'point_count'], 0.5, 10, 0.7],
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true
-        }
-      });
-      instance.addLayer({
-        id: 'connected-venues-cluster-count',
-        type: 'symbol',
-        source: 'connected-venues-source',
-        filter: ['has', 'point_count'],
-        layout: {
-          visibility: venueVisible(),
-          'text-field': '{point_count_abbreviated}',
-          'text-font': ['Noto Sans Bold'],
-          'text-size': 12
-        },
-        paint: { 'text-color': '#ffffff' }
-      });
-      instance.addLayer({
-        id: 'connected-venues-circles',
-        type: 'symbol',
-        source: 'connected-venues-source',
-        filter: ['!', ['has', 'point_count']],
-        layout: {
-          visibility: venueVisible(),
-          'icon-image': 'connected-pin-venue',
-          'icon-size': 0.85,
-          'icon-anchor': 'bottom',
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true
-        }
-      });
-
-      // A single pin (or the first of an unclusterable same-spot stack)
-      // opens the small floating card below - never the full EventDetails
-      // panel or a picker list, both specific to the anonymous/legacy map.
-      instance.on('click', 'connected-events-circles', (e) => {
-        const id = e.features?.[0]?.properties?.id as string | undefined;
-        const event = id && eventsRef.current.find((ev) => ev.id === id);
-        if (event) setMapSelection({ kind: 'event', event });
-      });
-      instance.on('click', 'connected-venues-circles', (e) => {
-        const id = e.features?.[0]?.properties?.id as string | undefined;
-        const group =
-          id && explorerVenueGroupsRef.current.find((g) => g.id === id);
-        if (group) setMapSelection({ kind: 'venue', group });
-      });
-      instance.on('click', 'connected-events-clusters', (e) => {
-        const feature = e.features?.[0];
-        const clusterId = feature?.properties?.cluster_id;
-        const source = instance.getSource('connected-events-source') as
-          maplibregl.GeoJSONSource | undefined;
-        if (clusterId === undefined || !source || !feature) return;
-        const coordinates = (
-          feature.geometry as { type: 'Point'; coordinates: [number, number] }
-        ).coordinates;
-        source.getClusterExpansionZoom(clusterId).then((zoom) => {
-          if (zoom > instance.getMaxZoom() - 0.5) {
-            // Can't zoom in any further to split this cluster apart (all
-            // its events sit at ~the same coordinate) - fall back to the
-            // first real leaf's own id (a cluster feature itself carries no
-            // `id` property, only individual points do).
-            source.getClusterLeaves(clusterId, 1, 0).then((leaves) => {
-              const id = leaves[0]?.properties?.id as string | undefined;
-              const event = id && eventsRef.current.find((ev) => ev.id === id);
-              if (event) setMapSelection({ kind: 'event', event });
-            });
-            return;
+        instance.addLayer({
+          id: 'connected-events-clusters-glow',
+          type: 'circle',
+          source: 'connected-events-source',
+          filter: ['has', 'point_count'],
+          layout: { visibility: eventVisible() },
+          paint: {
+            'circle-color': '#7058ff',
+            'circle-radius': [
+              'step',
+              ['get', 'point_count'],
+              30,
+              10,
+              42,
+              50,
+              54
+            ],
+            'circle-blur': 1,
+            'circle-opacity': 0.45
           }
-          instance.easeTo({ center: coordinates, zoom });
         });
-      });
-      instance.on('click', 'connected-venues-clusters', (e) => {
-        const feature = e.features?.[0];
-        const clusterId = feature?.properties?.cluster_id;
-        const source = instance.getSource('connected-venues-source') as
-          maplibregl.GeoJSONSource | undefined;
-        if (clusterId === undefined || !source || !feature) return;
-        const coordinates = (
-          feature.geometry as { type: 'Point'; coordinates: [number, number] }
-        ).coordinates;
-        source.getClusterExpansionZoom(clusterId).then((zoom) => {
-          if (zoom > instance.getMaxZoom() - 0.5) {
-            source.getClusterLeaves(clusterId, 1, 0).then((leaves) => {
-              const id = leaves[0]?.properties?.id as string | undefined;
-              const group =
-                id && explorerVenueGroupsRef.current.find((g) => g.id === id);
-              if (group) setMapSelection({ kind: 'venue', group });
-            });
-            return;
+        instance.addLayer({
+          id: 'connected-events-clusters',
+          type: 'symbol',
+          source: 'connected-events-source',
+          filter: ['has', 'point_count'],
+          layout: {
+            visibility: eventVisible(),
+            'icon-image': 'connected-cluster-badge',
+            'icon-size': [
+              'step',
+              ['get', 'point_count'],
+              0.56,
+              10,
+              0.83,
+              50,
+              1.1
+            ],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true
           }
-          instance.easeTo({ center: coordinates, zoom });
         });
+        instance.addLayer({
+          id: 'connected-events-cluster-count',
+          type: 'symbol',
+          source: 'connected-events-source',
+          filter: ['has', 'point_count'],
+          layout: {
+            visibility: eventVisible(),
+            'text-field': '{point_count_abbreviated}',
+            'text-font': ['Noto Sans Bold'],
+            'text-size': 13
+          },
+          paint: { 'text-color': '#ffffff' }
+        });
+        instance.addLayer({
+          id: 'connected-events-glow',
+          type: 'circle',
+          source: 'connected-events-source',
+          filter: ['!', ['has', 'point_count']],
+          layout: { visibility: eventVisible() },
+          paint: {
+            'circle-radius': 18,
+            'circle-color': ['get', 'color'],
+            'circle-blur': 1,
+            'circle-opacity': 0.5
+          }
+        });
+        instance.addLayer({
+          id: 'connected-events-circles',
+          type: 'symbol',
+          source: 'connected-events-source',
+          filter: ['!', ['has', 'point_count']],
+          layout: {
+            visibility: eventVisible(),
+            'icon-image': ['concat', 'connected-pin-', ['get', 'category']],
+            'icon-size': 0.85,
+            'icon-anchor': 'bottom',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true
+          }
+        });
+
+        instance.addLayer({
+          id: 'connected-venues-clusters-glow',
+          type: 'circle',
+          source: 'connected-venues-source',
+          filter: ['has', 'point_count'],
+          layout: { visibility: venueVisible() },
+          paint: {
+            'circle-color': VENUE_PIN_COLOR,
+            'circle-radius': ['step', ['get', 'point_count'], 26, 10, 36],
+            'circle-blur': 1,
+            'circle-opacity': 0.4
+          }
+        });
+        instance.addLayer({
+          id: 'connected-venues-clusters',
+          type: 'symbol',
+          source: 'connected-venues-source',
+          filter: ['has', 'point_count'],
+          layout: {
+            visibility: venueVisible(),
+            'icon-image': 'connected-cluster-badge',
+            'icon-size': ['step', ['get', 'point_count'], 0.5, 10, 0.7],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true
+          }
+        });
+        instance.addLayer({
+          id: 'connected-venues-cluster-count',
+          type: 'symbol',
+          source: 'connected-venues-source',
+          filter: ['has', 'point_count'],
+          layout: {
+            visibility: venueVisible(),
+            'text-field': '{point_count_abbreviated}',
+            'text-font': ['Noto Sans Bold'],
+            'text-size': 12
+          },
+          paint: { 'text-color': '#ffffff' }
+        });
+        instance.addLayer({
+          id: 'connected-venues-circles',
+          type: 'symbol',
+          source: 'connected-venues-source',
+          filter: ['!', ['has', 'point_count']],
+          layout: {
+            visibility: venueVisible(),
+            'icon-image': 'connected-pin-venue',
+            'icon-size': 0.85,
+            'icon-anchor': 'bottom',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true
+          }
+        });
+
+        // A single pin (or the first of an unclusterable same-spot stack)
+        // opens the small floating card below - never the full EventDetails
+        // panel or a picker list, both specific to the anonymous/legacy map.
+        instance.on('click', 'connected-events-circles', (e) => {
+          const id = e.features?.[0]?.properties?.id as string | undefined;
+          const event = id && eventsRef.current.find((ev) => ev.id === id);
+          if (event) setMapSelection({ kind: 'event', event });
+        });
+        instance.on('click', 'connected-venues-circles', (e) => {
+          const id = e.features?.[0]?.properties?.id as string | undefined;
+          const group =
+            id && explorerVenueGroupsRef.current.find((g) => g.id === id);
+          if (group) setMapSelection({ kind: 'venue', group });
+        });
+        instance.on('click', 'connected-events-clusters', (e) => {
+          const feature = e.features?.[0];
+          const clusterId = feature?.properties?.cluster_id;
+          const source = instance.getSource('connected-events-source') as
+            maplibregl.GeoJSONSource | undefined;
+          if (clusterId === undefined || !source || !feature) return;
+          const coordinates = (
+            feature.geometry as { type: 'Point'; coordinates: [number, number] }
+          ).coordinates;
+          source.getClusterExpansionZoom(clusterId).then((zoom) => {
+            if (zoom > instance.getMaxZoom() - 0.5) {
+              // Can't zoom in any further to split this cluster apart (all
+              // its events sit at ~the same coordinate) - fall back to the
+              // first real leaf's own id (a cluster feature itself carries no
+              // `id` property, only individual points do).
+              source.getClusterLeaves(clusterId, 1, 0).then((leaves) => {
+                const id = leaves[0]?.properties?.id as string | undefined;
+                const event =
+                  id && eventsRef.current.find((ev) => ev.id === id);
+                if (event) setMapSelection({ kind: 'event', event });
+              });
+              return;
+            }
+            instance.easeTo({ center: coordinates, zoom });
+          });
+        });
+        instance.on('click', 'connected-venues-clusters', (e) => {
+          const feature = e.features?.[0];
+          const clusterId = feature?.properties?.cluster_id;
+          const source = instance.getSource('connected-venues-source') as
+            maplibregl.GeoJSONSource | undefined;
+          if (clusterId === undefined || !source || !feature) return;
+          const coordinates = (
+            feature.geometry as { type: 'Point'; coordinates: [number, number] }
+          ).coordinates;
+          source.getClusterExpansionZoom(clusterId).then((zoom) => {
+            if (zoom > instance.getMaxZoom() - 0.5) {
+              source.getClusterLeaves(clusterId, 1, 0).then((leaves) => {
+                const id = leaves[0]?.properties?.id as string | undefined;
+                const group =
+                  id && explorerVenueGroupsRef.current.find((g) => g.id === id);
+                if (group) setMapSelection({ kind: 'venue', group });
+              });
+              return;
+            }
+            instance.easeTo({ center: coordinates, zoom });
+          });
+        });
+
+        for (const layer of [
+          'connected-events-circles',
+          'connected-events-clusters',
+          'connected-venues-circles',
+          'connected-venues-clusters'
+        ]) {
+          instance.on('mouseenter', layer, () => {
+            instance.getCanvas().style.cursor = 'pointer';
+          });
+          instance.on('mouseleave', layer, () => {
+            instance.getCanvas().style.cursor = '';
+          });
+        }
+
+        pushConnectedDataToMap(instance);
       });
 
-      for (const layer of [
-        'connected-events-circles',
-        'connected-events-clusters',
-        'connected-venues-circles',
-        'connected-venues-clusters'
-      ]) {
-        instance.on('mouseenter', layer, () => {
-          instance.getCanvas().style.cursor = 'pointer';
+      const onMoveEnd = () => {
+        const bounds = instance.getBounds();
+        void loadEvents({
+          west: bounds.getWest(),
+          south: bounds.getSouth(),
+          east: bounds.getEast(),
+          north: bounds.getNorth()
         });
-        instance.on('mouseleave', layer, () => {
-          instance.getCanvas().style.cursor = '';
-        });
+      };
+      instance.on('moveend', onMoveEnd);
+      connectedMap.current = instance;
+    },
+    [pushConnectedDataToMap, loadEvents]
+  );
+
+  // Must be a stable function, not an inline arrow in the JSX below - an
+  // inline arrow is a new function identity every render, which React
+  // treats as "the ref changed" and fires detach(null)/reattach on every
+  // single re-render, destroying and recreating the whole map constantly.
+  const connectedMapContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      connectedMapContainer.current = node;
+      if (node && !connectedMap.current) {
+        initConnectedMap(node);
+      } else if (!node && connectedMap.current) {
+        connectedMap.current.remove();
+        connectedMap.current = null;
       }
-
-      pushConnectedDataToMap(instance);
-    });
-
-    const onMoveEnd = () => {
-      const bounds = instance.getBounds();
-      void loadEvents({
-        west: bounds.getWest(),
-        south: bounds.getSouth(),
-        east: bounds.getEast(),
-        north: bounds.getNorth()
-      });
-    };
-    instance.on('moveend', onMoveEnd);
-    connectedMap.current = instance;
-    return () => {
-      instance.off('moveend', onMoveEnd);
-      instance.remove();
-    };
-  }, [pushConnectedDataToMap, loadEvents]);
+    },
+    [initConnectedMap]
+  );
 
   useEffect(() => {
     if (connectedMap.current) pushConnectedDataToMap(connectedMap.current);
@@ -3588,7 +3621,7 @@ export function ExploreMap({
                     locale={locale}
                   />
 
-                  <div ref={connectedMapContainer} className="map" />
+                  <div ref={connectedMapContainerRef} className="map" />
 
                   <div className="map-floating-pin-toggle">
                     <button
