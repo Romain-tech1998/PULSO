@@ -80,6 +80,11 @@ export interface FriendsRepository {
     viewerId: string,
     friendUserId: string
   ): Promise<FriendProfile | undefined>;
+  // "Suggestions pour toi"'s one-click add (Phase 4.15) - a suggestion only
+  // ever exposes a real user id (never a friend_code, per DEC-0011), so
+  // sending a request to one needs this by-id variant alongside the
+  // existing by-code sendRequest above.
+  sendRequestToUser(requesterId: string, addresseeId: string): Promise<void>;
 }
 
 interface PublicUserRow {
@@ -117,6 +122,22 @@ export class PostgresFriendsRepository implements FriendsRepository {
     );
     const addresseeId = addressee.rows[0]?.id;
     if (!addresseeId) throw new FriendCodeNotFoundError();
+    await this.insertPendingRequest(requesterId, addresseeId);
+  }
+
+  // "Suggestions pour toi"'s one-click add - same rules as sendRequest
+  // above, just addressed by real user id instead of a typed-in code.
+  async sendRequestToUser(
+    requesterId: string,
+    addresseeId: string
+  ): Promise<void> {
+    await this.insertPendingRequest(requesterId, addresseeId);
+  }
+
+  private async insertPendingRequest(
+    requesterId: string,
+    addresseeId: string
+  ): Promise<void> {
     if (addresseeId === requesterId) throw new CannotFriendSelfError();
 
     const existing = await this.pool.query(

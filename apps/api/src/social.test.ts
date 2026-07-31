@@ -85,6 +85,31 @@ describe('friend requests API', () => {
     await app.close();
   });
 
+  it('sends a friend request directly by user id (Suggestions "+")', async () => {
+    let received: { requesterId: string; addresseeId: string } | undefined;
+    const app = buildApp(
+      event,
+      accountRepositories({
+        friendsRepository: fakeFriendsRepository({
+          sendRequestToUser: async (requesterId, addresseeId) => {
+            received = { requesterId, addresseeId };
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/me/friends/${friend.id}/request`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(received).toEqual({
+      requesterId: testUser.id,
+      addresseeId: friend.id
+    });
+    await app.close();
+  });
+
   it('returns 404 for an unknown friend code', async () => {
     const app = buildApp(
       event,

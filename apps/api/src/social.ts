@@ -98,6 +98,30 @@ export function registerSocialRoutes(
     return reply.status(204).send();
   });
 
+  // One-click add from "Suggestions pour toi" (Phase 4.15) - a suggestion
+  // only ever exposes a real user id, never a friend_code.
+  app.post('/me/friends/:friendUserId/request', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { friendUserId } = friendParamsSchema.parse(request.params);
+    try {
+      await friendsRepository.sendRequestToUser(user.id, friendUserId);
+    } catch (error) {
+      if (error instanceof CannotFriendSelfError) {
+        return reply.status(400).send({
+          error: { code: 'CANNOT_FRIEND_SELF', message: error.message }
+        });
+      }
+      if (error instanceof FriendshipAlreadyExistsError) {
+        return reply.status(409).send({
+          error: { code: 'FRIENDSHIP_ALREADY_EXISTS', message: error.message }
+        });
+      }
+      throw error;
+    }
+    return reply.status(204).send();
+  });
+
   app.get('/me/friends/requests', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);

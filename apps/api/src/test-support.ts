@@ -89,6 +89,7 @@ export function fakeFriendsRepository(
     getMutualFriendCounts: async () => new Map(),
     getSuggestions: async () => [],
     getFriendProfile: async () => undefined,
+    sendRequestToUser: async () => undefined,
     ...overrides
   };
 }
