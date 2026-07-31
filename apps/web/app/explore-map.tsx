@@ -13017,14 +13017,14 @@ function EventDetails({
               <div className="attendance-row">
                 <button
                   type="button"
-                  className={`secondary-action-btn ${attendanceVisibility ? 'active' : ''}`}
+                  className={`forum-follow-cta attendance-cta ${attendanceVisibility ? 'active' : ''}`}
                   onClick={() =>
                     attendanceVisibility
                       ? onClearAttendance()
                       : onSetAttendance('private')
                   }
                 >
-                  {attendanceVisibility ? 'Vous y allez' : "J'y vais"}
+                  {attendanceVisibility ? '✓ Vous y allez' : "🎟️ J'y vais"}
                 </button>
                 {attendanceVisibility && (
                   <select

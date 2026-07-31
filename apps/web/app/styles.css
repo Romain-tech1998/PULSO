@@ -3234,9 +3234,16 @@ a.venue-detail-info-row:hover {
   align-items: center;
   gap: 0.75rem;
 }
-.attendance-row .secondary-action-btn {
+/* "J'y vais" (live feedback) - was a quiet, easy-to-miss
+   .secondary-action-btn while "Rencontrer avant l'événement" got a bold
+   gradient CTA right next to it. Marking your own presence is the real
+   signal "someone participates" is built on, so it gets the same
+   .forum-follow-cta treatment (Phase 4.14) - just not full-width here,
+   since it shares this row with the visibility <select>. */
+.attendance-row .attendance-cta {
+  width: auto;
   flex-shrink: 0;
-  padding: 0.6rem 1rem;
+  padding: 0.6rem 1.2rem;
 }
 .attendance-visibility-select {
   flex: 1;
@@ -3392,6 +3399,15 @@ a.venue-detail-info-row:hover {
   flex-direction: column;
   justify-content: space-between;
   border-radius: 1.5rem;
+}
+/* Live feedback: the category badge (details-hero-actions' first child
+   here, since inlineBadge replaces the hidden back button) slid in behind
+   .forum-panel-back - that button is position:absolute at top:1.25rem
+   over .forum-panel-hero-wrap, independent of the hero's own padding, so
+   its ~37px-tall pill still overlapped the badge sitting at the hero's own
+   2.5rem (40px) top padding. Push the whole actions row down to clear it. */
+.forum-panel-page .details-hero-actions {
+  margin-top: 1.5rem;
 }
 .forum-panel-page .details-title {
   font-size: 2rem;
