@@ -822,7 +822,16 @@ export function ExploreMap({
   >();
   // Client-side only: filters the already-fetched events by source.name.
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
-    () => new Set(['filtres', 'categories', 'prix', 'distance', 'ambiance'])
+    () =>
+      new Set([
+        'categories',
+        'prix',
+        'date',
+        'distance',
+        'ambiance',
+        'accessibilite',
+        'lieu-categorie'
+      ])
   );
   const toggleSection = (key: string) =>
     setCollapsedSections((prev) => {
@@ -1241,7 +1250,7 @@ export function ExploreMap({
         source: 'events-source',
         filter: ['has', 'point_count'],
         paint: {
-          'circle-color': '#7058ff',
+          'circle-color': '#7336C1',
           'circle-radius': ['step', ['get', 'point_count'], 30, 10, 42, 50, 54],
           'circle-blur': 1,
           'circle-opacity': 0.45
@@ -2367,7 +2376,7 @@ export function ExploreMap({
           filter: ['has', 'point_count'],
           layout: { visibility: eventVisible() },
           paint: {
-            'circle-color': '#7058ff',
+            'circle-color': '#7336C1',
             'circle-radius': [
               'step',
               ['get', 'point_count'],
@@ -3098,35 +3107,12 @@ export function ExploreMap({
 
                   {section === 'evenement' && (
                     <>
-                      <CollapsibleFilterGroup
-                        title="Filtres"
-                        collapsed={collapsedSections.has('filtres')}
-                        onToggle={() => toggleSection('filtres')}
-                        action={
-                          <button className="filter-reset" onClick={clearAll}>
-                            Réinitialiser
-                          </button>
-                        }
-                      >
-                        <div className="pill-list pill-list-long">
-                          {(['today', 'weekend', 'next7'] as const).map(
-                            (value) => (
-                              <button
-                                type="button"
-                                key={value}
-                                className={`filter-pill ${filters.date === value ? 'active' : ''}`}
-                                onClick={() =>
-                                  applyFilters(
-                                    withoutCustomDates(filters, value)
-                                  )
-                                }
-                              >
-                                {getDateFilterLabel(locale, value)}
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </CollapsibleFilterGroup>
+                      <div className="filter-group-title-row">
+                        <h3>Filtres</h3>
+                        <button className="filter-reset" onClick={clearAll}>
+                          Réinitialiser
+                        </button>
+                      </div>
 
                       <CollapsibleFilterGroup
                         title="Catégories"
@@ -3209,6 +3195,29 @@ export function ExploreMap({
                       </CollapsibleFilterGroup>
 
                       <CollapsibleFilterGroup
+                        title="Date"
+                        collapsed={collapsedSections.has('date')}
+                        onToggle={() => toggleSection('date')}
+                      >
+                        <div className="pill-list">
+                          {DATE_FILTER_OPTIONS.map((option) => (
+                            <button
+                              type="button"
+                              key={option.value}
+                              className={`filter-pill ${filters.date === option.value ? 'active' : ''}`}
+                              onClick={() =>
+                                applyFilters(
+                                  withoutCustomDates(filters, option.value)
+                                )
+                              }
+                            >
+                              {getDateFilterLabel(locale, option.value)}
+                            </button>
+                          ))}
+                        </div>
+                      </CollapsibleFilterGroup>
+
+                      <CollapsibleFilterGroup
                         title="Distance"
                         collapsed={collapsedSections.has('distance')}
                         onToggle={() => toggleSection('distance')}
@@ -3270,11 +3279,43 @@ export function ExploreMap({
                           </button>
                         </div>
                       </CollapsibleFilterGroup>
+
+                      <CollapsibleFilterGroup
+                        title="Accessibilité"
+                        collapsed={collapsedSections.has('accessibilite')}
+                        onToggle={() => toggleSection('accessibilite')}
+                      >
+                        <p className="category-legend-hint">
+                          Bientôt : de vraies informations d'accessibilité pour
+                          chaque lieu.
+                        </p>
+                        <div className="pill-list">
+                          <button className="filter-pill" disabled>
+                            ♿ Accès fauteuil roulant
+                          </button>
+                          <button className="filter-pill" disabled>
+                            🅿️ Stationnement accessible
+                          </button>
+                          <button className="filter-pill" disabled>
+                            🚻 Toilettes accessibles
+                          </button>
+                        </div>
+                      </CollapsibleFilterGroup>
                     </>
                   )}
 
                   {section === 'lieu' && (
                     <>
+                      <div className="filter-group-title-row">
+                        <h3>Filtres</h3>
+                        <button
+                          className="filter-reset"
+                          onClick={() => setVenueCategoryFilter([])}
+                        >
+                          Réinitialiser
+                        </button>
+                      </div>
+
                       <CollapsibleFilterGroup
                         title="Catégorie de lieu"
                         collapsed={collapsedSections.has('lieu-categorie')}
@@ -3385,6 +3426,28 @@ export function ExploreMap({
                           </button>
                         </div>
                       </CollapsibleFilterGroup>
+
+                      <CollapsibleFilterGroup
+                        title="Accessibilité"
+                        collapsed={collapsedSections.has('accessibilite')}
+                        onToggle={() => toggleSection('accessibilite')}
+                      >
+                        <p className="category-legend-hint">
+                          Bientôt : de vraies informations d'accessibilité pour
+                          chaque lieu.
+                        </p>
+                        <div className="pill-list">
+                          <button className="filter-pill" disabled>
+                            ♿ Accès fauteuil roulant
+                          </button>
+                          <button className="filter-pill" disabled>
+                            🅿️ Stationnement accessible
+                          </button>
+                          <button className="filter-pill" disabled>
+                            🚻 Toilettes accessibles
+                          </button>
+                        </div>
+                      </CollapsibleFilterGroup>
                     </>
                   )}
 
@@ -3392,6 +3455,40 @@ export function ExploreMap({
                     <div className="promo-content">
                       <h4>Téléchargez Pulso</h4>
                       <p>Emportez la ville dans votre poche.</p>
+                    </div>
+                    <div className="promo-store-badges">
+                      <button
+                        type="button"
+                        className="promo-store-badge"
+                        disabled
+                      >
+                        <span
+                          className="promo-store-badge-icon"
+                          aria-hidden="true"
+                        >
+                          🍎
+                        </span>
+                        <span>
+                          <small>Bientôt sur</small>
+                          <strong>App Store</strong>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="promo-store-badge"
+                        disabled
+                      >
+                        <span
+                          className="promo-store-badge-icon"
+                          aria-hidden="true"
+                        >
+                          ▶️
+                        </span>
+                        <span>
+                          <small>Bientôt sur</small>
+                          <strong>Google Play</strong>
+                        </span>
+                      </button>
                     </div>
                   </div>
                 </aside>
@@ -5597,13 +5694,11 @@ function CollapsibleFilterGroup({
   title,
   collapsed,
   onToggle,
-  action,
   children
 }: {
   title: string;
   collapsed: boolean;
   onToggle: () => void;
-  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -5616,24 +5711,22 @@ function CollapsibleFilterGroup({
           aria-expanded={!collapsed}
         >
           <svg
+            className={`filter-group-chevron ${collapsed ? 'collapsed' : ''}`}
             width="12"
             height="12"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
-            style={{
-              transform: collapsed ? 'rotate(-90deg)' : 'none',
-              transition: 'transform 0.15s'
-            }}
           >
             <path d="M6 9l6 6 6-6" />
           </svg>
           <span>{title}</span>
         </button>
-        {!collapsed && action}
       </div>
-      {!collapsed && children}
+      <div className={`filter-group-body ${collapsed ? 'collapsed' : ''}`}>
+        <div className="filter-group-body-inner">{children}</div>
+      </div>
     </div>
   );
 }
@@ -6757,7 +6850,7 @@ function MapSelectionCard({
             type="button"
             className="map-selection-card-close"
             onClick={onClose}
-            aria-label="Fermer"
+            aria-label={translate(locale, 'preview.close')}
           >
             ✕
           </button>
@@ -6787,7 +6880,7 @@ function MapSelectionCard({
               className="primary-action-btn map-selection-card-cta"
               onClick={() => onOpenEvent(event.id)}
             >
-              Voir l'événement
+              {translate(locale, 'preview.details')}
             </button>
           </div>
         </div>
@@ -6825,7 +6918,7 @@ function MapSelectionCard({
           type="button"
           className="map-selection-card-close"
           onClick={onClose}
-          aria-label="Fermer"
+          aria-label={translate(locale, 'preview.close')}
         >
           ✕
         </button>
@@ -6850,7 +6943,7 @@ function MapSelectionCard({
               className="primary-action-btn map-selection-card-cta"
               onClick={() => onOpenEvent(nextEvent.id)}
             >
-              Voir l'événement
+              {translate(locale, 'preview.details')}
             </button>
           )}
         </div>
@@ -12717,43 +12810,51 @@ function EventPreview({
   const fields = eventPreviewFields(event, locale);
   return (
     <div className="event-preview-card" aria-live="polite">
-      <div className="preview-header-actions">
-        <div
-          className="card-badge"
-          style={{ position: 'relative', top: 0, left: 0 }}
+      <div
+        className="event-preview-media"
+        style={
+          event.imageUrl
+            ? {
+                backgroundImage: `url(${event.imageUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }
+            : undefined
+        }
+      >
+        {!event.imageUrl && <EventImageFallback category={event.category} />}
+        <button
+          type="button"
+          className="card-fav"
+          aria-pressed={isFavorite}
+          aria-label={translate(
+            locale,
+            isFavorite ? 'favorites.remove' : 'favorites.add'
+          )}
+          onClick={onToggleFavorite}
         >
-          {SHORT_CATEGORY_LABELS[locale][event.category]}
-        </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button
-            type="button"
-            className="card-fav"
-            style={{ position: 'relative', top: 0, right: 0 }}
-            aria-pressed={isFavorite}
-            aria-label={translate(
-              locale,
-              isFavorite ? 'favorites.remove' : 'favorites.add'
-            )}
-            onClick={onToggleFavorite}
-          >
-            <HeartIcon filled={isFavorite} />
-          </button>
-          <button
-            type="button"
-            className="close-button"
-            onClick={onClose}
+          <HeartIcon filled={isFavorite} />
+        </button>
+      </div>
+      <div className="event-preview-body">
+        <div className="preview-header-actions">
+          <div
+            className="card-badge"
             style={{
-              background: 'rgba(255,255,255,0.1)',
-              border: 'none',
-              borderRadius: '50%',
-              width: 28,
-              height: 28,
-              color: '#fff',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              position: 'relative',
+              top: 0,
+              left: 0,
+              background:
+                CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']
             }}
+          >
+            {SHORT_CATEGORY_LABELS[locale][event.category]}
+          </div>
+          <button
+            type="button"
+            className="event-preview-close"
+            onClick={onClose}
+            aria-label={translate(locale, 'preview.close')}
           >
             <svg
               width="16"
@@ -12767,60 +12868,55 @@ function EventPreview({
             </svg>
           </button>
         </div>
-      </div>
-      <h3 style={{ margin: '0.5rem 0 0 0', fontSize: '1.25rem' }}>
-        {fields.title}
-      </h3>
-      <dl className="preview-fields">
-        <div>
-          <dt>{translate(locale, 'preview.when')}</dt>
-          <dd>{fields.dateTime}</dd>
-        </div>
-        <div>
-          <dt>{translate(locale, 'preview.venue')}</dt>
-          <dd>{fields.venue}</dd>
-        </div>
-        <div>
-          <dt>{translate(locale, 'preview.price')}</dt>
-          <dd>{fields.price}</dd>
-        </div>
-      </dl>
-      {fields.warning && <p className="warning">{fields.warning}</p>}
-      {searchMatch && (
-        <div
-          className="match-explanation"
-          aria-label={translate(locale, 'search.whyExact')}
+        <h3>{fields.title}</h3>
+        <ul className="event-preview-fields">
+          <li>
+            <span aria-hidden="true">📍</span> {fields.venue}
+          </li>
+          <li>
+            <span aria-hidden="true">📅</span> {fields.dateTime}
+          </li>
+          <li>
+            <span aria-hidden="true">💰</span> {fields.price}
+          </li>
+        </ul>
+        {fields.warning && <p className="warning">{fields.warning}</p>}
+        {searchMatch && (
+          <div
+            className="match-explanation"
+            aria-label={translate(locale, 'search.whyExact')}
+          >
+            <strong>
+              {searchMatch.matchType === 'exact'
+                ? translate(locale, 'search.whyExact')
+                : translate(locale, 'search.whyAlternative')}
+            </strong>
+            <ul>
+              {searchMatch.reasons.map((reason, index) => (
+                <li key={`${reason.code}-${index}`}>
+                  {localizeSearchMessage(locale, reason)}
+                </li>
+              ))}
+              {searchMatch.differences.map((difference, index) => (
+                <li
+                  key={`${difference.code}-${index}`}
+                  className="alternative-difference"
+                >
+                  {localizeSearchMessage(locale, difference)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <button
+          ref={detailsButton}
+          type="button"
+          className="primary-action-btn"
+          onClick={onDetails}
         >
-          <strong>
-            {searchMatch.matchType === 'exact'
-              ? translate(locale, 'search.whyExact')
-              : translate(locale, 'search.whyAlternative')}
-          </strong>
-          <ul>
-            {searchMatch.reasons.map((reason, index) => (
-              <li key={`${reason.code}-${index}`}>
-                {localizeSearchMessage(locale, reason)}
-              </li>
-            ))}
-            {searchMatch.differences.map((difference, index) => (
-              <li
-                key={`${difference.code}-${index}`}
-                className="alternative-difference"
-              >
-                {localizeSearchMessage(locale, difference)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <button
-        ref={detailsButton}
-        type="button"
-        className="primary-action"
-        onClick={onDetails}
-      >
-        {translate(locale, 'preview.details')}
-      </button>
+          {translate(locale, 'preview.details')}
+        </button>
+      </div>
     </div>
   );
 }

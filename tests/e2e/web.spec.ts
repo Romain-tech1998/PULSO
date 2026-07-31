@@ -29,7 +29,7 @@ test('completes anonymous UJ-0001 and preserves map context', async ({
   await expect(page.getByText('Free', { exact: true })).toBeVisible();
   await expect(page.getByText('Music / concerts')).toBeVisible();
 
-  await page.getByRole('button', { name: 'View event details' }).click();
+  await page.getByRole('button', { name: 'View event' }).click();
   await expect(page.getByLabel('Event Details')).toBeVisible();
   await expect(
     page.getByText('1000 Rue Synthétique, Montréal, QC')
@@ -80,7 +80,7 @@ test('filters anonymously and preserves the filtered map context', async ({
   await page
     .getByRole('button', { name: 'Preview Imaginary Montréal Comedy Hour' })
     .click();
-  await page.getByRole('button', { name: 'View event details' }).click();
+  await page.getByRole('button', { name: 'View event' }).click();
   await expect(
     page.getByRole('heading', { name: 'Imaginary Montréal Comedy Hour' })
   ).toBeVisible();
@@ -156,7 +156,7 @@ test('completes transparent deterministic UJ-0002 and preserves search context',
   await expect(query).toHaveValue('free music tonight starting soon');
   await expect(page.getByText('Why this matches')).toBeVisible();
   await expect(page.getByText('Price matches: Free')).toBeVisible();
-  await page.getByRole('button', { name: 'View event details' }).click();
+  await page.getByRole('button', { name: 'View event' }).click();
   await expect(page.getByLabel('Event Details')).toBeVisible();
   await page.getByRole('button', { name: /Back to map/ }).click();
   await expect(
@@ -289,9 +289,7 @@ test('switches, persists, and preserves bilingual map, filter, search, and detai
   await expect(
     page.getByRole('heading', { name: 'Imaginary Montréal Comedy Hour' })
   ).toBeVisible();
-  await page
-    .getByRole('button', { name: 'Voir les détails de l’événement' })
-    .click();
+  await page.getByRole('button', { name: 'Voir l’événement' }).click();
   const frenchDetails = page.getByLabel('Détails de l’événement');
   await expect(frenchDetails).toBeVisible();
   await expect(
@@ -351,9 +349,7 @@ test('switches, persists, and preserves bilingual map, filter, search, and detai
   await page
     .getByRole('button', { name: 'Aperçu du résultat de recherche 1 : exact' })
     .click();
-  await page
-    .getByRole('button', { name: 'Voir les détails de l’événement' })
-    .click();
+  await page.getByRole('button', { name: 'Voir l’événement' }).click();
 
   await page.getByRole('radio', { name: 'English' }).check();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
