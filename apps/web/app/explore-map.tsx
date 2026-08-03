@@ -769,6 +769,12 @@ export function ExploreMap({
   const detailsButton = useRef<HTMLButtonElement>(null);
   const detailsHeading = useRef<HTMLHeadingElement>(null);
   const [events, setEvents] = useState<PublicEvent[]>([]);
+  // Distinguishes "still loading" from "genuinely zero results" for the
+  // main map's own event fetch (audit: 0 events rendered identically to
+  // still-loading, with no actionable empty state at all).
+  const [eventsLoadState, setEventsLoadState] = useState<
+    'loading' | 'success' | 'error'
+  >('loading');
   const [nearbyEvents, setNearbyEvents] = useState<PublicEvent[]>([]);
   const [nearbyState, setNearbyState] = useState<LoadState>('loading');
   const [selected, setSelected] = useState<PublicEvent>();
@@ -799,6 +805,10 @@ export function ExploreMap({
   const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersOverlayMount = useTransitionedMount(filtersOpen);
+  // Mobile-only: the desktop sidebar becomes a bottom-sheet drawer below the
+  // .sidebar-left mobile breakpoint (audit: at 390px the inline sidebar left
+  // almost nothing else visible) - same content, just a different container.
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [queryInput, setQueryInput] = useState('');
   const [searchResult, setSearchResult] = useState<IntelligentSearchResponse>();
   const [searchProcessing, setSearchProcessing] = useState(false);
@@ -1080,6 +1090,7 @@ export function ExploreMap({
           setFilters(effectiveFilters);
           const foundEvents = result.data.map(({ event }) => event);
           setEvents(foundEvents);
+          setEventsLoadState('success');
           localStorage.setItem(
             'pulso-offline-events',
             JSON.stringify(foundEvents)
@@ -1105,6 +1116,7 @@ export function ExploreMap({
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
         setEvents(result.data);
+        setEventsLoadState('success');
         localStorage.setItem(
           'pulso-offline-events',
           JSON.stringify(result.data)
@@ -1117,6 +1129,7 @@ export function ExploreMap({
       } catch {
         if (activeSearch.current) setSearchError(true);
         setSearchProcessing(false);
+        setEventsLoadState('error');
       }
     },
     []
@@ -2698,7 +2711,11 @@ export function ExploreMap({
       ? nearbyEvents.length === 0
       : events.length === 0;
 
-  const ContentColumn = user ? 'div' : Fragment;
+  // A real <main> landmark for the anonymous experience (audit: none
+  // existed anywhere on the page) - the signed-in side already gets one
+  // implicitly via its own layout, this is the plain div/Fragment slot the
+  // anonymous header + section content render into.
+  const ContentColumn = user ? 'div' : 'main';
 
   return (
     <div className={`app-container${user ? ' app-container-connected' : ''}`}>
@@ -2763,12 +2780,9 @@ export function ExploreMap({
                 type="button"
                 className="nav-logo"
                 onClick={goHome}
-                aria-label={translate(locale, 'app.title')}
+                aria-label={translate(locale, 'app.logoHome')}
               >
-                <img
-                  src="/brand/pulso-logo-horizontal-dark.svg"
-                  alt={translate(locale, 'app.title')}
-                />
+                <img src="/brand/pulso-logo-horizontal-dark.svg" alt="" />
               </button>
               <div className="nav-actions-links">
                 <button
@@ -2846,7 +2860,7 @@ export function ExploreMap({
               </button>
               <button
                 type="button"
-                className="nav-icon-btn"
+                className="nav-icon-btn nav-icon-btn-notifications"
                 disabled
                 aria-label="Notifications (bientôt disponible)"
                 title="Bientôt disponible"
@@ -2867,6 +2881,82 @@ export function ExploreMap({
               />
             </div>
           </header>
+        )}
+
+        {/* Mobile bottom nav (audit: the desktop nav-actions-links row
+            becomes inaccessible under ~768px) - the same 3 destinations
+            plus Favoris, as real 44px+ tap targets instead of the ~22px
+            text row above. Anonymous only, same gate as the header above. */}
+        {!user && (
+          <nav className="mobile-bottom-nav" aria-label="Navigation principale">
+            <button
+              type="button"
+              className={!aboutOpen && section === 'evenement' ? 'active' : ''}
+              onClick={() => {
+                setAboutOpen(false);
+                setMobileFiltersOpen(false);
+                setSection('evenement');
+              }}
+            >
+              <ViewModeIcon kind="map" />
+              Événements
+            </button>
+            <button
+              type="button"
+              className={!aboutOpen && section === 'lieu' ? 'active' : ''}
+              onClick={() => {
+                setAboutOpen(false);
+                setMobileFiltersOpen(false);
+                setSection('lieu');
+              }}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z" />
+                <circle cx="12" cy="10" r="2.5" />
+              </svg>
+              Lieux
+            </button>
+            <button
+              type="button"
+              className={!aboutOpen && section === 'explorer' ? 'active' : ''}
+              onClick={() => {
+                setAboutOpen(false);
+                setMobileFiltersOpen(false);
+                setSection('explorer');
+              }}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <polygon points="3 11 22 2 13 21 11 13 3 11" />
+              </svg>
+              Explorer
+            </button>
+            <button
+              type="button"
+              className={!aboutOpen && section === 'favoris' ? 'active' : ''}
+              onClick={() => {
+                setAboutOpen(false);
+                setMobileFiltersOpen(false);
+                setSection('favoris');
+              }}
+            >
+              <HeartIcon filled={!aboutOpen && section === 'favoris'} />
+              Favoris
+            </button>
+          </nav>
         )}
 
         {user && forumPanelMode && showingDetails ? (
@@ -3027,11 +3117,34 @@ export function ExploreMap({
           <Fragment>
             <div className="dashboard-main">
               {(section === 'evenement' || section === 'lieu') && (
-                /* Left Sidebar */
-                <aside className="sidebar-left">
-                  <h2 className="sidebar-section-title">
-                    {section === 'evenement' ? 'Événement' : 'Lieu'}
-                  </h2>
+                /* Left Sidebar - becomes a mobile bottom-sheet drawer below
+                   the sidebar-left breakpoint, toggled by mobileFiltersOpen
+                   (see the floating "Filtres" buttons in each map shell). */
+                <aside
+                  className={`sidebar-left ${mobileFiltersOpen ? 'mobile-open' : ''}`}
+                >
+                  <div className="sidebar-mobile-header">
+                    <h1 className="sidebar-section-title">
+                      {section === 'evenement' ? 'Événements' : 'Lieux'}
+                    </h1>
+                    <button
+                      type="button"
+                      className="sidebar-mobile-close"
+                      onClick={() => setMobileFiltersOpen(false)}
+                      aria-label={translate(locale, 'filters.close')}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M18 6L6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
                   <p className="sidebar-results-count">
                     {section === 'evenement'
                       ? (() => {
@@ -3514,6 +3627,13 @@ export function ExploreMap({
                 </aside>
               )}
 
+              {mobileFiltersOpen && (
+                <div
+                  className="mobile-filters-backdrop"
+                  onClick={() => setMobileFiltersOpen(false)}
+                />
+              )}
+
               {/* Événement map + content - always mounted (never conditionally
             unmounted by section) so the MapLibre instance attached to
             `container` is never torn down and recreated; only its CSS
@@ -3532,6 +3652,28 @@ export function ExploreMap({
                   style={{ display: viewMode === 'map' ? undefined : 'none' }}
                 >
                   <div ref={container} className="map" />
+                  <button
+                    type="button"
+                    className="mobile-filters-trigger"
+                    onClick={() => setMobileFiltersOpen(true)}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <line x1="4" y1="6" x2="20" y2="6" />
+                      <line x1="4" y1="12" x2="20" y2="12" />
+                      <line x1="4" y1="18" x2="20" y2="18" />
+                      <circle cx="9" cy="6" r="1.6" fill="currentColor" />
+                      <circle cx="15" cy="12" r="1.6" fill="currentColor" />
+                      <circle cx="11" cy="18" r="1.6" fill="currentColor" />
+                    </svg>
+                    Filtres
+                  </button>
                   <button
                     type="button"
                     className="map-floating-recenter"
@@ -3630,12 +3772,58 @@ export function ExploreMap({
                   </div>
 
                   {basemapState !== 'loaded' && (
-                    <p className="map-basemap-status" role="status">
-                      {basemapState === 'loading'
-                        ? 'Loading map...'
-                        : 'Map unavailable'}
-                    </p>
+                    <div className="map-basemap-status" role="status">
+                      {basemapState === 'loading' && (
+                        <span
+                          className="map-basemap-spinner"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <p>
+                        {basemapState === 'loading'
+                          ? translate(locale, 'map.basemapLoading')
+                          : translate(locale, 'map.basemapUnavailable')}
+                      </p>
+                    </div>
                   )}
+
+                  {basemapState === 'loaded' &&
+                    eventsLoadState === 'success' &&
+                    events.length === 0 && (
+                      <div className="map-empty-state">
+                        <p className="map-empty-state-title">
+                          {translate(locale, 'map.emptyTitle')}
+                        </p>
+                        <p className="map-empty-state-subtitle">
+                          {translate(locale, 'map.emptySubtitle')}
+                        </p>
+                        <div className="map-empty-state-actions">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              map.current?.flyTo({
+                                center: MONTREAL_CENTER,
+                                zoom: 11
+                              })
+                            }
+                          >
+                            {translate(locale, 'map.emptyWiden')}
+                          </button>
+                          <button type="button" onClick={clearAll}>
+                            {translate(locale, 'map.emptyClear')}
+                          </button>
+                          <button
+                            type="button"
+                            className="primary"
+                            onClick={() =>
+                              applyFilters(withoutCustomDates(filters, 'next7'))
+                            }
+                          >
+                            {translate(locale, 'map.emptyThisWeek')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                 </div>
 
                 {viewMode === 'list' && (
@@ -3706,6 +3894,28 @@ export function ExploreMap({
                 style={{ display: section === 'lieu' ? undefined : 'none' }}
               >
                 <div className="venue-section">
+                  <button
+                    type="button"
+                    className="mobile-filters-trigger"
+                    onClick={() => setMobileFiltersOpen(true)}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <line x1="4" y1="6" x2="20" y2="6" />
+                      <line x1="4" y1="12" x2="20" y2="12" />
+                      <line x1="4" y1="18" x2="20" y2="18" />
+                      <circle cx="9" cy="6" r="1.6" fill="currentColor" />
+                      <circle cx="15" cy="12" r="1.6" fill="currentColor" />
+                      <circle cx="11" cy="18" r="1.6" fill="currentColor" />
+                    </svg>
+                    Filtres
+                  </button>
                   <div
                     className="map-shell"
                     style={{ display: lieuTab === 'map' ? undefined : 'none' }}
@@ -4113,6 +4323,11 @@ export function ExploreMap({
                 onClearAll={clearAll}
                 locale={locale}
                 visible={filtersOverlayMount.visible}
+                distanceKm={distanceKm}
+                onDistanceChange={setDistanceKm}
+                onApplyDistance={applyDistanceFilter}
+                distanceFilterActive={distanceFilterActive}
+                geoStatus={geoStatus}
               />
             )}
 
@@ -5802,15 +6017,13 @@ function LanguageSelector({
   const [open, setOpen] = useState(false);
   const other: SupportedLocale = locale === 'fr' ? 'en' : 'fr';
   return (
-    <div
-      className="lang-selector"
-      aria-label={translate(locale, 'language.label')}
-    >
+    <div className="lang-selector">
       <button
         type="button"
         className="lang-selector-current"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
+        aria-label={translate(locale, 'language.label')}
       >
         <span className="lang-flag">
           <LocaleFlagIcon locale={locale} />
@@ -12453,6 +12666,8 @@ function MapFilterBar({
           type="button"
           className={`map-filter-chip ${openChip === 'date' ? 'open' : ''}`}
           onClick={() => toggleChip('date')}
+          aria-expanded={openChip === 'date'}
+          aria-haspopup="true"
         >
           {getDateFilterLabel(locale, filters.date)}
           <svg
@@ -12491,6 +12706,8 @@ function MapFilterBar({
           type="button"
           className={`map-filter-chip ${openChip === 'price' ? 'open' : ''}`}
           onClick={() => toggleChip('price')}
+          aria-expanded={openChip === 'price'}
+          aria-haspopup="true"
         >
           {getPriceLabel(locale, filters.price)}
           <svg
@@ -12529,6 +12746,8 @@ function MapFilterBar({
           type="button"
           className={`map-filter-chip ${openChip === 'category' ? 'open' : ''} ${filters.categories.length > 0 ? 'active' : ''}`}
           onClick={() => toggleChip('category')}
+          aria-expanded={openChip === 'category'}
+          aria-haspopup="true"
         >
           {categoryLabel}
           <svg
@@ -12654,7 +12873,12 @@ function FilterOverlay({
   onClose,
   onClearAll,
   locale,
-  visible
+  visible,
+  distanceKm,
+  onDistanceChange,
+  onApplyDistance,
+  distanceFilterActive,
+  geoStatus
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
@@ -12662,6 +12886,11 @@ function FilterOverlay({
   onClearAll: () => void;
   locale: SupportedLocale;
   visible: boolean;
+  distanceKm: number;
+  onDistanceChange: (km: number) => void;
+  onApplyDistance: () => void;
+  distanceFilterActive: boolean;
+  geoStatus: GeoStatus;
 }) {
   const today = getMontrealCalendarDate(new Date());
   const setDate = (date: DiscoveryFilters['date']) => {
@@ -12770,6 +12999,57 @@ function FilterOverlay({
           </label>
         ))}
         <p className="filter-help">{translate(locale, 'filters.priceHelp')}</p>
+      </fieldset>
+      <fieldset>
+        <legend>{translate(locale, 'filters.distance')}</legend>
+        <div className="distance-slider-container">
+          <input
+            type="range"
+            min="1"
+            max="30"
+            value={distanceKm}
+            onChange={(event) => onDistanceChange(Number(event.target.value))}
+            onMouseUp={onApplyDistance}
+            onTouchEnd={onApplyDistance}
+            onKeyUp={onApplyDistance}
+            className="distance-slider"
+          />
+          <div className="distance-labels">
+            <span>1km</span>
+            <span>10km</span>
+            <span>20km</span>
+            <span>30km</span>
+          </div>
+          <p className="distance-value">
+            {distanceFilterActive
+              ? `Rayon actif : ${distanceKm} km`
+              : `Rayon max (${distanceKm} km) — non appliqué`}
+            {geoStatus === 'pending' && ' · localisation…'}
+            {geoStatus === 'denied' && ' · position non partagée'}
+            {geoStatus === 'unsupported' &&
+              ' · non disponible sur cet appareil'}
+          </p>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>{translate(locale, 'filters.ambiance')}</legend>
+        <p className="filter-help">
+          {translate(locale, 'filters.ambianceHelp')}
+        </p>
+        <div className="pill-list">
+          <button type="button" className="filter-pill" disabled>
+            🔥 Énergique
+          </button>
+          <button type="button" className="filter-pill" disabled>
+            ☕ Chill
+          </button>
+          <button type="button" className="filter-pill" disabled>
+            🥂 Romantique
+          </button>
+          <button type="button" className="filter-pill" disabled>
+            🎉 Festif
+          </button>
+        </div>
       </fieldset>
       <dl className="fixed-filter-rules">
         <div>

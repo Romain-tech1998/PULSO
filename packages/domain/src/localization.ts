@@ -55,6 +55,7 @@ export interface SearchMessage {
 const en = {
   'app.eyebrow': 'Pulso · Free exploration',
   'app.title': 'Explore Montréal',
+  'app.logoHome': 'Pulso — Home',
   'app.description':
     'Explore and filter fictional events for the next seven Montréal calendar days. No account or intelligent search is required.',
   'language.label': 'Language',
@@ -67,6 +68,13 @@ const en = {
   'map.loading': 'Loading events…',
   'map.empty': 'No events match the active filters in this map area.',
   'map.error': 'Events could not be loaded. Your map context is preserved.',
+  'map.basemapLoading': 'Loading map…',
+  'map.basemapUnavailable': 'Map unavailable',
+  'map.emptyTitle': 'No events found in this area',
+  'map.emptySubtitle': 'Try widening your search or clearing your filters.',
+  'map.emptyWiden': 'Recenter on Montréal',
+  'map.emptyClear': 'Clear filters',
+  'map.emptyThisWeek': 'See Montréal this week',
   'map.count.one': '1 matching fictional event in this map area.',
   'map.count.many': '{count} matching fictional events in this map area.',
   'map.previewAria': 'Preview {title}',
@@ -90,6 +98,9 @@ const en = {
   'filters.categoriesHelp': 'Multiple categories match with OR.',
   'filters.price': 'Price',
   'filters.priceHelp': 'Unknown prices appear only under All.',
+  'filters.distance': 'Distance',
+  'filters.ambiance': 'Mood',
+  'filters.ambianceHelp': 'Coming soon: AI will determine each event’s mood.',
   'filters.geography': 'Geography',
   'filters.geographyHelp':
     'Current visible map area. Distance is not applied because no reference location was supplied; no routing or implicit location.',
@@ -252,6 +263,7 @@ export type MessageKey = keyof typeof en;
 const fr = {
   'app.eyebrow': 'Pulso · Exploration libre',
   'app.title': 'Explorer Montréal',
+  'app.logoHome': 'Pulso — Accueil',
   'app.description':
     'Explorez et filtrez les événements fictifs des sept prochains jours civils à Montréal. Aucun compte ni recherche intelligente n’est requis.',
   'language.label': 'Langue',
@@ -266,6 +278,13 @@ const fr = {
     'Aucun événement ne correspond aux filtres actifs dans cette zone.',
   'map.error':
     'Les événements n’ont pas pu être chargés. Le contexte de la carte est conservé.',
+  'map.basemapLoading': 'Chargement de la carte…',
+  'map.basemapUnavailable': 'Carte indisponible',
+  'map.emptyTitle': 'Aucun événement trouvé dans cette zone',
+  'map.emptySubtitle': 'Essayez d’élargir votre recherche ou vos filtres.',
+  'map.emptyWiden': 'Recentrer sur Montréal',
+  'map.emptyClear': 'Effacer les filtres',
+  'map.emptyThisWeek': 'Voir Montréal cette semaine',
   'map.count.one': '1 événement fictif correspondant dans cette zone.',
   'map.count.many':
     '{count} événements fictifs correspondants dans cette zone.',
@@ -290,6 +309,10 @@ const fr = {
   'filters.categoriesHelp': 'Plusieurs catégories sont combinées avec OU.',
   'filters.price': 'Prix',
   'filters.priceHelp': 'Les prix inconnus apparaissent uniquement sous Tous.',
+  'filters.distance': 'Distance',
+  'filters.ambiance': 'Ambiance',
+  'filters.ambianceHelp':
+    'Bientôt : une IA déterminera l’ambiance de chaque événement.',
   'filters.geography': 'Zone géographique',
   'filters.geographyHelp':
     'Zone actuellement visible sur la carte. Aucune distance n’est appliquée sans lieu de référence fourni; aucun itinéraire ni emplacement implicite.',
