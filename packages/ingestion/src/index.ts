@@ -43,6 +43,17 @@ export {
 } from './sources/instagram-scout.js';
 
 export {
+  fetchInstagramStoriesSignals,
+  type InstagramStoryTarget,
+  type InstagramStorySignal
+} from './sources/instagram-stories-apify.js';
+
+export {
+  analyzeEventImage,
+  type EventImageAnalysis
+} from './lib/openrouter-vision.js';
+
+export {
   extractInstagramWatchlist,
   selectInstagramPilotTargets
 } from './registry.js';
