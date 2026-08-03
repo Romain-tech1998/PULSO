@@ -34,6 +34,13 @@ export {
   type AttendanceVisibility
 } from './attendance-repository.js';
 export {
+  PostgresRatingsRepository,
+  VenueNotFoundError,
+  type RatingsRepository,
+  type VenueRating,
+  type VenueRatingSummary
+} from './ratings-repository.js';
+export {
   PostgresForumRepository,
   ForumPostNotFoundError,
   type ForumPost,

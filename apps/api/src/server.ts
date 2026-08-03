@@ -10,6 +10,7 @@ import {
   PostgresGroupsRepository,
   PostgresMessagesRepository,
   PostgresProfileRepository,
+  PostgresRatingsRepository,
   PostgresReportsRepository,
   PostgresTrendsRepository
 } from '@pulso/database';
@@ -52,6 +53,7 @@ const app = buildApp(new PostgresEventRepository(pool), {
         groupsRepository: new PostgresGroupsRepository(pool),
         profileRepository: new PostgresProfileRepository(pool),
         eventPhotosRepository: new PostgresEventPhotosRepository(pool),
+        ratingsRepository: new PostgresRatingsRepository(pool),
         uploadDir,
         publicUploadUrl,
         google

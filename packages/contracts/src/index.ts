@@ -210,6 +210,32 @@ export const venueFavoriteCountsResponseSchema = z.object({
   )
 });
 
+// Internal-only venue quality signal (any signed-in user, 1-5 stars, an
+// optional comment) - used server-side to influence venue ranking. The
+// summary (average/count) is real and never inferred, but is deliberately
+// not surfaced as a public "reviews" feature until there's enough real
+// data for a shown rating to be credible.
+export const setVenueRatingRequestSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(500).optional()
+});
+export const myVenueRatingSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(500).optional()
+});
+export const myVenueRatingResponseSchema = z.object({
+  data: myVenueRatingSchema.nullable()
+});
+export const venueRatingSummariesResponseSchema = z.object({
+  data: z.array(
+    z.object({
+      venueId: z.uuid(),
+      average: z.number().min(1).max(5),
+      count: z.number().int().min(1)
+    })
+  )
+});
+
 // The account itself. `bio`/`coverStyle`/`avatarStyle` (Phase 4.7) are the
 // only user-authored profile fields - everything else is either provided by
 // Google or derived on demand (see /me/trends), never a stored preference
@@ -879,6 +905,12 @@ export type VenueListResponse = z.infer<typeof venueListResponseSchema>;
 export type VenueIdsQuery = z.infer<typeof venueIdsQuerySchema>;
 export type VenueFavoriteCountsResponse = z.infer<
   typeof venueFavoriteCountsResponseSchema
+>;
+export type SetVenueRatingRequest = z.infer<typeof setVenueRatingRequestSchema>;
+export type MyVenueRating = z.infer<typeof myVenueRatingSchema>;
+export type MyVenueRatingResponse = z.infer<typeof myVenueRatingResponseSchema>;
+export type VenueRatingSummariesResponse = z.infer<
+  typeof venueRatingSummariesResponseSchema
 >;
 export type User = z.infer<typeof userSchema>;
 export type MeResponse = z.infer<typeof meResponseSchema>;

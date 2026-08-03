@@ -21,6 +21,7 @@ import type {
   GroupsRepository,
   MessagesRepository,
   ProfileRepository,
+  RatingsRepository,
   ReportsRepository,
   TrendsRepository
 } from '@pulso/database';
@@ -43,6 +44,7 @@ import { registerForumRoutes } from './forum.js';
 import { registerGroupsRoutes } from './groups.js';
 import { registerMessagesRoutes } from './messages.js';
 import { registerProfileRoutes } from './profile.js';
+import { registerRatingsRoutes } from './ratings.js';
 import { registerReportsRoutes } from './reports.js';
 import { registerSocialRoutes } from './social.js';
 
@@ -70,6 +72,7 @@ export function buildApp(
     groupsRepository?: GroupsRepository;
     profileRepository?: ProfileRepository;
     eventPhotosRepository?: EventPhotosRepository;
+    ratingsRepository?: RatingsRepository;
     // Where uploaded photo files live on disk, and the base URL the API
     // serves them back from (see the /uploads static mount below) - local
     // disk rather than a cloud object store, matching the project's
@@ -103,6 +106,7 @@ export function buildApp(
     options.groupsRepository &&
     options.profileRepository &&
     options.eventPhotosRepository &&
+    options.ratingsRepository &&
     options.uploadDir &&
     options.publicUploadUrl &&
     options.google
@@ -156,6 +160,11 @@ export function buildApp(
       options.eventPhotosRepository,
       options.uploadDir,
       options.publicUploadUrl
+    );
+    registerRatingsRoutes(
+      app,
+      options.authRepository,
+      options.ratingsRepository
     );
   }
 

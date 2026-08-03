@@ -16,6 +16,7 @@ import type {
   Message,
   MessagesRepository,
   ProfileRepository,
+  RatingsRepository,
   ReportsRepository,
   Trends,
   TrendsRepository
@@ -216,6 +217,18 @@ export function fakeReportsRepository(
   };
 }
 
+export function fakeRatingsRepository(
+  overrides: Partial<RatingsRepository> = {}
+): RatingsRepository {
+  return {
+    setRating: async () => undefined,
+    clearRating: async () => undefined,
+    getMyRating: async () => undefined,
+    getAverageRatingsForVenues: async () => new Map(),
+    ...overrides
+  };
+}
+
 export function fakeGroup(overrides: Partial<Group> = {}): Group {
   return {
     id: '00000000-0000-4000-8000-000000000017',
@@ -367,6 +380,7 @@ export function accountRepositories(
     groupsRepository?: GroupsRepository;
     profileRepository?: ProfileRepository;
     eventPhotosRepository?: EventPhotosRepository;
+    ratingsRepository?: RatingsRepository;
     uploadDir?: string;
     publicUploadUrl?: string;
   } = {}
@@ -387,6 +401,7 @@ export function accountRepositories(
     profileRepository: overrides.profileRepository ?? fakeProfileRepository(),
     eventPhotosRepository:
       overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
+    ratingsRepository: overrides.ratingsRepository ?? fakeRatingsRepository(),
     uploadDir: overrides.uploadDir ?? testUploadDir,
     publicUploadUrl: overrides.publicUploadUrl ?? testPublicUploadUrl,
     google: testGoogleConfig

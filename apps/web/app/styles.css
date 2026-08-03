@@ -2671,6 +2671,90 @@ a.venue-detail-info-row:hover {
   letter-spacing: 0.04em;
   color: var(--text-secondary);
 }
+
+/* Internal-only venue rating widget (Phase 4.17) - visually matches
+   .venue-detail-upcoming-card's card treatment, not shown as a public
+   "reviews" feature anywhere else. */
+.venue-rating-widget {
+  padding: 1rem 1.1rem;
+  border-radius: 0.9rem;
+  background: var(--surface-base);
+  border: 1px solid var(--brand-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.venue-rating-widget h3 {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.venue-rating-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.venue-rating-stars {
+  display: flex;
+  gap: 0.3rem;
+}
+.venue-rating-stars button {
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--brand-border);
+  transition:
+    color 0.15s,
+    transform 0.1s;
+}
+.venue-rating-stars button:hover {
+  transform: scale(1.1);
+}
+.venue-rating-stars button.filled {
+  color: #ffd700;
+}
+.venue-rating-stars button:disabled {
+  cursor: not-allowed;
+}
+.venue-rating-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.venue-rating-comment-form textarea {
+  resize: vertical;
+  min-height: 60px;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--brand-border);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+.venue-rating-comment-actions,
+.venue-rating-summary-actions {
+  display: flex;
+  gap: 1rem;
+}
+.venue-rating-comment-actions .text-btn,
+.venue-rating-summary-actions .text-btn {
+  margin-top: 0;
+}
+.venue-rating-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.venue-rating-comment {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
 .venue-detail-events-list {
   padding: 1.1rem 1.25rem 1.5rem;
   display: flex;

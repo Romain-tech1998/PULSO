@@ -49,11 +49,14 @@ import {
   VENUE_CATEGORY_FILTER_OPTIONS,
   venueFavoriteCountsResponseSchema,
   venueListResponseSchema,
+  venueRatingSummariesResponseSchema,
+  myVenueRatingResponseSchema,
   type ActiveForum,
   type ActivityEntry,
   type AttendanceResponse,
   type DiscoverForumEntry,
   type DiscoverGroupEntry,
+  type MyVenueRating,
   type AttendanceVisibility,
   type ConversationSummary,
   type EventEngagementEntry,
@@ -3111,6 +3114,7 @@ export function ExploreMap({
               })
             }
             onNavigateToMap={() => setSection('explorer')}
+            authToken={authToken}
             locale={locale}
           />
         ) : (
@@ -5356,12 +5360,14 @@ function LieuxPage({
   onToggleFavoriteVenue,
   onOpenEventForum,
   onNavigateToMap,
+  authToken,
   locale
 }: {
   favoriteVenues: string[];
   onToggleFavoriteVenue: (id: string) => void;
   onOpenEventForum: (eventId: string) => void;
   onNavigateToMap: () => void;
+  authToken: string | undefined;
   locale: SupportedLocale;
 }) {
   const [events, setEvents] = useState<PublicEvent[]>([]);
@@ -5405,7 +5411,7 @@ function LieuxPage({
     )
   );
 
-  const filteredGroups = allGroups
+  const unsortedGroups = allGroups
     .filter(
       (group) =>
         activeCategory === 'all' || group.venueCategory === activeCategory
@@ -5418,7 +5424,7 @@ function LieuxPage({
           .includes(query.trim().toLowerCase())
     );
 
-  const idsKey = filteredGroups
+  const idsKey = unsortedGroups
     .map((group) => group.id)
     .slice(0, 100)
     .join(',');
@@ -5438,6 +5444,43 @@ function LieuxPage({
       })
       .catch(() => {});
   }, [idsKey]);
+
+  // Internal-only ranking signal (Phase 4.17) - never displayed, only used
+  // to break ties between venues that already have the same real event
+  // count (groupEventsByVenue's own primary sort), so a well-rated venue
+  // can genuinely outrank a middling one without overriding "what's
+  // actually happening near you" as the dominant signal.
+  const [venueRatings, setVenueRatings] = useState<
+    Map<string, { average: number; count: number }>
+  >(new Map());
+
+  useEffect(() => {
+    if (!idsKey) {
+      setVenueRatings(new Map());
+      return;
+    }
+    fetch(`${API_BASE_URL}/venues/ratings?ids=${idsKey}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const data = venueRatingSummariesResponseSchema.parse(json).data;
+        setVenueRatings(
+          new Map(
+            data.map((entry) => [
+              entry.venueId,
+              { average: entry.average, count: entry.count }
+            ])
+          )
+        );
+      })
+      .catch(() => {});
+  }, [idsKey]);
+
+  const filteredGroups = [...unsortedGroups].sort((a, b) => {
+    if (a.events.length !== b.events.length) return 0;
+    const ratingA = venueRatings.get(a.id)?.average ?? 0;
+    const ratingB = venueRatings.get(b.id)?.average ?? 0;
+    return ratingB - ratingA;
+  });
 
   const selectedGroup = allGroups.find((group) => group.id === selectedVenueId);
 
@@ -5515,6 +5558,7 @@ function LieuxPage({
             onToggleFavoriteVenue={onToggleFavoriteVenue}
             favoriteCount={favoriteCounts.get(selectedGroup.id) ?? 0}
             onOpenEventForum={onOpenEventForum}
+            authToken={authToken}
             locale={locale}
           />
         ) : (
@@ -5530,12 +5574,171 @@ function LieuxPage({
   );
 }
 
+// Internal-only venue quality signal (Phase 4.17) - any signed-in account
+// can rate a venue 1-5 stars with an optional comment, one rating per
+// account per venue (re-rating replaces it). Never shown as a public
+// "reviews" feature - see the DEC pending note in packages/contracts -
+// the average is only used server-side to break ranking ties.
+function VenueRatingWidget({
+  venueId,
+  authToken
+}: {
+  venueId: string;
+  authToken: string | undefined;
+}) {
+  const [myRating, setMyRating] = useState<MyVenueRating | null>();
+  const [hoverStar, setHoverStar] = useState<number>();
+  const [comment, setComment] = useState('');
+  const [editingComment, setEditingComment] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/venues/${venueId}/rating`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const data = myVenueRatingResponseSchema.parse(json).data;
+        setMyRating(data);
+        setComment(data?.comment ?? '');
+      })
+      .catch(() => {});
+  }, [venueId, authToken]);
+
+  const submitRating = (rating: number, nextComment = comment) => {
+    if (!authToken || saving) return;
+    setSaving(true);
+    const trimmed = nextComment.trim();
+    fetch(`${API_BASE_URL}/venues/${venueId}/rating`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        rating,
+        ...(trimmed ? { comment: trimmed } : {})
+      })
+    })
+      .then((response) => (response.ok ? undefined : Promise.reject()))
+      .then(() => {
+        setMyRating({ rating, ...(trimmed ? { comment: trimmed } : {}) });
+        setEditingComment(false);
+      })
+      .catch(() => {})
+      .finally(() => setSaving(false));
+  };
+
+  const clearRating = () => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/venues/${venueId}/rating`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? undefined : Promise.reject()))
+      .then(() => {
+        setMyRating(null);
+        setComment('');
+        setEditingComment(false);
+      })
+      .catch(() => {});
+  };
+
+  if (myRating === undefined) return null;
+
+  const displayRating = hoverStar ?? myRating?.rating ?? 0;
+
+  return (
+    <div className="venue-rating-widget">
+      <h3>Noter ce lieu</h3>
+      <p className="venue-rating-hint">
+        Usage interne pour l'instant - aide à faire remonter les meilleurs
+        lieux.
+      </p>
+      <div
+        className="venue-rating-stars"
+        role="radiogroup"
+        aria-label="Note de 1 à 5 étoiles"
+      >
+        {[1, 2, 3, 4, 5].map((star) => (
+          <button
+            type="button"
+            key={star}
+            className={star <= displayRating ? 'filled' : ''}
+            role="radio"
+            aria-checked={myRating?.rating === star}
+            aria-label={`${star} étoile${star > 1 ? 's' : ''}`}
+            disabled={saving}
+            onMouseEnter={() => setHoverStar(star)}
+            onMouseLeave={() => setHoverStar(undefined)}
+            onClick={() => submitRating(star)}
+          >
+            ★
+          </button>
+        ))}
+      </div>
+      {myRating &&
+        (editingComment ? (
+          <div className="venue-rating-comment-form">
+            <textarea
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder="Commentaire (optionnel)"
+              maxLength={500}
+            />
+            <div className="venue-rating-comment-actions">
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => submitRating(myRating.rating, comment)}
+              >
+                Enregistrer
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => {
+                  setComment(myRating.comment ?? '');
+                  setEditingComment(false);
+                }}
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="venue-rating-summary">
+            {myRating.comment && (
+              <p className="venue-rating-comment">« {myRating.comment} »</p>
+            )}
+            <div className="venue-rating-summary-actions">
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => setEditingComment(true)}
+              >
+                {myRating.comment
+                  ? 'Modifier le commentaire'
+                  : 'Ajouter un commentaire'}
+              </button>
+              <button type="button" className="text-btn" onClick={clearRating}>
+                Supprimer ma note
+              </button>
+            </div>
+          </div>
+        ))}
+    </div>
+  );
+}
+
 function VenueDetailContent({
   group,
   favoriteVenues,
   onToggleFavoriteVenue,
   favoriteCount,
   onOpenEventForum,
+  authToken,
   locale
 }: {
   group: VenueGroup;
@@ -5543,6 +5746,7 @@ function VenueDetailContent({
   onToggleFavoriteVenue: (id: string) => void;
   favoriteCount: number;
   onOpenEventForum: (eventId: string) => void;
+  authToken: string | undefined;
   locale: SupportedLocale;
 }) {
   const [tab, setTab] = useState<'infos' | 'evenements'>('infos');
@@ -5649,6 +5853,8 @@ function VenueDetailContent({
               </span>
             </div>
           )}
+          <VenueRatingWidget venueId={group.id} authToken={authToken} />
+
           {nextEvent && (
             <div className="venue-detail-upcoming-card">
               <h3>À ne pas manquer</h3>

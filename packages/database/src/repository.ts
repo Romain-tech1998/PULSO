@@ -315,12 +315,20 @@ export class PostgresEventRepository implements EventRepository {
       longitude: number;
       latitude: number;
     }>(
+      // r.average is an internal-only ranking signal (venue_ratings, Phase
+      // 4.17) - selected purely to drive ORDER BY, never mapped into the
+      // returned PublicVenue below, since no rating is shown publicly yet.
       `SELECT v.id, v.name, v.address, v.category, v.secondary_categories, v.image_url,
               ST_X(v.location) AS longitude, ST_Y(v.location) AS latitude
        FROM venues v
+       LEFT JOIN (
+         SELECT venue_id, AVG(rating) AS average
+         FROM venue_ratings
+         GROUP BY venue_id
+       ) r ON r.venue_id = v.id
        WHERE v.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
          AND NOT EXISTS (SELECT 1 FROM events e WHERE e.venue_id = v.id)
-       ORDER BY v.name`,
+       ORDER BY r.average DESC NULLS LAST, v.name`,
       [bounds.west, bounds.south, bounds.east, bounds.north]
     );
     return result.rows.map((row) => ({
