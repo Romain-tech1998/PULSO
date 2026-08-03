@@ -5715,11 +5715,33 @@ a.venue-detail-info-row:hover {
   padding: 0;
 }
 
+/* Each chip is tinted with its own real category color (inline style,
+   computed from CATEGORY_COLORS) rather than the flat gray/purple-only
+   treatment .events-category-chips uses elsewhere - the color itself is
+   the whole point of a "categories" widget. */
+.dashboard-home-rail-chips button {
+  border-width: 1px;
+  transition:
+    transform 0.15s,
+    filter 0.15s,
+    background 0.2s,
+    border-color 0.2s,
+    color 0.2s;
+}
+.dashboard-home-rail-chips button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.25);
+}
+.dashboard-home-rail-chips button.active {
+  font-weight: 700;
+}
+
 .dashboard-home-category-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   display: inline-block;
+  transition: box-shadow 0.2s;
 }
 
 .dashboard-invite-card {

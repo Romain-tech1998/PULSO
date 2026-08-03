@@ -7659,23 +7659,42 @@ function DashboardHome({
         <div className="events-trends-section">
           <h3>Catégories populaires</h3>
           <div className="events-category-chips dashboard-home-rail-chips">
-            {EVENT_CATEGORIES.map((cat) => (
-              <button
-                type="button"
-                key={cat}
-                className={activeFilter === cat ? 'active' : ''}
-                onClick={() =>
-                  setActiveFilter((current) => (current === cat ? 'all' : cat))
-                }
-              >
-                <span
-                  className="dashboard-home-category-dot"
-                  style={{ background: CATEGORY_COLORS[cat] }}
-                  aria-hidden="true"
-                />
-                {SHORT_CATEGORY_LABELS[locale][cat]}
-              </button>
-            ))}
+            {EVENT_CATEGORIES.map((cat) => {
+              const color = CATEGORY_COLORS[cat];
+              const active = activeFilter === cat;
+              return (
+                <button
+                  type="button"
+                  key={cat}
+                  className={active ? 'active' : ''}
+                  style={
+                    active
+                      ? {
+                          background: `${color}33`,
+                          borderColor: color,
+                          color: '#fff'
+                        }
+                      : {
+                          background: `${color}14`,
+                          borderColor: `${color}40`,
+                          color: 'var(--text-secondary)'
+                        }
+                  }
+                  onClick={() =>
+                    setActiveFilter((current) =>
+                      current === cat ? 'all' : cat
+                    )
+                  }
+                >
+                  <span
+                    className="dashboard-home-category-dot"
+                    style={{ background: color, boxShadow: `0 0 6px ${color}` }}
+                    aria-hidden="true"
+                  />
+                  {SHORT_CATEGORY_LABELS[locale][cat]}
+                </button>
+              );
+            })}
           </div>
         </div>
 
