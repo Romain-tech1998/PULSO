@@ -680,12 +680,26 @@ function useAuth() {
     fetch(`${API_BASE_URL}/me`, {
       headers: { authorization: `Bearer ${token}` }
     })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setUser(meResponseSchema.parse(json).data))
-      .catch(() => {
-        localStorage.removeItem(AUTH_TOKEN_KEY);
-        setAuthToken(undefined);
-      });
+      .then((response) => {
+        // A real 401 means the server itself says this session is gone
+        // (expired past its real 30-day lifetime, or revoked) - that's the
+        // only case where signing the browser out is correct. Anything
+        // else (network error, the API being briefly unreachable, a 500)
+        // must NOT delete a token that's still valid server-side - it just
+        // couldn't be verified right now. Leaving it in place means the
+        // next mount (e.g. the user's very next reload) retries and
+        // recovers on its own once the API responds again.
+        if (response.status === 401) {
+          localStorage.removeItem(AUTH_TOKEN_KEY);
+          setAuthToken(undefined);
+          return;
+        }
+        if (!response.ok) return Promise.reject();
+        return response
+          .json()
+          .then((json) => setUser(meResponseSchema.parse(json).data));
+      })
+      .catch(() => {});
   }, []);
 
   const login = () => {
@@ -812,6 +826,10 @@ export function ExploreMap({
   // .sidebar-left mobile breakpoint (audit: at 390px the inline sidebar left
   // almost nothing else visible) - same content, just a different container.
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  // Mobile-only, connected experience: Forums/Groupes/Messages/Amis collapse
+  // into one "Communauté" bottom-nav entry that opens this small sheet,
+  // rather than each needing its own slot in a 5-item bottom bar.
+  const [mobileCommunityOpen, setMobileCommunityOpen] = useState(false);
   const [queryInput, setQueryInput] = useState('');
   const [searchResult, setSearchResult] = useState<IntelligentSearchResponse>();
   const [searchProcessing, setSearchProcessing] = useState(false);
@@ -2746,6 +2764,145 @@ export function ExploreMap({
           }}
         />
       )}
+
+      {/* Mobile bottom nav, connected experience - the 260px sidebar's ~12
+          items becomes a horizontal scroll row at 1024px (existing rule)
+          which only shows 1-2 items and is not a real mobile nav. Collapses
+          to 5 destinations; Forums/Groupes/Messages/Amis live behind
+          "Communauté" (see mobileCommunityOpen) rather than each needing
+          their own slot. */}
+      {user && (
+        <nav className="mobile-bottom-nav" aria-label="Navigation principale">
+          <button
+            type="button"
+            className={!aboutOpen && section === 'decouvrir' ? 'active' : ''}
+            onClick={() => {
+              setAboutOpen(false);
+              setForumPanelMode(false);
+              setSection('decouvrir');
+            }}
+          >
+            <span aria-hidden="true">✨</span>
+            Découvrir
+          </button>
+          <button
+            type="button"
+            className={!aboutOpen && section === 'explorer' ? 'active' : ''}
+            onClick={() => {
+              setAboutOpen(false);
+              setForumPanelMode(false);
+              setSection('explorer');
+            }}
+          >
+            <span aria-hidden="true">🗺️</span>
+            Carte
+          </button>
+          <button
+            type="button"
+            className={!aboutOpen && section === 'evenement' ? 'active' : ''}
+            onClick={() => {
+              setAboutOpen(false);
+              setForumPanelMode(false);
+              setSection('evenement');
+            }}
+          >
+            <span aria-hidden="true">🎟️</span>
+            Événements
+          </button>
+          <button
+            type="button"
+            className={
+              ['forums', 'groupes', 'messages', 'amis'].includes(section)
+                ? 'active'
+                : ''
+            }
+            onClick={() => setMobileCommunityOpen(true)}
+          >
+            <span aria-hidden="true">👥</span>
+            Communauté
+            {unreadMessagesCount > 0 && (
+              <span className="mobile-bottom-nav-badge" aria-hidden="true" />
+            )}
+          </button>
+          <button
+            type="button"
+            className={!aboutOpen && section === 'compte' ? 'active' : ''}
+            onClick={() => {
+              setAboutOpen(false);
+              setForumPanelMode(false);
+              setSection('compte');
+            }}
+          >
+            <span aria-hidden="true">{renderUserAvatarContent(user)}</span>
+            Profil
+          </button>
+        </nav>
+      )}
+
+      {mobileCommunityOpen && (
+        <>
+          <div
+            className="mobile-filters-backdrop"
+            onClick={() => setMobileCommunityOpen(false)}
+          />
+          <div className="mobile-community-sheet">
+            <div className="sidebar-mobile-header">
+              <h2>Communauté</h2>
+              <button
+                type="button"
+                className="sidebar-mobile-close"
+                onClick={() => setMobileCommunityOpen(false)}
+                aria-label={translate(locale, 'filters.close')}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {(
+              [
+                { section: 'forums', label: 'Forums', icon: '💬' },
+                { section: 'groupes', label: 'Groupes', icon: '👥' },
+                {
+                  section: 'messages',
+                  label: 'Messages',
+                  icon: '✉️',
+                  badge: unreadMessagesCount
+                },
+                { section: 'amis', label: 'Amis', icon: '🧑‍🤝‍🧑' }
+              ] as const
+            ).map((item) => (
+              <button
+                type="button"
+                key={item.section}
+                className="mobile-community-item"
+                onClick={() => {
+                  setAboutOpen(false);
+                  setForumPanelMode(false);
+                  setSection(item.section);
+                  setMobileCommunityOpen(false);
+                }}
+              >
+                <span aria-hidden="true">{item.icon}</span>
+                {item.label}
+                {'badge' in item && item.badge > 0 && (
+                  <span className="primary-sidebar-nav-badge">
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
       <ContentColumn
         {...(user ? { className: 'connected-content-column' } : {})}
       >

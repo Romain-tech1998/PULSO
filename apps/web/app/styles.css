@@ -6395,14 +6395,17 @@ a.venue-detail-info-row:hover {
 
 @media (max-width: 1024px) {
   .dashboard-main,
-  .dashboard-home-page {
+  .dashboard-home-page,
+  .events-page {
     flex-direction: column;
     height: auto;
+    overflow: visible;
   }
 
   .sidebar-left,
   .sidebar-right,
-  .dashboard-home-rail {
+  .dashboard-home-rail,
+  .events-trends {
     width: 100%;
   }
 
@@ -6457,6 +6460,7 @@ a.venue-detail-info-row:hover {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .mobile-bottom-nav button {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -6471,6 +6475,70 @@ a.venue-detail-info-row:hover {
 }
 .mobile-bottom-nav button.active {
   color: var(--brand-pink);
+}
+.mobile-bottom-nav button span[aria-hidden] {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.mobile-bottom-nav button span[aria-hidden] img {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.mobile-bottom-nav-badge {
+  position: absolute;
+  top: 0.35rem;
+  right: 22%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand-pink);
+  border: 1.5px solid var(--surface-base);
+}
+
+/* "Communauté" bottom-sheet (connected mobile) - same bottom-sheet
+   treatment as .sidebar-left.mobile-open, just a plain list of the 4
+   sections it bundles instead of a filter form. */
+.mobile-community-sheet {
+  display: none;
+}
+@media (max-width: 768px) {
+  .mobile-community-sheet {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 70;
+    max-height: 80vh;
+    border-radius: 1.25rem 1.25rem 0 0;
+    background: var(--surface-base);
+    border: 1px solid var(--brand-border);
+    border-bottom: none;
+    box-shadow: 0 -16px 48px rgba(0, 0, 0, 0.85);
+    padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+.mobile-community-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 0.75rem;
+  border-radius: 0.75rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.mobile-community-item:hover {
+  background: var(--surface-raised);
+}
+.mobile-community-item span[aria-hidden] {
+  font-size: 1.2rem;
+}
+.mobile-community-item .primary-sidebar-nav-badge {
+  margin-left: auto;
 }
 
 .mobile-filters-trigger {
@@ -6626,5 +6694,20 @@ a.venue-detail-info-row:hover {
     transform: none;
     padding: 0.6rem 1rem;
     font-size: 0.85rem;
+  }
+
+  /* Connected experience: the 1024px rule above turns the ~12-item sidebar
+     into a horizontal scroll row, which only shows 1-2 items and isn't a
+     real mobile nav - hide it in favor of .mobile-bottom-nav's 5 real
+     destinations (Communauté bundles Forums/Groupes/Messages/Amis, see
+     .mobile-community-sheet). */
+  .primary-sidebar {
+    display: none;
+  }
+  .connected-topbar {
+    padding-left: 0.85rem;
+  }
+  .connected-content-column {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
