@@ -5741,6 +5741,7 @@ a.venue-detail-info-row:hover {
   height: 9px;
   border-radius: 50%;
   display: inline-block;
+  margin-right: 0.45rem;
   transition: box-shadow 0.2s;
 }
 
