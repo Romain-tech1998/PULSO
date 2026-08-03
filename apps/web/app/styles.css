@@ -1873,8 +1873,15 @@ h6 {
 
 .sidebar-section-title {
   font-size: 1.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.35rem;
   color: var(--brand-purple);
+}
+
+.sidebar-results-count {
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .view-toggles {
@@ -2757,7 +2764,7 @@ a.venue-detail-info-row:hover {
   text-transform: capitalize;
 }
 
-.map-floating-search {
+.map-floating-recenter {
   position: absolute;
   top: 1.5rem;
   left: 50%;
@@ -2777,7 +2784,7 @@ a.venue-detail-info-row:hover {
   transition: all 0.2s;
 }
 
-.map-floating-search:hover {
+.map-floating-recenter:hover {
   background: var(--surface-raised);
 }
 
@@ -2966,6 +2973,16 @@ a.venue-detail-info-row:hover {
   max-width: calc(100% - 3rem);
 }
 
+/* The bar itself sits near the top in these two contexts (above), so its
+   dropdowns must open downward - the default .map-filter-dropdown opens
+   upward assuming a bottom-anchored bar, which rendered them off-screen
+   (above the map, inaccessible) here. */
+.map-shell.connected-map-shell .map-filter-dropdown,
+.map-shell.explorer-map-shell .map-filter-dropdown {
+  top: calc(100% + 0.75rem);
+  bottom: auto;
+}
+
 /* The connected Carte page's own floating card (Phase 4.13) - a compact,
    real summary of one selected pin, distinct from .event-preview-card (the
    anonymous/Explorer map's own pin-click preview, below) and never the full
@@ -3108,6 +3125,12 @@ a.venue-detail-info-row:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.event-preview-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .event-preview-close {

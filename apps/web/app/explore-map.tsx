@@ -2245,6 +2245,26 @@ export function ExploreMap({
         });
       }
 
+      // Same rationale as the Événement map's own empty-click handler: a
+      // click on genuinely empty map is a real intent to look at the map,
+      // so close whatever panel/picker is open rather than leaving it stuck
+      // in front until the user finds its own close control.
+      instance.on('click', (e) => {
+        const hits = instance.queryRenderedFeatures(e.point, {
+          layers: [
+            'explorer-events-circles',
+            'explorer-venues-circles',
+            'explorer-venue-clusters'
+          ]
+        });
+        if (hits.length > 0) return;
+        if (detailsRef.current.kind !== 'closed') {
+          setDetails({ kind: 'closed' });
+        }
+        setPickerList(undefined);
+        setVenuePickerList(undefined);
+      });
+
       pushExplorerDataToMap(instance);
     });
 
@@ -3012,6 +3032,18 @@ export function ExploreMap({
                   <h2 className="sidebar-section-title">
                     {section === 'evenement' ? 'Événement' : 'Lieu'}
                   </h2>
+                  <p className="sidebar-results-count">
+                    {section === 'evenement'
+                      ? (() => {
+                          const count = showFavoritesOnly
+                            ? events.filter((event) =>
+                                favorites.includes(event.id)
+                              ).length
+                            : events.length;
+                          return `${count} événement${count !== 1 ? 's' : ''} dans cette zone`;
+                        })()
+                      : `${filteredVenueGroups.length} lieu${filteredVenueGroups.length !== 1 ? 's' : ''} dans cette zone`}
+                  </p>
 
                   <div className="view-toggles">
                     <div className="view-toggles-list">
@@ -3501,8 +3533,11 @@ export function ExploreMap({
                 >
                   <div ref={container} className="map" />
                   <button
-                    className="map-floating-search"
-                    onClick={() => loadEvents(currentBounds.current, filters)}
+                    type="button"
+                    className="map-floating-recenter"
+                    onClick={() =>
+                      map.current?.flyTo({ center: MONTREAL_CENTER, zoom: 11 })
+                    }
                   >
                     <svg
                       width="16"
@@ -3511,12 +3546,14 @@ export function ExploreMap({
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="2"
-                      style={{ marginRight: 8 }}
                     >
-                      <circle cx="11" cy="11" r="8" />
-                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                      <circle cx="12" cy="12" r="3" />
+                      <line x1="12" y1="2" x2="12" y2="5" />
+                      <line x1="12" y1="19" x2="12" y2="22" />
+                      <line x1="2" y1="12" x2="5" y2="12" />
+                      <line x1="19" y1="12" x2="22" y2="12" />
                     </svg>
-                    Rechercher dans cette zone
+                    Recentrer
                   </button>
 
                   <MapFilterBar
@@ -12845,23 +12882,48 @@ function EventPreview({
           >
             {SHORT_CATEGORY_LABELS[locale][event.category]}
           </div>
-          <button
-            type="button"
-            className="event-preview-close"
-            onClick={onClose}
-            aria-label={translate(locale, 'preview.close')}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
+          <div className="event-preview-header-right">
+            <button
+              type="button"
+              className="event-preview-close"
+              onClick={() => void shareEvent(event, locale)}
+              aria-label={translate(locale, 'details.share')}
             >
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="18" cy="5" r="3" />
+                <circle cx="6" cy="12" r="3" />
+                <circle cx="18" cy="19" r="3" />
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="event-preview-close"
+              onClick={onClose}
+              aria-label={translate(locale, 'preview.close')}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
         <h3>{fields.title}</h3>
         <ul className="event-preview-fields">
