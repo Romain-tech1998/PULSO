@@ -319,6 +319,19 @@ export function createFilteredDiscoveryWindow(
 
   if (filters.date === 'next7') return rolling;
 
+  if (filters.date === 'tonight') {
+    // Fixed 17h-to-3am window, deliberately NOT intersected with the
+    // MAP-003 rolling baseline below (whose startsAt is `now`): unlike the
+    // other relative presets, someone checking "tonight" at, say, 9pm must
+    // still see an event that started at 18h and is still going - clipping
+    // the start to `now` silently dropped most of the evening's events the
+    // later it got, which is the opposite of what "tonight" means here.
+    return {
+      startsAt: montrealLocalToInstant(atLocalTime(localNow, 17)),
+      endsAt: montrealLocalToInstant(atLocalTime(addLocalDays(localNow, 1), 3))
+    };
+  }
+
   if (filters.date === 'custom') {
     // Deliberately NOT intersected with the MAP-003 rolling baseline below,
     // unlike every relative preset: a user (or the Calendar view, which
@@ -345,19 +358,11 @@ export function createFilteredDiscoveryWindow(
   }
 
   if (filters.date === 'today') {
-    // Strictly today's Montréal calendar date - unlike 'tonight' below, this
+    // Strictly today's Montréal calendar date - unlike 'tonight' above, this
     // does not bleed into tomorrow morning.
     requested = {
       startsAt: new Date(now),
       endsAt: montrealLocalToInstant(atLocalTime(localNow, 23, 59, 59, 999))
-    };
-  } else if (filters.date === 'tonight') {
-    // Ends at 3am the next day rather than local midnight: a late-night
-    // event that starts this evening and runs past midnight is still
-    // "tonight" to someone browsing, not tomorrow's listing.
-    requested = {
-      startsAt: new Date(now),
-      endsAt: montrealLocalToInstant(atLocalTime(addLocalDays(localNow, 1), 3))
     };
   } else if (filters.date === 'tomorrow') {
     requested = {

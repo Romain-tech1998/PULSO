@@ -2953,9 +2953,11 @@ a.venue-detail-info-row:hover {
 /* Connected "Carte" page (Phase 4.13) - reuses .map-filter-bar/.map-zoom-
    controls/.map-floating-pin-toggle as-is, just relocates the filter bar
    to top-left (its default bottom-center slot is already taken by the
-   pin-kind toggle here, unlike the anonymous Explorer/evenement maps which
-   only ever show one of the two). */
-.map-shell.connected-map-shell .map-filter-bar {
+   pin-kind toggle here, unlike the plain evenement map which only ever
+   shows one of the two). Same treatment applies to the anonymous
+   Explorer map below, which also shows both at once. */
+.map-shell.connected-map-shell .map-filter-bar,
+.map-shell.explorer-map-shell .map-filter-bar {
   top: 1.5rem;
   bottom: auto;
   left: 1.5rem;
@@ -3316,6 +3318,10 @@ a.venue-detail-info-row:hover {
   gap: 0.25rem;
   padding: 0 1.25rem;
   border-bottom: 1px solid var(--brand-border);
+}
+.details-tabs-centered {
+  justify-content: center;
+  gap: 1.5rem;
 }
 .details-tabs button {
   padding: 0.85rem 1rem;

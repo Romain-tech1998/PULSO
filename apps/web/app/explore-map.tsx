@@ -829,8 +829,8 @@ export function ExploreMap({
         'date',
         'distance',
         'ambiance',
-        'accessibilite',
-        'lieu-categorie'
+        'lieu-categorie',
+        'lieu-date'
       ])
   );
   const toggleSection = (key: string) =>
@@ -1438,19 +1438,21 @@ export function ExploreMap({
       });
 
       // A click on genuinely empty map (not a pin/cluster, handled above)
-      // is a real intent to look at the map - close the details panel on
-      // its own rather than making the user hit "Retour" first. Layer-
-      // specific handlers above also fire for this same click, so this
-      // only acts when the click hit nothing interactive.
+      // is a real intent to look at the map - close the details panel and
+      // the small pin-preview card on its own rather than making the user
+      // hit "Retour"/the card's own close button first. Layer-specific
+      // handlers above also fire for this same click, so this only acts
+      // when the click hit nothing interactive.
       instance.on('click', (e) => {
-        if (detailsRef.current.kind === 'closed') return;
         const hits = instance.queryRenderedFeatures(e.point, {
           layers: ['events-circles', 'clusters']
         });
-        if (hits.length === 0) {
+        if (hits.length > 0) return;
+        if (detailsRef.current.kind !== 'closed') {
           setDetails({ kind: 'closed' });
           requestAnimationFrame(() => map.current?.resize());
         }
+        setSelected(undefined);
       });
 
       // Drainer les données qui sont arrivées AVANT que la source n'existait
@@ -3279,28 +3281,6 @@ export function ExploreMap({
                           </button>
                         </div>
                       </CollapsibleFilterGroup>
-
-                      <CollapsibleFilterGroup
-                        title="Accessibilité"
-                        collapsed={collapsedSections.has('accessibilite')}
-                        onToggle={() => toggleSection('accessibilite')}
-                      >
-                        <p className="category-legend-hint">
-                          Bientôt : de vraies informations d'accessibilité pour
-                          chaque lieu.
-                        </p>
-                        <div className="pill-list">
-                          <button className="filter-pill" disabled>
-                            ♿ Accès fauteuil roulant
-                          </button>
-                          <button className="filter-pill" disabled>
-                            🅿️ Stationnement accessible
-                          </button>
-                          <button className="filter-pill" disabled>
-                            🚻 Toilettes accessibles
-                          </button>
-                        </div>
-                      </CollapsibleFilterGroup>
                     </>
                   )}
 
@@ -3310,7 +3290,10 @@ export function ExploreMap({
                         <h3>Filtres</h3>
                         <button
                           className="filter-reset"
-                          onClick={() => setVenueCategoryFilter([])}
+                          onClick={() => {
+                            setVenueCategoryFilter([]);
+                            applyFilters(withoutCustomDates(filters, 'next7'));
+                          }}
                         >
                           Réinitialiser
                         </button>
@@ -3361,6 +3344,33 @@ export function ExploreMap({
                               </button>
                             );
                           })}
+                        </div>
+                      </CollapsibleFilterGroup>
+
+                      <CollapsibleFilterGroup
+                        title="Date"
+                        collapsed={collapsedSections.has('lieu-date')}
+                        onToggle={() => toggleSection('lieu-date')}
+                      >
+                        <p className="category-legend-hint">
+                          Affiche les lieux ayant un événement dans cette
+                          période.
+                        </p>
+                        <div className="pill-list">
+                          {DATE_FILTER_OPTIONS.map((option) => (
+                            <button
+                              type="button"
+                              key={option.value}
+                              className={`filter-pill ${filters.date === option.value ? 'active' : ''}`}
+                              onClick={() =>
+                                applyFilters(
+                                  withoutCustomDates(filters, option.value)
+                                )
+                              }
+                            >
+                              {getDateFilterLabel(locale, option.value)}
+                            </button>
+                          ))}
                         </div>
                       </CollapsibleFilterGroup>
 
@@ -3423,28 +3433,6 @@ export function ExploreMap({
                           </button>
                           <button className="filter-pill" disabled>
                             🎉 Festif
-                          </button>
-                        </div>
-                      </CollapsibleFilterGroup>
-
-                      <CollapsibleFilterGroup
-                        title="Accessibilité"
-                        collapsed={collapsedSections.has('accessibilite')}
-                        onToggle={() => toggleSection('accessibilite')}
-                      >
-                        <p className="category-legend-hint">
-                          Bientôt : de vraies informations d'accessibilité pour
-                          chaque lieu.
-                        </p>
-                        <div className="pill-list">
-                          <button className="filter-pill" disabled>
-                            ♿ Accès fauteuil roulant
-                          </button>
-                          <button className="filter-pill" disabled>
-                            🅿️ Stationnement accessible
-                          </button>
-                          <button className="filter-pill" disabled>
-                            🚻 Toilettes accessibles
                           </button>
                         </div>
                       </CollapsibleFilterGroup>
@@ -3764,7 +3752,14 @@ export function ExploreMap({
                   display: !user && section === 'explorer' ? undefined : 'none'
                 }}
               >
-                <div className="map-shell">
+                <div className="map-shell explorer-map-shell">
+                  <MapFilterBar
+                    filters={filters}
+                    onChange={applyFilters}
+                    onOpenMore={() => setFiltersOpen((prev) => !prev)}
+                    locale={locale}
+                  />
+
                   <div ref={explorerMapContainer} className="map" />
                   <div className="map-floating-pin-toggle">
                     <button
@@ -12880,7 +12875,6 @@ function EventPreview({
             <span aria-hidden="true">💰</span> {fields.price}
           </li>
         </ul>
-        {fields.warning && <p className="warning">{fields.warning}</p>}
         {searchMatch && (
           <div
             className="match-explanation"
@@ -13428,7 +13422,7 @@ function EventDetails({
         authToken={authToken}
       />
 
-      <div className="details-tabs">
+      <div className="details-tabs details-tabs-centered">
         <button
           type="button"
           className={tab === 'about' ? 'active' : ''}
