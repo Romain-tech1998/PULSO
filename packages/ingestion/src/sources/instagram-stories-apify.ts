@@ -25,6 +25,14 @@
 
 const APIFY_ACTOR_ID = 'dLL7b34nRrgN6ZV24';
 const APIFY_RUN_SYNC_URL = `https://api.apify.com/v2/actors/${APIFY_ACTOR_ID}/run-sync-get-dataset-items`;
+// Verified live (2026-08-03): the actor's input schema rejects more than
+// 100 usernames per run with HTTP 400. Separately, the run-sync-get-
+// dataset-items endpoint itself has a hard 300s server-side timeout - at
+// this actor's observed ~4-5s/account pace, 100 accounts (400-500s)
+// exceeds it (confirmed live: HTTP 408 run-timeout-exceeded). 40 keeps a
+// single batch comfortably under 300s while still being a small number of
+// sequential runs for a ~260-account watchlist.
+const MAX_USERNAMES_PER_RUN = 40;
 
 export interface InstagramStoryTarget {
   sourceId: string;
@@ -96,33 +104,39 @@ export async function fetchInstagramStoriesSignals(
     targets.map((target) => [target.handle.toLowerCase(), target.sourceId])
   );
 
-  const url = new URL(APIFY_RUN_SYNC_URL);
-  url.searchParams.set('token', apifyApiToken);
-
-  const response = await fetchImpl(url.toString(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ usernames: targets.map((target) => target.handle) })
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Apify Instagram Stories actor returned HTTP ${response.status}: ${await response.text()}`
-    );
+  const batches: InstagramStoryTarget[][] = [];
+  for (let index = 0; index < targets.length; index += MAX_USERNAMES_PER_RUN) {
+    batches.push(targets.slice(index, index + MAX_USERNAMES_PER_RUN));
   }
 
-  const items = (await response.json()) as ApifyStoryItem[];
   const observedAt = new Date().toISOString();
+  const signals: InstagramStorySignal[] = [];
 
-  return items
-    .filter((item) => !item.error && item.id)
-    .map((item) => {
+  for (const batch of batches) {
+    const url = new URL(APIFY_RUN_SYNC_URL);
+    url.searchParams.set('token', apifyApiToken);
+
+    const response = await fetchImpl(url.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernames: batch.map((target) => target.handle) })
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Apify Instagram Stories actor returned HTTP ${response.status}: ${await response.text()}`
+      );
+    }
+
+    const items = (await response.json()) as ApifyStoryItem[];
+    for (const item of items) {
+      if (item.error || !item.id) continue;
       const sourceId =
         handleToSourceId.get((item.username ?? '').toLowerCase()) ?? 'unknown';
-      return {
+      signals.push({
         sourceId,
         handle: item.username ?? '',
-        storyId: item.id as string,
+        storyId: item.id,
         mediaType: mapMediaType(item.media_type),
         imageUrl: item.image_versions2?.candidates?.[0]?.url,
         takenAt: item.taken_at
@@ -139,6 +153,9 @@ export async function fetchInstagramStoriesSignals(
           .filter((name): name is string => Boolean(name)),
         locationName: item.location?.name,
         observedAt
-      };
-    });
+      });
+    }
+  }
+
+  return signals;
 }
