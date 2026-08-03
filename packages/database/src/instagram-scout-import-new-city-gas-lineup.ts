@@ -12,10 +12,11 @@ import { upsertPublicEvents } from './upsert-public-events.js';
  * City Gas's upcoming lineup, human-accepted via
  * pulso-scout-stories-decisions.json on 2026-08-03). Same manual-verification
  * precedent as instagram-scout-import-lion-king.ts: the Story image gave
- * dates and lineups but no times, so 21:00 (a standard club doors/showtime)
- * is used as an explicit placeholder, not a fact read off the image - flag
- * for correction once real showtimes are confirmed. New City Gas is already
- * a curated venue in this database (id ...-023).
+ * dates and lineups but no times, so 22:00 (the confirmed real doors time for the
+ * one show checked live on Tixr, Adventure Club) is used as an explicit
+ * placeholder for the rest, not a fact read off the image for those - flag
+ * for correction once their real showtimes are confirmed. New City Gas is
+ * already a curated venue in this database (id ...-023).
  */
 
 const NEW_CITY_GAS = {
@@ -26,17 +27,33 @@ const NEW_CITY_GAS = {
 } as const;
 
 const observedAt = new Date().toISOString();
-const ticketingUrl = 'https://www.tixr.com/groups/newcitygas';
+const groupTicketingUrl = 'https://www.tixr.com/groups/newcitygas';
 const instagramEvidence = 'https://www.instagram.com/newcitygas/';
 
 // Montréal is on EDT (UTC-4) through this whole window (DST ends in
-// November). No time was visible on the Story image - 21:00 is an assumed
-// club showtime placeholder, not a verified fact.
-const lineup: Array<{ date: string; title: string; series: string }> = [
+// November). No time was visible on the Story image for most shows, so
+// 22:00 (Adventure Club's own confirmed doors time) is used as an assumed
+// placeholder for entries without a confirmed override - not a verified
+// fact for those.
+const lineup: Array<{
+  date: string;
+  title: string;
+  series: string;
+  time?: string;
+  ticketingUrl?: string;
+  minimumAmount?: number;
+}> = [
   {
+    // Confirmed live against the real Tixr event page (2026-08-04):
+    // doors 22h00, GA $27.76 CAD, VIP $52.51 CAD.
     date: '2026-08-07',
-    title: 'Adventure Club (Throwback Set) w/ Katt2Katt b2b Mholy, Riendo, Joss',
-    series: "L'Après îleSoniq"
+    title:
+      'Adventure Club (Throwback Set) w/ Katt2Katt b2b Mholy, Riendo, Joss',
+    series: "L'Après îleSoniq",
+    time: '22:00:00',
+    ticketingUrl:
+      'https://www.tixr.com/groups/newcitygas/events/adventure-club-b2b-invit-e-special-e-190147',
+    minimumAmount: 27.76
   },
   {
     date: '2026-08-07',
@@ -80,31 +97,42 @@ const lineup: Array<{ date: string; title: string; series: string }> = [
   }
 ];
 
-const rawEvents: RawIngestedEvent[] = lineup.map(({ date, title, series }) => ({
-  // Not 'ville-de-montreal-evenements-publics' or 'ticketmaster': this
-  // wasn't fetched through either trusted connector, so it must not inherit
-  // their KNOWN_SOURCE_AUTHORITY trust label. A distinct id keeps trust at
-  // the honest 'to_verify' default for a manually-verified one-off import.
-  sourceId: 'pulso-scout-verified-pilot',
-  sourceName: 'New City Gas',
-  sourceUrl: instagramEvidence,
-  ticketingUrl,
-  observedAt,
-  title,
-  description: `${series} - événement repéré par Pulso Scout Stories sur @newcitygas. Heure non visible sur l'affiche : 21h00 utilisé par défaut (showtime standard de club), à corriger si une heure officielle est confirmée.`,
-  category: 'music',
-  startsAt: `${date}T21:00:00-04:00`,
-  venueName: NEW_CITY_GAS.name,
-  address: NEW_CITY_GAS.address,
-  point: NEW_CITY_GAS.point,
-  pointResolution: 'source',
-  price: { kind: 'paid' },
-  raw: {
-    scoutReviewId: 'new-city-gas:3955692853343131093_203267420',
-    instagramEvidence,
-    series
+const rawEvents: RawIngestedEvent[] = lineup.map(
+  ({ date, title, series, time, ticketingUrl, minimumAmount }) => {
+    const timeConfirmed = Boolean(time);
+    return {
+      // Not 'ville-de-montreal-evenements-publics' or 'ticketmaster': this
+      // wasn't fetched through either trusted connector, so it must not
+      // inherit their KNOWN_SOURCE_AUTHORITY trust label. A distinct id
+      // keeps trust at the honest 'to_verify' default for a
+      // manually-verified one-off import.
+      sourceId: 'pulso-scout-verified-pilot',
+      sourceName: 'New City Gas',
+      sourceUrl: instagramEvidence,
+      ticketingUrl: ticketingUrl ?? groupTicketingUrl,
+      observedAt,
+      title,
+      description: timeConfirmed
+        ? `${series} - événement repéré par Pulso Scout Stories sur @newcitygas, heure et prix confirmés sur Tixr.`
+        : `${series} - événement repéré par Pulso Scout Stories sur @newcitygas. Heure non visible sur l'affiche : 22h00 utilisé par défaut (showtime standard de club), à corriger si une heure officielle est confirmée.`,
+      category: 'music',
+      startsAt: `${date}T${time ?? '22:00:00'}-04:00`,
+      venueName: NEW_CITY_GAS.name,
+      address: NEW_CITY_GAS.address,
+      point: NEW_CITY_GAS.point,
+      pointResolution: 'source',
+      price:
+        minimumAmount !== undefined
+          ? { kind: 'paid', minimumAmount }
+          : { kind: 'paid' },
+      raw: {
+        scoutReviewId: 'new-city-gas:3955692853343131093_203267420',
+        instagramEvidence,
+        series
+      }
+    };
   }
-}));
+);
 
 const { events, skipped } = mapAndDeduplicateRawEvents(rawEvents, {
   now: new Date()
