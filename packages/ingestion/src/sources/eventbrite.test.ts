@@ -126,11 +126,27 @@ describe('mapEventbriteApifyEvent', () => {
   });
 });
 
+// The connector now submits an async run (POST /runs) and polls
+// (GET /actor-runs/{id}) before fetching the dataset (GET
+// /datasets/{id}/items) - see eventbrite.ts's header comment for why: the
+// synchronous run-sync-get-dataset-items endpoint has a hard 300s
+// server-side timeout that a real run exceeded live (HTTP 408). Mocking a
+// run that's already SUCCEEDED on the first status check skips the poll
+// loop's real setTimeout entirely, so these tests run instantly.
+function succeededRunSequence(items: unknown[]) {
+  return vi
+    .fn()
+    .mockResolvedValueOnce(
+      jsonResponse({
+        data: { id: 'run1', defaultDatasetId: 'dataset1', status: 'SUCCEEDED' }
+      })
+    )
+    .mockResolvedValueOnce(jsonResponse(items));
+}
+
 describe('createEventbriteConnector', () => {
-  it('calls the Apify run-sync-get-dataset-items endpoint with the configured input', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValue(jsonResponse([REAL_MUSIC_EVENT]));
+  it('submits an async run and fetches its dataset once SUCCEEDED', async () => {
+    const fetchImpl = succeededRunSequence([REAL_MUSIC_EVENT]);
     const connector = createEventbriteConnector({
       apiToken: 'test-token',
       fetchImpl,
@@ -140,19 +156,19 @@ describe('createEventbriteConnector', () => {
     });
     const events = await connector.fetch();
 
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [calledUrl, calledInit] = fetchImpl.mock.calls[0]!;
-    expect(String(calledUrl)).toContain(
-      '/actors/WNUjlCROzqWUGQgfR/run-sync-get-dataset-items'
-    );
-    expect(String(calledUrl)).toContain('token=test-token');
-    expect(JSON.parse((calledInit as RequestInit).body as string)).toEqual({
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const [runUrl, runInit] = fetchImpl.mock.calls[0]!;
+    expect(String(runUrl)).toContain('/acts/WNUjlCROzqWUGQgfR/runs');
+    expect(String(runUrl)).toContain('token=test-token');
+    expect(JSON.parse((runInit as RequestInit).body as string)).toEqual({
       country: 'canada',
       city: 'montreal',
       maxResults: 5,
       startDate: '2026-08-01',
       endDate: '2026-08-08'
     });
+    const [datasetUrl] = fetchImpl.mock.calls[1]!;
+    expect(String(datasetUrl)).toContain('/datasets/dataset1/items');
     expect(events).toHaveLength(1);
     expect(events[0]?.title).toBe('KARNEEF + MAFUBA live at ESCOGRIFFE');
   });
@@ -161,15 +177,15 @@ describe('createEventbriteConnector', () => {
     // Verified live: leaving startDate/endDate blank returns almost only
     // today's events despite the actor's documented 7-day default, so this
     // connector always sends an explicit range.
-    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse([]));
+    const fetchImpl = succeededRunSequence([]);
     const connector = createEventbriteConnector({
       apiToken: 'test-token',
       fetchImpl
     });
     await connector.fetch();
 
-    const [, calledInit] = fetchImpl.mock.calls[0]!;
-    const body = JSON.parse((calledInit as RequestInit).body as string);
+    const [, runInit] = fetchImpl.mock.calls[0]!;
+    const body = JSON.parse((runInit as RequestInit).body as string);
     expect(body.startDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(body.endDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(new Date(body.endDate).getTime()).toBeGreaterThan(
@@ -182,12 +198,25 @@ describe('createEventbriteConnector', () => {
     await expect(connector.fetch()).rejects.toThrow('APIFY_API_TOKEN');
   });
 
-  it('throws when the API responds with an error status', async () => {
+  it('throws when the run fails to start', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({}, false));
     const connector = createEventbriteConnector({
       apiToken: 'test-token',
       fetchImpl
     });
     await expect(connector.fetch()).rejects.toThrow('status 500');
+  });
+
+  it('throws when the run ends in a non-SUCCEEDED status', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        data: { id: 'run1', defaultDatasetId: 'dataset1', status: 'FAILED' }
+      })
+    );
+    const connector = createEventbriteConnector({
+      apiToken: 'test-token',
+      fetchImpl
+    });
+    await expect(connector.fetch()).rejects.toThrow('ended with status FAILED');
   });
 });

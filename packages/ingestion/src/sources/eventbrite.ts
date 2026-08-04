@@ -18,7 +18,15 @@ import type { IngestionConnector, RawIngestedEvent } from '../types.js';
  */
 
 const APIFY_ACTOR_ID = 'WNUjlCROzqWUGQgfR';
-const APIFY_RUN_SYNC_URL = `https://api.apify.com/v2/actors/${APIFY_ACTOR_ID}/run-sync-get-dataset-items`;
+const APIFY_RUNS_URL = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/runs`;
+// The convenience run-sync-get-dataset-items endpoint has a hard 300s
+// server-side timeout (verified live: a real run returned HTTP 408 after
+// exactly 5 minutes even though the actor kept running server-side). This
+// actor's real run time varies with Apify/Eventbrite load and can exceed
+// that, so runs are submitted asynchronously and polled instead - no
+// server-imposed cap on total wait, bounded only by MAX_POLL_MS below.
+const POLL_INTERVAL_MS = 5000;
+const MAX_POLL_MS = 10 * 60 * 1000;
 
 interface EventbriteTag {
   prefix?: string;
@@ -219,21 +227,65 @@ export function createEventbriteConnector(
       }
 
       const observedAt = new Date().toISOString();
-      const url = new URL(APIFY_RUN_SYNC_URL);
-      url.searchParams.set('token', apiToken);
+      const runsUrl = new URL(APIFY_RUNS_URL);
+      runsUrl.searchParams.set('token', apiToken);
 
-      const response = await fetchImpl(url.toString(), {
+      const startResponse = await fetchImpl(runsUrl.toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ country, city, maxResults, startDate, endDate })
       });
-      if (!response.ok) {
+      if (!startResponse.ok) {
         throw new Error(
-          `Apify Eventbrite scraper request failed with status ${response.status}`
+          `Apify Eventbrite scraper run failed to start with status ${startResponse.status}`
+        );
+      }
+      const startBody = (await startResponse.json()) as {
+        data: { id: string; defaultDatasetId: string; status: string };
+      };
+      const runId = startBody.data.id;
+      const datasetId = startBody.data.defaultDatasetId;
+
+      const deadline = Date.now() + MAX_POLL_MS;
+      let status = startBody.data.status;
+      while (status === 'READY' || status === 'RUNNING') {
+        if (Date.now() > deadline) {
+          throw new Error(
+            `Apify Eventbrite scraper run ${runId} did not finish within ${MAX_POLL_MS / 1000}s (last status: ${status}).`
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        const pollUrl = new URL(`https://api.apify.com/v2/actor-runs/${runId}`);
+        pollUrl.searchParams.set('token', apiToken);
+        const pollResponse = await fetchImpl(pollUrl.toString());
+        if (!pollResponse.ok) {
+          throw new Error(
+            `Apify Eventbrite scraper run status check failed with status ${pollResponse.status}`
+          );
+        }
+        const pollBody = (await pollResponse.json()) as {
+          data: { status: string };
+        };
+        status = pollBody.data.status;
+      }
+      if (status !== 'SUCCEEDED') {
+        throw new Error(
+          `Apify Eventbrite scraper run ${runId} ended with status ${status}.`
         );
       }
 
-      const items = (await response.json()) as EventbriteApifyEvent[];
+      const datasetUrl = new URL(
+        `https://api.apify.com/v2/datasets/${datasetId}/items`
+      );
+      datasetUrl.searchParams.set('token', apiToken);
+      const datasetResponse = await fetchImpl(datasetUrl.toString());
+      if (!datasetResponse.ok) {
+        throw new Error(
+          `Apify Eventbrite scraper dataset fetch failed with status ${datasetResponse.status}`
+        );
+      }
+
+      const items = (await datasetResponse.json()) as EventbriteApifyEvent[];
       return items.map((item) => mapEventbriteApifyEvent(item, observedAt));
     }
   };
