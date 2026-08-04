@@ -175,7 +175,157 @@ const knownVenues: KnownVenue[] = [
   { name: 'Complexe Sportif Claude-Robillard', category: 'other' }, // large multi-sport complex, no sports-venue category
   { name: 'Théâtre Maisonneuve', category: 'theater' }, // Place des Arts
   { name: 'Maison Etienne Nivard de Saint-Dizier', category: 'gallery_museum' }, // Lachine historic house museum
-  { name: 'Fab Labs', category: 'community_space' } // maker/fabrication-lab community space
+  { name: 'Fab Labs', category: 'community_space' }, // maker/fabrication-lab community space
+
+  // Fourth batch: post merge-duplicate-venues.ts cleanup (see that script -
+  // 285 duplicate-location groups collapsed, surfacing many real venues that
+  // had been hiding behind bare-address duplicates). Instead of one-by-one
+  // research, this batch is every remaining "no category yet" venue with
+  // real events that matches a naming pattern already given a unanimous,
+  // zero-exception category by name across the first three batches (every
+  // prior "Parc X" -> outdoor_festival_site, every "Bibliothèque X" ->
+  // community_space, every public pool -> other, every ice arena -> other).
+  // "Parc bord l'eau" and "Parc à chiens du parc Gouin" are skipped again,
+  // same reason as the third batch (generic/ambiguous description, not a
+  // specific named place). Écoles remain excluded (taxonomy doesn't fit
+  // operating schools) except "Ancienne école Allion", researched
+  // individually below because it's a former school, not an operating one.
+  // Églises are never blanket-categorized (only one prior precedent existed:
+  // Église Notre-Dame-des-Sept-Douleurs) - the three below were each
+  // individually confirmed by web search to run a real recurring concert
+  // series before being added.
+  { name: 'Parc Henri-Bourassa', category: 'outdoor_festival_site' },
+  { name: 'Parc Médéric-Martin', category: 'outdoor_festival_site' },
+  { name: 'Parc Georges-Saint-Pierre', category: 'outdoor_festival_site' },
+  { name: 'Parc Verdelles', category: 'outdoor_festival_site' },
+  { name: 'Parc du Bocage', category: 'outdoor_festival_site' },
+  { name: 'Parc du Collège', category: 'outdoor_festival_site' },
+  { name: 'Parc de Mésy', category: 'outdoor_festival_site' },
+  {
+    name: 'Parc Sir-George-Étienne-Cartier',
+    category: 'outdoor_festival_site'
+  },
+  { name: 'Parc Saint-Jean-Baptiste', category: 'outdoor_festival_site' },
+  { name: 'Parc Armand-Bombardier', category: 'outdoor_festival_site' },
+  { name: 'Parc Beaubien', category: 'outdoor_festival_site' },
+  { name: 'Parc Nelson-Mandela', category: 'outdoor_festival_site' },
+  { name: 'Parc Lucie-Bruneau', category: 'outdoor_festival_site' },
+  { name: 'Parc William-Hurst', category: 'outdoor_festival_site' },
+  { name: 'Parc Eugène-Dostie', category: 'outdoor_festival_site' },
+  { name: 'Parc Irma-Le Vasseur', category: 'outdoor_festival_site' },
+  { name: 'Parc Joseph-Paré', category: 'outdoor_festival_site' },
+  { name: 'Parc Gohier', category: 'outdoor_festival_site' },
+  { name: "Parc d'A-Ma-Baie", category: 'outdoor_festival_site' },
+  { name: 'Parc Nicolas-Tillemont', category: 'outdoor_festival_site' },
+  { name: 'Parc Lhasa-De Sela', category: 'outdoor_festival_site' },
+  { name: 'Parc du Bassin-à-bois', category: 'outdoor_festival_site' },
+  { name: 'Parc Stinson', category: 'outdoor_festival_site' },
+  { name: 'Parc Van Horne', category: 'outdoor_festival_site' },
+  { name: 'Parc Coubertin', category: 'outdoor_festival_site' },
+  { name: 'Parc des Açores', category: 'outdoor_festival_site' },
+  { name: 'Parc Delorme', category: 'outdoor_festival_site' },
+  { name: 'Parc Baldwin', category: 'outdoor_festival_site' },
+  { name: 'parc Hilda-Ramacière', category: 'outdoor_festival_site' },
+  { name: 'Parc Luigi-Pirandello', category: 'outdoor_festival_site' },
+  { name: 'Parc Sauvé', category: 'outdoor_festival_site' },
+  { name: 'Parc Cousineau', category: 'outdoor_festival_site' },
+  {
+    name: "Parc de l'Honorable-George-O'Reilly",
+    category: 'outdoor_festival_site'
+  },
+  { name: 'Parc Toussaint-Louverture', category: 'outdoor_festival_site' },
+  { name: 'Parc Ménard', category: 'outdoor_festival_site' },
+  { name: 'Parc Ouellette', category: 'outdoor_festival_site' },
+  { name: 'Parc des Roseraies', category: 'outdoor_festival_site' },
+  { name: 'Parc Carignan', category: 'outdoor_festival_site' },
+  { name: 'Parc Robert-Sauvé', category: 'outdoor_festival_site' },
+  { name: 'Parc Dan-Hanganu', category: 'outdoor_festival_site' },
+  { name: "Parc de l'Ukraine", category: 'outdoor_festival_site' },
+  { name: 'Parc Richelieu', category: 'outdoor_festival_site' },
+  { name: 'Parc Outremont', category: 'outdoor_festival_site' },
+  { name: 'Parc de Louisbourg', category: 'outdoor_festival_site' },
+  { name: 'Parc Ethel-Stark', category: 'outdoor_festival_site' },
+  {
+    name: 'Parc André-Corbeil-Dit-Tranchemontagne',
+    category: 'outdoor_festival_site'
+  },
+  { name: 'Parc André-Lavallée', category: 'outdoor_festival_site' },
+  { name: 'Parc Walter-Stewart', category: 'outdoor_festival_site' },
+  { name: 'Parc Ferland', category: 'outdoor_festival_site' },
+  { name: 'Parc André-Laurendeau', category: 'outdoor_festival_site' },
+  { name: 'Parc rue Lafrance', category: 'outdoor_festival_site' },
+  { name: 'Parc Coffee Basketball Court', category: 'outdoor_festival_site' }, // Parc Coffee, 7330 rue Coffee - a real named municipal park, not a generic sports court
+  { name: 'Parc Raymond-Préfontaine', category: 'outdoor_festival_site' },
+  { name: 'Parc Lefebvre', category: 'outdoor_festival_site' },
+  { name: 'Parc de Deauville', category: 'outdoor_festival_site' },
+  { name: 'Parc Jean-Amyot', category: 'outdoor_festival_site' },
+  { name: 'Parc Leroux', category: 'outdoor_festival_site' },
+  { name: 'Parc Olympique de Montréal', category: 'outdoor_festival_site' }, // same treatment as the already-categorized "Esplanade du Parc olympique"
+  { name: 'Parc de Taishan', category: 'outdoor_festival_site' },
+  {
+    name: "Parc de la Capture-d'Ethan-Allen",
+    category: 'outdoor_festival_site'
+  },
+  { name: 'Parc Julie-Hamelin', category: 'outdoor_festival_site' },
+  { name: 'Parc Poirier', category: 'outdoor_festival_site' },
+  { name: 'Parc Thomas-Chapais', category: 'outdoor_festival_site' },
+  { name: 'Parc Félix-Leclerc LaSalle', category: 'outdoor_festival_site' },
+  { name: 'Parc Louis-Querbes', category: 'outdoor_festival_site' },
+
+  { name: 'Bibliothèque Serge-Bouchard', category: 'community_space' },
+  { name: 'Bibliothèque du Vieux-Saint-Laurent', category: 'community_space' },
+  { name: 'Bibliothèque Langelier', category: 'community_space' },
+  { name: 'Bibliothèque Mordecai-Richler', category: 'community_space' },
+  { name: 'Bibliothèque de Rivière-des-Prairies', category: 'community_space' },
+  { name: 'Bibliothèque Bellevile', category: 'community_space' }, // spelling as stored in the DB (missing an "l")
+  {
+    name: 'Bibliothèque de la Danse Vincent-Warren',
+    category: 'community_space'
+  }, // dance-archive library, Cinémathèque québécoise
+  {
+    name: 'Centre Communautaire Rivière-Des-Prairies',
+    category: 'community_space'
+  },
+  {
+    name: 'Centre communautaire intergénérationnel',
+    category: 'community_space'
+  },
+  { name: 'Piscine et pataugeoire Laurier', category: 'other' }, // outdoor public pool, same treatment as Piscine Jarry
+  { name: 'Piscine René-Goupil', category: 'other' },
+  { name: 'Piscine du Parc Dan-Hanganu (Elgar)', category: 'other' },
+  { name: 'Aréna Mont-Royal', category: 'other' }, // ice arena, same treatment as Aréna Martin-Lapointe
+
+  // Former primary school, vacant since 2007; now run by the citizen
+  // non-profit Allions-Nous as a transitional community site (collective
+  // garden, outdoor cinema nights, farmers market, mobile library) - a real
+  // community space today, unlike the still-operating schools excluded above.
+  { name: 'Ancienne école Allion', category: 'community_space' },
+  { name: 'Église Saint-Édouard', category: 'concert_hall' }, // free classical concert series in the chapel
+  { name: 'Église Saint-René-Goupil', category: 'concert_hall' }, // Salle de diffusion de Parc-Extension / Hors les murs concert series
+  { name: 'Église Saint-Paul-de-la-Croix', category: 'concert_hall' }, // regular choir/concert programming (Chorale Chantevoix, Concert sous les chandelles)
+
+  // Fifth batch: already-real-named venues turned up by the same "no
+  // category yet" sweep, needing only a category (found alongside
+  // rename-known-venues.ts's research pass, same event-description-driven
+  // method - each name below already matched a real place on its own).
+  { name: 'La maison de la poésie', category: 'community_space' }, // Maison de la poésie de Montréal, Jean-Talon Est - literary org, exhibitions/readings
+  { name: 'Écomuseum de la Pointe-aux-Trembles', category: 'gallery_museum' },
+  { name: 'The Comedy Nest', category: 'concert_hall' }, // Montreal comedy club, live stand-up
+  { name: 'Impro Montréal / Montreal Improv', category: 'theater' },
+  { name: 'Maison Robert-Bélanger', category: 'gallery_museum' }, // heritage house, garden concerts
+  { name: 'Centre culturel de Pierrefonds', category: 'community_space' },
+  {
+    name: "Hurley's Irish Pub",
+    category: 'bar',
+    secondaryCategories: ['concert_hall']
+  }, // Old Montreal Irish pub, also runs stand-up comedy nights
+  { name: "L'Espace Public", category: 'bar' }, // Instagram-scouted bar/café, recurring events + art openings
+  { name: "L'Illusion, Théâtre de marionnettes", category: 'theater' }, // Rosemont puppet theatre
+  {
+    name: 'Café La Ligne Verte',
+    category: 'bar',
+    secondaryCategories: ['concert_hall']
+  } // café/bar hosting a recurring live-band swing-dance night
 ];
 
 try {
