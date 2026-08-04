@@ -425,7 +425,74 @@ const knownVenues: KnownVenue[] = [
   }, // net-zero reception pavilion, Ahuntsic-Cartierville riverside trail
   { name: 'FineFineFine Café', category: 'cafe_concert' }, // café by day, all-ages performance space evenings
   { name: 'Terrasse Carla', category: 'bar' }, // rooftop bar, Chinatown
-  { name: 'TERRASSE CAMELIA', category: 'nightclub' } // rooftop club, Boulevard Saint-Laurent
+  { name: 'TERRASSE CAMELIA', category: 'nightclub' }, // rooftop club, Boulevard Saint-Laurent
+
+  // Ninth batch: already-real-named venues from the same sweep, needing
+  // only a category. "À Table" is deliberately excluded - it matches
+  // MTLàTABLE, a city-wide multi-restaurant week, not one physical venue.
+  { name: 'La Sotterenea', category: 'concert_hall' }, // basement music venue under La Sala Rossa
+  { name: 'Club Electric Avenue', category: 'nightclub' },
+  { name: 'La Toscadura', category: 'concert_hall' }, // 300-cap music venue, Casa del Popolo family
+  {
+    name: "P'tit Ours",
+    category: 'bar',
+    secondaryCategories: ['concert_hall']
+  }, // intimate live-music venue, Mile-End
+  {
+    name: 'Le Terminal',
+    category: 'bar',
+    secondaryCategories: ['concert_hall']
+  }, // microbrewery bar, Thursday comedy club
+  { name: 'Kawalees', category: 'cafe_concert' }, // Arabic cultural cabaret + restaurant
+  { name: "La Maison d'Aurore", category: 'community_space' }, // Plateau-Mont-Royal neighbourhood house
+  { name: 'Terrasse Ciel Rose', category: 'bar' },
+  { name: 'ALŪR Restaurant & Lounge', category: 'bar' },
+  {
+    name: 'Chez Ernest - Comptoir de curiosités',
+    category: 'bar',
+    secondaryCategories: ['concert_hall']
+  }, // themed nights incl. live jazz Thursdays
+  { name: 'Restaurant Le 514', category: 'other' },
+  { name: 'Bassin de la Brunante', category: 'outdoor_festival_site' },
+  { name: 'Belvédère Francine-Lalonde', category: 'outdoor_festival_site' },
+  {
+    name: 'Quai des brumes',
+    category: 'bar',
+    secondaryCategories: ['concert_hall']
+  }, // iconic Plateau bar with upstairs live-music stage
+  { name: 'Bar Le Jockey', category: 'bar' },
+  { name: 'Théâtre La Comédie de Montréal', category: 'theater' },
+  { name: 'Cabaret Berlin', category: 'cafe_concert' },
+  { name: 'Casa Galicia', category: 'community_space' }, // Galician cultural association
+  {
+    name: 'O Patro Výš',
+    category: 'bar',
+    secondaryCategories: ['concert_hall']
+  }, // Mile-End bar with regular live-music programming
+  { name: 'Théâtre Paradoxe', category: 'theater' },
+  { name: 'Édifice Belgo', category: 'gallery_museum' }, // multi-floor contemporary-art gallery building
+  { name: 'Dieu du Ciel!', category: 'brewery_with_stage' },
+  { name: 'Microbrasserie Folklore', category: 'brewery_with_stage' },
+  { name: 'Club Atwater', category: 'nightclub' },
+  { name: 'Bar Notre-Dame-Des-Quilles', category: 'bar' },
+  {
+    name: 'Port de Plaisance de Pierrefonds',
+    category: 'outdoor_festival_site'
+  },
+  { name: 'Marché Atwater', category: 'other' },
+  {
+    name: "Mairie d'arrondissement de Pierrefonds–Roxboro",
+    category: 'community_space'
+  },
+  {
+    name: 'Centre culturel et communautaire de Cartierville',
+    category: 'community_space'
+  },
+  { name: 'Quartier Des Spectacles', category: 'outdoor_festival_site' },
+  { name: 'Deli Planet', category: 'other' },
+  { name: "L'Escogriffe Bar", category: 'concert_hall' }, // = "l'Escogriffe Bar Spectacle" above
+  { name: 'Brasserie Beaubien', category: 'brewery_with_stage' },
+  { name: 'Chez Devi – Authentic Indian Restaurant', category: 'other' }
 ];
 
 try {
