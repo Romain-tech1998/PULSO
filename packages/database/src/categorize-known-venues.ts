@@ -325,7 +325,107 @@ const knownVenues: KnownVenue[] = [
     name: 'Café La Ligne Verte',
     category: 'bar',
     secondaryCategories: ['concert_hall']
-  } // café/bar hosting a recurring live-band swing-dance night
+  }, // café/bar hosting a recurring live-band swing-dance night
+
+  // Sixth batch: already-real-named venues from the same sweep, needing
+  // only a category (found alongside rename-known-venues.ts's sixth pass).
+  { name: 'NsurMackay', category: 'bar' }, // N sur Mackay, downtown speakeasy cocktail lounge
+  {
+    name: 'Turbo Haüs',
+    category: 'bar',
+    secondaryCategories: ['concert_hall']
+  }, // intimate live-music bar, Quartier Latin
+  { name: 'The Wiggle Room', category: 'cafe_concert' }, // Canada's only dedicated burlesque cabaret, Boulevard Saint-Laurent
+  {
+    name: 'KSF LaSalle, 7770, Boulevard LaSalle, LaSalle, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H8P 1X6, Canada',
+    category: 'other'
+  }, // outdoor river-surf/kayak/SUP activity centre, Lachine rapids
+  {
+    name: 'Place des Tisserandes, Hochelaga-Maisonneuve, Mercier–Hochelaga-Maisonneuve, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H1W 1P3, Canada',
+    category: 'outdoor_festival_site'
+  },
+  { name: 'Placette Duluth-Laval', category: 'outdoor_festival_site' },
+  {
+    name: 'Place Andrée-Lachapelle, Mile-End, Le Plateau-Mont-Royal, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H2T 1C9, Canada',
+    category: 'outdoor_festival_site'
+  },
+  { name: 'Café Shaika', category: 'cafe_concert' },
+  { name: 'Centre des Loisirs de Saint-Laurent', category: 'community_space' },
+  {
+    name: 'Ruelle verte Gilford, Mont-Royal, Parthenais, Messier',
+    category: 'outdoor_festival_site'
+  },
+  { name: 'Place Micheline-Legendre', category: 'outdoor_festival_site' },
+  {
+    name: 'Comedyville at Deli Planet – Inside Central Station (Gare Centrale)',
+    category: 'concert_hall'
+  }, // live stand-up comedy venue
+  { name: 'Édifice Wilder - Espace Danse', category: 'theater' }, // Quartier des Spectacles professional dance building
+  { name: 'Conservatoire de musique', category: 'concert_hall' },
+  { name: 'Façade du bâtiment de Vélo Québec', category: 'other' }, // building facade used as an outdoor participatory-theatre backdrop
+
+  // Seventh batch: already-real-named venues from the same sweep, needing
+  // only a category.
+  { name: 'Salle Jean-Eudes', category: 'theater' }, // 410-seat hall, Collège Jean-Eudes
+  { name: 'Station Youville', category: 'outdoor_festival_site' }, // citizen-led temporary summer public square, Ahuntsic-Cartierville
+  { name: "Devant la Maison de l'amitié", category: 'outdoor_festival_site' }, // outdoor intercultural festival site, Plateau-Mont-Royal
+  {
+    name: 'Ruelle verte des Pins, Prince-Arthur, Sainte-Famille, Jeanne-Mance',
+    category: 'outdoor_festival_site'
+  },
+  {
+    name: 'Scène culturelle du parc Wilfrid-Bastien',
+    category: 'outdoor_festival_site'
+  },
+  { name: 'Theatre St-James', category: 'theater' }, // 1870s heritage bank building, Old Montreal
+  { name: 'proto studio', category: 'community_space' }, // small shared workshop/performance studio, Mile-End
+
+  // Eighth batch: already-real-named venues from the same sweep, needing
+  // only a category, plus spelling/language variants of venues already
+  // categorized above under a different exact string (matched separately
+  // since this script updates by exact name).
+  { name: 'Les Foufounes Électriques', category: 'concert_hall' }, // = "Foufounes Electriques" above
+  { name: 'Bell Centre', category: 'concert_hall' }, // English-name variant of "Centre Bell" above
+  { name: 'Le Système', category: 'bar', secondaryCategories: ['nightclub'] }, // = "Système" above
+  { name: 'Burgundy Lion', category: 'bar' }, // Scottish pub, Little Burgundy
+  {
+    name: 'Peel Pub - Sports Bar/Bar Sportif',
+    category: 'bar'
+  },
+  {
+    name: 'Memento! - Brasserie Artisanale',
+    category: 'brewery_with_stage'
+  },
+  { name: 'Stade Ronald-Piché', category: 'other' },
+  { name: 'Mairie de Montréal-Nord', category: 'community_space' },
+  { name: 'Bar Le petit 26', category: 'bar' },
+  { name: 'Skatepark Benny', category: 'other' },
+  { name: 'Pandora Supper Club', category: 'cafe_concert' },
+  { name: "La Maison d'Haïti", category: 'community_space' },
+  {
+    name: 'Estrella Restaurant - Bar - Salle de réception/ Venue',
+    category: 'bar'
+  },
+  { name: 'Théâtre Rialto', category: 'theater' }, // heritage theatre, Avenue du Parc
+  { name: 'Teesri Duniya Theatre', category: 'theater' },
+  { name: 'McKibbin’s', category: 'bar' }, // Irish pub, downtown
+  { name: 'MainLine', category: 'theater' }, // Mainline Theatre, Boulevard Saint-Laurent
+  { name: 'Soubois', category: 'bar' }, // underground champagne/wine bar, Mile-End
+  { name: 'Barbossa', category: 'bar', secondaryCategories: ['nightclub'] }, // dance floor + DJs, Boulevard Saint-Laurent
+  {
+    name: 'Parquette',
+    category: 'community_space',
+    secondaryCategories: ['bar']
+  }, // queer/BIPOC-oriented cafe by day, event space by night, La Petite-Patrie
+  { name: 'LESPACEMAKER', category: 'community_space' }, // shared fabrication workshop, Centre-Sud
+  { name: 'Grand Quai', category: 'outdoor_festival_site' }, // Grand Quai du Port de Montréal, Old Port
+  {
+    name: "Pavillon d'accueil du Parcours Gouin",
+    category: 'community_space'
+  }, // net-zero reception pavilion, Ahuntsic-Cartierville riverside trail
+  { name: 'FineFineFine Café', category: 'cafe_concert' }, // café by day, all-ages performance space evenings
+  { name: 'Terrasse Carla', category: 'bar' }, // rooftop bar, Chinatown
+  { name: 'TERRASSE CAMELIA', category: 'nightclub' } // rooftop club, Boulevard Saint-Laurent
 ];
 
 try {

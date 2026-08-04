@@ -222,6 +222,163 @@ const renamedVenues: RenamedVenue[] = [
     oldName: 'Avenue Bloomfield',
     newName: 'Parc Saint-Viateur',
     category: 'outdoor_festival_site'
+  },
+
+  // Sixth research pass, same method and evidence bar as above.
+  // Parc de la Petite-Italie - exact address match (6634, rue Clark) per
+  // Ville de Montréal; the stored name "Park of Little Italy" is an English
+  // rendering of the same real place, not a different one.
+  {
+    oldName: 'Park of Little Italy',
+    newName: 'Parc de la Petite-Italie',
+    category: 'outdoor_festival_site'
+  },
+  // Bibliothèque Saint-Charles - Pointe-Saint-Charles library (former
+  // Saint-Gabriel fire station); this row's own events repeatedly name it
+  // ("bibliothèque ... saint-charles").
+  {
+    oldName: 'Rue Grand Trunk',
+    newName: 'Bibliothèque Saint-Charles',
+    category: 'community_space'
+  },
+  // Maison Brignon-dit-Lapierre - exact address match (4251, boulevard
+  // Gouin Est, Montréal-Nord), a classified heritage farmhouse now a
+  // cultural centre; named directly by this row's own event.
+  {
+    oldName: '4251 Boulevard Gouin Est',
+    newName: 'Maison Brignon-dit-Lapierre',
+    category: 'gallery_museum'
+  },
+  // Jardin communautaire des Belles-Roses - named directly by this row's
+  // own event; Rivière-des-Prairies–Pointe-aux-Trembles community garden.
+  {
+    oldName: '959 18e Avenue',
+    newName: 'Jardin communautaire des Belles-Roses',
+    category: 'community_space'
+  },
+  // Parc Kirkland - named directly, twice, by this row's own events ("au
+  // parc Kirkland"), in the Saint-Pierre sector of Lachine.
+  {
+    oldName:
+      'Rue des Érables, Saint-Pierre, Lachine, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H8R 1B1, Canada',
+    newName: 'Parc Kirkland',
+    category: 'outdoor_festival_site'
+  },
+  // Parc Marcel-Léger - this row's coordinates are ~10m from the
+  // already-named/categorized "Parc Marcel-Léger" venue (14678, Rue
+  // Notre-Dame Est) - same real place, separate geocode. See
+  // merge-venues-by-name.ts note above.
+  {
+    oldName: 'Rue Notre-Dame Est',
+    newName: 'Parc Marcel-Léger',
+    category: 'outdoor_festival_site'
+  },
+  // Parc La Fontaine - one of Montréal's best-known parks; this row's own
+  // address names the same street the park fronts (Avenue du Parc-La
+  // Fontaine), and its own event is part of a Plateau-Mont-Royal parks
+  // programming series consistent with that specific park.
+  {
+    oldName:
+      'Avenue du Parc-La Fontaine, Le Plateau-Mont-Royal, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H2L 1E7, Canada',
+    newName: 'Parc La Fontaine',
+    category: 'outdoor_festival_site'
+  },
+  // Parc Painter (also known locally as "Marcotte") - exact address match
+  // (260, rue Marcotte, Saint-Laurent) per Ville de Montréal/OnRoule.org.
+  {
+    oldName: '260 Rue Marcotte',
+    newName: 'Parc Painter',
+    category: 'outdoor_festival_site'
+  },
+
+  // Seventh research pass, same method and evidence bar as above.
+  // Parc Ahuntsic - named directly, twice, by this row's own events ("au
+  // parc Ahuntsic"), plus a third mentioning "près du planchodrome" (the
+  // park's skatepark).
+  {
+    oldName: 'Rue Prieur Est',
+    newName: 'Parc Ahuntsic',
+    category: 'outdoor_festival_site'
+  },
+  // Parc Michel-Ménard - named directly by this row's own event ("Rendez-
+  // vous au parc Michel-Ménard").
+  {
+    oldName: 'Parc-Duff Court',
+    newName: 'Parc Michel-Ménard',
+    category: 'outdoor_festival_site'
+  },
+  // Parc du Bois-Franc - named directly, three times, by this row's own
+  // events ("au Parc du Bois-Franc").
+  {
+    oldName:
+      "2111, Rue de l'Équateur, Bois-Franc, Saint-Laurent, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H4R 3C8, Canada",
+    newName: 'Parc du Bois-Franc',
+    category: 'outdoor_festival_site'
+  },
+  // Plage de Verdun - named directly by this row's own event ("plage de
+  // Verdun").
+  {
+    oldName: 'Zone de baignade',
+    newName: 'Plage de Verdun',
+    category: 'outdoor_festival_site'
+  },
+  // Bibliothèque Benny - this row's coordinates are ~30m from the
+  // already-categorized "Bibliothèque Benny" venue (6400, Avenue de
+  // Monkland) - same real place, separate geocode. See
+  // merge-venues-by-name.ts note above.
+  {
+    oldName:
+      '4160, Avenue Benny, Notre-Dame-de-Grâce, Côte-des-Neiges–Notre-Dame-de-Grâce, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H4B 2N4, Canada',
+    newName: 'Bibliothèque Benny',
+    category: 'community_space'
+  },
+  // Place Gennevilliers-Laliberté - the stored name "La Fermière" is the
+  // 1915 Alfred Laliberté fountain sculpture standing at the centre of this
+  // real square (in front of the former Maisonneuve Market), not the
+  // square's own name; confirmed by this row's own address string, which
+  // already contains "Place Gennevilliers-Laliberté".
+  {
+    oldName: 'La Fermière',
+    newName: 'Place Gennevilliers-Laliberté',
+    category: 'outdoor_festival_site'
+  },
+  // Théâtre Outremont - this row's address (1240, Avenue Bernard) is
+  // essentially the same block as the theatre's published address (1248,
+  // Avenue Bernard Ouest), and its own event (a contemporary dance
+  // triptych) matches the venue's real programming (dance, music, theatre).
+  {
+    oldName:
+      '1240, Avenue Bernard, Outremont, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H2V 1V7, Canada',
+    newName: 'Théâtre Outremont',
+    category: 'theater'
+  },
+  // Parc Wilfrid-Bastien - a second address-fallback row for the same real
+  // park already renamed earlier in this file; every one of this row's own
+  // events also names it directly. See merge-venues-by-name.ts note above.
+  {
+    oldName:
+      'Boulevard Lacordaire, Saint-Léonard, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H1P 2V5, Canada',
+    newName: 'Parc Wilfrid-Bastien',
+    category: 'outdoor_festival_site'
+  },
+  // Parc du Vieux-Moulin de Pointe-aux-Trembles - exact address match
+  // (11630, Notre-Dame Street East) per Tourisme Montréal; a windmill
+  // heritage site with an interpretation pavilion, confirmed by this row's
+  // own events ("au parc du Vieux-Moulin de PAT").
+  {
+    oldName: '11630 Rue Notre-Dame Est',
+    newName: 'Parc du Vieux-Moulin de Pointe-aux-Trembles',
+    category: 'gallery_museum'
+  },
+  // Parc Le Carignan - exact address match (11481, Avenue P.-M.-Favier,
+  // Montréal-Nord) per Ville de Montréal/La Vitrine; named directly, twice,
+  // by this row's own events ("au parc Le Carignan"). Distinct from the
+  // unrelated "Parc Carignan" already categorized in Lachine (40e Avenue).
+  {
+    oldName:
+      '11481, Avenue P.-M.-Favier, Montréal-Nord, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H1G 3X9, Canada',
+    newName: 'Parc Le Carignan',
+    category: 'outdoor_festival_site'
   }
 ];
 
