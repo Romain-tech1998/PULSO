@@ -379,6 +379,49 @@ const renamedVenues: RenamedVenue[] = [
       '11481, Avenue P.-M.-Favier, Montréal-Nord, Montréal, Agglomération de Montréal, Montréal (région administrative), Québec, H1G 3X9, Canada',
     newName: 'Parc Le Carignan',
     category: 'outdoor_festival_site'
+  },
+
+  // Eighth research pass, same method and evidence bar as above.
+  // Parc Aimé-Caron - exact address match (700, Rue Muir, Saint-Laurent)
+  // per Ville de Montréal; named directly by this row's own event ("au
+  // parc Aimé-Caron").
+  {
+    oldName: '700 Rue Muir',
+    newName: 'Parc Aimé-Caron',
+    category: 'outdoor_festival_site'
+  },
+  // Place Rodolphe-Rousseau - exact address match (Boulevard Edouard-
+  // Laurin, Saint-Laurent) per Ville de Montréal; named directly by this
+  // row's own event.
+  {
+    oldName: 'Boulevard Edouard-Laurin',
+    newName: 'Place Rodolphe-Rousseau',
+    category: 'outdoor_festival_site'
+  },
+  // Parc Champdoré - matches this row's own street address (Rue
+  // Champdoré) and is named directly by its own event ("au parc
+  // Champdoré").
+  {
+    oldName: 'Rue Champdoré',
+    newName: 'Parc Champdoré',
+    category: 'outdoor_festival_site'
+  },
+  // Parc Roger-Rousseau - exact address match (Boulevard de Châteauneuf,
+  // Anjou) per Ville de Montréal; named directly by this row's own event
+  // ("au Parc Roger-Rousseau").
+  {
+    oldName: 'Boulevard de Châteauneuf',
+    newName: 'Parc Roger-Rousseau',
+    category: 'outdoor_festival_site'
+  },
+  // FIGURA - exact address match (48, Notre-Dame Ouest, Loft #201, Old
+  // Montreal); a real figure-drawing studio, named directly by this row's
+  // own event ("FIGURA. Weekly Figure Drawing In The Heart of Old
+  // Montreal").
+  {
+    oldName: '48 Notre Dame Ouest (Loft #201)',
+    newName: 'FIGURA',
+    category: 'community_space'
   }
 ];
 

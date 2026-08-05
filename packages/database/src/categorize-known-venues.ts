@@ -84,7 +84,7 @@ const knownVenues: KnownVenue[] = [
   // "Business in the front, party in the back" - a bar with its own
   // nightclub area (7119 Saint-Hubert).
   { name: 'Système', category: 'bar', secondaryCategories: ['nightclub'] },
-  { name: 'CENTRE COURT - IGA STADIUM', category: 'other' },
+  { name: 'Stade IGA', category: 'other' },
   { name: 'Cinéma Beaubien', category: 'other' },
   { name: 'Théâtre St-Denis', category: 'theater' },
   // A real, currently-operating fire station (Service de sécurité incendie
@@ -115,7 +115,6 @@ const knownVenues: KnownVenue[] = [
   // single physical venue (Habitations Ahuntsic, Piste cyclable des Berges,
   // La Bolduc, Circuit électrique - the last one is an EV charging network
   // brand name, not a venue at all, despite appearing as one in the data).
-  { name: 'Rogers Court', category: 'other' }, // IGA Stadium tennis court (National Bank Open) - no sports-venue category, same as Centre Court
   { name: 'Salle Paul-Desmarais', category: 'concert_hall' }, // Centre Canadien d'Architecture - chamber/classical concert hall
   { name: 'Bibliothèque du Plateau-Mont-Royal', category: 'community_space' },
   { name: "Mairie d'arrondissement Anjou", category: 'community_space' },
@@ -492,7 +491,12 @@ const knownVenues: KnownVenue[] = [
   { name: 'Deli Planet', category: 'other' },
   { name: "L'Escogriffe Bar", category: 'concert_hall' }, // = "l'Escogriffe Bar Spectacle" above
   { name: 'Brasserie Beaubien', category: 'brewery_with_stage' },
-  { name: 'Chez Devi – Authentic Indian Restaurant', category: 'other' }
+  { name: 'Chez Devi – Authentic Indian Restaurant', category: 'other' },
+
+  // Tenth batch: already-real-named venues from the same sweep, needing
+  // only a category.
+  { name: 'Terrasse St-Ambroise', category: 'bar' }, // Brasserie McAuslan's terrace, Le Sud-Ouest
+  { name: 'Co-op Bar Milton-Parc [BMP]', category: 'bar' }
 ];
 
 try {
