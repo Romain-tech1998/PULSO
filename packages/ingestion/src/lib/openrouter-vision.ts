@@ -14,6 +14,11 @@
 
 const OPENROUTER_CHAT_COMPLETIONS_URL =
   'https://openrouter.ai/api/v1/chat/completions';
+// A single stalled request has no default timeout in Node's fetch, so a
+// pipeline processing hundreds of images sequentially can hang forever on
+// one bad call (observed live: a CI run stuck >45min with no error). Each
+// vision call gets its own budget instead of relying on the caller.
+const REQUEST_TIMEOUT_MS = 45_000;
 
 export interface EventImageAnalysis {
   isLikelyEvent: boolean;
@@ -65,25 +70,43 @@ export async function analyzeEventImage(
     throw new Error('OPENROUTER_API_KEY is required to analyze event images.');
   }
 
-  const response = await fetchImpl(OPENROUTER_CHAT_COMPLETIONS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: ANALYSIS_PROMPT },
-            { type: 'image_url', image_url: { url: imageUrl } }
-          ]
-        }
-      ]
-    })
-  });
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(
+    () => timeoutController.abort(),
+    REQUEST_TIMEOUT_MS
+  );
+  let response: Response;
+  try {
+    response = await fetchImpl(OPENROUTER_CHAT_COMPLETIONS_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: ANALYSIS_PROMPT },
+              { type: 'image_url', image_url: { url: imageUrl } }
+            ]
+          }
+        ]
+      }),
+      signal: timeoutController.signal
+    });
+  } catch (error) {
+    if (timeoutController.signal.aborted) {
+      throw new Error(
+        `OpenRouter request timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const body = (await response.json()) as OpenRouterChatResponse;
   if (!response.ok || body.error) {

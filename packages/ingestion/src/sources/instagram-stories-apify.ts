@@ -25,6 +25,10 @@
 
 const APIFY_ACTOR_ID = 'dLL7b34nRrgN6ZV24';
 const APIFY_RUN_SYNC_URL = `https://api.apify.com/v2/actors/${APIFY_ACTOR_ID}/run-sync-get-dataset-items`;
+// The run-sync endpoint itself times out server-side at 300s (see below),
+// but a connection-level stall (DNS, TCP) before any response headers
+// arrive isn't bounded by that - a client-side timeout covers that gap.
+const REQUEST_TIMEOUT_MS = 340_000;
 // Verified live (2026-08-03): the actor's input schema rejects more than
 // 100 usernames per run with HTTP 400. Separately, the run-sync-get-
 // dataset-items endpoint itself has a hard 300s server-side timeout - at
@@ -116,11 +120,31 @@ export async function fetchInstagramStoriesSignals(
     const url = new URL(APIFY_RUN_SYNC_URL);
     url.searchParams.set('token', apifyApiToken);
 
-    const response = await fetchImpl(url.toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usernames: batch.map((target) => target.handle) })
-    });
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(
+      () => timeoutController.abort(),
+      REQUEST_TIMEOUT_MS
+    );
+    let response: Response;
+    try {
+      response = await fetchImpl(url.toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usernames: batch.map((target) => target.handle)
+        }),
+        signal: timeoutController.signal
+      });
+    } catch (error) {
+      if (timeoutController.signal.aborted) {
+        throw new Error(
+          `Apify Instagram Stories actor request timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       throw new Error(

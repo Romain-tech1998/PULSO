@@ -78,6 +78,11 @@ interface BusinessDiscoveryResponse {
 }
 
 const GRAPH_API_VERSION = 'v25.0';
+// A single stalled request has no default timeout in Node's fetch, so
+// looping over a watchlist can hang forever on one unresponsive account
+// (observed live: a CI run stuck >45min with no error). Each account's
+// call gets its own budget instead of relying on the caller.
+const REQUEST_TIMEOUT_MS = 30_000;
 
 export async function fetchInstagramScoutSignals(
   targets: InstagramScoutTarget[],
@@ -116,7 +121,27 @@ export async function fetchInstagramScoutSignals(
     );
     url.searchParams.set('access_token', accessToken);
 
-    const response = await fetchImpl(url.toString());
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(
+      () => timeoutController.abort(),
+      REQUEST_TIMEOUT_MS
+    );
+    let response: Response;
+    try {
+      response = await fetchImpl(url.toString(), {
+        signal: timeoutController.signal
+      });
+    } catch (error) {
+      const message = timeoutController.signal.aborted
+        ? `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
+        : error instanceof Error
+          ? error.message
+          : String(error);
+      options.onTargetError?.(target, message);
+      continue;
+    } finally {
+      clearTimeout(timeoutId);
+    }
     const body = (await response.json()) as BusinessDiscoveryResponse;
     if (!response.ok || body.error) {
       // A single unreachable/private/renamed account must not abort the whole

@@ -27,6 +27,36 @@ const APIFY_RUNS_URL = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/runs`;
 // server-imposed cap on total wait, bounded only by MAX_POLL_MS below.
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_MS = 10 * 60 * 1000;
+// A single stalled request has no default timeout in Node's fetch, so a
+// hung connection on the start/poll/dataset call would block forever
+// regardless of MAX_POLL_MS, which only bounds time between *returned*
+// polls (observed live: a related pipeline stuck >45min with no error).
+const REQUEST_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit,
+  timeoutLabel: string
+): Promise<Response> {
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(
+    () => timeoutController.abort(),
+    REQUEST_TIMEOUT_MS
+  );
+  try {
+    return await fetchImpl(url, { ...init, signal: timeoutController.signal });
+  } catch (error) {
+    if (timeoutController.signal.aborted) {
+      throw new Error(
+        `${timeoutLabel} timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 interface EventbriteTag {
   prefix?: string;
@@ -244,11 +274,22 @@ export function createEventbriteConnector(
       const runsUrl = new URL(APIFY_RUNS_URL);
       runsUrl.searchParams.set('token', apiToken);
 
-      const startResponse = await fetchImpl(runsUrl.toString(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ country, city, maxResults, startDate, endDate })
-      });
+      const startResponse = await fetchWithTimeout(
+        fetchImpl,
+        runsUrl.toString(),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            country,
+            city,
+            maxResults,
+            startDate,
+            endDate
+          })
+        },
+        'Apify Eventbrite scraper run start'
+      );
       if (!startResponse.ok) {
         throw new Error(
           `Apify Eventbrite scraper run failed to start with status ${startResponse.status}`
@@ -271,7 +312,12 @@ export function createEventbriteConnector(
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         const pollUrl = new URL(`https://api.apify.com/v2/actor-runs/${runId}`);
         pollUrl.searchParams.set('token', apiToken);
-        const pollResponse = await fetchImpl(pollUrl.toString());
+        const pollResponse = await fetchWithTimeout(
+          fetchImpl,
+          pollUrl.toString(),
+          {},
+          'Apify Eventbrite scraper run status check'
+        );
         if (!pollResponse.ok) {
           throw new Error(
             `Apify Eventbrite scraper run status check failed with status ${pollResponse.status}`
@@ -292,7 +338,12 @@ export function createEventbriteConnector(
         `https://api.apify.com/v2/datasets/${datasetId}/items`
       );
       datasetUrl.searchParams.set('token', apiToken);
-      const datasetResponse = await fetchImpl(datasetUrl.toString());
+      const datasetResponse = await fetchWithTimeout(
+        fetchImpl,
+        datasetUrl.toString(),
+        {},
+        'Apify Eventbrite scraper dataset fetch'
+      );
       if (!datasetResponse.ok) {
         throw new Error(
           `Apify Eventbrite scraper dataset fetch failed with status ${datasetResponse.status}`
