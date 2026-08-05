@@ -25,7 +25,13 @@ const defaultSourceIds = [
   'evenko'
 ];
 
-loadEnvFile(fileURLToPath(new URL('../../../.env', import.meta.url)));
+// .env only exists for local dev; CI provides these vars directly via
+// GitHub Actions secrets, so a missing file here is expected, not an error.
+try {
+  loadEnvFile(fileURLToPath(new URL('../../../.env', import.meta.url)));
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+}
 
 const registryCsvPath = fileURLToPath(
   new URL(
