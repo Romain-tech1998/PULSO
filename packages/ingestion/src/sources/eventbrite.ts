@@ -66,10 +66,24 @@ interface EventbriteApifyEvent {
 const SUBCATEGORY_TO_CATEGORY: Record<string, RawIngestedEvent['category']> = {
   comedy: 'comedy'
 };
+// Sports, Community & Culture, Travel & Outdoor, and Health & Wellness have
+// no dedicated Pulso category (EVENT_CATEGORIES is music/nightlife/
+// festival/show/comedy/other only) - mapped to the 'other' catch-all
+// rather than left unmapped/discarded. Exact display_name strings below
+// are NOT yet verified live against a real Apify response (unlike the
+// three above, captured from a real run) - confirm/correct against the
+// next real Eventbrite run's actual tags.
 const CATEGORY_TO_CATEGORY: Record<string, RawIngestedEvent['category']> = {
   music: 'music',
   'performing & visual arts': 'show',
-  'film & media': 'show'
+  'film & media': 'show',
+  sports: 'other',
+  'sports & fitness': 'other',
+  'community & culture': 'other',
+  community: 'other',
+  'travel & outdoor': 'other',
+  'health & wellness': 'other',
+  health: 'other'
 };
 
 function mapCategory(

@@ -55,7 +55,8 @@ export {
 
 export {
   extractInstagramWatchlist,
-  selectInstagramPilotTargets
+  selectInstagramPilotTargets,
+  selectInstagramMvp80Targets
 } from './registry.js';
 export {
   automateInstagramScoutReviewQueue,

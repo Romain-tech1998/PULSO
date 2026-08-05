@@ -49,3 +49,27 @@ export function selectInstagramPilotTargets(
 
   return uniqueIds.map((sourceId) => targetsById.get(sourceId)!);
 }
+
+interface Mvp80WatchlistFile {
+  accounts: Array<{ sourceId: string; handle: string }>;
+}
+
+/**
+ * The curated ~80-account MVP subset (docs/data/research/instagram-watchlist-mvp80.json):
+ * venue/nightclub/bar accounts only, selected by scan priority plus real
+ * observed yield from a full watchlist run, meant to run far more often
+ * than the full ~260-account registry without spending Apify/OpenRouter
+ * budget on low-yield accounts (promoters, festivals, media curators).
+ * Cross-checked against the full registry so a stale/renamed entry in the
+ * curated file is rejected rather than silently queried.
+ */
+export function selectInstagramMvp80Targets(
+  registryCsvText: string,
+  mvp80JsonText: string
+): InstagramScoutTarget[] {
+  const parsed = JSON.parse(mvp80JsonText) as Mvp80WatchlistFile;
+  return selectInstagramPilotTargets(
+    registryCsvText,
+    parsed.accounts.map((account) => account.sourceId)
+  );
+}

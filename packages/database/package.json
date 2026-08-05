@@ -26,6 +26,9 @@
     "instagram:stories": "tsx src/instagram-stories-pilot.ts",
     "instagram:stories:review": "tsx src/instagram-stories-review-ui.ts",
     "instagram:stories:pipeline": "tsx src/instagram-stories-pilot.ts && tsx src/instagram-stories-review-ui.ts",
+    "instagram:unified": "tsx src/instagram-unified-pilot.ts",
+    "instagram:unified:review": "tsx src/instagram-unified-review-ui.ts",
+    "instagram:unified:pipeline": "tsx src/instagram-unified-pilot.ts && tsx src/instagram-unified-review-ui.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

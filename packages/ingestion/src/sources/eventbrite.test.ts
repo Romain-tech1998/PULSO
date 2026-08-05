@@ -101,11 +101,29 @@ describe('mapEventbriteApifyEvent', () => {
     const event = mapEventbriteApifyEvent(
       {
         ...REAL_MUSIC_EVENT,
-        tags: [{ prefix: 'EventbriteCategory', display_name: 'Sports' }]
+        tags: [{ prefix: 'EventbriteCategory', display_name: 'Business' }]
       },
       '2026-07-28T00:00:00.000Z'
     );
     expect(event.category).toBe('unmapped');
+  });
+
+  it('maps sports/community/travel/health categories to the other catch-all', () => {
+    for (const displayName of [
+      'Sports & Fitness',
+      'Community & Culture',
+      'Travel & Outdoor',
+      'Health & Wellness'
+    ]) {
+      const event = mapEventbriteApifyEvent(
+        {
+          ...REAL_MUSIC_EVENT,
+          tags: [{ prefix: 'EventbriteCategory', display_name: displayName }]
+        },
+        '2026-07-28T00:00:00.000Z'
+      );
+      expect(event.category).toBe('other');
+    }
   });
 
   it('has no point when latitude/longitude are missing', () => {

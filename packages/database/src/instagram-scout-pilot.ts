@@ -10,6 +10,7 @@ import {
   extractInstagramWatchlist,
   fetchInstagramScoutSignals,
   parseCsv,
+  selectInstagramMvp80Targets,
   selectInstagramPilotTargets,
   triageInstagramScoutItem,
   type InstagramScoutReviewItem
@@ -29,6 +30,12 @@ loadEnvFile(fileURLToPath(new URL('../../../.env', import.meta.url)));
 const registryCsvPath = fileURLToPath(
   new URL(
     '../../../docs/data/research/montreal-source-registry.csv',
+    import.meta.url
+  )
+);
+const mvp80JsonPath = fileURLToPath(
+  new URL(
+    '../../../docs/data/research/instagram-watchlist-mvp80.json',
     import.meta.url
   )
 );
@@ -115,9 +122,14 @@ function analyzeVisualEvidence(
 async function main(): Promise<void> {
   const visualOcrEnabled = process.argv.includes('--visual');
   const registryCsv = await readFile(registryCsvPath, 'utf8');
-  const targets = process.argv.includes('--all')
-    ? extractInstagramWatchlist(registryCsv)
-    : selectInstagramPilotTargets(registryCsv, requestedSourceIds());
+  const targets = process.argv.includes('--mvp80')
+    ? selectInstagramMvp80Targets(
+        registryCsv,
+        await readFile(mvp80JsonPath, 'utf8')
+      )
+    : process.argv.includes('--all')
+      ? extractInstagramWatchlist(registryCsv)
+      : selectInstagramPilotTargets(registryCsv, requestedSourceIds());
   const mediaLimitPerTarget = requestedMediaLimit();
   const targetErrors: Array<{
     sourceId: string;

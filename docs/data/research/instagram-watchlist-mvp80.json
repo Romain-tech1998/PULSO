@@ -1,0 +1,486 @@
+{
+  "generatedAt": "2026-08-04T18:32:04.051Z",
+  "criteria": "venue/nightclub/bar type + qualifying_event_host + high scan priority (77 accounts), topped up to 80 with the highest-yield accounts from today real Stories run among the remaining venue-type pool",
+  "accounts": [
+    {
+      "sourceId": "mtelus",
+      "handle": "mtelusmontreal",
+      "name": "MTELUS",
+      "type": "venue"
+    },
+    {
+      "sourceId": "centre-bell",
+      "handle": "centrebell",
+      "name": "Centre Bell",
+      "type": "venue"
+    },
+    {
+      "sourceId": "place-bell",
+      "handle": "placebell",
+      "name": "Place Bell",
+      "type": "venue"
+    },
+    {
+      "sourceId": "theatre-beanfield",
+      "handle": "theatrebeanfield",
+      "name": "Théâtre Beanfield",
+      "type": "venue"
+    },
+    {
+      "sourceId": "club-soda",
+      "handle": "clubsodamtl",
+      "name": "Club Soda",
+      "type": "venue"
+    },
+    {
+      "sourceId": "theatre-fairmount",
+      "handle": "theatrefairmount",
+      "name": "Théâtre Fairmount",
+      "type": "venue"
+    },
+    {
+      "sourceId": "l-olympia",
+      "handle": "olympiamontreal",
+      "name": "L’Olympia",
+      "type": "venue"
+    },
+    {
+      "sourceId": "foufounes-electriques",
+      "handle": "foufouneselectriques",
+      "name": "Foufounes Électriques",
+      "type": "venue"
+    },
+    {
+      "sourceId": "rialto-theatre",
+      "handle": "theatrerialtomtl",
+      "name": "Rialto Theatre",
+      "type": "venue"
+    },
+    {
+      "sourceId": "casa-del-popolo",
+      "handle": "casadelpopolo",
+      "name": "Casa del Popolo",
+      "type": "venue"
+    },
+    {
+      "sourceId": "la-sala-rossa",
+      "handle": "lasalarossa",
+      "name": "La Sala Rossa",
+      "type": "venue"
+    },
+    {
+      "sourceId": "la-tulipe",
+      "handle": "latulipemtl",
+      "name": "La Tulipe",
+      "type": "venue"
+    },
+    {
+      "sourceId": "le-ministere",
+      "handle": "leministeremtl",
+      "name": "Le Ministère",
+      "type": "venue"
+    },
+    {
+      "sourceId": "cafe-campus-petit-campus",
+      "handle": "cafecampusmtl",
+      "name": "Café Campus / Petit Campus",
+      "type": "venue"
+    },
+    {
+      "sourceId": "l-escogriffe-bar-spectacle",
+      "handle": "lescogriffe",
+      "name": "L’Escogriffe Bar Spectacle",
+      "type": "venue"
+    },
+    {
+      "sourceId": "bar-le-ritz-pdb",
+      "handle": "barleritzpdb",
+      "name": "Bar Le Ritz PDB",
+      "type": "venue"
+    },
+    {
+      "sourceId": "quai-des-brumes",
+      "handle": "quaidesbrumes",
+      "name": "Quai des Brumes",
+      "type": "venue"
+    },
+    {
+      "sourceId": "ausgang-plaza",
+      "handle": "ausgangplaza",
+      "name": "Ausgang Plaza",
+      "type": "venue"
+    },
+    {
+      "sourceId": "le-belmont",
+      "handle": "lebelmont",
+      "name": "Le Belmont",
+      "type": "venue"
+    },
+    {
+      "sourceId": "le-national",
+      "handle": "lenationalmtl",
+      "name": "Le National",
+      "type": "venue"
+    },
+    {
+      "sourceId": "groove-nation",
+      "handle": "groovenationmtl",
+      "name": "Groove Nation",
+      "type": "venue"
+    },
+    {
+      "sourceId": "societe-des-arts-technologiques-sat",
+      "handle": "sat_montreal",
+      "name": "Société des arts technologiques (SAT)",
+      "type": "venue"
+    },
+    {
+      "sourceId": "le-studio-td",
+      "handle": "lestudiotd",
+      "name": "Le Studio TD",
+      "type": "venue"
+    },
+    {
+      "sourceId": "place-des-arts",
+      "handle": "placedesarts",
+      "name": "Place des Arts",
+      "type": "venue"
+    },
+    {
+      "sourceId": "maison-symphonique-de-montreal",
+      "handle": "maisonsymphonique",
+      "name": "Maison symphonique de Montréal",
+      "type": "venue"
+    },
+    {
+      "sourceId": "le-gesu",
+      "handle": "legesu",
+      "name": "Le Gesù",
+      "type": "venue"
+    },
+    {
+      "sourceId": "usine-c",
+      "handle": "usine_c",
+      "name": "Usine C",
+      "type": "venue"
+    },
+    {
+      "sourceId": "centre-phi",
+      "handle": "phicentre",
+      "name": "Centre Phi",
+      "type": "venue"
+    },
+    {
+      "sourceId": "theatre-outremont",
+      "handle": "theatreoutremont",
+      "name": "Théâtre Outremont",
+      "type": "venue"
+    },
+    {
+      "sourceId": "monument-national",
+      "handle": "monument_national",
+      "name": "Monument-National",
+      "type": "venue"
+    },
+    {
+      "sourceId": "cabaret-lion-d-or",
+      "handle": "cabaretliondor",
+      "name": "Cabaret Lion d’Or",
+      "type": "venue"
+    },
+    {
+      "sourceId": "bain-mathieu",
+      "handle": "bainmathieu",
+      "name": "Bain Mathieu",
+      "type": "venue"
+    },
+    {
+      "sourceId": "la-chapelle-scenes-contemporaines",
+      "handle": "lachapelletheatre",
+      "name": "La Chapelle Scènes Contemporaines",
+      "type": "venue"
+    },
+    {
+      "sourceId": "espace-st-denis",
+      "handle": "espacestdenis",
+      "name": "Espace St-Denis",
+      "type": "venue"
+    },
+    {
+      "sourceId": "le-verre-bouteille",
+      "handle": "leverrebouteille",
+      "name": "Le Verre Bouteille",
+      "type": "venue"
+    },
+    {
+      "sourceId": "theatre-de-quat-sous",
+      "handle": "theatrequatsous",
+      "name": "Théâtre de Quat’Sous",
+      "type": "venue"
+    },
+    {
+      "sourceId": "espace-libre",
+      "handle": "espacelibre_mtl",
+      "name": "Espace Libre",
+      "type": "venue"
+    },
+    {
+      "sourceId": "theatre-la-licorne",
+      "handle": "theatrelalicorne",
+      "name": "Théâtre La Licorne",
+      "type": "venue"
+    },
+    {
+      "sourceId": "le-livart",
+      "handle": "lelivart",
+      "name": "Le Livart",
+      "type": "venue"
+    },
+    {
+      "sourceId": "arsenal-art-contemporain",
+      "handle": "arsenalcontemporary",
+      "name": "Arsenal Art Contemporain",
+      "type": "venue"
+    },
+    {
+      "sourceId": "new-city-gas",
+      "handle": "newcitygas",
+      "name": "New City Gas",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "stereo-montreal",
+      "handle": "stereomontreal",
+      "name": "Stereo Montreal",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "stereobar",
+      "handle": "stereobarmtl",
+      "name": "StereoBar",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "club-pelicano",
+      "handle": "clubpelicanomtl",
+      "name": "Club Pelicano",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "datcha",
+      "handle": "datchamtl",
+      "name": "Datcha",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "le-rouge-bar",
+      "handle": "rougebarmtl",
+      "name": "Le Rouge Bar",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "muzique",
+      "handle": "muziquemontreal",
+      "name": "Muzique",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "la-voute",
+      "handle": "lavoutemontreal",
+      "name": "La Voûte",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "bord-elle",
+      "handle": "bordellemtl",
+      "name": "Bord’Elle",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "yoko-luna",
+      "handle": "yokolunamtl",
+      "name": "Yoko Luna",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "soubois",
+      "handle": "soubois",
+      "name": "Soubois",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "flyjin",
+      "handle": "flyjinmtl",
+      "name": "Flyjin",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "apt-200",
+      "handle": "apt200mtl",
+      "name": "Apt. 200",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "ecole-privee",
+      "handle": "ecoleprivee",
+      "name": "École Privée",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "salon-daome",
+      "handle": "lesalondaome",
+      "name": "Salon Daomé",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "newspeak",
+      "handle": "newspeakmtl",
+      "name": "Newspeak",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "club-unity",
+      "handle": "clubunity",
+      "name": "Club Unity",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "cabaret-mado",
+      "handle": "cabaretmado",
+      "name": "Cabaret Mado",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "complexe-sky",
+      "handle": "complexesky",
+      "name": "Complexe Sky",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "le-stud",
+      "handle": "lestudbar",
+      "name": "Le Stud",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "salsatheque",
+      "handle": "salsathequemtl",
+      "name": "Salsathèque",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "le-jiao",
+      "handle": "jiaomtl",
+      "name": "Le Jiao",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "don-b-comber",
+      "handle": "donbcomber",
+      "name": "Don B Comber",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "peopl",
+      "handle": "clubpeopl",
+      "name": "Peopl",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "sans-soleil",
+      "handle": "sanssoleilmtl",
+      "name": "Sans Soleil",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "velvet-speakeasy",
+      "handle": "velvet_auberge_st_gabriel",
+      "name": "Velvet Speakeasy",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "somwhr-liquor-lounge",
+      "handle": "somwhrmtl",
+      "name": "Somwhr Liquor Lounge",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "blvd44",
+      "handle": "blvd44montreal",
+      "name": "BLVD44",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "pangea",
+      "handle": "pangeamtl",
+      "name": "Pangea",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "mila",
+      "handle": "milamontreal",
+      "name": "Mila",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "le-wiggle-room",
+      "handle": "wiggleroommtl",
+      "name": "Le Wiggle Room",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "stock-bar",
+      "handle": "stockbar_mtl",
+      "name": "Stock Bar",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "aigle-noir",
+      "handle": "aiglenoir_mtl",
+      "name": "Aigle Noir",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "bar-le-cocktail",
+      "handle": "barlecocktail",
+      "name": "Bar Le Cocktail",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "le-saloon",
+      "handle": "lesaloonbistro",
+      "name": "Le Saloon",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "hang-bar",
+      "handle": "hangbarmtl",
+      "name": "Hang Bar",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "la-shop",
+      "handle": "lashop.mtl",
+      "name": "La Shop",
+      "type": "nightclub"
+    },
+    {
+      "sourceId": "bar-de-courcelle",
+      "handle": "bardecourcelle",
+      "name": "Bar de Courcelle",
+      "type": "bar"
+    },
+    {
+      "sourceId": "mellon-brasserie",
+      "handle": "mellonbrasserie",
+      "name": "Mellön Brasserie",
+      "type": "bar"
+    },
+    {
+      "sourceId": "hurley-s-irish-pub",
+      "handle": "hurleysirishpub",
+      "name": "Hurley’s Irish Pub",
+      "type": "bar"
+    }
+  ]
+}

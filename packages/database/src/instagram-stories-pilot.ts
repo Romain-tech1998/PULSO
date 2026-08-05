@@ -8,6 +8,7 @@ import {
   extractInstagramWatchlist,
   fetchInstagramStoriesSignals,
   parseCsv,
+  selectInstagramMvp80Targets,
   selectInstagramPilotTargets,
   type EventImageAnalysis,
   type InstagramStorySignal
@@ -41,6 +42,12 @@ const registryCsvPath = fileURLToPath(
     import.meta.url
   )
 );
+const mvp80JsonPath = fileURLToPath(
+  new URL(
+    '../../../docs/data/research/instagram-watchlist-mvp80.json',
+    import.meta.url
+  )
+);
 const outputDirectory = fileURLToPath(
   new URL('../ingestion-output/', import.meta.url)
 );
@@ -62,9 +69,14 @@ export interface InstagramStoryReviewItem extends InstagramStorySignal {
 
 async function main(): Promise<void> {
   const registryCsv = await readFile(registryCsvPath, 'utf8');
-  const targets = process.argv.includes('--all')
-    ? extractInstagramWatchlist(registryCsv)
-    : selectInstagramPilotTargets(registryCsv, requestedSourceIds());
+  const targets = process.argv.includes('--mvp80')
+    ? selectInstagramMvp80Targets(
+        registryCsv,
+        await readFile(mvp80JsonPath, 'utf8')
+      )
+    : process.argv.includes('--all')
+      ? extractInstagramWatchlist(registryCsv)
+      : selectInstagramPilotTargets(registryCsv, requestedSourceIds());
 
   const signals = await fetchInstagramStoriesSignals(targets);
   console.error(`Instagram Stories: ${signals.length} stories fetched`);
