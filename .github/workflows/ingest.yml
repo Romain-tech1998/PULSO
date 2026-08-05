@@ -14,15 +14,17 @@ on:
     # Instagram scraper workstream. Revisit cadence/cost once real signal
     # exists - see DATA-0003.
     - cron: '0 1 * * 2,4,6'
-    # Run at 02:00 every day (Instagram Scout - free Meta Graph API quota,
-    # not billed per-call like Eventbrite/Apify, so no budget reason to
-    # throttle it. Still a supervised pilot per DEC-0006: produces a
-    # human-review HTML artifact, never publishes on its own.
+    # Run at 02:00 every day (Instagram unified Feed+Stories pilot - Meta
+    # Graph API Feed/Reels is free; the curated 80-account MVP subset
+    # (docs/data/research/instagram-watchlist-mvp80.json) keeps Apify
+    # Stories and OpenRouter vision costs low enough for a daily cadence.
+    # Still a supervised pilot per DEC-0006: produces a human-review HTML
+    # artifact, never publishes on its own.
     - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       job_type:
-        description: 'Job to run (events, venues, eventbrite, or instagram-scout)'
+        description: 'Job to run (events, venues, eventbrite, or instagram-unified)'
         required: true
         default: 'events'
         type: choice
@@ -30,7 +32,7 @@ on:
           - events
           - venues
           - eventbrite
-          - instagram-scout
+          - instagram-unified
 
 jobs:
   ingest-events:
@@ -114,10 +116,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
 
-  ingest-instagram-scout:
-    name: Run Instagram Scout Pipeline
+  ingest-instagram-unified:
+    name: Run Instagram Unified Pipeline (Feed + Stories)
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 2 * * *' || github.event.inputs.job_type == 'instagram-scout'
+    if: github.event_name == 'schedule' && github.event.schedule == '0 2 * * *' || github.event.inputs.job_type == 'instagram-unified'
 
     steps:
       - name: Check out repository
@@ -135,15 +137,17 @@ jobs:
         run: pnpm install
       - name: Build packages
         run: pnpm --filter "@pulso/database..." run build
-      - name: Run Instagram Scout pipeline
-        run: pnpm run --filter=@pulso/database instagram:scout:pipeline
+      - name: Run Instagram unified pipeline
+        run: pnpm run --filter=@pulso/database instagram:unified:pipeline
         env:
           INSTAGRAM_BUSINESS_ACCOUNT_ID: ${{ secrets.INSTAGRAM_BUSINESS_ACCOUNT_ID }}
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       - name: Upload review HTML
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: instagram-scout-review
-          path: packages/database/ingestion-output/instagram-scout-review.html
+          name: instagram-unified-review
+          path: packages/database/ingestion-output/instagram-unified-review.html
           retention-days: 14
