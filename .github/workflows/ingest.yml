@@ -14,17 +14,23 @@ on:
     # Instagram scraper workstream. Revisit cadence/cost once real signal
     # exists - see DATA-0003.
     - cron: '0 1 * * 2,4,6'
-    # Run at 02:00 every day (Instagram unified Feed+Stories pilot - Meta
-    # Graph API Feed/Reels is free; the curated 80-account MVP subset
-    # (docs/data/research/instagram-watchlist-mvp80.json) keeps Apify
-    # Stories and OpenRouter vision costs low enough for a daily cadence.
-    # Still a supervised pilot per DEC-0006: produces a human-review HTML
-    # artifact, never publishes on its own.
-    - cron: '0 2 * * *'
+    # Run at 03:00 every Monday (Instagram Feed/Reels pilot). Feed posts
+    # are static once published - a daily vision-model scan of the same
+    # ~220 posts wastes OpenRouter budget for no new signal, so this only
+    # runs weekly. Reduced from a daily unified run after early results
+    # weren't significant enough to justify the cost - see instagram-
+    # unified-pilot.ts's --feed-only flag.
+    - cron: '0 3 * * 1'
+    # Run at 03:00 on Thursday, Friday, and Saturday (Instagram Stories
+    # pilot). Stories genuinely change day to day (24h expiry, unlike
+    # Feed), so they keep a tighter, weekend-focused cadence when nightlife
+    # activity is highest - see instagram-unified-pilot.ts's
+    # --stories-only flag.
+    - cron: '0 3 * * 4,5,6'
   workflow_dispatch:
     inputs:
       job_type:
-        description: 'Job to run (events, venues, eventbrite, or instagram-unified)'
+        description: 'Job to run (events, venues, eventbrite, instagram-feed, or instagram-stories)'
         required: true
         default: 'events'
         type: choice
@@ -32,7 +38,8 @@ on:
           - events
           - venues
           - eventbrite
-          - instagram-unified
+          - instagram-feed
+          - instagram-stories
 
 jobs:
   ingest-events:
@@ -116,10 +123,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
 
-  ingest-instagram-unified:
-    name: Run Instagram Unified Pipeline (Feed + Stories)
+  ingest-instagram-feed:
+    name: Run Instagram Feed Pipeline (weekly)
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 2 * * *' || github.event.inputs.job_type == 'instagram-unified'
+    if: github.event_name == 'schedule' && github.event.schedule == '0 3 * * 1' || github.event.inputs.job_type == 'instagram-feed'
 
     steps:
       - name: Check out repository
@@ -137,17 +144,50 @@ jobs:
         run: pnpm install
       - name: Build packages
         run: pnpm --filter "@pulso/database..." run build
-      - name: Run Instagram unified pipeline
-        run: pnpm run --filter=@pulso/database instagram:unified:pipeline
+      - name: Run Instagram Feed pipeline
+        run: pnpm run --filter=@pulso/database instagram:unified:pipeline:feed
         env:
           INSTAGRAM_BUSINESS_ACCOUNT_ID: ${{ secrets.INSTAGRAM_BUSINESS_ACCOUNT_ID }}
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      - name: Upload review HTML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instagram-feed-review
+          path: packages/database/ingestion-output/instagram-unified-review.html
+          retention-days: 14
+
+  ingest-instagram-stories:
+    name: Run Instagram Stories Pipeline (Thu/Fri/Sat)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' && github.event.schedule == '0 3 * * 4,5,6' || github.event.inputs.job_type == 'instagram-stories'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 11.7.0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install
+      - name: Build packages
+        run: pnpm --filter "@pulso/database..." run build
+      - name: Run Instagram Stories pipeline
+        run: pnpm run --filter=@pulso/database instagram:unified:pipeline:stories
+        env:
           APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       - name: Upload review HTML
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: instagram-unified-review
+          name: instagram-stories-review
           path: packages/database/ingestion-output/instagram-unified-review.html
           retention-days: 14

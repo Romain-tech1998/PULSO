@@ -15,6 +15,7 @@
     "db:merge-duplicate-venues": "tsx src/merge-duplicate-venues.ts",
     "db:rename-known-venues": "tsx src/rename-known-venues.ts",
     "db:merge-venues-by-name": "tsx src/merge-venues-by-name.ts",
+    "db:merge-known-venue-aliases": "tsx src/merge-known-venue-aliases.ts",
     "instagram:scout": "tsx src/instagram-scout-pilot.ts",
     "instagram:scout:apply-decisions": "tsx src/instagram-scout-apply-decisions.ts",
     "instagram:scout:crosscheck": "tsx src/instagram-scout-crosscheck.ts",
@@ -29,6 +30,8 @@
     "instagram:unified": "tsx src/instagram-unified-pilot.ts",
     "instagram:unified:review": "tsx src/instagram-unified-review-ui.ts",
     "instagram:unified:pipeline": "tsx src/instagram-unified-pilot.ts && tsx src/instagram-unified-review-ui.ts",
+    "instagram:unified:pipeline:feed": "tsx src/instagram-unified-pilot.ts --feed-only && tsx src/instagram-unified-review-ui.ts",
+    "instagram:unified:pipeline:stories": "tsx src/instagram-unified-pilot.ts --stories-only && tsx src/instagram-unified-review-ui.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

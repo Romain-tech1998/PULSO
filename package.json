@@ -25,6 +25,8 @@
     "instagram:unified": "pnpm --filter @pulso/database instagram:unified",
     "instagram:unified:review": "pnpm --filter @pulso/database instagram:unified:review",
     "instagram:unified:pipeline": "pnpm --filter @pulso/database instagram:unified:pipeline",
+    "instagram:unified:pipeline:feed": "pnpm --filter @pulso/database instagram:unified:pipeline:feed",
+    "instagram:unified:pipeline:stories": "pnpm --filter @pulso/database instagram:unified:pipeline:stories",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

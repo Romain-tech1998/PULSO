@@ -81,6 +81,17 @@ function confidenceRank(
 }
 
 async function main(): Promise<void> {
+  // Feed/Reels posts are static once published - scanning the same ~220
+  // posts with a paid vision call every single day burns budget for zero
+  // new signal, so this only fetches feed when explicitly asked (weekly
+  // cadence in CI) or when neither flag is given (local/manual default:
+  // both). Stories genuinely change day to day (24h expiry) so they run
+  // on their own, more frequent cadence via --stories-only.
+  const feedOnly = process.argv.includes('--feed-only');
+  const storiesOnly = process.argv.includes('--stories-only');
+  const runFeed = !storiesOnly;
+  const runStories = !feedOnly;
+
   const registryCsv = await readFile(registryCsvPath, 'utf8');
   const targets = selectInstagramMvp80Targets(
     registryCsv,
@@ -92,12 +103,16 @@ async function main(): Promise<void> {
     handle: string;
     message: string;
   }> = [];
-  const feedSignals = await fetchInstagramScoutSignals(targets, {
-    onTargetError: (target, message) => {
-      targetErrors.push({ ...target, message });
-    }
-  });
-  const storySignals = await fetchInstagramStoriesSignals(targets);
+  const feedSignals = runFeed
+    ? await fetchInstagramScoutSignals(targets, {
+        onTargetError: (target, message) => {
+          targetErrors.push({ ...target, message });
+        }
+      })
+    : [];
+  const storySignals = runStories
+    ? await fetchInstagramStoriesSignals(targets)
+    : [];
   console.error(
     `Unified Scout: ${targets.length} accounts, ${feedSignals.length} feed items, ${storySignals.length} stories`
   );
