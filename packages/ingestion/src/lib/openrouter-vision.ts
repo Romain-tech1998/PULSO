@@ -28,11 +28,13 @@ export interface EventImageAnalysis {
   venueNameGuess?: string | undefined;
   priceText?: string | undefined;
   ticketingUrlOrHandle?: string | undefined;
+  eventIsInFuture?: boolean | undefined;
   confidence: 'low' | 'medium' | 'high';
   reasoning?: string | undefined;
 }
 
-const ANALYSIS_PROMPT = `You are looking at a single Instagram Story image that may or may not advertise a real-world event (concert, show, party, exhibition, etc.) in Montreal, Canada.
+function buildAnalysisPrompt(referenceDate: string): string {
+  return `Today's date is ${referenceDate}. You are looking at a single Instagram image that may or may not advertise a real-world FUTURE event (concert, show, party, exhibition, etc.) in Montreal, Canada. Pulso only cares about events people can still go to - never past ones.
 
 Reply with ONLY a JSON object (no markdown fences) with this exact shape:
 {
@@ -43,11 +45,19 @@ Reply with ONLY a JSON object (no markdown fences) with this exact shape:
   "venueNameGuess": string or null,
   "priceText": string or null,
   "ticketingUrlOrHandle": string or null (a URL or @handle mentioned for tickets),
+  "eventIsInFuture": boolean or null (compare dateText, inferring the nearest sensible year if none is written, against today's date ${referenceDate}; null if no date is legible at all),
   "confidence": "low" | "medium" | "high",
   "reasoning": string (one sentence explaining your confidence)
 }
 
-If the image is not an event advertisement (e.g. a personal photo, a repost, an ad for a product), set isLikelyEvent to false and leave the other fields null. Never invent a date, time, or venue that is not visibly present in the image.`;
+STRICT rule for isLikelyEvent - set it to true ONLY if ALL of these hold:
+1. The image is genuinely advertising a real event, not a mood/lifestyle photo, a solo artist portrait with no other context, a repost, or a product ad.
+2. At least ONE of the following is true:
+   a. A specific date is legible AND eventIsInFuture is true (a date that is clearly in the past, e.g. last month or last year, means isLikelyEvent MUST be false even if everything else looks like an event ad).
+   b. A ticketing link or @handle for buying tickets is visible.
+   c. Both an event title AND a venue name are clearly legible together (a structured announcement, not just an artist's name and a nice photo).
+If none of 2a/2b/2c hold - for example a photogenic shot of a guitarist or DJ with no date, no venue, and no ticketing info - set isLikelyEvent to false regardless of how "eventy" the vibe looks. Never invent a date, time, or venue that is not visibly present in the image.`;
+}
 
 interface OpenRouterChatResponse {
   choices?: Array<{ message?: { content?: string } }>;
@@ -60,11 +70,14 @@ export async function analyzeEventImage(
     apiKey?: string;
     model?: string;
     fetchImpl?: typeof fetch;
+    referenceDate?: string;
   } = {}
 ): Promise<EventImageAnalysis> {
   const apiKey = options.apiKey ?? process.env.OPENROUTER_API_KEY;
   const model = options.model ?? 'openai/gpt-4o-mini';
   const fetchImpl = options.fetchImpl ?? fetch;
+  const referenceDate =
+    options.referenceDate ?? new Date().toISOString().slice(0, 10);
 
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is required to analyze event images.');
@@ -89,7 +102,7 @@ export async function analyzeEventImage(
           {
             role: 'user',
             content: [
-              { type: 'text', text: ANALYSIS_PROMPT },
+              { type: 'text', text: buildAnalysisPrompt(referenceDate) },
               { type: 'image_url', image_url: { url: imageUrl } }
             ]
           }
@@ -131,14 +144,21 @@ export async function analyzeEventImage(
     );
   }
 
+  // Defense in depth: even if the model doesn't perfectly follow the
+  // "isLikelyEvent requires eventIsInFuture !== false" rule in the prompt,
+  // enforce it in code - Pulso only ever wants future events.
+  const isLikelyEvent =
+    (parsed.isLikelyEvent ?? false) && parsed.eventIsInFuture !== false;
+
   return {
-    isLikelyEvent: parsed.isLikelyEvent ?? false,
+    isLikelyEvent,
     workingTitle: parsed.workingTitle ?? undefined,
     dateText: parsed.dateText ?? undefined,
     timeText: parsed.timeText ?? undefined,
     venueNameGuess: parsed.venueNameGuess ?? undefined,
     priceText: parsed.priceText ?? undefined,
     ticketingUrlOrHandle: parsed.ticketingUrlOrHandle ?? undefined,
+    eventIsInFuture: parsed.eventIsInFuture ?? undefined,
     confidence: parsed.confidence ?? 'low',
     reasoning: parsed.reasoning ?? undefined
   };

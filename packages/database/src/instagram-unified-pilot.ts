@@ -80,6 +80,21 @@ function confidenceRank(
   return 0;
 }
 
+// Feed posts are static once published, so a post from months ago is never
+// going to become a new future event - burning a paid vision call on it
+// every run is pure waste. This is about the POST's publish date, not any
+// event date mentioned inside it (that's handled by the vision prompt's
+// eventIsInFuture check). Stories are always <24h old so this rarely
+// filters any of them, kept here anyway for uniformity/future-proofing.
+const MAX_POST_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function isRecentEnough(timestamp: string | undefined, now: number): boolean {
+  if (!timestamp) return true;
+  const postedAt = new Date(timestamp).getTime();
+  if (Number.isNaN(postedAt)) return true;
+  return now - postedAt <= MAX_POST_AGE_MS;
+}
+
 async function main(): Promise<void> {
   // Feed/Reels posts are static once published - scanning the same ~220
   // posts with a paid vision call every single day burns budget for zero
@@ -117,9 +132,16 @@ async function main(): Promise<void> {
     `Unified Scout: ${targets.length} accounts, ${feedSignals.length} feed items, ${storySignals.length} stories`
   );
 
+  const now = Date.now();
+  const referenceDate = new Date(now).toISOString().slice(0, 10);
+  let staleSkippedCount = 0;
   const rawCandidates: UnifiedCandidate[] = [];
 
   for (const signal of feedSignals) {
+    if (!isRecentEnough(signal.timestamp, now)) {
+      staleSkippedCount += 1;
+      continue;
+    }
     const imageUrl =
       signal.mediaAssets?.[0]?.mediaUrl ??
       signal.mediaAssets?.[0]?.thumbnailUrl;
@@ -134,6 +156,10 @@ async function main(): Promise<void> {
     });
   }
   for (const signal of storySignals) {
+    if (!isRecentEnough(signal.takenAt, now)) {
+      staleSkippedCount += 1;
+      continue;
+    }
     rawCandidates.push({
       reviewId: `story:${signal.sourceId}:${signal.storyId}`,
       seenIn: ['story'],
@@ -143,6 +169,9 @@ async function main(): Promise<void> {
       takenAt: signal.takenAt
     });
   }
+  console.error(
+    `Unified Scout: skipped ${staleSkippedCount} post(s) older than 30 days before analysis`
+  );
 
   let completed = 0;
   for (const candidate of rawCandidates) {
@@ -151,7 +180,9 @@ async function main(): Promise<void> {
       candidate.analysisError = 'No image URL available for vision analysis';
     } else {
       try {
-        candidate.analysis = await analyzeEventImage(candidate.imageUrl);
+        candidate.analysis = await analyzeEventImage(candidate.imageUrl, {
+          referenceDate
+        });
       } catch (error) {
         candidate.analysisError =
           error instanceof Error ? error.message : String(error);
@@ -211,6 +242,7 @@ async function main(): Promise<void> {
       accounts: targets.length,
       feedItems: feedSignals.length,
       storyItems: storySignals.length,
+      staleSkipped: staleSkippedCount,
       candidatesAnalyzed: rawCandidates.length,
       mergedAway: mergedAwayCount,
       likelyEventCount,
