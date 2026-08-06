@@ -38,8 +38,10 @@ import {
   groupsResponseSchema,
   intelligentSearchResponseSchema,
   meResponseSchema,
+  createdEventResponseSchema,
   mutualEventIdsResponseSchema,
   myAttendanceResponseSchema,
+  notificationsResponseSchema,
   PRICE_FILTER_OPTIONS,
   PROFILE_AVATAR_STYLES,
   PROFILE_COVER_STYLES,
@@ -77,6 +79,7 @@ import {
   type IntelligentSearchResponse,
   type SearchConstraintKey,
   type Message,
+  type Notification as PulsoNotification,
   type PublicEvent,
   type PublicUser,
   type PublicVenue,
@@ -86,6 +89,8 @@ import {
   type User
 } from '@pulso/contracts';
 import {
+  AFTER_WINDOW_END_HOUR,
+  AFTER_WINDOW_START_HOUR,
   DEFAULT_DISCOVERY_FILTERS,
   EVENT_CATEGORIES,
   FORUM_CATEGORIES,
@@ -112,8 +117,10 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
   type RefObject
 } from 'react';
@@ -121,6 +128,10 @@ import {
 import { eventDetailsFields, eventPreviewFields } from './event-view-model';
 import { persistBrowserLocale, resolveBrowserLocale } from './locale-client';
 import { deriveVenuePriceTier, type VenuePriceTier } from './venue-price-tier';
+import {
+  getVenueDiscoveryDateRange,
+  partitionVenueEvents
+} from './venue-view-model';
 
 const MONTREAL_CENTER: [number, number] = [-73.5673, 45.5017];
 // One neutral pin color for the Lieu map, rather than per-category icons
@@ -164,7 +175,7 @@ const MAP_STYLE_DARK: maplibregl.StyleSpecification = {
 const MAP_STYLE_URL: string | maplibregl.StyleSpecification =
   process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? MAP_STYLE_DARK;
 
-const PIN_WIDTH = 34;
+const PIN_WIDTH = 38;
 const PIN_HEIGHT = 44;
 // Pins are rasterized once at load time, not re-drawn per zoom level -
 // without oversampling, MapLibre stretches these few dozen source pixels
@@ -175,12 +186,10 @@ const PIN_HEIGHT = 44;
 const PIN_SCALE = 3;
 
 /**
- * Classic teardrop map-pin shape (colored fill, white ring, white dot
- * center), rasterized on a canvas - replaces the plain flat circle markers,
- * which read as generic dots rather than map pins. Drawn on canvas and
- * passed to maplibre as raw ImageData rather than an SVG data URI fed
- * through Map.loadImage(): that path threw "source image could not be
- * decoded" in this environment, silently dropping every pin.
+ * Pulso night pin: a dark core, luminous category rim and compact location
+ * tail, rasterized on a canvas for crisp HiDPI rendering. The restrained
+ * glow stays legible on the black basemap without the previous glossy white
+ * outline.
  */
 function buildPinImageData(color: string): ImageData {
   const canvas = document.createElement('canvas');
@@ -190,39 +199,38 @@ function buildPinImageData(color: string): ImageData {
   if (!ctx) throw new Error('2D canvas context unavailable.');
   ctx.scale(PIN_SCALE, PIN_SCALE);
 
-  const teardrop = new Path2D();
-  teardrop.moveTo(17, 0);
-  teardrop.bezierCurveTo(7.611, 0, 0, 7.611, 0, 17);
-  teardrop.bezierCurveTo(0, 29.75, 17, 44, 17, 44);
-  teardrop.bezierCurveTo(17, 44, 34, 29.75, 34, 17);
-  teardrop.bezierCurveTo(34, 7.611, 26.389, 0, 17, 0);
-  teardrop.closePath();
+  const body = new Path2D();
+  body.moveTo(19, 2);
+  body.bezierCurveTo(9.5, 2, 3, 8.4, 3, 17.5);
+  body.bezierCurveTo(3, 27.4, 11.8, 31.8, 19, 42);
+  body.bezierCurveTo(26.2, 31.8, 35, 27.4, 35, 17.5);
+  body.bezierCurveTo(35, 8.4, 28.5, 2, 19, 2);
+  body.closePath();
 
-  // A soft drop shadow gives the pin a lifted-off-the-map feel rather than
-  // sitting flush on the surface - drawn as a separate pass so the shadow
-  // doesn't also darken the white ring/dot drawn afterwards.
   ctx.save();
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-  ctx.shadowBlur = 3;
-  ctx.shadowOffsetY = 2;
+  ctx.globalAlpha = 0.95;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 11;
   ctx.fillStyle = color;
-  ctx.fill(teardrop);
+  ctx.fill(body);
   ctx.restore();
 
-  // A subtle top-to-bottom gradient over the flat category color reads as
-  // a rounded, glossy surface rather than a flat sticker.
-  const sheen = ctx.createLinearGradient(0, 0, 0, 44);
-  sheen.addColorStop(0, 'rgba(255, 255, 255, 0.22)');
-  sheen.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
-  ctx.fillStyle = sheen;
-  ctx.fill(teardrop);
-
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#ffffff';
-  ctx.stroke(teardrop);
+  const surface = ctx.createLinearGradient(0, 2, 0, 42);
+  surface.addColorStop(0, color);
+  surface.addColorStop(0.3, '#24182f');
+  surface.addColorStop(1, '#0d0b14');
+  ctx.fillStyle = surface;
+  ctx.fill(body);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = color;
+  ctx.stroke(body);
 
   ctx.beginPath();
-  ctx.arc(17, 17, 6.5, 0, Math.PI * 2);
+  ctx.arc(19, 17.5, 8.2, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(19, 17.5, 2.4, 0, Math.PI * 2);
   ctx.fillStyle = '#ffffff';
   ctx.fill();
 
@@ -232,11 +240,8 @@ function buildPinImageData(color: string): ImageData {
 const CLUSTER_BADGE_SIZE = 72;
 
 /**
- * Cluster badge: a soft brand-gradient disc (UI-0001's canonical
- * #7336C1 → #EA3E81 → #FE7C5C gradient) with a white ring, replacing the
- * previous flat single-color circle - the point-count text is drawn by a
- * separate symbol layer stacked on top, unchanged. Oversampled at PIN_SCALE
- * for the same reason as buildPinImageData above.
+ * Cluster badge: the same dark core with a luminous brand-gradient rim. The
+ * point-count text is drawn by a separate symbol layer stacked on top.
  */
 function buildClusterBadgeImageData(): ImageData {
   const canvas = document.createElement('canvas');
@@ -258,12 +263,18 @@ function buildClusterBadgeImageData(): ImageData {
   gradient.addColorStop(0.5, '#EA3E81');
   gradient.addColorStop(1, '#FE7C5C');
 
+  ctx.save();
+  ctx.shadowColor = '#EA3E81';
+  ctx.shadowBlur = 10;
   ctx.beginPath();
   ctx.arc(center, center, radius, 0, Math.PI * 2);
-  ctx.fillStyle = gradient;
+  ctx.fillStyle = '#0d0b14';
   ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = '#ffffff';
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(center, center, radius - 1.5, 0, Math.PI * 2);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = gradient;
   ctx.stroke();
 
   return ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -600,6 +611,61 @@ function useUnreadMessagesCount(
   return count;
 }
 
+// DEC-0016 in-app notifications. No real-time transport by design (same
+// position DEC-0012 already takes on messages) - `refreshKey` is the current
+// header section, so navigating anywhere refetches, and opening the panel
+// refetches explicitly via `reload`.
+function useNotifications(authToken: string | undefined, refreshKey: unknown) {
+  const [notifications, setNotifications] = useState<PulsoNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+
+  const reload = useCallback(() => {
+    if (!authToken) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+    fetch(`${API_BASE_URL}/me/notifications`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const data = notificationsResponseSchema.parse(json).data;
+        setNotifications(data.notifications);
+        setUnreadCount(data.unreadCount);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload, refreshKey]);
+
+  const markAllRead = useCallback(() => {
+    if (!authToken || unreadCount === 0) return;
+    // Optimistic: the badge is the whole point of the control, so it clears
+    // on tap rather than after a round trip.
+    setUnreadCount(0);
+    setNotifications((current) =>
+      current.map((entry) =>
+        'readAt' in entry && entry.readAt === null
+          ? { ...entry, readAt: new Date().toISOString() }
+          : entry
+      )
+    );
+    void fetch(`${API_BASE_URL}/me/notifications/read`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).catch(() => {});
+  }, [authToken, unreadCount]);
+
+  return { notifications, unreadCount, state, reload, markAllRead };
+}
+
 // Scoped to the caller's own favorited/attended events (see /me/forums/active)
 // - shared by the dashboard widget and the full "Forums" page so both read
 // from a single fetch/refresh cycle rather than duplicating it.
@@ -819,6 +885,9 @@ export function ExploreMap({
   const [venuePickerList, setVenuePickerList] = useState<
     { title: string; groups: VenueGroup[] } | undefined
   >();
+  const [venueDetailsGroup, setVenueDetailsGroup] = useState<VenueGroup>();
+  const [connectedSelectedVenueId, setConnectedSelectedVenueId] =
+    useState<string>();
   const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersOverlayMount = useTransitionedMount(filtersOpen);
@@ -859,7 +928,6 @@ export function ExploreMap({
         'prix',
         'date',
         'distance',
-        'ambiance',
         'lieu-categorie',
         'lieu-date'
       ])
@@ -934,14 +1002,17 @@ export function ExploreMap({
     }
   }, [user, section]);
   const unreadMessagesCount = useUnreadMessagesCount(authToken, section);
+  const afterEventCount = events.filter(isAfterEvent).length;
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notifications = useNotifications(authToken, section);
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
   const [lieuTab, setLieuTab] = useState<'map' | 'list' | 'calendar'>('list');
   // Reset to 'event' every time Explorer is (re-)entered rather than
   // persisted - simplest, least surprising default per the restructuring
   // plan.
-  const [explorerPinKind, setExplorerPinKind] = useState<'event' | 'venue'>(
-    'event'
-  );
+  const [explorerPinKind, setExplorerPinKind] = useState<
+    'all' | 'event' | 'venue' | 'after'
+  >('all');
   // The connected Carte page's own selected-pin state (Phase 4.13) - a
   // small floating card, not the full EventDetails panel or a picker list
   // (those stay exactly as they are for the anonymous map).
@@ -954,6 +1025,7 @@ export function ExploreMap({
     VenueCategory[]
   >([]);
   const [noEventVenues, setNoEventVenues] = useState<PublicVenue[]>([]);
+  const [venueListEvents, setVenueListEvents] = useState<PublicEvent[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const aboutPanelMount = useTransitionedMount(aboutOpen);
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -1027,10 +1099,9 @@ export function ExploreMap({
     loadCalendarEvents
   ]);
 
-  useEffect(() => {
-    if (section !== 'lieu') return;
-    const bounds = currentBounds.current;
-    fetch(
+  const loadVenueMapData = useCallback(async (bounds: MapBounds) => {
+    const venueWindow = getVenueDiscoveryDateRange(new Date());
+    const recurringVenuesRequest = fetch(
       `${API_BASE_URL}/venues?west=${bounds.west}&south=${bounds.south}&east=${bounds.east}&north=${bounds.north}`
     )
       .then((response) => (response.ok ? response.json() : Promise.reject()))
@@ -1038,7 +1109,27 @@ export function ExploreMap({
         setNoEventVenues(venueListResponseSchema.parse(json).data)
       )
       .catch(() => setNoEventVenues([]));
-  }, [section]);
+    const programmedVenuesRequest = fetch(
+      `${API_BASE_URL}/events?${buildMapEventsQuery(bounds, {
+        date: 'custom',
+        categories: [],
+        price: 'all',
+        customStartDate: venueWindow.start,
+        customEndDate: venueWindow.end
+      })}`
+    )
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setVenueListEvents(eventListResponseSchema.parse(json).data)
+      )
+      .catch(() => setVenueListEvents([]));
+    await Promise.all([recurringVenuesRequest, programmedVenuesRequest]);
+  }, []);
+
+  useEffect(() => {
+    if (section !== 'lieu' && section !== 'explorer') return;
+    void loadVenueMapData(currentBounds.current);
+  }, [section, loadVenueMapData]);
 
   useEffect(() => {
     const resolved = resolveBrowserLocale([initialLocale], localStorage);
@@ -1226,6 +1317,7 @@ export function ExploreMap({
     setFiltersOpen(false);
     setPickerList(undefined);
     setVenuePickerList(undefined);
+    setVenueDetailsGroup(undefined);
     setDetails({ kind: 'closed' });
     setSelected(undefined);
     clearSearch();
@@ -1353,7 +1445,17 @@ export function ExploreMap({
         source: 'events-source',
         layout: {
           'icon-image': ['concat', 'pin-', ['get', 'category']],
-          'icon-size': 0.85,
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            10,
+            0.66,
+            14,
+            0.88,
+            17,
+            1.06
+          ],
           'icon-anchor': 'bottom',
           'icon-allow-overlap': true,
           'icon-ignore-placement': true
@@ -1516,6 +1618,9 @@ export function ExploreMap({
   // own (see applyDistanceFilter for why the Distance slider stays inactive
   // until the user explicitly touches it).
   const userMarker = useRef<maplibregl.Marker | null>(null);
+  const lieuUserMarker = useRef<maplibregl.Marker | null>(null);
+  const explorerUserMarker = useRef<maplibregl.Marker | null>(null);
+  const connectedUserMarker = useRef<maplibregl.Marker | null>(null);
   useEffect(() => {
     if (!map.current || !userLocation) return;
     const el = document.createElement('div');
@@ -1537,6 +1642,38 @@ export function ExploreMap({
       userMarker.current = null;
     };
   }, [userLocation]);
+
+  useEffect(() => {
+    if (!userLocation) return;
+    const markers: Array<{
+      map: maplibregl.Map | null;
+      ref: RefObject<maplibregl.Marker | null>;
+    }> = [
+      { map: lieuMap.current, ref: lieuUserMarker },
+      { map: explorerMap.current, ref: explorerUserMarker },
+      { map: connectedMap.current, ref: connectedUserMarker }
+    ];
+    for (const target of markers) {
+      if (!target.map) continue;
+      const element = document.createElement('div');
+      element.className = 'user-location-marker';
+      element.title = 'Vous êtes ici';
+      element.setAttribute('aria-label', 'Vous êtes ici');
+      element.innerHTML =
+        '<span class="user-location-marker-pulse"></span>' +
+        '<span class="user-location-marker-icon" aria-hidden="true"></span>';
+      target.ref.current?.remove();
+      target.ref.current = new maplibregl.Marker({ element })
+        .setLngLat([userLocation.longitude, userLocation.latitude])
+        .addTo(target.map);
+    }
+    return () => {
+      for (const target of markers) {
+        target.ref.current?.remove();
+        target.ref.current = null;
+      }
+    };
+  }, [userLocation, section]);
 
   // Ref toujours à jour des events pour les handlers internes à la carte
   const eventsRef = useRef(events);
@@ -1632,6 +1769,7 @@ export function ExploreMap({
     eventId: string,
     options: {
       keepPickerList?: boolean;
+      keepVenueDetails?: boolean;
       initialTab?: EventDetailsTab;
       asForumPanel?: boolean;
       // ForumPanel's tab order/default (Phase 4.14): true everywhere except
@@ -1646,6 +1784,7 @@ export function ExploreMap({
     } = {}
   ) {
     if (!options.keepPickerList) setPickerList(undefined);
+    if (!options.keepVenueDetails) setVenueDetailsGroup(undefined);
     setDetailsInitialTab(options.initialTab);
     setForumPanelMode(options.asForumPanel ?? false);
     setForumEventFirst(options.forumEventFirst ?? false);
@@ -1681,12 +1820,16 @@ export function ExploreMap({
   // of two independent ones so their open/close animations can never both
   // be mid-flight and stack in the same layout slot at once.
   const rightPanelOpen =
-    showingDetails || pickerList !== undefined || venuePickerList !== undefined;
+    showingDetails ||
+    pickerList !== undefined ||
+    venuePickerList !== undefined ||
+    venueDetailsGroup !== undefined;
   const rightPanelMount = useTransitionedMount(rightPanelOpen);
   const lastRightPanelContentRef = useRef<
     | { kind: 'details'; state: DetailsState }
     | { kind: 'picker'; list: { title: string; events: PublicEvent[] } }
     | { kind: 'venue-picker'; list: { title: string; groups: VenueGroup[] } }
+    | { kind: 'venue-details'; group: VenueGroup }
     | { kind: 'none' }
   >({ kind: 'none' });
   useEffect(() => {
@@ -1699,23 +1842,30 @@ export function ExploreMap({
         kind: 'venue-picker',
         list: venuePickerList
       };
+    } else if (venueDetailsGroup !== undefined) {
+      lastRightPanelContentRef.current = {
+        kind: 'venue-details',
+        group: venueDetailsGroup
+      };
     }
-  }, [showingDetails, details, pickerList, venuePickerList]);
+  }, [showingDetails, details, pickerList, venuePickerList, venueDetailsGroup]);
   const shownRightPanelContent = rightPanelOpen
     ? showingDetails
       ? ({ kind: 'details', state: details } as const)
       : pickerList !== undefined
         ? ({ kind: 'picker', list: pickerList } as const)
-        : ({ kind: 'venue-picker', list: venuePickerList! } as const)
+        : venuePickerList !== undefined
+          ? ({ kind: 'venue-picker', list: venuePickerList } as const)
+          : ({ kind: 'venue-details', group: venueDetailsGroup! } as const)
     : lastRightPanelContentRef.current;
-  // noEventVenues (fixed reference points like Clébard, La Rockette - real
-  // venues seeded ahead of any event ever being recorded there, see
-  // seed-curated-venues.ts) can never share an id with an event-derived
-  // group: findVenuesWithoutUpcomingEvents only returns venues with zero
-  // event rows, ever.
-  const venueGroups: VenueGroup[] = [
-    ...groupEventsByVenue(events),
-    ...noEventVenues.map((venue): VenueGroup => ({
+  // The map is the union of verified recurring landmarks and venues with a
+  // real event in the 14-day venue window. Event-backed data wins on merge,
+  // while curated category/image metadata fills any missing fields.
+  const venueGroups = useMemo(() => {
+    const programmedVenueGroups = groupEventsByVenue(
+      venueListEvents.length > 0 ? venueListEvents : events
+    );
+    const recurringVenueGroups = noEventVenues.map((venue): VenueGroup => ({
       id: venue.id,
       name: venue.name,
       address: venue.address,
@@ -1727,13 +1877,62 @@ export function ExploreMap({
         : {}),
       ...(venue.secondaryCategories !== undefined
         ? { venueSecondaryCategories: venue.secondaryCategories }
-        : {})
-    }))
-  ];
+        : {}),
+      ...(venue.imageUrl !== undefined ? { imageUrl: venue.imageUrl } : {})
+    }));
+    const byId = new Map<string, VenueGroup>();
+    for (const group of [...recurringVenueGroups, ...programmedVenueGroups]) {
+      const existing = byId.get(group.id);
+      byId.set(
+        group.id,
+        existing
+          ? {
+              ...existing,
+              ...group,
+              events: group.events.length > 0 ? group.events : existing.events,
+              categories:
+                group.categories.length > 0
+                  ? group.categories
+                  : existing.categories,
+              ...((group.imageUrl ?? existing.imageUrl)
+                ? { imageUrl: (group.imageUrl ?? existing.imageUrl)! }
+                : {}),
+              ...((group.venueCategory ?? existing.venueCategory)
+                ? {
+                    venueCategory: (group.venueCategory ??
+                      existing.venueCategory)!
+                  }
+                : {}),
+              ...((group.venueSecondaryCategories ??
+              existing.venueSecondaryCategories)
+                ? {
+                    venueSecondaryCategories: (group.venueSecondaryCategories ??
+                      existing.venueSecondaryCategories)!
+                  }
+                : {})
+            }
+          : group
+      );
+    }
+    return [...byId.values()];
+  }, [events, noEventVenues, venueListEvents]);
   // Never guessed: a venue with no known type/price simply isn't matched by
   // an active filter rather than being bucketed into a default - same
   // "omit, don't guess" rule as the untyped-venue card display.
   const filteredVenueGroups = venueGroups
+    .filter(
+      (group) =>
+        venueCategoryFilter.length === 0 ||
+        (group.venueCategory !== undefined &&
+          venueCategoryFilter.includes(group.venueCategory)) ||
+        group.venueSecondaryCategories?.some((category) =>
+          venueCategoryFilter.includes(category)
+        )
+    )
+    .filter(
+      (group) => !showFavoriteVenuesOnly || favoriteVenues.includes(group.id)
+    );
+  const filteredVenueListGroups = groupEventsByVenue(venueListEvents)
     .filter(
       (group) =>
         venueCategoryFilter.length === 0 ||
@@ -1847,7 +2046,17 @@ export function ExploreMap({
         filter: ['!', ['has', 'point_count']],
         layout: {
           'icon-image': 'pin-venue',
-          'icon-size': 0.85,
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            10,
+            0.66,
+            14,
+            0.88,
+            17,
+            1.06
+          ],
           'icon-anchor': 'bottom',
           'icon-allow-overlap': true,
           'icon-ignore-placement': true
@@ -1867,12 +2076,11 @@ export function ExploreMap({
         if (matched.length === 1) {
           const group = matched[0]!;
           setVenuePickerList(undefined);
-          setPickerList({
-            title: `${group.name} — ${group.address}`,
-            events: group.events
-          });
+          setPickerList(undefined);
+          setVenueDetailsGroup(group);
           return;
         }
+        setVenueDetailsGroup(undefined);
         setPickerList(undefined);
         setVenuePickerList({
           title: `${matched.length} lieux à cet endroit`,
@@ -1921,12 +2129,35 @@ export function ExploreMap({
         instance.getCanvas().style.cursor = '';
       });
 
+      instance.on('click', (event) => {
+        const hits = instance.queryRenderedFeatures(event.point, {
+          layers: ['venues-circles', 'venue-clusters']
+        });
+        if (hits.length > 0) return;
+        setVenueDetailsGroup(undefined);
+        setVenuePickerList(undefined);
+        setPickerList(undefined);
+      });
+
       pushVenuesToMap(instance);
     });
 
+    const onMoveEnd = () => {
+      const bounds = instance.getBounds();
+      void loadVenueMapData({
+        west: bounds.getWest(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        north: bounds.getNorth()
+      });
+    };
+    instance.on('moveend', onMoveEnd);
     lieuMap.current = instance;
-    return () => instance.remove();
-  }, [pushVenuesToMap]);
+    return () => {
+      instance.off('moveend', onMoveEnd);
+      instance.remove();
+    };
+  }, [pushVenuesToMap, loadVenueMapData]);
 
   useEffect(() => {
     if (lieuMap.current) pushVenuesToMap(lieuMap.current);
@@ -1958,7 +2189,9 @@ export function ExploreMap({
     explorerPinKindRef.current = explorerPinKind;
     if (!explorerMap.current) return;
     const visible = (kind: 'event' | 'venue') =>
-      explorerPinKind === kind ? 'visible' : 'none';
+      explorerPinKind === 'all' || explorerPinKind === kind
+        ? 'visible'
+        : 'none';
     for (const layer of ['explorer-events-glow', 'explorer-events-circles']) {
       if (explorerMap.current.getLayer(layer)) {
         explorerMap.current.setLayoutProperty(
@@ -1985,7 +2218,7 @@ export function ExploreMap({
   }, [explorerPinKind]);
 
   useEffect(() => {
-    if (section === 'explorer') setExplorerPinKind('event');
+    if (section === 'explorer') setExplorerPinKind('all');
   }, [section]);
 
   // Lieu's and Explorer's map containers are always mounted but start
@@ -2018,21 +2251,30 @@ export function ExploreMap({
     if (eventSource) {
       eventSource.setData({
         type: 'FeatureCollection',
-        features: eventsRef.current.map((event) => ({
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [
-              event.venue.point.longitude,
-              event.venue.point.latitude
-            ]
-          },
-          properties: {
-            id: event.id,
-            color: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
-            category: event.category
-          }
-        }))
+        // 'after' filters the source rather than a layer's visibility: it
+        // narrows *which* events are pins, not whether the event layer is
+        // drawn at all (DEC-0017).
+        features: eventsRef.current
+          .filter(
+            (event) =>
+              explorerPinKindRef.current !== 'after' || isAfterEvent(event)
+          )
+          .map((event) => ({
+            type: 'Feature',
+            geometry: {
+              type: 'Point',
+              coordinates: [
+                event.venue.point.longitude,
+                event.venue.point.latitude
+              ]
+            },
+            properties: {
+              id: event.id,
+              color:
+                CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
+              category: event.category
+            }
+          }))
       });
     }
     const venueSource = instance.getSource('explorer-venues-source') as
@@ -2102,9 +2344,15 @@ export function ExploreMap({
       });
 
       const eventVisible =
-        explorerPinKindRef.current === 'event' ? 'visible' : 'none';
+        explorerPinKindRef.current === 'all' ||
+        explorerPinKindRef.current === 'event'
+          ? 'visible'
+          : 'none';
       const venueVisible =
-        explorerPinKindRef.current === 'venue' ? 'visible' : 'none';
+        explorerPinKindRef.current === 'all' ||
+        explorerPinKindRef.current === 'venue'
+          ? 'visible'
+          : 'none';
 
       instance.addLayer({
         id: 'explorer-events-glow',
@@ -2126,7 +2374,17 @@ export function ExploreMap({
         layout: {
           visibility: eventVisible,
           'icon-image': ['concat', 'explorer-pin-', ['get', 'category']],
-          'icon-size': 0.85,
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            10,
+            0.66,
+            14,
+            0.88,
+            17,
+            1.06
+          ],
           'icon-anchor': 'bottom',
           'icon-allow-overlap': true,
           'icon-ignore-placement': true
@@ -2180,7 +2438,17 @@ export function ExploreMap({
         layout: {
           visibility: venueVisible,
           'icon-image': 'explorer-pin-venue',
-          'icon-size': 0.85,
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            10,
+            0.66,
+            14,
+            0.88,
+            17,
+            1.06
+          ],
           'icon-anchor': 'bottom',
           'icon-allow-overlap': true,
           'icon-ignore-placement': true
@@ -2198,11 +2466,13 @@ export function ExploreMap({
         if (matched.length === 0) return;
         setDetails({ kind: 'closed' });
         setVenuePickerList(undefined);
+        setVenueDetailsGroup(undefined);
         if (matched.length === 1) {
           setPickerList(undefined);
-          void openDetails(matched[0]!.id);
+          setSelected(matched[0]);
           return;
         }
+        setSelected(undefined);
         setPickerList({
           title: `${matched.length} événements à cet endroit`,
           events: matched
@@ -2219,15 +2489,15 @@ export function ExploreMap({
           .filter((g): g is VenueGroup => Boolean(g));
         if (matched.length === 0) return;
         setDetails({ kind: 'closed' });
+        setSelected(undefined);
         if (matched.length === 1) {
           const group = matched[0]!;
           setVenuePickerList(undefined);
-          setPickerList({
-            title: `${group.name} — ${group.address}`,
-            events: group.events
-          });
+          setPickerList(undefined);
+          setVenueDetailsGroup(group);
           return;
         }
+        setVenueDetailsGroup(undefined);
         setPickerList(undefined);
         setVenuePickerList({
           title: `${matched.length} lieux à cet endroit`,
@@ -2297,6 +2567,8 @@ export function ExploreMap({
         }
         setPickerList(undefined);
         setVenuePickerList(undefined);
+        setVenueDetailsGroup(undefined);
+        setSelected(undefined);
       });
 
       pushExplorerDataToMap(instance);
@@ -2304,12 +2576,14 @@ export function ExploreMap({
 
     const onMoveEnd = () => {
       const bounds = instance.getBounds();
-      void loadEvents({
+      const nextBounds = {
         west: bounds.getWest(),
         south: bounds.getSouth(),
         east: bounds.getEast(),
         north: bounds.getNorth()
-      });
+      };
+      void loadEvents(nextBounds);
+      void loadVenueMapData(nextBounds);
     };
     instance.on('moveend', onMoveEnd);
     explorerMap.current = instance;
@@ -2317,7 +2591,7 @@ export function ExploreMap({
       instance.off('moveend', onMoveEnd);
       instance.remove();
     };
-  }, [pushExplorerDataToMap, loadEvents]);
+  }, [pushExplorerDataToMap, loadEvents, loadVenueMapData]);
 
   useEffect(() => {
     if (explorerMap.current) pushExplorerDataToMap(explorerMap.current);
@@ -2334,21 +2608,30 @@ export function ExploreMap({
     if (eventSource) {
       eventSource.setData({
         type: 'FeatureCollection',
-        features: eventsRef.current.map((event) => ({
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [
-              event.venue.point.longitude,
-              event.venue.point.latitude
-            ]
-          },
-          properties: {
-            id: event.id,
-            color: CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
-            category: event.category
-          }
-        }))
+        // 'after' filters the source rather than a layer's visibility: it
+        // narrows *which* events are pins, not whether the event layer is
+        // drawn at all (DEC-0017).
+        features: eventsRef.current
+          .filter(
+            (event) =>
+              explorerPinKindRef.current !== 'after' || isAfterEvent(event)
+          )
+          .map((event) => ({
+            type: 'Feature',
+            geometry: {
+              type: 'Point',
+              coordinates: [
+                event.venue.point.longitude,
+                event.venue.point.latitude
+              ]
+            },
+            properties: {
+              id: event.id,
+              color:
+                CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
+              category: event.category
+            }
+          }))
       });
     }
     const venueSource = instance.getSource('connected-venues-source') as
@@ -2421,9 +2704,15 @@ export function ExploreMap({
         });
 
         const eventVisible = () =>
-          explorerPinKindRef.current === 'event' ? 'visible' : 'none';
+          explorerPinKindRef.current === 'all' ||
+          explorerPinKindRef.current === 'event'
+            ? 'visible'
+            : 'none';
         const venueVisible = () =>
-          explorerPinKindRef.current === 'venue' ? 'visible' : 'none';
+          explorerPinKindRef.current === 'all' ||
+          explorerPinKindRef.current === 'venue'
+            ? 'visible'
+            : 'none';
 
         instance.addLayer({
           id: 'connected-events-clusters-glow',
@@ -2501,7 +2790,17 @@ export function ExploreMap({
           layout: {
             visibility: eventVisible(),
             'icon-image': ['concat', 'connected-pin-', ['get', 'category']],
-            'icon-size': 0.85,
+            'icon-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10,
+              0.66,
+              14,
+              0.88,
+              17,
+              1.06
+            ],
             'icon-anchor': 'bottom',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true
@@ -2555,7 +2854,17 @@ export function ExploreMap({
           layout: {
             visibility: venueVisible(),
             'icon-image': 'connected-pin-venue',
-            'icon-size': 0.85,
+            'icon-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10,
+              0.66,
+              14,
+              0.88,
+              17,
+              1.06
+            ],
             'icon-anchor': 'bottom',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true
@@ -2639,6 +2948,18 @@ export function ExploreMap({
           });
         }
 
+        instance.on('click', (event) => {
+          const hits = instance.queryRenderedFeatures(event.point, {
+            layers: [
+              'connected-events-circles',
+              'connected-events-clusters',
+              'connected-venues-circles',
+              'connected-venues-clusters'
+            ]
+          });
+          if (hits.length === 0) setMapSelection(undefined);
+        });
+
         pushConnectedDataToMap(instance);
       });
 
@@ -2683,8 +3004,16 @@ export function ExploreMap({
   useEffect(() => {
     const instance = connectedMap.current;
     if (!instance || !instance.getLayer('connected-events-circles')) return;
-    const eventVisibility = explorerPinKind === 'event' ? 'visible' : 'none';
-    const venueVisibility = explorerPinKind === 'venue' ? 'visible' : 'none';
+    const eventVisibility =
+      explorerPinKind === 'all' ||
+      explorerPinKind === 'event' ||
+      explorerPinKind === 'after'
+        ? 'visible'
+        : 'none';
+    const venueVisibility =
+      explorerPinKind === 'all' || explorerPinKind === 'venue'
+        ? 'visible'
+        : 'none';
     for (const layer of [
       'connected-events-clusters-glow',
       'connected-events-clusters',
@@ -2731,6 +3060,25 @@ export function ExploreMap({
     userLocation && (nearbyState === 'success' || nearbyState === 'empty')
       ? nearbyEvents.length === 0
       : events.length === 0;
+  const explorerTwoWeekRange = getVenueDiscoveryDateRange(new Date());
+  const explorerTwoWeeksActive =
+    filters.date === 'custom' &&
+    filters.customStartDate === explorerTwoWeekRange.start &&
+    filters.customEndDate === explorerTwoWeekRange.end;
+  const applyExplorerDatePreset = (
+    preset: 'today' | 'tonight' | 'weekend' | 'two-weeks'
+  ) => {
+    if (preset === 'two-weeks') {
+      applyFilters({
+        ...filters,
+        date: 'custom',
+        customStartDate: explorerTwoWeekRange.start,
+        customEndDate: explorerTwoWeekRange.end
+      });
+      return;
+    }
+    applyFilters(withoutCustomDates(filters, preset));
+  };
 
   // A real <main> landmark for the anonymous experience (audit: none
   // existed anywhere on the page) - the signed-in side already gets one
@@ -2907,32 +3255,72 @@ export function ExploreMap({
         {...(user ? { className: 'connected-content-column' } : {})}
       >
         {user ? (
-          <TopBar
-            query={queryInput}
-            result={searchResult}
-            processing={searchProcessing}
-            error={searchError}
-            onQueryChange={setQueryInput}
-            onSubmit={submitSearch}
-            onClear={clearSearch}
-            onClearConstraint={clearDerivedConstraint}
-            onPreview={setSelected}
-            locale={locale}
-            user={user}
-            unreadMessagesCount={unreadMessagesCount}
-            onOpenAccount={() => {
-              setAboutOpen(false);
-              setForumPanelMode(false);
-              setSection('compte');
-            }}
-            onOpenMessages={() => {
-              setAboutOpen(false);
-              setForumPanelMode(false);
-              setSection('messages');
-            }}
-            onOpenAbout={() => setAboutOpen((prev) => !prev)}
-            aboutOpen={aboutOpen}
-          />
+          <>
+            <TopBar
+              query={queryInput}
+              result={searchResult}
+              processing={searchProcessing}
+              error={searchError}
+              onQueryChange={setQueryInput}
+              onSubmit={submitSearch}
+              onClear={clearSearch}
+              onClearConstraint={clearDerivedConstraint}
+              onPreview={setSelected}
+              locale={locale}
+              user={user}
+              unreadMessagesCount={unreadMessagesCount}
+              notificationsUnreadCount={notifications.unreadCount}
+              notificationsOpen={notificationsOpen}
+              onToggleNotifications={() => {
+                setNotificationsOpen((open) => {
+                  if (open) return false;
+                  // Opening is the acknowledgement: refetch so the panel is
+                  // current, then clear the badge.
+                  notifications.reload();
+                  notifications.markAllRead();
+                  return true;
+                });
+              }}
+              onOpenAccount={() => {
+                setAboutOpen(false);
+                setForumPanelMode(false);
+                setSection('compte');
+              }}
+              onOpenMessages={() => {
+                setAboutOpen(false);
+                setForumPanelMode(false);
+                setSection('messages');
+              }}
+              onOpenAbout={() => setAboutOpen((prev) => !prev)}
+              aboutOpen={aboutOpen}
+              notificationsPanel={
+                notificationsOpen ? (
+                  <>
+                    <div
+                      className="notifications-backdrop"
+                      onClick={() => setNotificationsOpen(false)}
+                    />
+                    <NotificationsPanel
+                      notifications={notifications.notifications}
+                      state={notifications.state}
+                      onClose={() => setNotificationsOpen(false)}
+                      onOpenEvent={(eventId) =>
+                        void openDetails(eventId, {
+                          asForumPanel: true,
+                          forumEventFirst: true
+                        })
+                      }
+                      onOpenSection={(next) => {
+                        setAboutOpen(false);
+                        setForumPanelMode(false);
+                        setSection(next);
+                      }}
+                    />
+                  </>
+                ) : null
+              }
+            />
+          </>
         ) : (
           <header className="top-navbar">
             <div className="nav-left">
@@ -2955,7 +3343,7 @@ export function ExploreMap({
                     setSection('evenement');
                   }}
                 >
-                  Événement
+                  Événements
                 </button>
                 <button
                   type="button"
@@ -2965,7 +3353,7 @@ export function ExploreMap({
                     setSection('lieu');
                   }}
                 >
-                  Lieu
+                  Lieux
                 </button>
                 <button
                   type="button"
@@ -3218,34 +3606,6 @@ export function ExploreMap({
             }
             onNavigate={setSection}
           />
-        ) : user && section === 'mes-evenements' ? (
-          <AttendanceEventsPage
-            title="Mes événements"
-            emptyMessage="Aucun événement à venir pour l'instant. Marquez votre présence sur un événement pour le voir apparaître ici."
-            mode="upcoming"
-            attendance={attendance}
-            onOpenDetails={(eventId) =>
-              void openDetails(eventId, {
-                asForumPanel: true,
-                forumEventFirst: true
-              })
-            }
-            locale={locale}
-          />
-        ) : user && section === 'historique' ? (
-          <AttendanceEventsPage
-            title="Historique"
-            emptyMessage="Aucun événement passé pour l'instant."
-            mode="past"
-            attendance={attendance}
-            onOpenDetails={(eventId) =>
-              void openDetails(eventId, {
-                asForumPanel: true,
-                forumEventFirst: true
-              })
-            }
-            locale={locale}
-          />
         ) : user && section === 'evenement' ? (
           <EventsPage
             authToken={authToken}
@@ -3273,6 +3633,8 @@ export function ExploreMap({
             onNavigateToMap={() => setSection('explorer')}
             authToken={authToken}
             locale={locale}
+            selectedVenueId={connectedSelectedVenueId}
+            onSelectVenueId={setConnectedSelectedVenueId}
           />
         ) : (
           <Fragment>
@@ -3562,31 +3924,6 @@ export function ExploreMap({
                           </p>
                         </div>
                       </CollapsibleFilterGroup>
-
-                      <CollapsibleFilterGroup
-                        title="Ambiance"
-                        collapsed={collapsedSections.has('ambiance')}
-                        onToggle={() => toggleSection('ambiance')}
-                      >
-                        <p className="category-legend-hint">
-                          Bientôt : une IA déterminera l'ambiance de chaque
-                          événement.
-                        </p>
-                        <div className="pill-list">
-                          <button className="filter-pill" disabled>
-                            🔥 Énergique
-                          </button>
-                          <button className="filter-pill" disabled>
-                            ☕ Chill
-                          </button>
-                          <button className="filter-pill" disabled>
-                            🥂 Romantique
-                          </button>
-                          <button className="filter-pill" disabled>
-                            🎉 Festif
-                          </button>
-                        </div>
-                      </CollapsibleFilterGroup>
                     </>
                   )}
 
@@ -3623,17 +3960,15 @@ export function ExploreMap({
                                 style={
                                   active
                                     ? {
-                                        background:
-                                          VENUE_CATEGORY_COLORS[option.value],
+                                        background: `${VENUE_CATEGORY_COLORS[option.value]}2e`,
                                         borderColor:
                                           VENUE_CATEGORY_COLORS[option.value],
                                         color: '#fff'
                                       }
                                     : {
-                                        borderColor:
-                                          VENUE_CATEGORY_COLORS[option.value],
-                                        color:
-                                          VENUE_CATEGORY_COLORS[option.value]
+                                        background: `${VENUE_CATEGORY_COLORS[option.value]}12`,
+                                        borderColor: `${VENUE_CATEGORY_COLORS[option.value]}55`,
+                                        color: 'var(--text-secondary)'
                                       }
                                 }
                                 onClick={() =>
@@ -3646,6 +3981,14 @@ export function ExploreMap({
                                   )
                                 }
                               >
+                                <span
+                                  className="venue-category-pill-dot"
+                                  style={{
+                                    background:
+                                      VENUE_CATEGORY_COLORS[option.value]
+                                  }}
+                                  aria-hidden="true"
+                                />
                                 {VENUE_CATEGORY_LABELS[locale][option.value]}
                               </button>
                             );
@@ -3715,31 +4058,6 @@ export function ExploreMap({
                             {geoStatus === 'unsupported' &&
                               ' · non disponible sur cet appareil'}
                           </p>
-                        </div>
-                      </CollapsibleFilterGroup>
-
-                      <CollapsibleFilterGroup
-                        title="Ambiance"
-                        collapsed={collapsedSections.has('ambiance')}
-                        onToggle={() => toggleSection('ambiance')}
-                      >
-                        <p className="category-legend-hint">
-                          Bientôt : une IA déterminera l'ambiance de chaque
-                          lieu.
-                        </p>
-                        <div className="pill-list">
-                          <button className="filter-pill" disabled>
-                            🔥 Énergique
-                          </button>
-                          <button className="filter-pill" disabled>
-                            ☕ Chill
-                          </button>
-                          <button className="filter-pill" disabled>
-                            🥂 Romantique
-                          </button>
-                          <button className="filter-pill" disabled>
-                            🎉 Festif
-                          </button>
                         </div>
                       </CollapsibleFilterGroup>
                     </>
@@ -3901,6 +4219,20 @@ export function ExploreMap({
                       >
                         <line x1="5" y1="12" x2="19" y2="12" />
                       </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="map-zoom-btn"
+                      aria-label="Recentrer sur Montréal"
+                      title="Montréal"
+                      onClick={() =>
+                        connectedMap.current?.flyTo({
+                          center: MONTREAL_CENTER,
+                          zoom: 11
+                        })
+                      }
+                    >
+                      M
                     </button>
                     <button
                       type="button"
@@ -4082,26 +4414,44 @@ export function ExploreMap({
                     style={{ display: lieuTab === 'map' ? undefined : 'none' }}
                   >
                     <div ref={lieuMapContainer} className="map" />
+                    <div className="explorer-location-controls">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          lieuMap.current?.flyTo({
+                            center: MONTREAL_CENTER,
+                            zoom: 11
+                          })
+                        }
+                      >
+                        Montréal
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!userLocation}
+                        onClick={() => {
+                          if (!userLocation) return;
+                          lieuMap.current?.flyTo({
+                            center: [
+                              userLocation.longitude,
+                              userLocation.latitude
+                            ],
+                            zoom: 14
+                          });
+                        }}
+                      >
+                        Ma position
+                      </button>
+                    </div>
                   </div>
                   {lieuTab === 'list' && (
                     <VenueListView
-                      groups={filteredVenueGroups}
+                      groups={filteredVenueListGroups}
                       onSelectVenue={(group) => {
-                        // A newly-picked list must win over an already-open
-                        // details panel (same rule as map cluster/pin clicks) -
-                        // without this, clicking another venue while one's
-                        // events are open silently swapped the list behind the
-                        // visible details panel.
                         setDetails({ kind: 'closed' });
                         setVenuePickerList(undefined);
-                        if (group.events.length === 1) {
-                          void openDetails(group.events[0]!.id);
-                        } else {
-                          setPickerList({
-                            title: `${group.name} — ${group.address}`,
-                            events: group.events
-                          });
-                        }
+                        setPickerList(undefined);
+                        setVenueDetailsGroup(group);
                       }}
                       favoriteVenues={favoriteVenues}
                       onToggleFavoriteVenue={toggleFavoriteVenue}
@@ -4168,21 +4518,99 @@ export function ExploreMap({
                     locale={locale}
                   />
 
+                  <div
+                    className="explorer-date-shortcuts"
+                    aria-label="Période d'exploration"
+                  >
+                    <button
+                      type="button"
+                      className={filters.date === 'today' ? 'active' : ''}
+                      onClick={() => applyExplorerDatePreset('today')}
+                    >
+                      Aujourd'hui
+                    </button>
+                    <button
+                      type="button"
+                      className={filters.date === 'tonight' ? 'active' : ''}
+                      onClick={() => applyExplorerDatePreset('tonight')}
+                    >
+                      Ce soir
+                    </button>
+                    <button
+                      type="button"
+                      className={filters.date === 'weekend' ? 'active' : ''}
+                      onClick={() => applyExplorerDatePreset('weekend')}
+                    >
+                      Ce week-end
+                    </button>
+                    <button
+                      type="button"
+                      className={explorerTwoWeeksActive ? 'active' : ''}
+                      onClick={() => applyExplorerDatePreset('two-weeks')}
+                    >
+                      14 jours
+                    </button>
+                  </div>
+
                   <div ref={explorerMapContainer} className="map" />
                   <div className="map-floating-pin-toggle">
+                    <button
+                      type="button"
+                      className={explorerPinKind === 'all' ? 'active' : ''}
+                      onClick={() => setExplorerPinKind('all')}
+                    >
+                      Tout <span>{events.length + venueGroups.length}</span>
+                    </button>
                     <button
                       type="button"
                       className={explorerPinKind === 'event' ? 'active' : ''}
                       onClick={() => setExplorerPinKind('event')}
                     >
-                      Événements
+                      Événements <span>{events.length}</span>
                     </button>
                     <button
                       type="button"
                       className={explorerPinKind === 'venue' ? 'active' : ''}
                       onClick={() => setExplorerPinKind('venue')}
                     >
-                      Lieux
+                      Lieux <span>{venueGroups.length}</span>
+                    </button>
+                  </div>
+                  <div className="explorer-map-legend" aria-label="Légende">
+                    <span>
+                      <i className="legend-event-dot" /> Événement programmé
+                    </span>
+                    <span>
+                      <i className="legend-venue-dot" /> Lieu récurrent
+                    </span>
+                  </div>
+                  <div className="explorer-location-controls">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        explorerMap.current?.flyTo({
+                          center: MONTREAL_CENTER,
+                          zoom: 11
+                        })
+                      }
+                    >
+                      Montréal
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!userLocation}
+                      onClick={() => {
+                        if (!userLocation) return;
+                        explorerMap.current?.flyTo({
+                          center: [
+                            userLocation.longitude,
+                            userLocation.latitude
+                          ],
+                          zoom: 14
+                        });
+                      }}
+                    >
+                      Ma position
                     </button>
                   </div>
                 </div>
@@ -4203,6 +4631,13 @@ export function ExploreMap({
                 }}
               >
                 <div className="map-shell connected-map-shell">
+                  <div className="connected-map-context">
+                    <span>Explorer Montréal</span>
+                    <strong>
+                      {events.length + venueGroups.length} repères
+                    </strong>
+                  </div>
+
                   <MapFilterBar
                     filters={filters}
                     onChange={applyFilters}
@@ -4210,23 +4645,89 @@ export function ExploreMap({
                     locale={locale}
                   />
 
+                  <div
+                    className="explorer-date-shortcuts"
+                    aria-label="Période d'exploration"
+                  >
+                    <button
+                      type="button"
+                      className={filters.date === 'today' ? 'active' : ''}
+                      onClick={() => applyExplorerDatePreset('today')}
+                    >
+                      Aujourd'hui
+                    </button>
+                    <button
+                      type="button"
+                      className={filters.date === 'tonight' ? 'active' : ''}
+                      onClick={() => applyExplorerDatePreset('tonight')}
+                    >
+                      Ce soir
+                    </button>
+                    <button
+                      type="button"
+                      className={filters.date === 'weekend' ? 'active' : ''}
+                      onClick={() => applyExplorerDatePreset('weekend')}
+                    >
+                      Ce week-end
+                    </button>
+                    <button
+                      type="button"
+                      className={explorerTwoWeeksActive ? 'active' : ''}
+                      onClick={() => applyExplorerDatePreset('two-weeks')}
+                    >
+                      14 jours
+                    </button>
+                  </div>
+
                   <div ref={connectedMapContainerRef} className="map" />
 
                   <div className="map-floating-pin-toggle">
                     <button
                       type="button"
+                      className={explorerPinKind === 'all' ? 'active' : ''}
+                      onClick={() => setExplorerPinKind('all')}
+                    >
+                      <i className="map-toggle-dot map-toggle-dot-all" />
+                      Tout <span>{events.length + venueGroups.length}</span>
+                    </button>
+                    <button
+                      type="button"
                       className={explorerPinKind === 'event' ? 'active' : ''}
                       onClick={() => setExplorerPinKind('event')}
                     >
-                      Événements
+                      <i className="map-toggle-dot map-toggle-dot-event" />
+                      Événements <span>{events.length}</span>
                     </button>
                     <button
                       type="button"
                       className={explorerPinKind === 'venue' ? 'active' : ''}
                       onClick={() => setExplorerPinKind('venue')}
                     >
-                      Lieux
+                      <i className="map-toggle-dot map-toggle-dot-venue" />
+                      Lieux <span>{venueGroups.length}</span>
                     </button>
+                    {/* Connected map only (DEC-0017) - the anonymous
+                        Explorer's identical toggle above deliberately has no
+                        After, since the filter and the created events it
+                        surfaces are both connected-experience surfaces. */}
+                    <button
+                      type="button"
+                      className={explorerPinKind === 'after' ? 'active' : ''}
+                      onClick={() => setExplorerPinKind('after')}
+                    >
+                      <i className="map-toggle-dot map-toggle-dot-after" />
+                      After <span>{afterEventCount}</span>
+                    </button>
+                  </div>
+
+                  <div className="explorer-map-legend" aria-label="Légende">
+                    <strong>Repères</strong>
+                    <span>
+                      <i className="legend-event-dot" /> Événement programmé
+                    </span>
+                    <span>
+                      <i className="legend-venue-dot" /> Lieu récurrent
+                    </span>
                   </div>
 
                   <div className="map-zoom-controls">
@@ -4264,6 +4765,22 @@ export function ExploreMap({
                       >
                         <line x1="5" y1="12" x2="19" y2="12" />
                       </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="map-zoom-btn"
+                      aria-label="Recentrer sur Montréal"
+                      title="Montréal"
+                      onClick={() =>
+                        connectedMap.current?.flyTo({
+                          center: MONTREAL_CENTER,
+                          zoom: 11
+                        })
+                      }
+                    >
+                      <span className="map-montreal-icon" aria-hidden="true">
+                        ⌖
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -4343,6 +4860,9 @@ export function ExploreMap({
                     }
                   }}
                   locale={locale}
+                  authToken={authToken}
+                  onNavigateToMap={() => setSection('lieu')}
+                  onNavigateToEvents={() => setSection('evenement')}
                 />
               )}
 
@@ -4384,7 +4904,7 @@ export function ExploreMap({
             rightPanelMount above for why these aren't two independent panels. */}
               {rightPanelMount.mounted && (
                 <div
-                  className={`sidebar-right panel-transition ${rightPanelMount.visible ? 'panel-visible' : ''}`}
+                  className={`sidebar-right panel-transition ${shownRightPanelContent.kind === 'venue-details' ? 'sidebar-right-venue-detail' : ''} ${rightPanelMount.visible ? 'panel-visible' : ''}`}
                 >
                   {shownRightPanelContent.kind === 'details' &&
                     shownRightPanelContent.state.kind === 'success' &&
@@ -4460,16 +4980,24 @@ export function ExploreMap({
                       onClose={() => setVenuePickerList(undefined)}
                       onSelectVenue={(group) => {
                         setDetails({ kind: 'closed' });
-                        if (group.events.length === 1) {
-                          setVenuePickerList(undefined);
-                          void openDetails(group.events[0]!.id);
-                        } else {
-                          setPickerList({
-                            title: `${group.name} — ${group.address}`,
-                            events: group.events
-                          });
-                        }
+                        setVenuePickerList(undefined);
+                        setPickerList(undefined);
+                        setVenueDetailsGroup(group);
                       }}
+                    />
+                  )}
+                  {shownRightPanelContent.kind === 'venue-details' && (
+                    <VenueDetailContent
+                      group={shownRightPanelContent.group}
+                      favoriteVenues={favoriteVenues}
+                      onToggleFavoriteVenue={toggleFavoriteVenue}
+                      favoriteCount={0}
+                      onOpenEventForum={(eventId) =>
+                        void openDetails(eventId, { keepVenueDetails: true })
+                      }
+                      authToken={authToken}
+                      locale={locale}
+                      onClose={() => setVenueDetailsGroup(undefined)}
                     />
                   )}
                 </div>
@@ -4669,6 +5197,7 @@ const SHORT_CATEGORY_LABELS: Record<
     festival: 'Festivals',
     show: 'Spectacles',
     comedy: 'Humour',
+    sport: 'Sport',
     other: 'Autres'
   },
   en: {
@@ -4677,6 +5206,7 @@ const SHORT_CATEGORY_LABELS: Record<
     festival: 'Festivals',
     show: 'Shows',
     comedy: 'Comedy',
+    sport: 'Sport',
     other: 'Other'
   }
 };
@@ -4735,6 +5265,13 @@ const CATEGORY_ICON_PATHS: Record<EventCategory, ReactNode> = {
       <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
       <line x1="12" y1="19" x2="12" y2="23" />
       <line x1="8" y1="23" x2="16" y2="23" />
+    </>
+  ),
+  sport: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+      <path d="M2 12h20" />
     </>
   ),
   other: (
@@ -4867,6 +5404,39 @@ function EventImageFallback({ category }: { category: EventCategory }) {
   );
 }
 
+/**
+ * A CSS `background-image` has no way to report a load failure, so a poster
+ * URL that 404s (several `images.ra.co` ones currently do) left an empty
+ * black rectangle exactly where EventImageFallback should have been - the
+ * fallback only ever rendered when the URL was *absent*, not when it was
+ * broken. Rendering a real <img> lets onError fall back to the same
+ * treatment the no-image case already gets.
+ *
+ * `alt=""`: these are event posters standing in for a venue photo, and the
+ * venue name is already the adjacent heading - announcing the poster would
+ * be misleading rather than informative.
+ */
+function VenueThumbImage({
+  imageUrl,
+  category
+}: {
+  imageUrl: string | undefined;
+  category: EventCategory;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [imageUrl]);
+  if (!imageUrl || failed) return <EventImageFallback category={category} />;
+  return (
+    <img
+      className="venue-thumb-image"
+      src={imageUrl}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function ViewModeIcon({
   kind
 }: {
@@ -4918,6 +5488,286 @@ function ViewModeIcon({
     >
       {paths[kind]}
     </svg>
+  );
+}
+
+// The connected sidebar was the last nav in the app still drawing its items
+// with emoji. Emoji render from whatever font the OS supplies, so they came
+// out multicoloured, inconsistently sized, and unable to inherit the active
+// item's colour - next to the anonymous navbar's stroke SVGs they read as
+// placeholder art. Same 24-viewBox / 2px-stroke set as ViewModeIcon and the
+// navbar icons, so the whole product uses one icon language.
+type SidebarIconKind =
+  | 'decouvrir'
+  | 'carte'
+  | 'evenements'
+  | 'lieux'
+  | 'forums'
+  | 'groupes'
+  | 'messages'
+  | 'amis'
+  | 'favoris';
+
+function SidebarNavIcon({ kind }: { kind: SidebarIconKind }) {
+  const paths: Record<SidebarIconKind, ReactNode> = {
+    decouvrir: (
+      <>
+        <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
+        <path d="M18 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
+      </>
+    ),
+    carte: (
+      <>
+        <path d="M9 3v15M15 6v15" />
+        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z" />
+      </>
+    ),
+    evenements: (
+      <>
+        <path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1.5a2.5 2.5 0 0 0 0 5V16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1.5a2.5 2.5 0 0 0 0-5z" />
+        <path d="M14 6v12" />
+      </>
+    ),
+    lieux: (
+      <>
+        <path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z" />
+        <circle cx="12" cy="10" r="2.5" />
+      </>
+    ),
+    forums: (
+      <>
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z" />
+      </>
+    ),
+    groupes: (
+      <>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </>
+    ),
+    messages: (
+      <>
+        <rect x="2" y="4" width="20" height="16" rx="2" />
+        <path d="M22 6l-10 7L2 6" />
+      </>
+    ),
+    amis: (
+      <>
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M17 11l2 2 4-4" />
+      </>
+    ),
+    favoris: (
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    )
+  };
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[kind]}
+    </svg>
+  );
+}
+
+// Display text is composed here from the referenced rows rather than read
+// from a stored label (DEC-0016 §Data and trust rules), so a renamed venue
+// or a rescheduled event is reflected instead of frozen at send time.
+//
+// The connecting words are string literals in expression containers, not
+// bare JSX text: JSX trims the leading whitespace of a text chunk, so a
+// plain space after `</strong>` is silently dropped at compile time (it
+// rendered as "Camille Royt'a envoyé…"), and Prettier rewrites an explicit
+// {' '} straight back into that bare space. A string literal survives both.
+function describeNotification(entry: PulsoNotification): {
+  icon: SidebarIconKind;
+  text: ReactNode;
+  detail: string;
+} {
+  switch (entry.kind) {
+    case 'venue_new_event':
+      return {
+        icon: 'lieux',
+        text: (
+          <>
+            <strong>{entry.venueName}</strong>
+            {" vient d'ajouter "}
+            <strong>{entry.eventTitle}</strong>
+          </>
+        ),
+        detail: formatEventDateTime(entry.eventStartsAt)
+      };
+    case 'friend_request_received':
+      return {
+        icon: 'amis',
+        text: (
+          <>
+            <strong>{entry.actorDisplayName}</strong>
+            {" t'a envoyé une demande d'ami"}
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt)
+      };
+    case 'friend_request_accepted':
+      return {
+        icon: 'amis',
+        text: (
+          <>
+            <strong>{entry.actorDisplayName}</strong>
+            {" a accepté ta demande d'ami"}
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt)
+      };
+    case 'message_received':
+      return {
+        icon: 'messages',
+        text: (
+          <>
+            <strong>{entry.actorDisplayName}</strong>
+            {" t'a envoyé un message"}
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt)
+      };
+    case 'forum_reply':
+      return {
+        icon: 'forums',
+        text: (
+          <>
+            <strong>{entry.actorDisplayName}</strong>
+            {' a écrit dans le forum de '}
+            <strong>{entry.eventTitle}</strong>
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt)
+      };
+    case 'upcoming_event':
+      return {
+        icon: 'evenements',
+        text: (
+          <>
+            <strong>{entry.eventTitle}</strong>
+            {' commence bientôt à '}
+            <strong>{entry.venueName}</strong>
+          </>
+        ),
+        detail: formatEventDateTime(entry.eventStartsAt)
+      };
+  }
+}
+
+function NotificationsPanel({
+  notifications,
+  state,
+  onClose,
+  onOpenEvent,
+  onOpenSection
+}: {
+  notifications: PulsoNotification[];
+  state: 'loading' | 'success' | 'error';
+  onClose: () => void;
+  onOpenEvent: (eventId: string) => void;
+  onOpenSection: (section: ConnectedSection) => void;
+}) {
+  return (
+    <div
+      className="notifications-panel"
+      role="dialog"
+      aria-label="Notifications"
+    >
+      <div className="notifications-panel-header">
+        <h3>Notifications</h3>
+        <button
+          type="button"
+          className="close-button"
+          onClick={onClose}
+          aria-label="Fermer"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">
+          Impossible de charger tes notifications.
+        </p>
+      )}
+      {state === 'success' && notifications.length === 0 && (
+        <div className="empty-state-card notifications-empty">
+          <span className="empty-state-icon" aria-hidden="true">
+            <BellIcon />
+          </span>
+          <p>Rien de neuf</p>
+          <p>
+            Suis un lieu pour être prévenu·e dès qu&apos;il programme quelque
+            chose.
+          </p>
+        </div>
+      )}
+
+      <div className="notifications-list">
+        {notifications.map((entry) => {
+          const described = describeNotification(entry);
+          const unread = 'readAt' in entry && entry.readAt === null;
+          const key = 'id' in entry ? entry.id : `upcoming-${entry.eventId}`;
+          const openTarget = () => {
+            onClose();
+            if (entry.kind === 'venue_new_event') onOpenEvent(entry.eventId);
+            else if (entry.kind === 'forum_reply') onOpenEvent(entry.eventId);
+            else if (entry.kind === 'upcoming_event') {
+              onOpenEvent(entry.eventId);
+            } else if (entry.kind === 'message_received') {
+              onOpenSection('messages');
+            } else {
+              onOpenSection('amis');
+            }
+          };
+          return (
+            <button
+              type="button"
+              key={key}
+              className={`notifications-row ${unread ? 'unread' : ''}`}
+              onClick={openTarget}
+            >
+              <span className="notifications-row-icon" aria-hidden="true">
+                <SidebarNavIcon kind={described.icon} />
+              </span>
+              <span className="notifications-row-body">
+                <span className="notifications-row-text">{described.text}</span>
+                <span className="notifications-row-detail">
+                  {described.detail}
+                </span>
+              </span>
+              {unread && (
+                <span className="notifications-row-dot" aria-label="Non lu" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -5097,7 +5947,11 @@ function FavorisSection({
   favoriteVenues,
   onToggleFavoriteVenue,
   onSelectVenue,
-  locale
+  locale,
+  authToken,
+  variant = 'page',
+  onNavigateToMap,
+  onNavigateToEvents
 }: {
   favorites: string[];
   onToggleFavorite: (id: string) => void;
@@ -5113,10 +5967,20 @@ function FavorisSection({
   onToggleFavoriteVenue: (id: string) => void;
   onSelectVenue: (group: VenueGroup) => void;
   locale: SupportedLocale;
+  authToken?: string | undefined;
+  // The profile's Favoris tab embeds this inside a page that already has its
+  // own header, so the hero is only rendered for the standalone destination.
+  variant?: 'page' | 'embedded';
+  onNavigateToMap?: (() => void) | undefined;
+  onNavigateToEvents?: (() => void) | undefined;
 }) {
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [state, setState] = useState<LoadState>('loading');
   const [kind, setKind] = useState<'event' | 'venue'>('event');
+  const engagement = useEventEngagement(
+    events.map((event) => event.id),
+    authToken
+  );
 
   useEffect(() => {
     if (favorites.length === 0) {
@@ -5135,59 +5999,177 @@ function FavorisSection({
       .catch(() => setState('error'));
   }, [favorites]);
 
+  const eventCount = events.length;
+  const venueCount = favoriteVenueGroups.length;
+
   return (
     <section className="map-container-wrapper favoris-section">
-      <div className="favoris-kind-toggle">
+      {variant === 'page' && (
+        <div className="events-hero favoris-hero">
+          <div className="events-hero-text">
+            <p className="events-hero-kicker">Ta sélection</p>
+            <h1>Tout ce que tu gardes sous la main.</h1>
+            <p className="events-hero-eyebrow">
+              Les événements que tu as mis en favori et les lieux dont tu suis
+              la programmation.
+            </p>
+            <div className="events-hero-stats">
+              <span className="events-hero-stat">
+                <strong>{eventCount}</strong> événement
+                {eventCount > 1 ? 's' : ''} en favori
+              </span>
+              <span className="events-hero-stat">
+                <strong>{venueCount}</strong> lieu{venueCount > 1 ? 'x' : ''}{' '}
+                suivi{venueCount > 1 ? 's' : ''}
+              </span>
+            </div>
+          </div>
+          {onNavigateToMap && (
+            <button
+              type="button"
+              className="btn-secondary events-hero-map-btn"
+              onClick={onNavigateToMap}
+            >
+              <ViewModeIcon kind="map" />
+              Explorer la carte
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="details-tabs favoris-kind-toggle">
         <button
           type="button"
           className={kind === 'event' ? 'active' : ''}
           onClick={() => setKind('event')}
         >
-          Événements
+          Événements <span>{eventCount}</span>
         </button>
         <button
           type="button"
           className={kind === 'venue' ? 'active' : ''}
           onClick={() => setKind('venue')}
         >
-          Lieux suivis
+          Lieux suivis <span>{venueCount}</span>
         </button>
       </div>
+
       {kind === 'event' && (
         <div className="favoris-block">
           {state === 'loading' && (
-            <p className="list-view-empty">Chargement de vos favoris…</p>
+            <p className="list-view-empty">Chargement de tes favoris…</p>
           )}
           {state === 'error' && (
             <p className="list-view-empty">
-              Impossible de charger vos favoris pour le moment.
+              Impossible de charger tes favoris pour le moment.
             </p>
           )}
-          {(state === 'success' || state === 'empty') && (
-            <ListView
-              events={events}
-              favorites={favorites}
-              showFavoritesOnly={false}
-              onToggleFavorite={onToggleFavorite}
-              onOpenDetails={onOpenDetails}
+          {state === 'empty' && (
+            <div className="empty-state-card">
+              <span className="empty-state-icon" aria-hidden="true">
+                <HeartIcon filled={false} />
+              </span>
+              <p>Aucun événement en favori</p>
+              <p>
+                Touche le cœur sur un événement pour le retrouver ici, même hors
+                de la zone affichée sur la carte.
+              </p>
+              {onNavigateToEvents && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={onNavigateToEvents}
+                >
+                  Parcourir les événements
+                </button>
+              )}
+            </div>
+          )}
+          {state === 'success' && (
+            <div className="events-grid favoris-grid">
+              {events.map((event) => (
+                <EventGridCard
+                  key={event.id}
+                  event={event}
+                  locale={locale}
+                  isFavorite={favorites.includes(event.id)}
+                  onToggleFavorite={() => onToggleFavorite(event.id)}
+                  onOpen={() => onOpenDetails(event.id)}
+                  attendeeCount={engagement.get(event.id)?.attendeeCount ?? 0}
+                  friendsAttending={
+                    engagement.get(event.id)?.friendsAttending ?? []
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {kind === 'venue' && (
+        <div className="favoris-block">
+          {venueCount === 0 ? (
+            <div className="empty-state-card">
+              <span className="empty-state-icon" aria-hidden="true">
+                <BellIcon />
+              </span>
+              <p>Aucun lieu suivi</p>
+              <p>Touche la cloche sur un lieu pour suivre sa programmation.</p>
+              {onNavigateToMap && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={onNavigateToMap}
+                >
+                  Découvrir des lieux
+                </button>
+              )}
+            </div>
+          ) : (
+            <VenueListView
+              groups={favoriteVenueGroups}
+              onSelectVenue={onSelectVenue}
+              favoriteVenues={favoriteVenues}
+              onToggleFavoriteVenue={onToggleFavoriteVenue}
               locale={locale}
             />
           )}
         </div>
       )}
-      {kind === 'venue' && (
-        <div className="favoris-block">
-          <VenueListView
-            groups={favoriteVenueGroups}
-            onSelectVenue={onSelectVenue}
-            favoriteVenues={favoriteVenues}
-            onToggleFavoriteVenue={onToggleFavoriteVenue}
-            locale={locale}
-          />
-        </div>
-      )}
     </section>
   );
+}
+
+// Real attendee/friend counts for a set of events (batched
+// /events/engagement, Phase 4.11 backend). Extracted so the Événements page
+// and Favoris read the same signal from one implementation rather than the
+// second surface silently showing zeros where the first shows a real count.
+function useEventEngagement(
+  ids: string[],
+  authToken: string | undefined
+): Map<string, EventEngagementEntry> {
+  const [engagement, setEngagement] = useState<
+    Map<string, EventEngagementEntry>
+  >(new Map());
+  const idsKey = ids.join(',');
+
+  useEffect(() => {
+    if (!idsKey) {
+      setEngagement(new Map());
+      return;
+    }
+    const headers: Record<string, string> = {};
+    if (authToken) headers.authorization = `Bearer ${authToken}`;
+    fetch(`${API_BASE_URL}/events/engagement?ids=${idsKey}`, { headers })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const data = eventEngagementResponseSchema.parse(json).data;
+        setEngagement(new Map(data.map((entry) => [entry.eventId, entry])));
+      })
+      .catch(() => {});
+  }, [idsKey, authToken]);
+
+  return engagement;
 }
 
 function ListView({
@@ -5288,6 +6270,28 @@ interface VenueGroup {
   venueSecondaryCategories?: VenueCategory[];
   priceTier?: VenuePriceTier;
   imageUrl?: string;
+}
+
+function getVenueSummary(group: VenueGroup, locale: SupportedLocale): string {
+  if (group.events.length === 0) {
+    return locale === 'fr'
+      ? `${group.name} fait partie des lieux montréalais suivis par Pulso. Ce repère reste visible sur la carte même lorsqu'aucune programmation officielle n'est actuellement recensée.`
+      : `${group.name} is one of the Montréal venues tracked by Pulso. It remains visible on the map even when no official programming is currently listed.`;
+  }
+  return locale === 'fr'
+    ? `${group.name} fait partie des lieux montréalais suivis par Pulso. ${group.events.length} événement${group.events.length > 1 ? 's sont recensés' : ' est recensé'} ici au cours des 14 prochains jours.`
+    : `${group.name} is one of the Montréal venues tracked by Pulso. ${group.events.length} event${group.events.length > 1 ? 's are' : ' is'} listed here over the next 14 days.`;
+}
+
+// "Unknown address" is the ingestion mapper's sentinel for an event with no
+// address at all (to-public-event.ts), not a real string to show a French
+// user. DEC-0014 wants missing practical information disclosed rather than
+// inferred, so it surfaces as an explicit "not recorded" line.
+const UNKNOWN_ADDRESS_SENTINEL = 'Unknown address';
+
+function formatVenueAddress(address: string, locale: SupportedLocale): string {
+  if (address !== UNKNOWN_ADDRESS_SENTINEL) return address;
+  return locale === 'fr' ? 'Adresse non renseignée' : 'Address not recorded';
 }
 
 // A bare street segment ("Rue Dorion", "Avenue du Parc-La Fontaine") isn't a
@@ -5397,23 +6401,22 @@ function VenueListView({
             key={group.id}
             className="venue-card"
             onClick={() => onSelectVenue(group)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onSelectVenue(group);
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label={`Ouvrir la fiche de ${group.name}`}
             style={{ cursor: 'pointer' }}
           >
-            <div
-              className="venue-card-thumb"
-              style={
-                group.imageUrl
-                  ? {
-                      backgroundImage: `url(${group.imageUrl})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center'
-                    }
-                  : undefined
-              }
-            >
-              {!group.imageUrl && (
-                <EventImageFallback category={group.categories[0] ?? 'other'} />
-              )}
+            <div className="venue-card-thumb">
+              <VenueThumbImage
+                imageUrl={group.imageUrl}
+                category={group.categories[0] ?? 'other'}
+              />
               <button
                 type="button"
                 className={`card-fav ${favoriteVenues.includes(group.id) ? 'card-fav-following' : ''}`}
@@ -5441,17 +6444,25 @@ function VenueListView({
                   <span className="venue-card-price">{group.priceTier}</span>
                 )}
               </div>
-              <span className="venue-card-address">{group.address}</span>
+              <span className="venue-card-address">
+                {formatVenueAddress(group.address, locale)}
+              </span>
               <div className="venue-card-categories">
                 {group.venueCategory && (
                   <span
                     className="venue-card-type-badge"
                     style={{
-                      background: VENUE_CATEGORY_COLORS[group.venueCategory],
-                      borderColor: VENUE_CATEGORY_COLORS[group.venueCategory],
-                      color: '#fff'
+                      background: `${VENUE_CATEGORY_COLORS[group.venueCategory]}18`,
+                      borderColor: `${VENUE_CATEGORY_COLORS[group.venueCategory]}55`
                     }}
                   >
+                    <span
+                      className="venue-card-type-dot"
+                      style={{
+                        background: VENUE_CATEGORY_COLORS[group.venueCategory]
+                      }}
+                      aria-hidden="true"
+                    />
                     {VENUE_CATEGORY_LABELS[locale][group.venueCategory]}
                   </span>
                 )}
@@ -5460,10 +6471,15 @@ function VenueListView({
                     key={category}
                     className="venue-card-type-badge venue-card-type-badge-secondary"
                     style={{
-                      borderColor: VENUE_CATEGORY_COLORS[category],
-                      color: VENUE_CATEGORY_COLORS[category]
+                      background: `${VENUE_CATEGORY_COLORS[category]}10`,
+                      borderColor: `${VENUE_CATEGORY_COLORS[category]}40`
                     }}
                   >
+                    <span
+                      className="venue-card-type-dot"
+                      style={{ background: VENUE_CATEGORY_COLORS[category] }}
+                      aria-hidden="true"
+                    />
                     {VENUE_CATEGORY_LABELS[locale][category]}
                   </span>
                 ))}
@@ -5518,7 +6534,9 @@ function LieuxPage({
   onOpenEventForum,
   onNavigateToMap,
   authToken,
-  locale
+  locale,
+  selectedVenueId,
+  onSelectVenueId
 }: {
   favoriteVenues: string[];
   onToggleFavoriteVenue: (id: string) => void;
@@ -5526,6 +6544,8 @@ function LieuxPage({
   onNavigateToMap: () => void;
   authToken: string | undefined;
   locale: SupportedLocale;
+  selectedVenueId: string | undefined;
+  onSelectVenueId: (id: string | undefined) => void;
 }) {
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
@@ -5535,15 +6555,21 @@ function LieuxPage({
     'all'
   );
   const [query, setQuery] = useState('');
-  const [selectedVenueId, setSelectedVenueId] = useState<string>();
   const [favoriteCounts, setFavoriteCounts] = useState<Map<string, number>>(
     new Map()
   );
 
   useEffect(() => {
     let cancelled = false;
+    const venueWindow = getVenueDiscoveryDateRange(new Date());
     fetch(
-      `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, { date: 'next7', categories: [], price: 'all' })}`
+      `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, {
+        date: 'custom',
+        categories: [],
+        price: 'all',
+        customStartDate: venueWindow.start,
+        customEndDate: venueWindow.end
+      })}`
     )
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
@@ -5649,8 +6675,8 @@ function LieuxPage({
             <p className="events-hero-eyebrow">Les lieux à Montréal ✨</p>
             <div className="events-hero-stats">
               <span className="events-hero-stat">
-                <strong>{allGroups.length}</strong> lieux avec des événements à
-                venir
+                <strong>{allGroups.length}</strong> lieux avec des événements
+                dans les 14 prochains jours
               </span>
             </div>
           </div>
@@ -5700,7 +6726,7 @@ function LieuxPage({
 
         <VenueListView
           groups={filteredGroups}
-          onSelectVenue={(group) => setSelectedVenueId(group.id)}
+          onSelectVenue={(group) => onSelectVenueId(group.id)}
           favoriteVenues={favoriteVenues}
           onToggleFavoriteVenue={onToggleFavoriteVenue}
           locale={locale}
@@ -5896,7 +6922,8 @@ function VenueDetailContent({
   favoriteCount,
   onOpenEventForum,
   authToken,
-  locale
+  locale,
+  onClose
 }: {
   group: VenueGroup;
   favoriteVenues: string[];
@@ -5905,31 +6932,28 @@ function VenueDetailContent({
   onOpenEventForum: (eventId: string) => void;
   authToken: string | undefined;
   locale: SupportedLocale;
+  onClose?: () => void;
 }) {
-  const [tab, setTab] = useState<'infos' | 'evenements'>('infos');
   const isFavorite = favoriteVenues.includes(group.id);
-  const sortedEvents = [...group.events].sort(
-    (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
-  );
-  const nextEvent = sortedEvents[0];
+  const eventBuckets = partitionVenueEvents(group.events, new Date());
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${group.point.latitude},${group.point.longitude}`;
 
   return (
     <div className="venue-detail">
-      <div
-        className="venue-detail-hero"
-        style={
-          group.imageUrl
-            ? {
-                backgroundImage: `url(${group.imageUrl})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center'
-              }
-            : undefined
-        }
-      >
-        {!group.imageUrl && (
-          <EventImageFallback category={group.categories[0] ?? 'other'} />
+      <div className="venue-detail-hero">
+        <VenueThumbImage
+          imageUrl={group.imageUrl}
+          category={group.categories[0] ?? 'other'}
+        />
+        {onClose && (
+          <button
+            type="button"
+            className="venue-detail-back"
+            onClick={onClose}
+            aria-label="Fermer la fiche du lieu"
+          >
+            ← Retour
+          </button>
         )}
         <button
           type="button"
@@ -5941,23 +6965,46 @@ function VenueDetailContent({
         >
           <BellIcon />
         </button>
+        <div className="venue-detail-hero-overlay">
+          {group.venueCategory && (
+            <span
+              className="venue-card-type-badge"
+              style={
+                {
+                  '--venue-detail-color':
+                    VENUE_CATEGORY_COLORS[group.venueCategory]
+                } as CSSProperties
+              }
+            >
+              <span className="venue-card-type-dot" aria-hidden="true" />
+              {VENUE_CATEGORY_LABELS[locale][group.venueCategory]}
+            </span>
+          )}
+          <h2>{group.name}</h2>
+          <p>
+            <span aria-hidden="true">⌖</span>
+            {formatVenueAddress(group.address, locale)}
+          </p>
+        </div>
       </div>
 
       <div className="venue-detail-header">
-        {group.venueCategory && (
-          <span
-            className="venue-card-type-badge"
-            style={{
-              background: VENUE_CATEGORY_COLORS[group.venueCategory],
-              borderColor: VENUE_CATEGORY_COLORS[group.venueCategory],
-              color: '#fff'
-            }}
-          >
-            {VENUE_CATEGORY_LABELS[locale][group.venueCategory]}
+        <span className="venue-detail-section-kicker">À propos</span>
+        <p className="venue-detail-summary">{getVenueSummary(group, locale)}</p>
+        <div className="venue-detail-metrics">
+          <span>
+            <strong>{eventBuckets.today.length}</strong>
+            aujourd'hui
           </span>
-        )}
-        <h2>{group.name}</h2>
-        <p className="venue-detail-address">📍 {group.address}</p>
+          <span>
+            <strong>{eventBuckets.later.length}</strong>à venir
+          </span>
+          {group.priceTier && (
+            <span>
+              <strong>{group.priceTier}</strong>prix estimé
+            </span>
+          )}
+        </div>
         {favoriteCount > 0 && (
           <p className="venue-detail-popularity">
             🔥 {favoriteCount} personne{favoriteCount > 1 ? 's' : ''}{' '}
@@ -5966,125 +7013,142 @@ function VenueDetailContent({
         )}
       </div>
 
-      <div className="details-tabs venue-detail-tabs">
-        <button
-          type="button"
-          className={tab === 'infos' ? 'active' : ''}
-          onClick={() => setTab('infos')}
+      {/* One scroll rather than Infos/Événements tabs: the "Événements" tab
+          was a flat re-listing of the exact same rows the two programming
+          blocks below already show, so the tabs hid half the sheet and
+          duplicated the other half. This order is the one DEC-0014
+          prescribes - identity, description, address, today, then the rest
+          of the fourteen-day window. */}
+      <div className="venue-detail-infos">
+        <a
+          className="venue-detail-info-row"
+          href={mapsUrl}
+          target="_blank"
+          rel="noreferrer"
         >
-          Infos
-        </button>
-        <button
-          type="button"
-          className={tab === 'evenements' ? 'active' : ''}
-          onClick={() => setTab('evenements')}
-        >
-          Événements
-          {sortedEvents.length > 0 ? ` (${sortedEvents.length})` : ''}
-        </button>
-      </div>
-
-      {tab === 'infos' && (
-        <div className="venue-detail-infos">
-          <a
-            className="venue-detail-info-row"
-            href={mapsUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <span aria-hidden="true">📍</span>
-            <span>{group.address}</span>
-            <span className="venue-detail-info-link" aria-hidden="true">
-              ↗
+          <span className="venue-detail-info-icon" aria-hidden="true">
+            ⌖
+          </span>
+          <span>
+            <small>Adresse</small>
+            {formatVenueAddress(group.address, locale)}
+          </span>
+          <span className="venue-detail-info-link" aria-hidden="true">
+            ↗
+          </span>
+        </a>
+        {group.priceTier && (
+          <div className="venue-detail-info-row">
+            <span className="venue-detail-info-icon" aria-hidden="true">
+              $
             </span>
-          </a>
-          {group.priceTier && (
-            <div className="venue-detail-info-row">
-              <span aria-hidden="true">💰</span>
-              <span>
-                Gamme de prix estimée : {group.priceTier}
-                <span className="venue-detail-info-hint">
-                  {' '}
-                  (basée sur les événements payants à venir)
-                </span>
+            <span>
+              <small>Prix indicatif</small>
+              Gamme estimée : {group.priceTier}
+              <span className="venue-detail-info-hint">
+                {' '}
+                (basée sur les événements payants à venir)
               </span>
-            </div>
-          )}
-          <VenueRatingWidget venueId={group.id} authToken={authToken} />
+            </span>
+          </div>
+        )}
 
-          {nextEvent && (
-            <div className="venue-detail-upcoming-card">
-              <h3>À ne pas manquer</h3>
-              <button
-                type="button"
-                className="venue-detail-event-row"
-                onClick={() => onOpenEventForum(nextEvent.id)}
-              >
-                <span
-                  className="card-badge"
-                  style={{
-                    background:
-                      CATEGORY_COLORS[nextEvent.category] ??
-                      CATEGORY_COLORS['other']
-                  }}
-                >
-                  {SHORT_CATEGORY_LABELS[locale][nextEvent.category]}
-                </span>
-                <span className="venue-detail-event-info">
-                  <strong>{nextEvent.title}</strong>
-                  <span>
-                    {new Date(nextEvent.startsAt).toLocaleDateString('fr-CA', {
-                      day: 'numeric',
-                      month: 'short'
-                    })}{' '}
-                    ·{' '}
-                    {formatEventTimeRange(nextEvent.startsAt, nextEvent.endsAt)}
-                  </span>
-                </span>
-              </button>
+        <div className="venue-detail-programming-block venue-detail-programming-today">
+          <div className="venue-detail-programming-heading">
+            <div>
+              <span className="venue-detail-programming-kicker">
+                Aujourd'hui
+              </span>
+              <h3>Ce soir dans ce lieu</h3>
             </div>
-          )}
-        </div>
-      )}
-
-      {tab === 'evenements' && (
-        <div className="venue-detail-events-list">
-          {sortedEvents.length === 0 && (
-            <p className="list-view-empty">
-              Aucun événement à venir pour ce lieu.
+            <span className="venue-detail-programming-count">
+              {eventBuckets.today.length}
+            </span>
+          </div>
+          {eventBuckets.today.length === 0 ? (
+            <p className="venue-detail-programming-empty">
+              Aucun événement officiel recensé aujourd'hui.
             </p>
+          ) : (
+            eventBuckets.today.map((event) => (
+              <VenueDetailEventRow
+                key={event.id}
+                event={event}
+                locale={locale}
+                onSelect={() => onOpenEventForum(event.id)}
+              />
+            ))
           )}
-          {sortedEvents.map((event) => (
-            <button
-              type="button"
-              key={event.id}
-              className="venue-detail-event-row"
-              onClick={() => onOpenEventForum(event.id)}
-            >
-              <span
-                className="card-badge"
-                style={{
-                  background:
-                    CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other']
-                }}
-              >
-                {SHORT_CATEGORY_LABELS[locale][event.category]}
-              </span>
-              <span className="venue-detail-event-info">
-                <strong>{event.title}</strong>
-                <span>
-                  {new Date(event.startsAt).toLocaleDateString('fr-CA', {
-                    day: 'numeric',
-                    month: 'short'
-                  })}{' '}
-                  · {formatEventTimeRange(event.startsAt, event.endsAt)}
-                </span>
-              </span>
-            </button>
-          ))}
         </div>
-      )}
+
+        <div className="venue-detail-programming-block">
+          <div className="venue-detail-programming-heading">
+            <div>
+              <span className="venue-detail-programming-kicker">À venir</span>
+              <h3>Dans les 14 prochains jours</h3>
+            </div>
+            <span className="venue-detail-programming-count">
+              {eventBuckets.later.length}
+            </span>
+          </div>
+          {eventBuckets.later.length === 0 ? (
+            <p className="venue-detail-programming-empty">
+              Aucune autre programmation officielle recensée pour le moment.
+            </p>
+          ) : (
+            eventBuckets.later.map((event) => (
+              <VenueDetailEventRow
+                key={event.id}
+                event={event}
+                locale={locale}
+                onSelect={() => onOpenEventForum(event.id)}
+              />
+            ))
+          )}
+        </div>
+
+        <VenueRatingWidget venueId={group.id} authToken={authToken} />
+      </div>
     </div>
+  );
+}
+
+function VenueDetailEventRow({
+  event,
+  locale,
+  onSelect
+}: {
+  event: PublicEvent;
+  locale: SupportedLocale;
+  onSelect: () => void;
+}) {
+  const dateBadge = formatEventDateBadge(event.startsAt);
+  return (
+    <button type="button" className="venue-detail-event-row" onClick={onSelect}>
+      <span className="venue-detail-event-date">
+        <strong>{dateBadge.day}</strong>
+        {dateBadge.month}
+      </span>
+      <span className="venue-detail-event-info">
+        <span
+          className="venue-detail-event-category"
+          style={
+            {
+              '--venue-event-color':
+                CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.other
+            } as CSSProperties
+          }
+        >
+          <i aria-hidden="true" />
+          {SHORT_CATEGORY_LABELS[locale][event.category]}
+        </span>
+        <strong>{event.title}</strong>
+        <span>{formatEventTimeRange(event.startsAt, event.endsAt)}</span>
+      </span>
+      <span className="venue-detail-event-arrow" aria-hidden="true">
+        →
+      </span>
+    </button>
   );
 }
 
@@ -6550,36 +7614,22 @@ type ConnectedSection =
   | 'forums'
   | 'groupes'
   | 'messages'
-  | 'amis'
-  | 'mes-evenements'
-  | 'historique';
+  | 'amis';
 
 const SIDEBAR_NAV_ITEMS: Array<{
   section: ConnectedSection;
   label: string;
-  icon: string;
+  icon: SidebarIconKind;
 }> = [
-  { section: 'decouvrir', label: 'Découvrir', icon: '✨' },
-  { section: 'explorer', label: 'Carte', icon: '🗺️' },
-  { section: 'evenement', label: 'Événements', icon: '🎟️' },
-  { section: 'lieu', label: 'Lieux', icon: '📍' },
-  { section: 'forums', label: 'Forums', icon: '💬' },
-  { section: 'groupes', label: 'Groupes', icon: '👥' },
-  { section: 'messages', label: 'Messages', icon: '✉️' },
-  { section: 'amis', label: 'Amis', icon: '🧑‍🤝‍🧑' },
-  { section: 'favoris', label: 'Favoris', icon: '❤️' }
-];
-
-// "Événements suivis" points at the existing Favoris section (same data,
-// already hydrated there via /events/by-ids) rather than duplicating it.
-const SIDEBAR_SHORTCUT_ITEMS: Array<{
-  section: ConnectedSection;
-  label: string;
-  icon: string;
-}> = [
-  { section: 'mes-evenements', label: 'Mes événements', icon: '🎟️' },
-  { section: 'favoris', label: 'Événements suivis', icon: '🔖' },
-  { section: 'historique', label: 'Historique', icon: '🕘' }
+  { section: 'decouvrir', label: 'Découvrir', icon: 'decouvrir' },
+  { section: 'explorer', label: 'Carte', icon: 'carte' },
+  { section: 'evenement', label: 'Événements', icon: 'evenements' },
+  { section: 'lieu', label: 'Lieux', icon: 'lieux' },
+  { section: 'forums', label: 'Forums', icon: 'forums' },
+  { section: 'groupes', label: 'Groupes', icon: 'groupes' },
+  { section: 'messages', label: 'Messages', icon: 'messages' },
+  { section: 'amis', label: 'Amis', icon: 'amis' },
+  { section: 'favoris', label: 'Favoris', icon: 'favoris' }
 ];
 
 // Primary navigation rail for the connected experience (Phase 4). Only
@@ -6653,8 +7703,8 @@ function Sidebar({
             className={`primary-sidebar-nav-item ${activeSection === item.section ? 'active' : ''}`}
             onClick={() => onNavigate(item.section)}
           >
-            <span className="primary-sidebar-nav-icon" aria-hidden="true">
-              {item.icon}
+            <span className="primary-sidebar-nav-icon">
+              <SidebarNavIcon kind={item.icon} />
             </span>
             {item.label}
             {item.section === 'messages' && unreadMessagesCount > 0 && (
@@ -6666,30 +7716,19 @@ function Sidebar({
         ))}
       </nav>
 
-      <div className="primary-sidebar-group">
-        <h3 className="primary-sidebar-group-title">Raccourcis</h3>
-        {SIDEBAR_SHORTCUT_ITEMS.map((item) => (
-          <button
-            type="button"
-            key={item.section}
-            className={`primary-sidebar-nav-item ${activeSection === item.section ? 'active' : ''}`}
-            onClick={() => onNavigate(item.section)}
-          >
-            <span className="primary-sidebar-nav-icon" aria-hidden="true">
-              {item.icon}
-            </span>
-            {item.label}
-          </button>
-        ))}
-      </div>
-
-      {/* No "Mes groupes" heading (live feedback) - the groups themselves
-          are the label. Only groups the user pinned show up here at all
-          (see Group.pinned, Phase 4.14) - "Groupes" above is the real
-          entry point to the full panel (and its own create-group form),
-          not a "Créer un groupe" shortcut duplicated down here. */}
+      {/* "Raccourcis" now means only what the user actually pinned. It used
+          to head three fixed links (Mes événements / Événements suivis /
+          Historique) that either duplicated a primary nav item or led to a
+          page reachable from the profile - so the heading now belongs to
+          the pinned block, and disappears entirely when nothing is pinned
+          rather than labelling a permanently-identical list.
+          Only groups the user pinned show up here (see Group.pinned, Phase
+          4.14) - "Groupes" above is the real entry point to the full panel
+          (and its own create-group form), not a "Créer un groupe" shortcut
+          duplicated down here. */}
       {pinnedGroups.length > 0 && (
         <div className="primary-sidebar-group">
+          <h3 className="primary-sidebar-group-title">Raccourcis</h3>
           {pinnedGroups.map((group) => (
             <button
               type="button"
@@ -6719,40 +7758,88 @@ function Sidebar({
         />
       )}
 
-      <div className="primary-sidebar-divider" />
-      <button
-        type="button"
-        className="primary-sidebar-profile"
-        onClick={onOpenAccount}
-      >
-        <span className="account-avatar">{renderUserAvatarContent(user)}</span>
-        <span className="primary-sidebar-profile-info">
-          <strong>{user.displayName}</strong>
-          <span>{user.email}</span>
-        </span>
-      </button>
+      {/* Grouped: the rail's own 2rem gap applies between top-level blocks,
+          so leaving the divider, the profile and the invite as three
+          siblings spread the footer over ~5rem of dead space and stopped it
+          reading as one cluster. */}
+      <div className="primary-sidebar-footer">
+        <div className="primary-sidebar-divider" />
+        <button
+          type="button"
+          className="primary-sidebar-profile"
+          onClick={onOpenAccount}
+        >
+          <span className="account-avatar">
+            {renderUserAvatarContent(user)}
+          </span>
+          <span className="primary-sidebar-profile-info">
+            <strong>{user.displayName}</strong>
+            <span>{user.email}</span>
+          </span>
+          <span className="primary-sidebar-profile-chevron" aria-hidden="true">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </span>
+        </button>
 
-      {friendCode && (
-        <div className="primary-sidebar-invite">
-          <p>Invite tes amis</p>
-          <div className="friends-code-row">
-            <span>
-              <strong>{friendCode}</strong>
-            </span>
+        {/* The whole row is the copy control rather than a small "Copier" text
+          link beside it: one obvious target instead of a 40px one, and it
+          drops the lone blue link that was the only non-brand accent in the
+          rail. The label is the kicker - the code itself is data, so it no
+          longer outweighs its own heading. */}
+        {friendCode && (
+          <div className="primary-sidebar-invite">
+            <p className="primary-sidebar-invite-kicker">
+              Ton code d'invitation
+            </p>
             <button
               type="button"
-              className="text-btn"
+              className={`primary-sidebar-invite-code ${copied ? 'copied' : ''}`}
+              aria-label={`Copier ton code d'invitation ${friendCode}`}
               onClick={() => {
                 void navigator.clipboard.writeText(friendCode);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}
             >
-              {copied ? 'Copié !' : 'Copier'}
+              <strong>{friendCode}</strong>
+              <span className="primary-sidebar-invite-action">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  {copied ? (
+                    <path d="M20 6L9 17l-5-5" />
+                  ) : (
+                    <>
+                      <rect x="9" y="9" width="12" height="12" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </>
+                  )}
+                </svg>
+                {copied ? 'Copié' : 'Copier'}
+              </span>
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </aside>
   );
 }
@@ -6774,6 +7861,10 @@ function TopBar({
   locale,
   user,
   unreadMessagesCount,
+  notificationsUnreadCount,
+  notificationsOpen,
+  notificationsPanel,
+  onToggleNotifications,
   onOpenAccount,
   onOpenMessages,
   onOpenAbout,
@@ -6791,6 +7882,13 @@ function TopBar({
   locale: SupportedLocale;
   user: User;
   unreadMessagesCount: number;
+  notificationsUnreadCount: number;
+  notificationsOpen: boolean;
+  // Rendered inside .nav-actions so the popover anchors to the bell itself;
+  // as a sibling of the header it resolved `top: 100%` against the whole
+  // content column and landed off-screen at the bottom of the page.
+  notificationsPanel: ReactNode;
+  onToggleNotifications: () => void;
   onOpenAccount: () => void;
   onOpenMessages: () => void;
   onOpenAbout: () => void;
@@ -6842,13 +7940,24 @@ function TopBar({
         </button>
         <button
           type="button"
-          className="nav-icon-btn"
-          disabled
-          aria-label="Notifications (bientôt disponible)"
-          title="Bientôt disponible"
+          className={`nav-icon-btn ${notificationsOpen ? 'active' : ''}`}
+          onClick={onToggleNotifications}
+          aria-expanded={notificationsOpen}
+          aria-label={
+            notificationsUnreadCount > 0
+              ? `Notifications — ${notificationsUnreadCount} non lues`
+              : 'Notifications'
+          }
+          title="Notifications"
         >
           <BellIcon />
+          {notificationsUnreadCount > 0 && (
+            <span className="nav-icon-badge">
+              {notificationsUnreadCount > 9 ? '9+' : notificationsUnreadCount}
+            </span>
+          )}
         </button>
+        {notificationsPanel}
         <AccountMenu
           user={user}
           onLogin={() => {}}
@@ -6911,6 +8020,9 @@ function EventsPage({
     'all'
   );
   const [query, setQuery] = useState('');
+  // DEC-0017. Connected-only, like the created events it surfaces.
+  const [afterOnly, setAfterOnly] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
@@ -6919,9 +8031,6 @@ function EventsPage({
   const [periodCounts, setPeriodCounts] = useState<
     Partial<Record<EventsPeriod, number>>
   >({});
-  const [engagement, setEngagement] = useState<
-    Map<string, EventEngagementEntry>
-  >(new Map());
   const [activeGroups, setActiveGroups] = useState<DiscoverGroupEntry[]>([]);
 
   useEffect(() => {
@@ -6959,10 +8068,14 @@ function EventsPage({
     const filters: DiscoveryFilters = {
       date: period,
       categories: isEventCategory(activeChip) ? [activeChip] : [],
-      price: activeChip === 'free' ? 'free' : 'all'
+      price: activeChip === 'free' ? 'free' : 'all',
+      ...(afterOnly ? { after: true } : {})
     };
     fetch(
-      `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, filters)}`
+      `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, filters)}`,
+      // The API only honours `after` - and only returns account-created
+      // events at all - for a signed-in caller (DEC-0017).
+      authToken ? { headers: { authorization: `Bearer ${authToken}` } } : {}
     )
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
@@ -6976,7 +8089,7 @@ function EventsPage({
     return () => {
       cancelled = true;
     };
-  }, [period, activeChip]);
+  }, [period, activeChip, afterOnly, authToken]);
 
   useEffect(() => {
     if (!authToken) return;
@@ -6998,28 +8111,10 @@ function EventsPage({
       )
     : events;
   const visible = filtered.slice(0, visibleCount);
-  const visibleIdsKey = visible
-    .map((event) => event.id)
-    .slice(0, 100)
-    .join(',');
-
-  useEffect(() => {
-    if (!visibleIdsKey) {
-      setEngagement(new Map());
-      return;
-    }
-    const headers: Record<string, string> = {};
-    if (authToken) headers.authorization = `Bearer ${authToken}`;
-    fetch(`${API_BASE_URL}/events/engagement?ids=${visibleIdsKey}`, {
-      headers
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        const data = eventEngagementResponseSchema.parse(json).data;
-        setEngagement(new Map(data.map((entry) => [entry.eventId, entry])));
-      })
-      .catch(() => {});
-  }, [visibleIdsKey, authToken]);
+  const engagement = useEventEngagement(
+    visible.map((event) => event.id).slice(0, 100),
+    authToken
+  );
 
   const popular = [...visible]
     .filter((event) => (engagement.get(event.id)?.attendeeCount ?? 0) > 0)
@@ -7056,7 +8151,11 @@ function EventsPage({
       <div className="events-page-main">
         <div className="events-hero">
           <div className="events-hero-text">
-            <p className="events-hero-eyebrow">Les événements à Montréal ✨</p>
+            <p className="events-hero-kicker">Agenda montréalais</p>
+            <h1>Ta prochaine sortie commence ici.</h1>
+            <p className="events-hero-eyebrow">
+              Concerts, festivals et soirées sélectionnés à Montréal.
+            </p>
             <div className="events-hero-stats">
               {EVENTS_PERIOD_TABS.map(({ value, label }) => (
                 <span className="events-hero-stat" key={value}>
@@ -7066,61 +8165,110 @@ function EventsPage({
               ))}
             </div>
           </div>
-          <button
-            type="button"
-            className="btn-secondary events-hero-map-btn"
-            onClick={onNavigateToMap}
-          >
-            🗺️ Voir la carte
-          </button>
-        </div>
-
-        <div className="details-tabs events-period-tabs">
-          {EVENTS_PERIOD_TABS.map(({ value, label }) => (
+          <div className="events-hero-actions">
             <button
               type="button"
-              key={value}
-              className={period === value ? 'active' : ''}
-              onClick={() => setPeriod(value)}
+              className="btn-primary events-hero-create-btn"
+              onClick={() => setCreateOpen(true)}
             >
-              {label}
+              Créer un événement
             </button>
-          ))}
+            <button
+              type="button"
+              className="btn-secondary events-hero-map-btn"
+              onClick={onNavigateToMap}
+            >
+              <ViewModeIcon kind="map" />
+              Explorer la carte
+            </button>
+          </div>
         </div>
 
-        <div className="messages-search events-search">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Rechercher un événement, un lieu…"
+        {createOpen && (
+          <CreateEventModal
+            authToken={authToken}
+            venues={groupEventsByVenue(events)}
+            locale={locale}
+            onClose={() => setCreateOpen(false)}
+            onCreated={(created) =>
+              setEvents((current) => [created, ...current])
+            }
           />
-        </div>
+        )}
 
-        <div className="events-category-chips">
-          <button
-            type="button"
-            className={activeChip === 'all' ? 'active' : ''}
-            onClick={() => setActiveChip('all')}
-          >
-            Tous
-          </button>
-          {EVENT_CATEGORIES.map((cat) => (
+        <div className="events-discovery-controls">
+          <div className="details-tabs events-period-tabs">
+            {EVENTS_PERIOD_TABS.map(({ value, label }) => (
+              <button
+                type="button"
+                key={value}
+                className={period === value ? 'active' : ''}
+                onClick={() => setPeriod(value)}
+              >
+                {label}
+                <span>{periodCounts[value] ?? '…'}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="messages-search events-search">
+            <span className="events-search-icon" aria-hidden="true">
+              ⌕
+            </span>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Rechercher un événement ou un lieu"
+            />
+          </div>
+
+          <div className="events-category-chips">
             <button
               type="button"
-              key={cat}
-              className={activeChip === cat ? 'active' : ''}
-              onClick={() => setActiveChip(cat)}
+              className={activeChip === 'all' ? 'active' : ''}
+              onClick={() => setActiveChip('all')}
             >
-              {SHORT_CATEGORY_LABELS[locale][cat]}
+              Tout voir
             </button>
-          ))}
-          <button
-            type="button"
-            className={activeChip === 'free' ? 'active' : ''}
-            onClick={() => setActiveChip('free')}
-          >
-            ★ Gratuit
-          </button>
+            {EVENT_CATEGORIES.map((cat) => (
+              <button
+                type="button"
+                key={cat}
+                className={activeChip === cat ? 'active' : ''}
+                onClick={() => setActiveChip(cat)}
+                style={
+                  {
+                    '--event-chip-color':
+                      CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.other
+                  } as CSSProperties
+                }
+              >
+                <span className="events-category-dot" aria-hidden="true" />
+                {SHORT_CATEGORY_LABELS[locale][cat]}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={`events-free-chip ${activeChip === 'free' ? 'active' : ''}`}
+              onClick={() => setActiveChip('free')}
+            >
+              <span className="events-category-dot" aria-hidden="true" />
+              Gratuit
+            </button>
+            {/* DEC-0017. Not a seventh category: an after keeps its real
+                category and colour, and this matches the creator's flag OR a
+                02:00-06:00 start, so it also surfaces late-night events
+                already in the sourced directory. */}
+            <button
+              type="button"
+              className={`events-after-chip ${afterOnly ? 'active' : ''}`}
+              aria-pressed={afterOnly}
+              onClick={() => setAfterOnly((on) => !on)}
+            >
+              <span className="events-category-dot" aria-hidden="true" />
+              After
+            </button>
+          </div>
         </div>
 
         {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
@@ -7131,6 +8279,18 @@ function EventsPage({
         )}
         {state === 'success' && filtered.length === 0 && (
           <p className="list-view-empty">Aucun événement trouvé.</p>
+        )}
+
+        {state === 'success' && filtered.length > 0 && (
+          <div className="events-results-heading">
+            <div>
+              <span>À découvrir</span>
+              <h2>Les sorties du moment</h2>
+            </div>
+            <p>
+              {filtered.length} événement{filtered.length > 1 ? 's' : ''}
+            </p>
+          </div>
         )}
 
         <div className="events-grid">
@@ -7162,14 +8322,20 @@ function EventsPage({
       </div>
 
       <aside className="events-trends">
-        <h2>🔥 Tendances</h2>
+        <div className="events-trends-heading">
+          <span>En ce moment</span>
+          <h2>Tendances</h2>
+        </div>
 
         <div className="events-trends-section">
           <h3>Les plus populaires</h3>
           {popular.length === 0 ? (
-            <p className="list-view-empty">
-              Pas encore de données de fréquentation.
-            </p>
+            <div className="events-trends-empty">
+              <span aria-hidden="true">↗</span>
+              <p>
+                Les tendances apparaîtront avec les premières participations.
+              </p>
+            </div>
           ) : (
             <ol className="events-trends-list">
               {popular.map((event, index) => (
@@ -7299,6 +8465,259 @@ function EventsPage({
   );
 }
 
+/**
+ * DEC-0017 event organizer. Connected-experience only, and it says so: a
+ * created event never appears on the anonymous map, and hiding that would
+ * leave an organizer expecting reach the feature does not give them.
+ *
+ * The venue is picked from venues Pulso already knows rather than typed as
+ * free text - there is no geocoder in the client, and deriving coordinates
+ * from a typed address is exactly the guess EVENT-002 forbids.
+ */
+function CreateEventModal({
+  authToken,
+  venues,
+  locale,
+  onClose,
+  onCreated
+}: {
+  authToken: string | undefined;
+  venues: VenueGroup[];
+  locale: SupportedLocale;
+  onClose: () => void;
+  onCreated: (event: PublicEvent) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState<EventCategory>('nightlife');
+  const [venueId, setVenueId] = useState('');
+  const [startsAt, setStartsAt] = useState('');
+  const [endsAt, setEndsAt] = useState('');
+  const [accessInformation, setAccessInformation] = useState('');
+  const [description, setDescription] = useState('');
+  const [priceKind, setPriceKind] = useState<'free' | 'paid' | 'unknown'>(
+    'free'
+  );
+  const [isAfter, setIsAfter] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const canSubmit =
+    Boolean(authToken) &&
+    title.trim().length > 0 &&
+    venueId.length > 0 &&
+    startsAt.length > 0 &&
+    accessInformation.trim().length > 0 &&
+    !saving;
+
+  const submit = () => {
+    if (!authToken || !canSubmit) return;
+    setSaving(true);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/me/events`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        title: title.trim(),
+        category,
+        startsAt: new Date(startsAt).toISOString(),
+        ...(endsAt ? { endsAt: new Date(endsAt).toISOString() } : {}),
+        accessInformation: accessInformation.trim(),
+        ...(description.trim() ? { description: description.trim() } : {}),
+        isAfter,
+        price: { kind: priceKind },
+        venue: { kind: 'existing', venueId }
+      })
+    })
+      .then((response) =>
+        response.ok ? response.json() : Promise.reject(response)
+      )
+      .then((json) => {
+        onCreated(createdEventResponseSchema.parse(json).data);
+        onClose();
+      })
+      .catch(() => {
+        setError(
+          "L'événement n'a pas pu être publié. Vérifie la date et réessaie."
+        );
+      })
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <div className="create-event-backdrop" onClick={onClose}>
+      <div
+        className="create-event-modal"
+        role="dialog"
+        aria-label="Créer un événement"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <div className="create-event-header">
+          <div>
+            <span className="create-event-kicker">Organisateur</span>
+            <h2>Créer un événement</h2>
+          </div>
+          <button
+            type="button"
+            className="close-button"
+            onClick={onClose}
+            aria-label="Fermer"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <p className="create-event-notice">
+          {
+            "Ton événement sera visible uniquement dans l'espace connecté de Pulso, pas sur la carte publique. Il portera la mention « Communauté », ou « Organisateur vérifié » si ton compte est rattaché à ce lieu."
+          }
+        </p>
+
+        <label className="create-event-field">
+          <span>Titre</span>
+          <input
+            value={title}
+            onChange={(changeEvent) => setTitle(changeEvent.target.value)}
+            placeholder="After techno chez Marie"
+            maxLength={200}
+          />
+        </label>
+
+        <div className="create-event-row">
+          <label className="create-event-field">
+            <span>Catégorie</span>
+            <select
+              value={category}
+              onChange={(changeEvent) =>
+                setCategory(changeEvent.target.value as EventCategory)
+              }
+            >
+              {EVENT_CATEGORIES.map((value) => (
+                <option key={value} value={value}>
+                  {SHORT_CATEGORY_LABELS[locale][value]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="create-event-field">
+            <span>Prix</span>
+            <select
+              value={priceKind}
+              onChange={(changeEvent) =>
+                setPriceKind(
+                  changeEvent.target.value as 'free' | 'paid' | 'unknown'
+                )
+              }
+            >
+              <option value="free">Gratuit</option>
+              <option value="paid">Payant</option>
+              <option value="unknown">Non précisé</option>
+            </select>
+          </label>
+        </div>
+
+        <label className="create-event-field">
+          <span>Lieu</span>
+          <select
+            value={venueId}
+            onChange={(changeEvent) => setVenueId(changeEvent.target.value)}
+          >
+            <option value="">Choisis un lieu…</option>
+            {venues.map((venue) => (
+              <option key={venue.id} value={venue.id}>
+                {venue.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="create-event-row">
+          <label className="create-event-field">
+            <span>Début</span>
+            <input
+              type="datetime-local"
+              value={startsAt}
+              onChange={(changeEvent) => setStartsAt(changeEvent.target.value)}
+            />
+          </label>
+          <label className="create-event-field">
+            <span>Fin (optionnel)</span>
+            <input
+              type="datetime-local"
+              value={endsAt}
+              onChange={(changeEvent) => setEndsAt(changeEvent.target.value)}
+            />
+          </label>
+        </div>
+
+        <label className="create-event-field">
+          <span>Comment y accéder</span>
+          <textarea
+            value={accessInformation}
+            onChange={(changeEvent) =>
+              setAccessInformation(changeEvent.target.value)
+            }
+            placeholder="Sonner à la porte bleue, 3e étage."
+            rows={2}
+          />
+        </label>
+
+        <label className="create-event-field">
+          <span>Description (optionnel)</span>
+          <textarea
+            value={description}
+            onChange={(changeEvent) => setDescription(changeEvent.target.value)}
+            rows={3}
+          />
+        </label>
+
+        <label className="create-event-after">
+          <input
+            type="checkbox"
+            checked={isAfter}
+            onChange={(changeEvent) => setIsAfter(changeEvent.target.checked)}
+          />
+          <span>
+            <strong>{"C'est un after"}</strong>
+            <small>
+              {
+                'Il apparaîtra dans le filtre After. Un événement qui commence entre 2 h et 6 h y apparaît de toute façon.'
+              }
+            </small>
+          </span>
+        </label>
+
+        {error && <p className="create-event-error">{error}</p>}
+
+        <div className="create-event-actions">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Annuler
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={!canSubmit}
+            onClick={submit}
+          >
+            {saving ? 'Publication…' : 'Publier'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EventGridCard({
   event,
   locale,
@@ -7317,6 +8736,7 @@ function EventGridCard({
   friendsAttending: PublicUser[];
 }) {
   const priceLabel = formatEventPrice(event.price);
+  const dateBadge = formatEventDateBadge(event.startsAt);
   return (
     <div
       className="events-grid-card"
@@ -7340,6 +8760,10 @@ function EventGridCard({
         }
       >
         {!event.imageUrl && <EventImageFallback category={event.category} />}
+        <span className="events-grid-card-date">
+          <strong>{dateBadge.day}</strong>
+          {dateBadge.month}
+        </span>
         <div
           className="card-badge"
           style={{
@@ -7352,19 +8776,25 @@ function EventGridCard({
         <button
           type="button"
           className="card-fav"
+          aria-label={
+            isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'
+          }
           onClick={(clickEvent) => {
             clickEvent.stopPropagation();
             onToggleFavorite();
           }}
         >
-          {isFavorite ? '❤️' : '🤍'}
+          <HeartIcon filled={isFavorite} />
         </button>
       </div>
       <div className="events-grid-card-content">
         <h3>{event.title}</h3>
-        <p className="events-grid-card-venue">📍 {event.venue.name}</p>
+        <p className="events-grid-card-venue">
+          <span aria-hidden="true">⌖</span> {event.venue.name}
+        </p>
         <p className="events-grid-card-time">
-          🕐 {formatEventTimeRange(event.startsAt, event.endsAt)}
+          <span aria-hidden="true">◷</span>{' '}
+          {formatEventTimeRange(event.startsAt, event.endsAt)}
         </p>
         <p
           className={`events-grid-card-price ${event.price.kind === 'free' ? 'free' : ''}`}
@@ -7744,20 +9174,21 @@ function DashboardHome({
     <div className="dashboard-home-page">
       <div className="dashboard-home">
         <div className="dashboard-home-hero">
-          <p className="dashboard-home-hero-eyebrow">
-            Bonjour {user.displayName.split(' ')[0]} 👋
+          <p className="dashboard-home-hero-kicker">
+            Bonjour {user.displayName.split(' ')[0]}
           </p>
-          <h1>Découvrez le meilleur de Montréal</h1>
+          <h1>Montréal, maintenant.</h1>
           <p className="dashboard-home-hero-subtitle">
-            Événements, lieux et communautés qui font vibrer ta ville.
+            Les sorties, les lieux et les communautés qui font vibrer la ville.
           </p>
           <div className="dashboard-home-hero-actions">
             <button
               type="button"
-              className="primary-action-btn"
+              className="dashboard-home-hero-primary"
               onClick={() => onNavigate('explorer')}
             >
-              🧭 Explorer la carte
+              <ViewModeIcon kind="map" />
+              Explorer la carte
             </button>
             <button
               type="button"
@@ -7768,49 +9199,70 @@ function DashboardHome({
                 )
               }
             >
-              🌙 Voir ce soir
+              <span aria-hidden="true">◐</span>
+              Voir ce soir
             </button>
           </div>
         </div>
 
-        <div className="events-category-chips">
-          <button
-            type="button"
-            className={activeFilter === 'all' ? 'active' : ''}
-            onClick={() => setActiveFilter('all')}
-          >
-            Tous
-          </button>
-          <button
-            type="button"
-            className={activeFilter === 'tonight' ? 'active' : ''}
-            onClick={() => setActiveFilter('tonight')}
-          >
-            Ce soir
-          </button>
-          {EVENT_CATEGORIES.map((cat) => (
+        <div className="dashboard-home-filter-bar">
+          <span className="dashboard-home-filter-label">
+            Explorer par envie
+          </span>
+          <div className="events-category-chips dashboard-home-filters">
             <button
               type="button"
-              key={cat}
-              className={activeFilter === cat ? 'active' : ''}
-              onClick={() => setActiveFilter(cat)}
+              className={activeFilter === 'all' ? 'active' : ''}
+              onClick={() => setActiveFilter('all')}
             >
-              {SHORT_CATEGORY_LABELS[locale][cat]}
+              Tout voir
             </button>
-          ))}
-          <button
-            type="button"
-            className={activeFilter === 'free' ? 'active' : ''}
-            onClick={() => setActiveFilter('free')}
-          >
-            ★ Gratuit
-          </button>
+            <button
+              type="button"
+              className={activeFilter === 'tonight' ? 'active' : ''}
+              onClick={() => setActiveFilter('tonight')}
+              style={{ '--event-chip-color': '#d65cff' } as CSSProperties}
+            >
+              <span className="events-category-dot" aria-hidden="true" />
+              Ce soir
+            </button>
+            {EVENT_CATEGORIES.map((cat) => (
+              <button
+                type="button"
+                key={cat}
+                className={activeFilter === cat ? 'active' : ''}
+                onClick={() => setActiveFilter(cat)}
+                style={
+                  {
+                    '--event-chip-color':
+                      CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.other
+                  } as CSSProperties
+                }
+              >
+                <span className="events-category-dot" aria-hidden="true" />
+                {SHORT_CATEGORY_LABELS[locale][cat]}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={`events-free-chip ${activeFilter === 'free' ? 'active' : ''}`}
+              onClick={() => setActiveFilter('free')}
+            >
+              <span className="events-category-dot" aria-hidden="true" />
+              Gratuit
+            </button>
+          </div>
         </div>
 
         {newEvents.length > 0 && (
           <div className="dashboard-home-section">
-            <div className="section-header">
-              <h2>✨ Nouveautés</h2>
+            <div className="section-header dashboard-home-section-header">
+              <div>
+                <span className="dashboard-home-section-kicker">
+                  Fraîchement ajouté
+                </span>
+                <h2>Nouveautés</h2>
+              </div>
               <span className="dashboard-home-section-subtitle">
                 {newEventsPersonalized
                   ? 'Ajoutés récemment, dans tes catégories favorites'
@@ -7866,8 +9318,11 @@ function DashboardHome({
         )}
 
         <div className="dashboard-home-section">
-          <div className="section-header">
-            <h2>Événements autour de vous</h2>
+          <div className="section-header dashboard-home-section-header">
+            <div>
+              <span className="dashboard-home-section-kicker">À proximité</span>
+              <h2>Autour de vous</h2>
+            </div>
             <button
               type="button"
               className="view-all"
@@ -7930,8 +9385,13 @@ function DashboardHome({
         </div>
 
         <div className="dashboard-home-section">
-          <div className="section-header">
-            <h2>Forums actifs</h2>
+          <div className="section-header dashboard-home-section-header">
+            <div>
+              <span className="dashboard-home-section-kicker">
+                La communauté échange
+              </span>
+              <h2>Forums actifs</h2>
+            </div>
             <button
               type="button"
               className="view-all"
@@ -7978,9 +9438,13 @@ function DashboardHome({
       </div>
 
       <aside className="dashboard-home-rail">
+        <div className="dashboard-home-rail-heading">
+          <span>À Montréal</span>
+          <h2>Ce soir</h2>
+        </div>
         <div className="events-trends-section">
           <div className="section-header">
-            <h3>🌙 Ce soir à Montréal</h3>
+            <h3>À l'affiche</h3>
             <button
               type="button"
               className="view-all"
@@ -8143,8 +9607,21 @@ function DashboardEventCard({
   onOpen: () => void;
   isNew?: boolean;
 }) {
+  const dateBadge = formatEventDateBadge(evt.startsAt);
+  const priceLabel = formatEventPrice(evt.price);
   return (
-    <div className="event-card" onClick={onOpen} style={{ cursor: 'pointer' }}>
+    <div
+      className="event-card dashboard-event-card"
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <div
         className="event-card-img"
         style={
@@ -8158,6 +9635,10 @@ function DashboardEventCard({
         }
       >
         {!evt.imageUrl && <EventImageFallback category={evt.category} />}
+        <span className="dashboard-event-card-date">
+          <strong>{dateBadge.day}</strong>
+          {dateBadge.month}
+        </span>
         <div
           className="card-badge"
           style={{
@@ -8169,21 +9650,36 @@ function DashboardEventCard({
         </div>
         {isNew && <span className="dashboard-home-new-badge">NOUVEAU</span>}
         <button
+          type="button"
           className="card-fav"
+          aria-label={
+            isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'
+          }
           onClick={(clickEvent) => {
             clickEvent.stopPropagation();
             onToggleFavorite();
           }}
         >
-          {isFavorite ? '❤️' : '🤍'}
+          <HeartIcon filled={isFavorite} />
         </button>
       </div>
       <div className="event-card-content">
         <h3>{evt.title}</h3>
-        <p>{evt.venue?.name}</p>
-        <p className="card-price">
-          {evt.startsAt ? new Date(evt.startsAt).toLocaleDateString() : ''}
+        <p className="dashboard-event-card-meta">
+          <span aria-hidden="true">⌖</span>
+          {evt.venue?.name}
         </p>
+        <div className="dashboard-event-card-footer">
+          <span>
+            <span aria-hidden="true">◷</span>{' '}
+            {formatEventTimeRange(evt.startsAt, evt.endsAt)}
+          </span>
+          {priceLabel && (
+            <strong className={evt.price.kind === 'free' ? 'free' : ''}>
+              {priceLabel}
+            </strong>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -8237,12 +9733,14 @@ function ForumDiscoverCard({
   locale: SupportedLocale;
   onOpen: () => void;
 }) {
-  const { event, memberCount, lastPostAt, lastPostExcerpt } = entry;
+  const { event, memberCount, postCount, lastPostAt, lastPostExcerpt } = entry;
+  const dateBadge = formatEventDateBadge(event.startsAt);
   return (
-    <div
+    <button
+      type="button"
       className="forum-discover-card"
       onClick={onOpen}
-      style={{ cursor: 'pointer' }}
+      aria-label={`Ouvrir le forum de ${event.title}`}
     >
       <div
         className="forum-discover-card-cover"
@@ -8257,6 +9755,13 @@ function ForumDiscoverCard({
         }
       >
         {!event.imageUrl && <EventImageFallback category={event.category} />}
+        <span
+          className="forum-discover-date"
+          aria-label={formatForumEventDayLabel(event.startsAt)}
+        >
+          <strong>{dateBadge.day}</strong>
+          <span>{dateBadge.month}</span>
+        </span>
         <div
           className="card-badge"
           style={{
@@ -8266,25 +9771,127 @@ function ForumDiscoverCard({
         >
           {SHORT_CATEGORY_LABELS[locale][event.category]}
         </div>
+        <span
+          className={`forum-discover-activity ${postCount > 0 ? 'active' : ''}`}
+        >
+          <span aria-hidden="true" />
+          {postCount > 0 ? 'Discussion active' : 'À lancer'}
+        </span>
       </div>
       <div className="forum-discover-card-body">
+        <span className="forum-discover-card-kicker">
+          {formatForumEventDayLabel(event.startsAt)} ·{' '}
+          {formatEventTimeRange(event.startsAt, event.endsAt)}
+        </span>
         <strong className="forum-discover-card-title">{event.title}</strong>
-        <span className="forum-discover-card-venue">{event.venue.name}</span>
+        <span className="forum-discover-card-venue">
+          <span aria-hidden="true">●</span>
+          {event.venue.name}
+        </span>
         <span className="forum-discover-card-members">
-          {memberCount} membre{memberCount !== 1 ? 's' : ''}
+          <span>
+            {postCount} message{postCount !== 1 ? 's' : ''}
+          </span>
+          <span>
+            {memberCount} participant{memberCount !== 1 ? 's' : ''}
+          </span>
         </span>
         {lastPostExcerpt ? (
           <span className="forum-discover-card-last">
-            {lastPostExcerpt}
-            {lastPostAt ? ` · ${formatRelativeTime(lastPostAt)}` : ''}
+            <span className="forum-discover-quote" aria-hidden="true">
+              “
+            </span>
+            <span>
+              {lastPostExcerpt}
+              {lastPostAt ? (
+                <small>{formatRelativeTime(lastPostAt)}</small>
+              ) : null}
+            </span>
           </span>
         ) : (
           <span className="forum-discover-card-last forum-discover-card-empty">
-            Sois le premier à écrire ici
+            Lance la première discussion pour cet événement.
           </span>
         )}
+        <span className="forum-discover-card-cta">
+          Voir la discussion <span aria-hidden="true">→</span>
+        </span>
       </div>
-    </div>
+    </button>
+  );
+}
+
+function ForumDiscoverSpotlight({
+  entry,
+  locale,
+  onOpen
+}: {
+  entry: DiscoverForumEntry;
+  locale: SupportedLocale;
+  onOpen: () => void;
+}) {
+  const { event, postCount, memberCount, lastPostAt, lastPostExcerpt } = entry;
+  return (
+    <button
+      type="button"
+      className="forum-discover-spotlight"
+      onClick={onOpen}
+      aria-label={`Ouvrir la discussion mise en avant pour ${event.title}`}
+    >
+      <span
+        className="forum-discover-spotlight-cover"
+        style={
+          event.imageUrl
+            ? {
+                backgroundImage: `url(${event.imageUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }
+            : undefined
+        }
+      >
+        {!event.imageUrl && <EventImageFallback category={event.category} />}
+        <span className="forum-discover-spotlight-shade" />
+        <span
+          className="forum-discover-spotlight-category"
+          style={
+            {
+              '--forum-accent':
+                CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.other
+            } as CSSProperties
+          }
+        >
+          {SHORT_CATEGORY_LABELS[locale][event.category]}
+        </span>
+      </span>
+      <span className="forum-discover-spotlight-content">
+        <span className="forum-discover-section-eyebrow">
+          Discussion à découvrir
+        </span>
+        <strong>{event.title}</strong>
+        <span className="forum-discover-spotlight-meta">
+          {formatForumEventDayLabel(event.startsAt)} ·{' '}
+          {formatEventTimeRange(event.startsAt, event.endsAt)} ·{' '}
+          {event.venue.name}
+        </span>
+        <span className="forum-discover-spotlight-excerpt">
+          {lastPostExcerpt ??
+            'La conversation est ouverte. Sois la première personne à lancer le sujet.'}
+        </span>
+        <span className="forum-discover-spotlight-footer">
+          <span>
+            <b>{postCount}</b> message{postCount !== 1 ? 's' : ''}
+          </span>
+          <span>
+            <b>{memberCount}</b> participant{memberCount !== 1 ? 's' : ''}
+          </span>
+          {lastPostAt && <span>{formatRelativeTime(lastPostAt)}</span>}
+          <span className="forum-discover-spotlight-cta">
+            Entrer dans la discussion <span aria-hidden="true">→</span>
+          </span>
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -8299,38 +9906,105 @@ function ActiveForumsPage({
 }) {
   const [filter, setFilter] = useState<ForumDiscoverFilter>('mine');
   const { entries, state } = useDiscoverForums(authToken, filter);
+  const featuredEntry = entries[0];
+  const remainingEntries = featuredEntry ? entries.slice(1) : [];
+  const totalMessages = entries.reduce(
+    (sum, entry) => sum + entry.postCount,
+    0
+  );
+  const activeForumCount = entries.filter(
+    (entry) => entry.postCount > 0
+  ).length;
 
   return (
-    <div className="dashboard-home">
-      <h1>Forums</h1>
-      <div className="forum-discover-filters">
-        <button
-          type="button"
-          className={filter === 'mine' ? 'active' : ''}
-          onClick={() => setFilter('mine')}
+    <div className="dashboard-home forum-discover-page">
+      <section className="forum-discover-hero">
+        <div className="forum-discover-hero-copy">
+          <span className="forum-discover-hero-eyebrow">
+            La communauté Pulso · Montréal
+          </span>
+          <h1>Les discussions qui donnent envie de sortir.</h1>
+          <p>
+            Trouve avec qui y aller, échange les bons plans et retrouve les
+            personnes qui font vivre chaque événement.
+          </p>
+          <a href="#forum-list" className="forum-discover-hero-cta">
+            Explorer les discussions <span aria-hidden="true">↓</span>
+          </a>
+        </div>
+        <div
+          className="forum-discover-hero-community"
+          aria-label="Salons disponibles"
         >
-          Mes forums
-        </button>
-        <button
-          type="button"
-          className={filter === 'popular' ? 'active' : ''}
-          onClick={() => setFilter('popular')}
-        >
-          Les plus populaires
-        </button>
-        {EVENT_CATEGORIES.filter((category) => category !== 'other').map(
-          (category) => (
-            <button
-              type="button"
-              key={category}
-              className={filter === category ? 'active' : ''}
-              onClick={() => setFilter(category)}
-            >
-              {SHORT_CATEGORY_LABELS[locale][category]}
-            </button>
-          )
-        )}
-      </div>
+          <span className="forum-discover-orbit forum-discover-orbit-main">
+            <b>Forum</b>
+            <small>par événement</small>
+          </span>
+          <span className="forum-discover-orbit room-general">Discussion</span>
+          <span className="forum-discover-orbit room-partners">
+            Sortir ensemble
+          </span>
+          <span className="forum-discover-orbit room-tickets">Billets</span>
+          <span className="forum-discover-orbit room-find">Se retrouver</span>
+        </div>
+        <div className="forum-discover-hero-stats">
+          <span>
+            <b>{entries.length}</b>
+            événements
+          </span>
+          <span>
+            <b>{totalMessages}</b>
+            messages
+          </span>
+          <span>
+            <b>{activeForumCount}</b>
+            forums actifs
+          </span>
+        </div>
+      </section>
+
+      <section className="forum-discover-browser" id="forum-list">
+        <div className="forum-discover-browser-heading">
+          <div>
+            <span className="forum-discover-section-eyebrow">
+              À toi de choisir
+            </span>
+            <h2>Explore les forums</h2>
+          </div>
+          <p>Une discussion dédiée à chaque événement à venir.</p>
+        </div>
+        <div className="forum-discover-filters" aria-label="Filtrer les forums">
+          <button
+            type="button"
+            className={filter === 'mine' ? 'active' : ''}
+            onClick={() => setFilter('mine')}
+            aria-pressed={filter === 'mine'}
+          >
+            Mes forums
+          </button>
+          <button
+            type="button"
+            className={filter === 'popular' ? 'active' : ''}
+            onClick={() => setFilter('popular')}
+            aria-pressed={filter === 'popular'}
+          >
+            Les plus actifs
+          </button>
+          {EVENT_CATEGORIES.filter((category) => category !== 'other').map(
+            (category) => (
+              <button
+                type="button"
+                key={category}
+                className={filter === category ? 'active' : ''}
+                onClick={() => setFilter(category)}
+                aria-pressed={filter === category}
+              >
+                {SHORT_CATEGORY_LABELS[locale][category]}
+              </button>
+            )
+          )}
+        </div>
+      </section>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
         <p className="list-view-empty">
@@ -8348,8 +10022,17 @@ function ActiveForumsPage({
           Aucun événement à venir pour le moment.
         </p>
       )}
+      {state === 'success' && featuredEntry && (
+        <ForumDiscoverSpotlight
+          entry={featuredEntry}
+          locale={locale}
+          onOpen={() =>
+            onOpenDetails(featuredEntry.event.id, featuredEntry.event)
+          }
+        />
+      )}
       <div className="forum-discover-grid">
-        {entries.map((entry) => (
+        {remainingEntries.map((entry) => (
           <ForumDiscoverCard
             key={entry.event.id}
             entry={entry}
@@ -8382,6 +10065,7 @@ function GroupsPage({
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<GroupVisibility>('open');
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [listVersion, setListVersion] = useState(0);
 
   const createGroup = () => {
@@ -8404,6 +10088,7 @@ function GroupsPage({
         setName('');
         setDescription('');
         setVisibility('open');
+        setCreateOpen(false);
         setListVersion((version) => version + 1);
         setSelectedGroup(groupResponseSchema.parse(json).data);
       })
@@ -8412,58 +10097,110 @@ function GroupsPage({
   };
 
   return (
-    <div className="messages-page">
-      <div className="messages-list-column">
-        <div className="messages-list-header">
-          <h1>Groupes</h1>
-        </div>
-        <form
-          className="friends-add-form groups-create-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            createGroup();
-          }}
-        >
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Nom du groupe"
-            maxLength={80}
-          />
-          <input
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder="Description (optionnel)"
-            maxLength={500}
-          />
-          <div className="groups-visibility-choice">
-            <label>
-              <input
-                type="radio"
-                name="group-visibility"
-                checked={visibility === 'open'}
-                onChange={() => setVisibility('open')}
-              />
-              Accès libre — tout le monde peut rejoindre
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="group-visibility"
-                checked={visibility === 'restricted'}
-                onChange={() => setVisibility('restricted')}
-              />
-              Accès limité — sur demande, approuvée par toi
-            </label>
+    <div className="messages-page groups-page">
+      <div className="messages-list-column groups-directory-column">
+        <header className="groups-page-header">
+          <div>
+            <span className="groups-page-eyebrow">Communautés Pulso</span>
+            <h1>Groupes</h1>
+            <p>Des espaces conçus pour passer de l’idée à la sortie.</p>
           </div>
           <button
-            type="submit"
-            className="btn-secondary"
-            disabled={creating || !name.trim()}
+            type="button"
+            className={`groups-create-trigger ${createOpen ? 'active' : ''}`}
+            onClick={() => setCreateOpen((open) => !open)}
+            aria-expanded={createOpen}
           >
+            <span aria-hidden="true">+</span>
             Créer
           </button>
-        </form>
+        </header>
+        {createOpen && (
+          <form
+            className="groups-create-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              createGroup();
+            }}
+          >
+            <div className="groups-create-form-heading">
+              <div>
+                <span className="groups-page-eyebrow">Nouveau groupe</span>
+                <strong>Crée ton espace d’organisation</strong>
+              </div>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => setCreateOpen(false)}
+              >
+                Fermer
+              </button>
+            </div>
+            <label className="groups-create-field">
+              <span>Nom du groupe</span>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Ex. Français à Montréal"
+                maxLength={80}
+                autoFocus
+              />
+            </label>
+            <label className="groups-create-field">
+              <span>Mission du groupe</span>
+              <textarea
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="À qui s’adresse le groupe et comment souhaitez-vous organiser les sorties ?"
+                maxLength={500}
+                rows={3}
+              />
+              <small>{description.length}/500</small>
+            </label>
+            <fieldset className="groups-visibility-choice">
+              <legend>Comment peut-on rejoindre ?</legend>
+              <label className={visibility === 'open' ? 'active' : ''}>
+                <input
+                  type="radio"
+                  name="group-visibility"
+                  checked={visibility === 'open'}
+                  onChange={() => setVisibility('open')}
+                />
+                <span className="groups-visibility-icon" aria-hidden="true">
+                  ◎
+                </span>
+                <span>
+                  <strong>Accès libre</strong>
+                  <small>Visible et accessible immédiatement.</small>
+                </span>
+              </label>
+              <label className={visibility === 'restricted' ? 'active' : ''}>
+                <input
+                  type="radio"
+                  name="group-visibility"
+                  checked={visibility === 'restricted'}
+                  onChange={() => setVisibility('restricted')}
+                />
+                <span className="groups-visibility-icon" aria-hidden="true">
+                  ◇
+                </span>
+                <span>
+                  <strong>Sur demande</strong>
+                  <small>
+                    Visible, mais chaque entrée doit être approuvée.
+                  </small>
+                </span>
+              </label>
+            </fieldset>
+            <button
+              type="submit"
+              className="groups-create-submit"
+              disabled={creating || !name.trim()}
+            >
+              {creating ? 'Création…' : 'Créer le groupe'}
+            </button>
+          </form>
+        )}
         <MessagesGroupsTab
           key={listVersion}
           authToken={authToken}
@@ -8472,7 +10209,7 @@ function GroupsPage({
         />
       </div>
 
-      <div className="messages-conversation-column">
+      <div className="messages-conversation-column groups-workspace-column">
         {selectedGroup ? (
           <GroupDetailContent
             group={selectedGroup}
@@ -8483,11 +10220,39 @@ function GroupsPage({
             onOpenEventForum={onOpenEventForum}
           />
         ) : (
-          <div className="messages-empty-pane">
-            <span className="empty-state-icon" aria-hidden="true">
-              👥
-            </span>
-            <p>Sélectionne un groupe pour l'ouvrir ici.</p>
+          <div className="groups-workspace-empty">
+            <div className="groups-workspace-empty-copy">
+              <span className="groups-page-eyebrow">Ton espace collectif</span>
+              <h2>Organiser une sortie ne devrait jamais être compliqué.</h2>
+              <p>
+                Ouvre un groupe pour retrouver au même endroit les décisions, le
+                programme, les présences, les tâches et la discussion.
+              </p>
+              <button
+                type="button"
+                className="groups-create-submit"
+                onClick={() => setCreateOpen(true)}
+              >
+                Créer mon premier groupe
+              </button>
+            </div>
+            <div
+              className="groups-workspace-modules"
+              aria-label="Modules disponibles"
+            >
+              <span>
+                <b>01</b> Programme partagé
+              </span>
+              <span>
+                <b>02</b> Présences réelles
+              </span>
+              <span>
+                <b>03</b> Checklist collective
+              </span>
+              <span>
+                <b>04</b> Discussion du groupe
+              </span>
+            </div>
           </div>
         )}
       </div>
@@ -8566,12 +10331,20 @@ function MessagesPage({
   const existingFriendIds = new Set(
     conversations.map((entry) => entry.friend.id)
   );
+  const unreadTotal = conversations.reduce(
+    (sum, conversation) => sum + conversation.unreadCount,
+    0
+  );
 
   return (
-    <div className="messages-page">
-      <div className="messages-list-column">
-        <div className="messages-list-header">
-          <h1>Messages</h1>
+    <div className="messages-page messaging-page">
+      <div className="messages-list-column messaging-inbox-column">
+        <header className="messages-list-header messaging-inbox-header">
+          <div>
+            <span className="messages-page-eyebrow">Ton cercle Pulso</span>
+            <h1>Messages</h1>
+            <p>Prépare vos prochaines sorties, simplement.</p>
+          </div>
           <button
             type="button"
             className="messages-compose-btn"
@@ -8579,23 +10352,36 @@ function MessagesPage({
             title="Nouveau message"
             onClick={() => setComposeOpen(true)}
           >
-            ✏️
+            <span aria-hidden="true">+</span>
+            <small>Écrire</small>
           </button>
+        </header>
+        <div className="messages-inbox-stats">
+          <span>
+            <b>{conversations.length}</b>
+            conversation{conversations.length !== 1 ? 's' : ''}
+          </span>
+          <span className={unreadTotal > 0 ? 'active' : ''}>
+            <b>{unreadTotal}</b>
+            non lu{unreadTotal !== 1 ? 's' : ''}
+          </span>
         </div>
-        <div className="details-tabs">
+        <div className="details-tabs messages-main-tabs">
           <button
             type="button"
             className={tab === 'discussions' ? 'active' : ''}
             onClick={() => setTab('discussions')}
           >
             Discussions
+            {unreadTotal > 0 && <small>{unreadTotal}</small>}
           </button>
           <button
             type="button"
             className={tab === 'demandes' ? 'active' : ''}
             onClick={() => setTab('demandes')}
           >
-            Demandes{pendingCount > 0 ? ` (${pendingCount})` : ''}
+            Demandes
+            {pendingCount > 0 && <small>{pendingCount}</small>}
           </button>
           <button
             type="button"
@@ -8608,13 +10394,15 @@ function MessagesPage({
 
         {tab === 'discussions' && (
           <>
-            <div className="messages-search">
+            <label className="messages-search">
+              <span aria-hidden="true">⌕</span>
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Rechercher dans vos messages"
+                placeholder="Rechercher une conversation"
+                aria-label="Rechercher une conversation"
               />
-            </div>
+            </label>
             {state === 'loading' && (
               <p className="list-view-empty">Chargement…</p>
             )}
@@ -8624,12 +10412,17 @@ function MessagesPage({
               </p>
             )}
             {state === 'success' && conversations.length === 0 && (
-              <div className="empty-state-card">
-                <span className="empty-state-icon" aria-hidden="true">
-                  💬
-                </span>
-                <p>Aucune conversation pour l'instant</p>
-                <p>Ajoute des amis pour commencer à discuter avec eux.</p>
+              <div className="messages-inbox-empty">
+                <span aria-hidden="true">◌</span>
+                <strong>Ton espace de discussion est prêt.</strong>
+                <p>Ajoute des amis, puis lance la première conversation.</p>
+                <button
+                  type="button"
+                  className="messages-empty-cta"
+                  onClick={() => setComposeOpen(true)}
+                >
+                  Nouveau message
+                </button>
               </div>
             )}
             {state === 'success' &&
@@ -8666,8 +10459,10 @@ function MessagesPage({
                         </span>
                       )}
                     </span>
-                    <span>
-                      {conversation.lastMessage?.body ?? 'Dites bonjour !'}
+                    <span className="conversation-list-preview">
+                      {conversation.lastMessage
+                        ? `${conversation.lastMessage.senderId === conversation.friend.id ? '' : 'Vous : '}${conversation.lastMessage.body}`
+                        : 'Commencez la conversation'}
                     </span>
                   </span>
                   {conversation.unreadCount > 0 && (
@@ -8700,7 +10495,7 @@ function MessagesPage({
         )}
       </div>
 
-      <div className="messages-conversation-column">
+      <div className="messages-conversation-column messaging-conversation-column">
         {selectedFriend ? (
           <ConversationPane
             friend={selectedFriend}
@@ -8716,11 +10511,26 @@ function MessagesPage({
             onOpenEventForum={onOpenEventForum}
           />
         ) : (
-          <div className="messages-empty-pane">
-            <span className="empty-state-icon" aria-hidden="true">
-              💬
-            </span>
-            <p>Sélectionne une discussion ou un groupe pour l'ouvrir ici.</p>
+          <div className="messaging-conversation-empty">
+            <div className="messaging-empty-orbit" aria-hidden="true">
+              <span>●</span>
+              <span>●</span>
+              <span>●</span>
+              <b>◌</b>
+            </div>
+            <span className="messages-page-eyebrow">Conversations privées</span>
+            <h2>Les meilleures sorties commencent souvent par un message.</h2>
+            <p>
+              Choisis un ami ou un groupe pour planifier, partager un événement
+              et décider ensemble.
+            </p>
+            <button
+              type="button"
+              className="messages-empty-cta"
+              onClick={() => setComposeOpen(true)}
+            >
+              Écrire à un ami
+            </button>
           </div>
         )}
       </div>
@@ -8754,25 +10564,30 @@ function ConversationPane({
   onActivity: () => void;
 }) {
   return (
-    <>
+    <div className="conversation-pane">
       <div className="conversation-pane-header">
         <span className="conversation-modal-friend">
-          <span className="friends-row-avatar friends-row-avatar-md">
+          <span className="friends-row-avatar friends-row-avatar-lg conversation-pane-avatar">
             {friend.avatarUrl ? (
               <img src={friend.avatarUrl} alt="" />
             ) : (
               friend.displayName.slice(0, 1).toUpperCase()
             )}
           </span>
-          <strong>{friend.displayName}</strong>
+          <span className="conversation-pane-identity">
+            <span className="messages-page-eyebrow">Conversation privée</span>
+            <strong>{friend.displayName}</strong>
+            <small>Vous pouvez échanger car vous êtes amis sur Pulso.</small>
+          </span>
         </span>
+        <span className="conversation-pane-trust">Entre amis</span>
       </div>
       <ConversationThread
         friend={friend}
         authToken={authToken}
         onActivity={onActivity}
       />
-    </>
+    </div>
   );
 }
 
@@ -8835,7 +10650,12 @@ function MessagesRequestsTab({
   );
 
   return (
-    <div className="messages-tab-panel">
+    <div className="messages-tab-panel messages-requests-panel">
+      <div className="messages-request-heading">
+        <span className="messages-page-eyebrow">Nouvelles connexions</span>
+        <strong>Demandes d’amis</strong>
+        <p>Une fois acceptée, une conversation privée peut commencer.</p>
+      </div>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
         <p className="list-view-empty">
@@ -8843,56 +10663,78 @@ function MessagesRequestsTab({
         </p>
       )}
       {state === 'success' && requests.length === 0 && (
-        <p className="list-view-empty">Aucune demande en attente.</p>
+        <div className="messages-request-empty">
+          <span aria-hidden="true">✓</span>
+          <div>
+            <strong>Tout est à jour.</strong>
+            <p>Aucune demande en attente pour le moment.</p>
+          </div>
+        </div>
       )}
       {incoming.length > 0 && (
-        <div className="amis-list">
-          {incoming.map((request) => (
-            <div className="amis-row" key={request.id}>
-              <span className="friends-row-avatar friends-row-avatar-lg">
-                {request.user.avatarUrl ? (
-                  <img src={request.user.avatarUrl} alt="" />
-                ) : (
-                  request.user.displayName.slice(0, 1).toUpperCase()
-                )}
-              </span>
-              <span className="amis-row-name">{request.user.displayName}</span>
-              <div className="amis-row-actions">
-                <button
-                  type="button"
-                  className="amis-btn-accept"
-                  onClick={() => respond(request.id, 'accept')}
-                >
-                  Accepter
-                </button>
-                <button
-                  type="button"
-                  className="amis-btn-ghost"
-                  onClick={() => respond(request.id, 'decline')}
-                >
-                  Refuser
-                </button>
+        <section className="messages-request-section">
+          <div className="messages-request-section-title">
+            <strong>À confirmer</strong>
+            <span>{incoming.length}</span>
+          </div>
+          <div className="amis-list messages-request-list">
+            {incoming.map((request) => (
+              <div className="amis-row" key={request.id}>
+                <span className="friends-row-avatar friends-row-avatar-lg">
+                  {request.user.avatarUrl ? (
+                    <img src={request.user.avatarUrl} alt="" />
+                  ) : (
+                    request.user.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <span className="amis-row-name">
+                  {request.user.displayName}
+                </span>
+                <div className="amis-row-actions">
+                  <button
+                    type="button"
+                    className="amis-btn-accept"
+                    onClick={() => respond(request.id, 'accept')}
+                  >
+                    Accepter
+                  </button>
+                  <button
+                    type="button"
+                    className="amis-btn-ghost"
+                    onClick={() => respond(request.id, 'decline')}
+                  >
+                    Refuser
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </section>
       )}
       {outgoing.length > 0 && (
-        <div className="amis-list">
-          {outgoing.map((request) => (
-            <div className="amis-row" key={request.id}>
-              <span className="friends-row-avatar friends-row-avatar-lg">
-                {request.user.avatarUrl ? (
-                  <img src={request.user.avatarUrl} alt="" />
-                ) : (
-                  request.user.displayName.slice(0, 1).toUpperCase()
-                )}
-              </span>
-              <span className="amis-row-name">{request.user.displayName}</span>
-              <span className="amis-row-pending">En attente</span>
-            </div>
-          ))}
-        </div>
+        <section className="messages-request-section">
+          <div className="messages-request-section-title">
+            <strong>Envoyées</strong>
+            <span>{outgoing.length}</span>
+          </div>
+          <div className="amis-list messages-request-list">
+            {outgoing.map((request) => (
+              <div className="amis-row" key={request.id}>
+                <span className="friends-row-avatar friends-row-avatar-lg">
+                  {request.user.avatarUrl ? (
+                    <img src={request.user.avatarUrl} alt="" />
+                  ) : (
+                    request.user.displayName.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <span className="amis-row-name">
+                  {request.user.displayName}
+                </span>
+                <span className="amis-row-pending">En attente</span>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );
@@ -8927,6 +10769,7 @@ function MessagesGroupsTab({
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
   );
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     if (!authToken) return;
@@ -8974,9 +10817,15 @@ function MessagesGroupsTab({
       : subTab === 'event'
         ? eventGroups
         : discoverGroups;
+  const visibleRows = query.trim()
+    ? rows.filter(({ group, event }) => {
+        const haystack = `${group.name} ${group.description ?? ''} ${event?.title ?? ''}`;
+        return haystack.toLowerCase().includes(query.trim().toLowerCase());
+      })
+    : rows;
 
   return (
-    <div className="messages-tab-panel">
+    <div className="messages-tab-panel groups-directory-panel">
       <div className="details-tabs groups-sub-tabs">
         <button
           type="button"
@@ -8990,7 +10839,7 @@ function MessagesGroupsTab({
           className={subTab === 'event' ? 'active' : ''}
           onClick={() => setSubTab('event')}
         >
-          Groupes de l'événement
+          Événements
         </button>
         <button
           type="button"
@@ -9000,6 +10849,35 @@ function MessagesGroupsTab({
           Découvrir
         </button>
       </div>
+
+      <div className="groups-directory-context">
+        <div>
+          <strong>
+            {subTab === 'mine'
+              ? 'Tes espaces'
+              : subTab === 'event'
+                ? 'Autour des événements'
+                : 'Communautés à découvrir'}
+          </strong>
+          <span>
+            {subTab === 'mine'
+              ? 'Tous les groupes que tu as rejoints.'
+              : subTab === 'event'
+                ? 'Des groupes créés pour préparer une sortie précise.'
+                : 'Des communautés montréalaises ouvertes ou sur demande.'}
+          </span>
+        </div>
+        <span className="groups-directory-count">{rows.length}</span>
+      </div>
+      <label className="groups-directory-search">
+        <span aria-hidden="true">⌕</span>
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Rechercher un groupe"
+          aria-label="Rechercher un groupe"
+        />
+      </label>
 
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
@@ -9016,29 +10894,49 @@ function MessagesGroupsTab({
               : 'Aucun groupe permanent pour le moment.'}
         </p>
       )}
-      <div className="friends-list">
-        {rows.map(({ group, event }) => (
+      {state === 'success' && rows.length > 0 && visibleRows.length === 0 && (
+        <p className="list-view-empty">
+          Aucun groupe ne correspond à ta recherche.
+        </p>
+      )}
+      <div className="friends-list groups-directory-list">
+        {visibleRows.map(({ group, event }) => (
           <button
             type="button"
             key={group.id}
             className={`conversation-list-row ${selectedGroupId === group.id ? 'selected' : ''}`}
             onClick={() => openGroup(group.id)}
           >
-            <span className="friends-row-avatar friends-row-avatar-lg">
+            <span className="friends-row-avatar friends-row-avatar-lg group-directory-avatar">
               {group.name.slice(0, 1).toUpperCase()}
             </span>
             <span className="conversation-list-info">
               <span className="conversation-list-row-top">
                 <strong>{group.name}</strong>
-                {group.visibility === 'restricted' && (
-                  <span title="Accès limité">🔒</span>
-                )}
+                <span className="group-directory-access">
+                  {group.visibility === 'restricted' ? 'Sur demande' : 'Libre'}
+                </span>
               </span>
-              <span>
-                {event
-                  ? `${event.title} · ${new Date(event.startsAt).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}`
-                  : `${group.memberCount} membre${group.memberCount > 1 ? 's' : ''}`}
+              {group.description && (
+                <span className="group-directory-description">
+                  {group.description}
+                </span>
+              )}
+              <span className="group-directory-meta">
+                <span>
+                  {group.memberCount} membre{group.memberCount > 1 ? 's' : ''}
+                </span>
+                <span>{event ? 'Groupe événement' : 'Communauté'}</span>
               </span>
+              {event && (
+                <span className="group-directory-event">
+                  {event.title} ·{' '}
+                  {new Date(event.startsAt).toLocaleDateString('fr-CA', {
+                    day: 'numeric',
+                    month: 'short'
+                  })}
+                </span>
+              )}
             </span>
             {group.isModerator &&
               group.pendingRequestCount !== undefined &&
@@ -9091,13 +10989,19 @@ function ComposeMessageModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="share-friend-modal"
+        className="share-friend-modal messages-compose-modal"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="conversation-modal-header">
-          <strong>Nouveau message</strong>
+          <div className="messages-compose-modal-title">
+            <span className="messages-page-eyebrow">Conversation privée</span>
+            <strong>Nouveau message</strong>
+            <small>
+              Choisis un ami pour commencer ou reprendre un échange.
+            </small>
+          </div>
           <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
+            ✕
           </button>
         </div>
         <div className="share-friend-list">
@@ -9116,7 +11020,10 @@ function ComposeMessageModal({
           )}
           {state === 'success' &&
             friends.map((friend) => (
-              <div className="friends-row" key={friend.id}>
+              <div
+                className="friends-row messages-compose-friend"
+                key={friend.id}
+              >
                 <span className="friends-row-avatar">
                   {friend.avatarUrl ? (
                     <img src={friend.avatarUrl} alt="" />
@@ -9293,6 +11200,7 @@ function AmisPage({
 
   const removeFriendAction = (friendUserId: string) => {
     if (!authToken) return;
+    if (!window.confirm('Retirer cette personne de tes amis ?')) return;
     void fetch(`${API_BASE_URL}/me/friends/${friendUserId}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${authToken}` }
@@ -9319,6 +11227,19 @@ function AmisPage({
         f.displayName.toLowerCase().includes(query.trim().toLowerCase())
       )
     : friends;
+  const friendsWithPlansCount = new Set(
+    friendsUpcoming.map((entry) => entry.friend.id)
+  ).size;
+  const circleOutings = friendsUpcoming
+    .map((entry) => ({
+      entry,
+      event: upcomingEventsById.get(entry.eventId)
+    }))
+    .filter(
+      (row): row is { entry: FriendsMapEntry; event: PublicEvent } =>
+        row.event !== undefined
+    )
+    .slice(0, 4);
 
   const friendRowSubtitle = (friendUserId: string): string | undefined => {
     const upcoming = friendsUpcoming.find(
@@ -9333,14 +11254,42 @@ function AmisPage({
   };
 
   return (
-    <div className="amis-page-layout">
+    <div
+      className={`amis-page-layout ${selectedFriend ? 'has-selection' : ''}`}
+    >
       <div className="amis-list-column">
         <div className="amis-list-header">
-          <h1>Amis</h1>
-          <p>
-            Retrouve tes amis, vois leurs sorties et organise vos prochaines
-            expériences.
-          </p>
+          <span className="amis-page-kicker">Ton cercle Pulso</span>
+          <div className="amis-title-row">
+            <div>
+              <h1>Mes amis</h1>
+              <p>Retrouve les personnes avec qui vivre Montréal.</p>
+            </div>
+            <button
+              type="button"
+              className="amis-invite-icon"
+              onClick={() => setInviteOpen(true)}
+              aria-label="Inviter un ami"
+              title="Inviter un ami"
+            >
+              +
+            </button>
+          </div>
+          <div
+            className="amis-overview-stats"
+            aria-label="Résumé de ton cercle"
+          >
+            <span>
+              <strong>{friends.length}</strong> amis
+            </span>
+            <span>
+              <strong>{friendsWithPlansCount}</strong> ont une sortie visible
+            </span>
+            <span>
+              <strong>{incoming.length}</strong> demande
+              {incoming.length !== 1 ? 's' : ''}
+            </span>
+          </div>
         </div>
 
         <div className="amis-search-row">
@@ -9351,36 +11300,29 @@ function AmisPage({
               placeholder="Rechercher un ami"
             />
           </div>
-          <button
-            type="button"
-            className="btn-secondary amis-invite-btn"
-            onClick={() => setInviteOpen(true)}
-          >
-            👤 Inviter
-          </button>
         </div>
 
-        <div className="details-tabs">
+        <div className="details-tabs amis-tabs">
           <button
             type="button"
             className={tab === 'tous' ? 'active' : ''}
             onClick={() => setTab('tous')}
           >
-            Tous
+            Mon cercle <span>{friends.length}</span>
           </button>
           <button
             type="button"
             className={tab === 'demandes' ? 'active' : ''}
             onClick={() => setTab('demandes')}
           >
-            Demandes{incoming.length > 0 ? ` (${incoming.length})` : ''}
+            Demandes {incoming.length > 0 && <span>{incoming.length}</span>}
           </button>
           <button
             type="button"
             className={tab === 'suggestions' ? 'active' : ''}
             onClick={() => setTab('suggestions')}
           >
-            Suggestions
+            À découvrir <span>{suggestions.length}</span>
           </button>
         </div>
 
@@ -9408,26 +11350,32 @@ function AmisPage({
               <div
                 className={`conversation-list-row amis-friend-row ${selectedFriend?.id === friendUser.id ? 'selected' : ''}`}
                 key={friendUser.id}
-                onClick={() => setSelectedFriend(friendUser)}
               >
-                <span className="friends-row-avatar friends-row-avatar-lg">
-                  {friendUser.avatarUrl ? (
-                    <img src={friendUser.avatarUrl} alt="" />
-                  ) : (
-                    friendUser.displayName.slice(0, 1).toUpperCase()
-                  )}
-                </span>
-                <span className="conversation-list-info">
-                  <strong>{friendUser.displayName}</strong>
-                  <span>{friendRowSubtitle(friendUser.id) ?? ' '}</span>
-                </span>
+                <button
+                  type="button"
+                  className="amis-friend-select"
+                  onClick={() => setSelectedFriend(friendUser)}
+                >
+                  <span className="friends-row-avatar friends-row-avatar-lg">
+                    {friendUser.avatarUrl ? (
+                      <img src={friendUser.avatarUrl} alt="" />
+                    ) : (
+                      friendUser.displayName.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  <span className="conversation-list-info">
+                    <strong>{friendUser.displayName}</strong>
+                    <span>
+                      {friendRowSubtitle(friendUser.id) ?? 'Dans ton cercle'}
+                    </span>
+                  </span>
+                </button>
                 <button
                   type="button"
                   className="amis-row-icon-btn"
                   aria-label="Envoyer un message"
                   title="Message"
-                  onClick={(event) => {
-                    event.stopPropagation();
+                  onClick={() => {
                     setConversationWith(friendUser);
                   }}
                 >
@@ -9438,8 +11386,7 @@ function AmisPage({
                   className="amis-row-icon-btn"
                   aria-label="Retirer cet ami"
                   title="Retirer"
-                  onClick={(event) => {
-                    event.stopPropagation();
+                  onClick={() => {
                     removeFriendAction(friendUser.id);
                   }}
                 >
@@ -9578,137 +11525,124 @@ function AmisPage({
             attendance={attendance}
             onOpenEventForum={onOpenEventForum}
             onMessage={() => setConversationWith(selectedFriend)}
+            onBack={() => setSelectedFriend(undefined)}
           />
         ) : (
-          <div className="messages-empty-pane">
-            <span className="empty-state-icon" aria-hidden="true">
-              🧑‍🤝‍🧑
-            </span>
-            <p>Sélectionne un ami pour voir son profil.</p>
+          <div className="messages-empty-pane amis-empty-detail">
+            <div className="amis-empty-orbit" aria-hidden="true">
+              <span>☺</span>
+              <span>✦</span>
+              <span>☺</span>
+            </div>
+            <span className="amis-page-kicker">Ton cercle t’attend</span>
+            <h2>Choisis un ami</h2>
+            <p>
+              Consulte ses sorties partagées, vos événements en commun et
+              démarre l’organisation de votre prochaine soirée.
+            </p>
+            <button type="button" onClick={() => setInviteOpen(true)}>
+              Inviter une nouvelle personne
+            </button>
           </div>
         )}
       </div>
 
       <aside className="amis-rail">
-        <div className="events-trends-section amis-rail-section">
-          <div className="section-header amis-rail-header">
-            <h3>
-              Demandes d'amis
-              {incoming.length > 0 ? ` (${incoming.length})` : ''}
-            </h3>
-            <button
-              type="button"
-              className="view-all"
-              onClick={() => setTab('demandes')}
-            >
-              Voir tout
-            </button>
+        <div className="amis-rail-hero">
+          <span className="amis-page-kicker">Ton cercle bouge</span>
+          <strong>{friendsWithPlansCount}</strong>
+          <p>
+            ami{friendsWithPlansCount !== 1 ? 's ont' : ' a'} partagé une sortie
+            à venir avec leur cercle.
+          </p>
+          <button type="button" onClick={() => setMapOpen(true)}>
+            <span aria-hidden="true">⌖</span> Voir sur la carte
+          </button>
+        </div>
+
+        <div className="amis-rail-section amis-circle-outings">
+          <div className="amis-rail-header">
+            <div>
+              <span>À venir</span>
+              <h3>Sorties du cercle</h3>
+            </div>
           </div>
-          {incoming.length === 0 ? (
-            <p className="list-view-empty">Aucune demande en attente.</p>
+          {circleOutings.length === 0 ? (
+            <p className="list-view-empty">
+              Les sorties que tes amis partagent apparaîtront ici.
+            </p>
           ) : (
-            <div className="amis-list">
-              {incoming.slice(0, 3).map((request) => (
-                <div className="amis-row" key={request.id}>
+            <div className="amis-circle-list">
+              {circleOutings.map(({ entry, event }) => (
+                <button
+                  type="button"
+                  className="amis-circle-row"
+                  key={`${entry.friend.id}-${event.id}`}
+                  onClick={() => onOpenEventForum(event.id)}
+                >
                   <span className="friends-row-avatar">
-                    {request.user.avatarUrl ? (
-                      <img src={request.user.avatarUrl} alt="" />
+                    {entry.friend.avatarUrl ? (
+                      <img src={entry.friend.avatarUrl} alt="" />
                     ) : (
-                      request.user.displayName.slice(0, 1).toUpperCase()
+                      entry.friend.displayName.slice(0, 1).toUpperCase()
                     )}
                   </span>
-                  <span className="amis-row-name">
-                    {request.user.displayName}
+                  <span>
+                    <strong>{entry.friend.displayName}</strong>
+                    <span>{event.title}</span>
                   </span>
-                  <div className="amis-row-actions">
-                    <button
-                      type="button"
-                      className="amis-btn-accept"
-                      onClick={() => respond(request.id, 'accept')}
-                    >
-                      ✓
-                    </button>
-                    <button
-                      type="button"
-                      className="amis-btn-ghost"
-                      onClick={() => respond(request.id, 'decline')}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
+                  <time dateTime={event.startsAt}>
+                    {new Date(event.startsAt).toLocaleDateString('fr-CA', {
+                      day: 'numeric',
+                      month: 'short'
+                    })}
+                  </time>
+                </button>
               ))}
             </div>
           )}
         </div>
 
-        <div className="events-trends-section amis-rail-section">
-          <div className="section-header amis-rail-header">
-            <h3>Suggestions pour toi</h3>
-            <button
-              type="button"
-              className="view-all"
-              onClick={() => setTab('suggestions')}
-            >
-              Voir tout
-            </button>
-          </div>
-          {suggestions.length === 0 ? (
-            <p className="list-view-empty">Rien pour l'instant.</p>
-          ) : (
-            <div className="amis-list">
-              {suggestions.slice(0, 3).map((suggestion) => (
-                <div className="amis-row" key={suggestion.user.id}>
-                  <span className="friends-row-avatar">
-                    {suggestion.user.avatarUrl ? (
-                      <img src={suggestion.user.avatarUrl} alt="" />
-                    ) : (
-                      suggestion.user.displayName.slice(0, 1).toUpperCase()
-                    )}
-                  </span>
-                  <span className="amis-row-name">
-                    {suggestion.user.displayName}
-                    <span className="amis-row-mutual">
-                      {suggestion.mutualFriendCount} ami
-                      {suggestion.mutualFriendCount > 1 ? 's' : ''} en commun
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className="text-btn"
-                    onClick={() => addSuggestion(suggestion.user.id)}
-                  >
-                    +
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="amis-rail-section amis-code-rail">
+          <span className="amis-page-kicker">Ton code ami</span>
+          <strong>{friendCode ?? '—'}</strong>
+          <p>Partage-le uniquement avec les personnes que tu veux ajouter.</p>
+          <button type="button" onClick={() => setInviteOpen(true)}>
+            Inviter avec mon code <span aria-hidden="true">→</span>
+          </button>
         </div>
 
-        <div className="events-trends-section amis-rail-section">
-          <h3>Actions rapides</h3>
+        <div className="amis-rail-section amis-actions-card">
+          <div className="amis-rail-header">
+            <div>
+              <span>Ensemble</span>
+              <h3>Organiser une sortie</h3>
+            </div>
+          </div>
           <div className="amis-quick-actions">
             <button
               type="button"
               className="forum-panel-rail-action"
               onClick={() => onNavigate('groupes')}
             >
-              👥 Créer un groupe
+              <span aria-hidden="true">♟</span>
+              <span>
+                <strong>Créer un groupe</strong>
+                <small>Rassembler ton cercle</small>
+              </span>
+              <span aria-hidden="true">→</span>
             </button>
             <button
               type="button"
               className="forum-panel-rail-action"
               onClick={() => onNavigate('evenement')}
             >
-              🔗 Partager un événement
-            </button>
-            <button
-              type="button"
-              className="forum-panel-rail-action"
-              onClick={() => setMapOpen(true)}
-            >
-              📍 Voir les amis sur la carte
+              <span aria-hidden="true">♡</span>
+              <span>
+                <strong>Choisir un événement</strong>
+                <small>Partager une idée de sortie</small>
+              </span>
+              <span aria-hidden="true">→</span>
             </button>
           </div>
         </div>
@@ -9741,13 +11675,10 @@ function AmisPage({
   );
 }
 
-// Shared by the "Mes événements" and "Historique" Raccourcis - same
-// attendance data (GET /me/attendance, already built in Phase 2.2),
-// hydrated via the existing /events/by-ids endpoint, split by date rather
-// than duplicating the fetch for two near-identical pages.
-// Shared by AttendanceEventsPage (Raccourcis: Mes événements/Historique)
-// and the profile page's Aperçu/Mes événements tabs (Phase 4.7) - one fetch
-// implementation rather than three copies of the same by-ids hydration.
+// Same attendance data (GET /me/attendance, Phase 2.2) hydrated via the
+// existing /events/by-ids endpoint and split by date, rather than a second
+// fetch for the past half. Shared by the profile page's Aperçu and Mes
+// sorties tabs, each of which shows both halves.
 function useAttendanceEvents(
   attendance: Record<string, AttendanceVisibility>,
   mode: 'upcoming' | 'past'
@@ -9848,63 +11779,15 @@ function EventCarouselRow({
   );
 }
 
-function AttendanceEventsPage({
-  title,
-  emptyMessage,
-  mode,
-  attendance,
-  onOpenDetails,
-  locale
-}: {
-  title: string;
-  emptyMessage: string;
-  mode: 'upcoming' | 'past';
-  attendance: Record<string, AttendanceVisibility>;
-  onOpenDetails: (eventId: string) => void;
-  locale: SupportedLocale;
-}) {
-  const { events, state } = useAttendanceEvents(attendance, mode);
-
-  return (
-    <div className="dashboard-home">
-      <h1>{title}</h1>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'error' && (
-        <p className="list-view-empty">
-          Impossible de charger vos événements pour le moment.
-        </p>
-      )}
-      {state === 'success' && events.length === 0 && (
-        <p className="list-view-empty">{emptyMessage}</p>
-      )}
-      <EventCarouselRow
-        events={events}
-        onOpenDetails={onOpenDetails}
-        locale={locale}
-      />
-    </div>
-  );
-}
-
 type ProfilTab =
-  | 'apercu'
-  | 'mes-evenements'
-  | 'favoris'
-  | 'groupes'
-  | 'avis'
-  | 'photos'
-  | 'badges'
-  | 'activite';
+  'apercu' | 'mes-evenements' | 'favoris' | 'groupes' | 'activite';
 
-const PROFIL_TABS: Array<{ id: ProfilTab; label: string }> = [
-  { id: 'apercu', label: 'Aperçu' },
-  { id: 'mes-evenements', label: 'Mes événements' },
-  { id: 'favoris', label: 'Favoris' },
-  { id: 'groupes', label: 'Groupes' },
-  { id: 'avis', label: 'Avis' },
-  { id: 'photos', label: 'Photos' },
-  { id: 'badges', label: 'Badges' },
-  { id: 'activite', label: 'Activité' }
+const PROFIL_TABS: Array<{ id: ProfilTab; label: string; icon: string }> = [
+  { id: 'apercu', label: 'Vue d’ensemble', icon: '✦' },
+  { id: 'mes-evenements', label: 'Mes sorties', icon: '◫' },
+  { id: 'favoris', label: 'Favoris', icon: '♡' },
+  { id: 'groupes', label: 'Groupes', icon: '♟' },
+  { id: 'activite', label: 'Activité', icon: '↗' }
 ];
 
 // Brand-gradient banner presets (Phase 4.7) - never a photo upload, Pulso
@@ -10005,6 +11888,29 @@ function formatMessageTimestamp(iso: string): string {
   return date.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
 }
 
+function formatConversationDayLabel(iso: string): string {
+  const date = new Date(iso);
+  const day = date.toLocaleDateString('en-CA', {
+    timeZone: 'America/Toronto'
+  });
+  const today = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/Toronto'
+  });
+  const yesterday = new Date(Date.now() - 86400000).toLocaleDateString(
+    'en-CA',
+    { timeZone: 'America/Toronto' }
+  );
+  if (day === today) return 'Aujourd’hui';
+  if (day === yesterday) return 'Hier';
+  const label = date.toLocaleDateString('fr-CA', {
+    timeZone: 'America/Toronto',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long'
+  });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 // Événements page (Phase 4.11) - real price display for a PublicEvent's
 // price object. 'unknown' (source never stated a price) is deliberately
 // distinct from 'free': showing "Gratuit" for an unknown price would be a
@@ -10030,6 +11936,76 @@ function formatEventTimeRange(startsAt: string, endsAt: string | undefined) {
       minute: '2-digit'
     });
   return endsAt ? `${format(startsAt)} - ${format(endsAt)}` : format(startsAt);
+}
+
+// "sam. 8 août, 20 h 00" - the whole instant in one line, for surfaces that
+// have no separate date badge to lean on (the notifications panel).
+// Mirrors the server-side After rule (DEC-0017): the creator's flag, or a
+// start in the small hours - which is what an after actually is, and which
+// also catches late-night events already in the sourced directory.
+function isAfterEvent(event: PublicEvent): boolean {
+  if (event.isAfter) return true;
+  const hour = Number(
+    new Date(event.startsAt).toLocaleString('en-CA', {
+      timeZone: 'America/Toronto',
+      hour: '2-digit',
+      hour12: false
+    })
+  );
+  return hour >= AFTER_WINDOW_START_HOUR && hour < AFTER_WINDOW_END_HOUR;
+}
+
+function formatEventDateTime(startsAt: string): string {
+  return new Date(startsAt).toLocaleString('fr-CA', {
+    timeZone: 'America/Toronto',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function formatEventDateBadge(startsAt: string): {
+  day: string;
+  month: string;
+} {
+  const date = new Date(startsAt);
+  return {
+    day: date.toLocaleDateString('fr-CA', {
+      timeZone: 'America/Toronto',
+      day: '2-digit'
+    }),
+    month: date
+      .toLocaleDateString('fr-CA', {
+        timeZone: 'America/Toronto',
+        month: 'short'
+      })
+      .replace('.', '')
+      .toUpperCase()
+  };
+}
+
+function formatForumEventDayLabel(startsAt: string): string {
+  const eventDate = new Date(startsAt);
+  const eventDay = eventDate.toLocaleDateString('en-CA', {
+    timeZone: 'America/Toronto'
+  });
+  const today = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/Toronto'
+  });
+  const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('en-CA', {
+    timeZone: 'America/Toronto'
+  });
+  if (eventDay === today) return 'Ce soir';
+  if (eventDay === tomorrow) return 'Demain';
+  const label = eventDate.toLocaleDateString('fr-CA', {
+    timeZone: 'America/Toronto',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short'
+  });
+  return label.charAt(0).toUpperCase() + label.slice(1).replace('.', '');
 }
 
 function formatMemberSince(iso: string): string {
@@ -10281,30 +12257,61 @@ function ProfilHeader({
   return (
     <div className="profil-header">
       <div className="profil-cover" style={{ background: coverGradient }} />
-      {/* Only the avatar + name overlap the banner, inside the scrim
-          (.profil-cover's ::after) that fades to the solid background -
-          that's what keeps the name legible regardless of which bright
-          gradient preset is picked. Location/memberSince/bio/stats live in
-          .profil-header-details below, always fully on the solid
-          background, never over the banner. */}
-      <div className="profil-header-overlap">
-        <span className="profil-avatar">{renderUserAvatarContent(user)}</span>
-        <h1>{user.displayName}</h1>
+      <div className="profil-header-content">
+        <div className="profil-identity">
+          <span className="profil-avatar">{renderUserAvatarContent(user)}</span>
+          <div className="profil-identity-copy">
+            <span className="profil-eyebrow">Mon espace Pulso</span>
+            <div className="profil-name-row">
+              <h1>{user.displayName}</h1>
+              <span className="profil-account-pill">Compte connecté</span>
+            </div>
+            <div className="profil-meta">
+              <span>📍 Montréal, QC</span>
+              <span>·</span>
+              <span>Membre depuis {formatMemberSince(user.createdAt)}</span>
+            </div>
+            <p className={`profil-bio ${user.bio ? '' : 'is-empty'}`}>
+              {user.bio ||
+                'Ajoute quelques mots pour personnaliser ton espace.'}
+            </p>
+            <span className="profil-friends-link">
+              <strong>{friendsCount}</strong> ami{friendsCount !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
         <button type="button" className="profil-edit-btn" onClick={onEdit}>
-          ✏️ Modifier mon profil
+          <span aria-hidden="true">✎</span>
+          Personnaliser
         </button>
       </div>
-      <div className="profil-header-details">
-        <p className="profil-location">📍 Montréal, QC</p>
-        <p className="profil-member-since">
-          Membre depuis {formatMemberSince(user.createdAt)}
-        </p>
-        {user.bio && <p className="profil-bio">{user.bio}</p>}
-        <div className="profil-stats-row">
-          <span>
-            <strong>{friendsCount}</strong> Ami{friendsCount !== 1 ? 's' : ''}
-          </span>
-        </div>
+      <div className="profil-cover-caption">
+        <span className="profil-cover-spark" aria-hidden="true">
+          ✦
+        </span>
+        <span>Tes sorties, tes groupes et tes découvertes au même endroit</span>
+      </div>
+    </div>
+  );
+}
+
+function ProfilCardHeading({
+  eyebrow,
+  title,
+  icon
+}: {
+  eyebrow: string;
+  title: string;
+  icon: string;
+}) {
+  return (
+    <div className="profil-card-heading">
+      <span className="profil-card-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <div>
+        <span>{eyebrow}</span>
+        <h3>{title}</h3>
       </div>
     </div>
   );
@@ -10312,9 +12319,22 @@ function ProfilHeader({
 
 function ProfilStatsCard({ authToken }: { authToken: string | undefined }) {
   const { stats, state } = useProfileStats(authToken);
+  const statItems = stats
+    ? [
+        { value: stats.eventsAttended, label: 'Sorties vécues', icon: '◫' },
+        { value: stats.venuesDiscovered, label: 'Lieux découverts', icon: '⌖' },
+        { value: stats.groupsJoined, label: 'Groupes rejoints', icon: '♟' },
+        { value: stats.favoritesCount, label: 'Favoris gardés', icon: '♡' }
+      ]
+    : [];
+
   return (
-    <div className="profil-side-card">
-      <h3>Stats</h3>
+    <div className="profil-side-card profil-stats-card">
+      <ProfilCardHeading
+        eyebrow="Ton parcours"
+        title="En quelques chiffres"
+        icon="↗"
+      />
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
         <p className="list-view-empty">
@@ -10323,42 +12343,17 @@ function ProfilStatsCard({ authToken }: { authToken: string | undefined }) {
       )}
       {state === 'success' && stats && (
         <div className="profil-stats-grid">
-          <div className="profil-stat-tile">
-            <strong>{stats.eventsAttended}</strong>
-            <span>Événements assistés</span>
-          </div>
-          <div className="profil-stat-tile">
-            <strong>{stats.venuesDiscovered}</strong>
-            <span>Lieux découverts</span>
-          </div>
-          <div className="profil-stat-tile">
-            <strong>{stats.groupsJoined}</strong>
-            <span>Groupes rejoints</span>
-          </div>
-          <div className="profil-stat-tile">
-            <strong>{stats.favoritesCount}</strong>
-            <span>Favoris</span>
-          </div>
+          {statItems.map((item) => (
+            <div className="profil-stat-tile" key={item.label}>
+              <span className="profil-stat-icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <strong>{item.value}</strong>
+              <span>{item.label}</span>
+            </div>
+          ))}
         </div>
       )}
-    </div>
-  );
-}
-
-// Badges don't exist yet - the card keeps its place in the layout (matches
-// the reference mockup) but shows an honest "not built" state rather than
-// simulated badge data.
-function ProfilBadgesCard() {
-  return (
-    <div className="profil-side-card">
-      <h3>Badges</h3>
-      <div className="empty-state-card">
-        <span className="empty-state-icon" aria-hidden="true">
-          🏅
-        </span>
-        <p>Bientôt disponible</p>
-        <p>Les badges arrivent dans une prochaine mise à jour.</p>
-      </div>
     </div>
   );
 }
@@ -10374,8 +12369,12 @@ function ProfilTrendsCard({ authToken }: { authToken: string | undefined }) {
     (trends.eventCategories.length > 0 || trends.venueCategories.length > 0);
 
   return (
-    <div className="profil-side-card">
-      <h3>Vos tendances</h3>
+    <div className="profil-side-card profil-trends-card">
+      <ProfilCardHeading
+        eyebrow="D’après tes favoris"
+        title="Tes tendances"
+        icon="✦"
+      />
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
         <p className="list-view-empty">
@@ -10429,11 +12428,15 @@ function ProfilAmisCard({
   onOpenAmis: () => void;
 }) {
   return (
-    <div className="profil-side-card">
+    <div className="profil-side-card profil-friends-card">
       <div className="profil-side-card-header">
-        <h3>Amis ({friends.length})</h3>
+        <ProfilCardHeading
+          eyebrow="Ton cercle"
+          title={`${friends.length} ami${friends.length !== 1 ? 's' : ''}`}
+          icon="☺"
+        />
         <button type="button" className="text-btn" onClick={onOpenAmis}>
-          Voir tous mes amis
+          Voir tout
         </button>
       </div>
       {friends.length === 0 && (
@@ -10472,8 +12475,12 @@ function ProfilActivityRecentCard({
 }) {
   const { activity, state } = useActivity(authToken, 4);
   return (
-    <div className="profil-side-card">
-      <h3>Activité récente</h3>
+    <div className="profil-side-card profil-recent-card">
+      <ProfilCardHeading
+        eyebrow="Derniers mouvements"
+        title="Activité récente"
+        icon="↗"
+      />
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
         <p className="list-view-empty">Impossible de charger votre activité.</p>
@@ -10484,8 +12491,8 @@ function ProfilActivityRecentCard({
           emptyMessage="Aucune activité pour le moment."
         />
       )}
-      <button type="button" className="text-btn" onClick={onSeeAll}>
-        Voir toute mon activité
+      <button type="button" className="profil-card-link" onClick={onSeeAll}>
+        Voir toute mon activité <span aria-hidden="true">→</span>
       </button>
     </div>
   );
@@ -10508,9 +12515,22 @@ function ApercuTab({
   const past = useAttendanceEvents(attendance, 'past');
   return (
     <div className="profil-tab-content">
-      <div className="dashboard-home-section">
-        <div className="list-view-heading">
-          <h3>Événements à venir</h3>
+      <div className="profil-welcome-strip">
+        <div>
+          <span className="profil-section-kicker">Ton agenda</span>
+          <h2>Prêt pour ta prochaine sortie ?</h2>
+          <p>Retrouve ici les événements auxquels tu as prévu de participer.</p>
+        </div>
+        <span className="profil-welcome-glyph" aria-hidden="true">
+          ✦
+        </span>
+      </div>
+      <div className="dashboard-home-section profil-events-section">
+        <div className="list-view-heading profil-section-heading">
+          <div>
+            <span className="profil-section-kicker">À l’horizon</span>
+            <h3>Mes prochaines sorties</h3>
+          </div>
           {upcoming.events.length > 0 && (
             <button
               type="button"
@@ -10532,9 +12552,12 @@ function ApercuTab({
           locale={locale}
         />
       </div>
-      <div className="dashboard-home-section">
-        <div className="list-view-heading">
-          <h3>Mes événements passés</h3>
+      <div className="dashboard-home-section profil-events-section">
+        <div className="list-view-heading profil-section-heading">
+          <div>
+            <span className="profil-section-kicker">Souvenirs</span>
+            <h3>Mes sorties passées</h3>
+          </div>
           {past.events.length > 0 && (
             <button type="button" className="text-btn" onClick={onSeeMorePast}>
               Voir tout
@@ -10566,8 +12589,16 @@ function MesEvenementsTab({
   locale: SupportedLocale;
 }) {
   const { events, state } = useAttendanceEvents(attendance, 'upcoming');
+  // Past events used to live behind the sidebar's "Historique" shortcut.
+  // That shortcut is gone, and Aperçu's "voir plus" for past events already
+  // pointed at this tab, so this is where the history belongs.
+  const { events: pastEvents, state: pastState } = useAttendanceEvents(
+    attendance,
+    'past'
+  );
   return (
     <div className="profil-tab-content">
+      <h3 className="profil-tab-section-title">À venir</h3>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'success' && events.length === 0 && (
         <p className="list-view-empty">
@@ -10576,6 +12607,19 @@ function MesEvenementsTab({
       )}
       <EventCarouselRow
         events={events}
+        onOpenDetails={onOpenDetails}
+        locale={locale}
+      />
+
+      <h3 className="profil-tab-section-title">Historique</h3>
+      {pastState === 'loading' && (
+        <p className="list-view-empty">Chargement…</p>
+      )}
+      {pastState === 'success' && pastEvents.length === 0 && (
+        <p className="list-view-empty">Aucun événement passé pour l'instant.</p>
+      )}
+      <EventCarouselRow
+        events={pastEvents}
         onOpenDetails={onOpenDetails}
         locale={locale}
       />
@@ -10597,18 +12641,6 @@ function ActiviteTab({ authToken }: { authToken: string | undefined }) {
           emptyMessage="Aucune activité pour le moment."
         />
       )}
-    </div>
-  );
-}
-
-function ComingSoonTab({ icon, message }: { icon: string; message: string }) {
-  return (
-    <div className="empty-state-card">
-      <span className="empty-state-icon" aria-hidden="true">
-        {icon}
-      </span>
-      <p>Bientôt disponible</p>
-      <p>{message}</p>
     </div>
   );
 }
@@ -10670,7 +12702,7 @@ function CompteSection({
 
       <div className="profil-body">
         <div className="profil-main">
-          <nav className="profil-tabs">
+          <nav className="profil-tabs" aria-label="Sections de mon espace">
             {PROFIL_TABS.map((item) => (
               <button
                 type="button"
@@ -10678,6 +12710,7 @@ function CompteSection({
                 className={tab === item.id ? 'active' : ''}
                 onClick={() => setTab(item.id)}
               >
+                <span aria-hidden="true">{item.icon}</span>
                 {item.label}
               </button>
             ))}
@@ -10710,6 +12743,8 @@ function CompteSection({
                 onToggleFavoriteVenue={onToggleFavoriteVenue}
                 onSelectVenue={onSelectVenue}
                 locale={locale}
+                authToken={authToken}
+                variant="embedded"
               />
             </div>
           )}
@@ -10718,44 +12753,36 @@ function CompteSection({
               <GroupsBlock authToken={authToken} userId={user.id} />
             </div>
           )}
-          {tab === 'avis' && (
-            <ComingSoonTab
-              icon="⭐"
-              message="Les avis sur les lieux arrivent dans une prochaine mise à jour."
-            />
-          )}
-          {tab === 'photos' && (
-            <ComingSoonTab
-              icon="📷"
-              message="Le partage de photos arrive dans une prochaine mise à jour."
-            />
-          )}
-          {tab === 'badges' && (
-            <ComingSoonTab
-              icon="🏅"
-              message="Les badges arrivent dans une prochaine mise à jour."
-            />
-          )}
           {tab === 'activite' && <ActiviteTab authToken={authToken} />}
         </div>
 
         <div className="profil-side">
           <ProfilStatsCard authToken={authToken} />
-          <ProfilBadgesCard />
+          <ProfilAmisCard friends={friends} onOpenAmis={onOpenAmis} />
+          <ProfilTrendsCard authToken={authToken} />
           <ProfilActivityRecentCard
             authToken={authToken}
             onSeeAll={() => setTab('activite')}
           />
-          <ProfilAmisCard friends={friends} onOpenAmis={onOpenAmis} />
-          <ProfilTrendsCard authToken={authToken} />
-          <div className="profil-side-card">
-            <h3>Paramètres</h3>
+          <div className="profil-side-card profil-settings-card">
+            <ProfilCardHeading
+              eyebrow="Préférences"
+              title="Mon compte"
+              icon="⚙"
+            />
             <div className="profil-settings-row">
-              <span>Langue</span>
+              <div>
+                <strong>Langue de l’interface</strong>
+                <span>Choisis la langue de Pulso</span>
+              </div>
               <LanguageSelector locale={locale} onChange={onChangeLocale} />
             </div>
-            <button type="button" className="btn-secondary" onClick={onLogout}>
-              Se déconnecter
+            <button
+              type="button"
+              className="profil-logout-btn"
+              onClick={onLogout}
+            >
+              <span aria-hidden="true">↪</span> Se déconnecter
             </button>
           </div>
         </div>
@@ -10792,7 +12819,8 @@ function FriendDetailPanel({
   locale,
   attendance,
   onOpenEventForum,
-  onMessage
+  onMessage,
+  onBack
 }: {
   friend: PublicUser;
   authToken: string | undefined;
@@ -10801,6 +12829,7 @@ function FriendDetailPanel({
   attendance: Record<string, AttendanceVisibility>;
   onOpenEventForum: (eventId: string) => void;
   onMessage: () => void;
+  onBack: () => void;
 }) {
   const [profile, setProfile] = useState<FriendProfile>();
   const [mutualEvents, setMutualEvents] = useState<PublicEvent[]>([]);
@@ -10860,52 +12889,87 @@ function FriendDetailPanel({
 
   return (
     <div className="friend-detail">
-      <div className="friend-detail-header">
-        <span className="friends-row-avatar friends-row-avatar-xl">
-          {friend.avatarUrl ? (
-            <img src={friend.avatarUrl} alt="" />
-          ) : (
-            friend.displayName.slice(0, 1).toUpperCase()
-          )}
-        </span>
-        <h2>{friend.displayName}</h2>
-        <div className="friend-detail-meta-row">
-          {profile?.createdAt && (
-            <span>📅 Membre depuis {formatMemberSince(profile.createdAt)}</span>
-          )}
-          {mutualCount > 0 && (
-            <span>
-              🧑‍🤝‍🧑 {mutualCount} ami{mutualCount > 1 ? 's' : ''} en commun
-            </span>
-          )}
+      <div className="friend-detail-hero">
+        <button type="button" className="friend-detail-back" onClick={onBack}>
+          <span aria-hidden="true">←</span> Mes amis
+        </button>
+        <div className="friend-detail-cover" aria-hidden="true">
+          <span>✦</span>
         </div>
-        {profile?.bio && <p className="friend-detail-bio">{profile.bio}</p>}
-        <div className="friend-detail-actions">
-          <button
-            type="button"
-            className="primary-action-btn friend-detail-cta"
-            onClick={onMessage}
-          >
-            Envoyer un message
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => setInviteEventOpen(true)}
-          >
-            Inviter à un événement
-          </button>
+        <div className="friend-detail-header">
+          <span className="friends-row-avatar friends-row-avatar-xl">
+            {friend.avatarUrl ? (
+              <img src={friend.avatarUrl} alt="" />
+            ) : (
+              friend.displayName.slice(0, 1).toUpperCase()
+            )}
+          </span>
+          <div className="friend-detail-identity">
+            <span className="amis-page-kicker">Dans ton cercle</span>
+            <h2>{friend.displayName}</h2>
+            <div className="friend-detail-meta-row">
+              {profile?.createdAt && (
+                <span>
+                  Membre depuis {formatMemberSince(profile.createdAt)}
+                </span>
+              )}
+              {mutualCount > 0 && (
+                <span>
+                  {mutualCount} ami{mutualCount > 1 ? 's' : ''} en commun
+                </span>
+              )}
+            </div>
+            <p
+              className={`friend-detail-bio ${profile?.bio ? '' : 'is-empty'}`}
+            >
+              {profile?.bio || 'Aucune bio partagée pour le moment.'}
+            </p>
+          </div>
+          <div className="friend-detail-actions">
+            <button
+              type="button"
+              className="primary-action-btn friend-detail-cta"
+              onClick={onMessage}
+            >
+              <span aria-hidden="true">✉</span> Message
+            </button>
+            <button
+              type="button"
+              className="btn-secondary friend-detail-invite"
+              onClick={() => setInviteEventOpen(true)}
+            >
+              <span aria-hidden="true">＋</span> Proposer une sortie
+            </button>
+          </div>
         </div>
       </div>
 
       {nextOuting && (
-        <div className="group-detail-card">
-          <h3>Prochaine sortie</h3>
+        <div className="friend-next-outing">
+          <div className="friend-section-title">
+            <div>
+              <span>À l’horizon</span>
+              <h3>Votre prochaine sortie en commun</h3>
+            </div>
+            <span className="friend-next-status">Prévue</span>
+          </div>
           <button
             type="button"
-            className="venue-detail-event-row"
+            className="friend-next-row"
             onClick={() => onOpenEventForum(nextOuting.id)}
           >
+            <span className="friend-next-date">
+              <strong>
+                {new Date(nextOuting.startsAt).toLocaleDateString('fr-CA', {
+                  day: '2-digit'
+                })}
+              </strong>
+              <span>
+                {new Date(nextOuting.startsAt).toLocaleDateString('fr-CA', {
+                  month: 'short'
+                })}
+              </span>
+            </span>
             <span
               className="card-badge"
               style={{
@@ -10919,20 +12983,27 @@ function FriendDetailPanel({
             <span className="venue-detail-event-info">
               <strong>{nextOuting.title}</strong>
               <span>
-                {new Date(nextOuting.startsAt).toLocaleDateString('fr-CA', {
-                  day: 'numeric',
-                  month: 'short'
-                })}{' '}
-                · {nextOuting.venue.name}
+                {nextOuting.venue.name} ·{' '}
+                {new Date(nextOuting.startsAt).toLocaleTimeString('fr-CA', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
               </span>
+            </span>
+            <span className="friend-next-arrow" aria-hidden="true">
+              →
             </span>
           </button>
         </div>
       )}
 
       <div className="dashboard-home-section friend-detail-section">
-        <div className="section-header">
-          <h2>Événements en commun</h2>
+        <div className="friend-section-title">
+          <div>
+            <span>Vos rendez-vous</span>
+            <h2>Événements en commun</h2>
+          </div>
+          <strong>{mutualEvents.length}</strong>
         </div>
         {mutualEvents.length === 0 ? (
           <p className="list-view-empty">
@@ -10948,8 +13019,11 @@ function FriendDetailPanel({
       </div>
 
       <div className="friend-detail-section">
-        <div className="section-header">
-          <h2>Sorties récentes</h2>
+        <div className="friend-section-title">
+          <div>
+            <span>Historique partagé</span>
+            <h2>Activité récente</h2>
+          </div>
         </div>
         <ActivityList
           entries={activity}
@@ -11100,11 +13174,15 @@ function InviteFriendModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="share-friend-modal"
+        className="share-friend-modal amis-invite-modal"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="conversation-modal-header">
-          <strong>Inviter un ami</strong>
+          <div className="amis-modal-title">
+            <span className="amis-page-kicker">Agrandir ton cercle</span>
+            <strong>Inviter un ami</strong>
+            <p>Échangez vos codes personnels pour vous retrouver sur Pulso.</p>
+          </div>
           <button type="button" className="text-btn" onClick={onClose}>
             Fermer
           </button>
@@ -11143,6 +13221,7 @@ function InviteFriendModal({
               value={codeInput}
               onChange={(event) => setCodeInput(event.target.value)}
               placeholder="Coller le code d'un ami pour l'ajouter"
+              aria-label="Code ami à ajouter"
               maxLength={32}
             />
             <button
@@ -11340,6 +13419,7 @@ function ConversationThread({
       .catch(() => {})
       .finally(() => setSending(false));
   };
+  let previousDayKey = '';
 
   return (
     <>
@@ -11351,66 +13431,110 @@ function ConversationThread({
           </p>
         )}
         {state === 'success' && messages.length === 0 && (
-          <p className="list-view-empty">Aucun message pour l'instant.</p>
+          <div className="conversation-empty-state">
+            <span className="friends-row-avatar friends-row-avatar-lg">
+              {friend.avatarUrl ? (
+                <img src={friend.avatarUrl} alt="" />
+              ) : (
+                friend.displayName.slice(0, 1).toUpperCase()
+              )}
+            </span>
+            <strong>Commence la conversation avec {friend.displayName}.</strong>
+            <p>
+              Un événement à partager ou une sortie à préparer ? Écris le
+              premier message.
+            </p>
+          </div>
         )}
         {state === 'success' &&
           messages.map((message) => {
             const incoming = message.senderId === friend.id;
+            const dayKey = new Date(message.createdAt).toLocaleDateString(
+              'en-CA',
+              { timeZone: 'America/Toronto' }
+            );
+            const showDayDivider = dayKey !== previousDayKey;
+            previousDayKey = dayKey;
             return (
-              <div
-                key={message.id}
-                className={`conversation-message ${incoming ? 'incoming' : 'outgoing'}`}
-              >
-                <span className="conversation-message-body">
-                  {message.body}
-                </span>
-                <span className="conversation-message-meta">
-                  {formatMessageTimestamp(message.createdAt)}
-                  {!incoming && (
-                    <span
-                      className={`conversation-message-receipt ${message.readAt ? 'read' : ''}`}
-                      aria-label={message.readAt ? 'Lu' : 'Envoyé'}
-                    >
-                      {message.readAt ? '✓✓' : '✓'}
+              <Fragment key={message.id}>
+                {showDayDivider && (
+                  <div className="conversation-day-divider">
+                    <span>{formatConversationDayLabel(message.createdAt)}</span>
+                  </div>
+                )}
+                <div
+                  className={`conversation-message-row ${incoming ? 'incoming' : 'outgoing'}`}
+                >
+                  {incoming && (
+                    <span className="friends-row-avatar conversation-message-avatar">
+                      {friend.avatarUrl ? (
+                        <img src={friend.avatarUrl} alt="" />
+                      ) : (
+                        friend.displayName.slice(0, 1).toUpperCase()
+                      )}
                     </span>
                   )}
-                </span>
-                {incoming && (
-                  <button
-                    type="button"
-                    className="conversation-message-report"
-                    onClick={() =>
-                      reportContent(authToken, 'message', message.id)
-                    }
+                  <div
+                    className={`conversation-message ${incoming ? 'incoming' : 'outgoing'}`}
                   >
-                    Signaler
-                  </button>
-                )}
-              </div>
+                    <span className="conversation-message-body">
+                      {message.body}
+                    </span>
+                    <span className="conversation-message-meta">
+                      {formatMessageTimestamp(message.createdAt)}
+                      {!incoming && (
+                        <span
+                          className={`conversation-message-receipt ${message.readAt ? 'read' : ''}`}
+                          aria-label={message.readAt ? 'Lu' : 'Envoyé'}
+                        >
+                          {message.readAt ? '✓✓' : '✓'}
+                        </span>
+                      )}
+                    </span>
+                    {incoming && (
+                      <button
+                        type="button"
+                        className="conversation-message-report"
+                        onClick={() =>
+                          reportContent(authToken, 'message', message.id)
+                        }
+                      >
+                        Signaler
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </Fragment>
             );
           })}
       </div>
       <form
-        className="forum-composer"
+        className="forum-composer message-composer"
         onSubmit={(event) => {
           event.preventDefault();
           sendMessage();
         }}
       >
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Écrire un message…"
-          maxLength={2000}
-          rows={2}
-        />
-        <button
-          type="submit"
-          className="btn-secondary"
-          disabled={sending || !draft.trim()}
-        >
-          Envoyer
-        </button>
+        <div className="message-composer-box">
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={`Écrire à ${friend.displayName}…`}
+            aria-label={`Écrire un message à ${friend.displayName}`}
+            maxLength={2000}
+            rows={2}
+          />
+          <div className="message-composer-footer">
+            <span>{draft.length}/2000</span>
+            <button
+              type="submit"
+              className="btn-secondary"
+              disabled={sending || !draft.trim()}
+            >
+              {sending ? 'Envoi…' : 'Envoyer'} <span aria-hidden="true">→</span>
+            </button>
+          </div>
+        </div>
       </form>
     </>
   );
@@ -11625,6 +13749,8 @@ function GroupsBlock({
 // the linked event's actual venue, and member-added schedule/attendance/
 // checklist modules - no online presence, no kick/removal, no content
 // moderation beyond the existing author-only delete (DEC-0013 v1.2).
+type GroupDetailTab = 'organize' | 'discussion' | 'members' | 'manage';
+
 function GroupDetailContent({
   group,
   authToken,
@@ -11653,6 +13779,11 @@ function GroupDetailContent({
   const [members, setMembers] = useState<PublicUser[]>([]);
   const [joining, setJoining] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [tab, setTab] = useState<GroupDetailTab>('organize');
+
+  useEffect(() => {
+    setTab('organize');
+  }, [group.id]);
 
   const refreshPosts = useCallback(() => {
     if (!authToken || !group.isMember) return;
@@ -11810,9 +13941,28 @@ function GroupDetailContent({
   return (
     <div className="group-detail">
       <div className="group-detail-header">
+        <div className="group-detail-cover" aria-hidden="true">
+          <span>{group.name.slice(0, 1).toUpperCase()}</span>
+          <i />
+          <i />
+          <i />
+        </div>
         <div className="group-detail-header-top">
           <div className="group-detail-header-info">
+            <span className="groups-page-eyebrow">
+              {group.eventId ? 'Groupe événement' : 'Communauté permanente'}
+            </span>
             <strong>{group.name}</strong>
+            <div className="group-detail-status-row">
+              <span className="group-detail-visibility-badge">
+                {group.visibility === 'restricted'
+                  ? '◇ Sur demande'
+                  : '◎ Accès libre'}
+              </span>
+              {group.isModerator && (
+                <span className="group-detail-role-badge">Gestionnaire</span>
+              )}
+            </div>
             {group.eventId && group.eventTitle && (
               <span className="group-detail-event-badge">
                 Groupe lié à{' '}
@@ -11831,11 +13981,6 @@ function GroupDetailContent({
                     ` — ${new Date(group.eventStartsAt).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}`}
                   {group.meetupVenue && ` · ${group.meetupVenue.name}`}
                 </button>
-              </span>
-            )}
-            {group.visibility === 'restricted' && (
-              <span className="group-detail-visibility-badge">
-                🔒 Accès limité
               </span>
             )}
           </div>
@@ -11865,7 +14010,7 @@ function GroupDetailContent({
           )}
         </div>
         {group.description && (
-          <p className="forum-disclaimer">{group.description}</p>
+          <p className="group-detail-description">{group.description}</p>
         )}
         <div className="group-detail-members-row">
           {members.length > 0 && (
@@ -11929,82 +14074,256 @@ function GroupDetailContent({
 
       {group.isMember && (
         <>
-          {group.isModerator &&
-            group.pendingRequestCount !== undefined &&
-            group.pendingRequestCount > 0 && (
-              <GroupJoinRequestsCard
-                groupId={group.id}
-                authToken={authToken}
-                onResolved={refreshGroup}
-              />
-            )}
-
-          {group.meetupVenue && <GroupMeetupCard venue={group.meetupVenue} />}
-
-          <GroupScheduleCard groupId={group.id} authToken={authToken} />
-          <GroupAttendanceCard groupId={group.id} authToken={authToken} />
-          <GroupChecklistCard groupId={group.id} authToken={authToken} />
-
-          <div className="group-detail-discussion">
-            <h3>Discussion</h3>
-            <div className="forum-posts">
-              {postsState === 'loading' && (
-                <p className="list-view-empty">Chargement…</p>
-              )}
-              {postsState === 'error' && (
-                <p className="list-view-empty">
-                  Impossible de charger le fil pour le moment.
-                </p>
-              )}
-              {postsState === 'success' && topLevelPosts.length === 0 && (
-                <p className="list-view-empty">
-                  Aucun message pour l'instant. Soyez le premier.
-                </p>
-              )}
-              {postsState === 'success' &&
-                topLevelPosts.map((post) => (
-                  <GroupPostRow
-                    key={post.id}
-                    post={post}
-                    userId={userId}
-                    authToken={authToken}
-                    onLike={toggleLike}
-                    onDelete={removePost}
-                    replies={repliesFor(post.id)}
-                    expanded={expandedReplies.has(post.id)}
-                    onToggleExpanded={() => toggleExpanded(post.id)}
-                    replyDraft={replyDrafts[post.id] ?? ''}
-                    onReplyDraftChange={(value) =>
-                      setReplyDrafts((prev) => ({ ...prev, [post.id]: value }))
-                    }
-                    onSubmitReply={() => submitPost(post.id)}
-                    posting={posting}
-                  />
-                ))}
-            </div>
-            <form
-              className="forum-composer"
-              onSubmit={(event) => {
-                event.preventDefault();
-                submitPost();
-              }}
+          <nav className="group-detail-tabs" aria-label="Espaces du groupe">
+            <button
+              type="button"
+              className={tab === 'organize' ? 'active' : ''}
+              onClick={() => setTab('organize')}
             >
-              <textarea
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder="Écrire un message…"
-                maxLength={2000}
-                rows={2}
-              />
+              <span aria-hidden="true">▦</span>
+              Organiser
+            </button>
+            <button
+              type="button"
+              className={tab === 'discussion' ? 'active' : ''}
+              onClick={() => setTab('discussion')}
+            >
+              <span aria-hidden="true">◌</span>
+              Discussion
+              {posts.length > 0 && <small>{posts.length}</small>}
+            </button>
+            <button
+              type="button"
+              className={tab === 'members' ? 'active' : ''}
+              onClick={() => setTab('members')}
+            >
+              <span aria-hidden="true">◎</span>
+              Membres
+              <small>{group.memberCount}</small>
+            </button>
+            {group.isModerator && (
               <button
-                type="submit"
-                className="btn-secondary"
-                disabled={posting || !draft.trim()}
+                type="button"
+                className={tab === 'manage' ? 'active' : ''}
+                onClick={() => setTab('manage')}
               >
-                Publier
+                <span aria-hidden="true">◇</span>
+                Gestion
+                {(group.pendingRequestCount ?? 0) > 0 && (
+                  <small className="attention">
+                    {group.pendingRequestCount}
+                  </small>
+                )}
               </button>
-            </form>
-          </div>
+            )}
+          </nav>
+
+          {tab === 'organize' && (
+            <section className="group-organize-view">
+              <div className="group-view-heading">
+                <div>
+                  <span className="groups-page-eyebrow">
+                    Tableau d’organisation
+                  </span>
+                  <h2>Préparez la prochaine sortie ensemble.</h2>
+                </div>
+                <p>Chaque action ici est partagée avec tous les membres.</p>
+              </div>
+              <div className="group-modules-grid">
+                {group.meetupVenue && (
+                  <GroupMeetupCard venue={group.meetupVenue} />
+                )}
+                <GroupScheduleCard groupId={group.id} authToken={authToken} />
+                <GroupAttendanceCard groupId={group.id} authToken={authToken} />
+                <GroupChecklistCard groupId={group.id} authToken={authToken} />
+              </div>
+            </section>
+          )}
+
+          {tab === 'discussion' && (
+            <section className="group-detail-discussion">
+              <div className="group-view-heading">
+                <div>
+                  <span className="groups-page-eyebrow">Fil du groupe</span>
+                  <h2>Décidez, échangez, avancez.</h2>
+                </div>
+                <p>
+                  {posts.length} message{posts.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <form
+                className="forum-composer group-main-composer"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitPost();
+                }}
+              >
+                <textarea
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  placeholder="Partage une idée, une question ou une décision…"
+                  maxLength={2000}
+                  rows={3}
+                />
+                <div className="group-main-composer-footer">
+                  <span>{draft.length}/2000</span>
+                  <button
+                    type="submit"
+                    className="btn-secondary"
+                    disabled={posting || !draft.trim()}
+                  >
+                    {posting ? 'Publication…' : 'Publier'}
+                  </button>
+                </div>
+              </form>
+              <div className="forum-posts group-posts-feed">
+                {postsState === 'loading' && (
+                  <p className="list-view-empty">Chargement…</p>
+                )}
+                {postsState === 'error' && (
+                  <p className="list-view-empty">
+                    Impossible de charger le fil pour le moment.
+                  </p>
+                )}
+                {postsState === 'success' && topLevelPosts.length === 0 && (
+                  <div className="group-empty-feed">
+                    <span aria-hidden="true">◌</span>
+                    <strong>Lance la première conversation.</strong>
+                    <p>
+                      Une question simple suffit souvent à organiser toute une
+                      sortie.
+                    </p>
+                  </div>
+                )}
+                {postsState === 'success' &&
+                  topLevelPosts.map((post) => (
+                    <GroupPostRow
+                      key={post.id}
+                      post={post}
+                      userId={userId}
+                      authToken={authToken}
+                      onLike={toggleLike}
+                      onDelete={removePost}
+                      replies={repliesFor(post.id)}
+                      expanded={expandedReplies.has(post.id)}
+                      onToggleExpanded={() => toggleExpanded(post.id)}
+                      replyDraft={replyDrafts[post.id] ?? ''}
+                      onReplyDraftChange={(value) =>
+                        setReplyDrafts((prev) => ({
+                          ...prev,
+                          [post.id]: value
+                        }))
+                      }
+                      onSubmitReply={() => submitPost(post.id)}
+                      posting={posting}
+                    />
+                  ))}
+              </div>
+            </section>
+          )}
+
+          {tab === 'members' && (
+            <section className="group-members-view">
+              <div className="group-view-heading">
+                <div>
+                  <span className="groups-page-eyebrow">La communauté</span>
+                  <h2>
+                    {group.memberCount} membre
+                    {group.memberCount !== 1 ? 's' : ''}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  className="groups-create-submit"
+                  onClick={() => setInviteOpen(true)}
+                >
+                  Inviter des amis
+                </button>
+              </div>
+              <div className="group-members-grid">
+                {members.map((member) => (
+                  <div className="group-member-card" key={member.id}>
+                    <span className="friends-row-avatar friends-row-avatar-lg">
+                      {member.avatarUrl ? (
+                        <img src={member.avatarUrl} alt="" />
+                      ) : (
+                        member.displayName.slice(0, 1).toUpperCase()
+                      )}
+                    </span>
+                    <span>
+                      <strong>{member.displayName}</strong>
+                      <small>
+                        {member.id === group.createdBy
+                          ? 'Créateur du groupe'
+                          : 'Membre'}
+                      </small>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {tab === 'manage' && group.isModerator && (
+            <section className="group-management-view">
+              <div className="group-view-heading">
+                <div>
+                  <span className="groups-page-eyebrow">
+                    Espace gestionnaire
+                  </span>
+                  <h2>Gérer les accès au groupe.</h2>
+                </div>
+                <span className="group-management-role">
+                  Créateur · Gestionnaire
+                </span>
+              </div>
+              <div className="group-management-summary">
+                <div>
+                  <span>Accès</span>
+                  <strong>
+                    {group.visibility === 'restricted'
+                      ? 'Sur approbation'
+                      : 'Libre'}
+                  </strong>
+                </div>
+                <div>
+                  <span>Membres</span>
+                  <strong>{group.memberCount}</strong>
+                </div>
+                <div>
+                  <span>Demandes</span>
+                  <strong>{group.pendingRequestCount ?? 0}</strong>
+                </div>
+              </div>
+              {group.visibility === 'restricted' ? (
+                <GroupJoinRequestsCard
+                  groupId={group.id}
+                  authToken={authToken}
+                  onResolved={refreshGroup}
+                  showEmpty
+                />
+              ) : (
+                <div className="group-detail-card group-management-empty">
+                  <span aria-hidden="true">◎</span>
+                  <div>
+                    <strong>Ce groupe est en accès libre.</strong>
+                    <p>
+                      Les membres le rejoignent sans passer par une demande.
+                    </p>
+                  </div>
+                </div>
+              )}
+              <div className="group-management-scope">
+                <strong>Pouvoirs actuellement disponibles</strong>
+                <p>
+                  Le gestionnaire peut approuver ou refuser les demandes. Les
+                  rôles multiples, la configuration des modules et la mise en
+                  avant d’événements restent proposés pour la prochaine décision
+                  produit.
+                </p>
+              </div>
+            </section>
+          )}
         </>
       )}
 
@@ -12044,8 +14363,14 @@ function GroupMeetupCard({ venue }: { venue: GroupMeetupVenue }) {
   }, [venue.longitude, venue.latitude]);
 
   return (
-    <div className="group-detail-card">
-      <h3>Point de rendez-vous</h3>
+    <div className="group-detail-card group-module-card group-meetup-card">
+      <div className="group-module-heading">
+        <span aria-hidden="true">⌖</span>
+        <div>
+          <h3>Point de rendez-vous</h3>
+          <p>Le lieu réel lié à l’événement.</p>
+        </div>
+      </div>
       <div className="group-meetup-map" ref={container} />
       <div className="group-meetup-address">
         <strong>{venue.name}</strong>
@@ -12115,8 +14440,14 @@ function GroupScheduleCard({
   };
 
   return (
-    <div className="group-detail-card">
-      <h3>Programme</h3>
+    <div className="group-detail-card group-module-card group-schedule-card">
+      <div className="group-module-heading">
+        <span aria-hidden="true">◷</span>
+        <div>
+          <h3>Programme</h3>
+          <p>Construisez le déroulé de la sortie.</p>
+        </div>
+      </div>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'success' && items.length === 0 && (
         <p className="list-view-empty">Aucun horaire pour l'instant.</p>
@@ -12219,8 +14550,14 @@ function GroupAttendanceCard({
   const total = summary ? summary.yes + summary.maybe + summary.no : 0;
 
   return (
-    <div className="group-detail-card">
-      <h3>Qui vient ?</h3>
+    <div className="group-detail-card group-module-card group-attendance-card">
+      <div className="group-module-heading">
+        <span aria-hidden="true">◎</span>
+        <div>
+          <h3>Qui vient ?</h3>
+          <p>Une réponse claire par membre.</p>
+        </div>
+      </div>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'success' && summary && (
         <>
@@ -12347,8 +14684,14 @@ function GroupChecklistCard({
   };
 
   return (
-    <div className="group-detail-card">
-      <h3>Checklist</h3>
+    <div className="group-detail-card group-module-card group-checklist-card">
+      <div className="group-module-heading">
+        <span aria-hidden="true">✓</span>
+        <div>
+          <h3>Checklist</h3>
+          <p>Les choses à prévoir avant de partir.</p>
+        </div>
+      </div>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'success' && items.length === 0 && (
         <p className="list-view-empty">Aucun item pour l'instant.</p>
@@ -12403,11 +14746,13 @@ function GroupChecklistCard({
 function GroupJoinRequestsCard({
   groupId,
   authToken,
-  onResolved
+  onResolved,
+  showEmpty = false
 }: {
   groupId: string;
   authToken: string | undefined;
   onResolved: () => void;
+  showEmpty?: boolean;
 }) {
   const [requests, setRequests] = useState<PublicUser[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
@@ -12447,12 +14792,18 @@ function GroupJoinRequestsCard({
     });
   };
 
-  if (state === 'success' && requests.length === 0) return null;
+  if (state === 'success' && requests.length === 0 && !showEmpty) return null;
 
   return (
     <div className="group-detail-card group-join-requests-card">
       <h3>Demandes en attente</h3>
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'success' && requests.length === 0 && (
+        <div className="group-management-empty-inline">
+          <span aria-hidden="true">✓</span>
+          <p>Aucune demande à traiter pour le moment.</p>
+        </div>
+      )}
       {requests.map((request) => (
         <div className="amis-row" key={request.id}>
           <span className="friends-row-avatar friends-row-avatar-lg">
@@ -12677,11 +15028,12 @@ function GroupPostRow({
           </span>
         )}
         <div className="group-bubble-col">
-          {!mine && (
-            <span className="group-bubble-author">
-              {item.author.displayName}
-            </span>
-          )}
+          <span className="group-bubble-author">
+            {mine ? 'Vous' : item.author.displayName}
+            <time dateTime={item.createdAt}>
+              {formatRelativeTime(item.createdAt)}
+            </time>
+          </span>
           <div className="group-bubble">
             <p>{item.body}</p>
           </div>
@@ -12692,7 +15044,8 @@ function GroupPostRow({
               onClick={() => onLike(item)}
             >
               <HeartIcon filled={item.likedByMe} />
-              {item.likeCount > 0 && item.likeCount}
+              <span>{item.likedByMe ? 'Aimé' : 'J’aime'}</span>
+              {item.likeCount > 0 && <b>{item.likeCount}</b>}
             </button>
             {!isReply && (
               <button
@@ -13411,26 +15764,6 @@ function FilterOverlay({
             {geoStatus === 'unsupported' &&
               ' · non disponible sur cet appareil'}
           </p>
-        </div>
-      </fieldset>
-      <fieldset>
-        <legend>{translate(locale, 'filters.ambiance')}</legend>
-        <p className="filter-help">
-          {translate(locale, 'filters.ambianceHelp')}
-        </p>
-        <div className="pill-list">
-          <button type="button" className="filter-pill" disabled>
-            🔥 Énergique
-          </button>
-          <button type="button" className="filter-pill" disabled>
-            ☕ Chill
-          </button>
-          <button type="button" className="filter-pill" disabled>
-            🥂 Romantique
-          </button>
-          <button type="button" className="filter-pill" disabled>
-            🎉 Festif
-          </button>
         </div>
       </fieldset>
       <dl className="fixed-filter-rules">
@@ -14647,6 +16980,7 @@ function ForumPanel({
                 eventId={event.id}
                 authToken={authToken}
                 userId={user.id}
+                user={user}
               />
             )}
           </div>
@@ -15042,14 +17376,55 @@ function SignInPrompt({
   );
 }
 
+const FORUM_ROOM_PRESENTATION: Record<
+  ForumCategory,
+  {
+    icon: string;
+    description: string;
+    placeholder: string;
+    emptyMessage: string;
+  }
+> = {
+  general: {
+    icon: '💬',
+    description: 'Questions, conseils et impressions autour de la sortie.',
+    placeholder: 'Pose une question ou partage un bon plan…',
+    emptyMessage:
+      'Pose la première question ou partage ton conseil sur la soirée.'
+  },
+  find_partners: {
+    icon: '👋',
+    description: 'Présente-toi et trouve des personnes avec qui y aller.',
+    placeholder: 'Dis qui tu es et avec qui tu aimerais y aller…',
+    emptyMessage:
+      'Présente-toi et propose un point de rendez-vous avant l’événement.'
+  },
+  ticket_resale: {
+    icon: '🎟️',
+    description: 'Propositions de billets entre membres de la communauté.',
+    placeholder: 'Décris clairement le billet que tu proposes ou recherches…',
+    emptyMessage:
+      'Indique le type de billet recherché ou proposé, sans partager de données sensibles.'
+  },
+  find_someone: {
+    icon: '🔎',
+    description: 'Retrouve une personne croisée pendant l’événement.',
+    placeholder: 'Décris le contexte de votre rencontre avec respect…',
+    emptyMessage:
+      'Décris sobrement le moment et le lieu de la rencontre pour lancer la recherche.'
+  }
+};
+
 function EventForum({
   eventId,
   authToken,
-  userId
+  userId,
+  user
 }: {
   eventId: string;
   authToken: string | undefined;
   userId: string;
+  user: User;
 }) {
   const [category, setCategory] = useState<ForumCategory>('general');
   const [posts, setPosts] = useState<ForumPost[]>([]);
@@ -15062,6 +17437,9 @@ function EventForum({
     new Set()
   );
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [roomCounts, setRoomCounts] = useState<
+    Partial<Record<ForumCategory, number>>
+  >({});
 
   const refresh = useCallback(() => {
     if (!authToken) return;
@@ -15071,7 +17449,12 @@ function EventForum({
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
-        setPosts(forumPostsResponseSchema.parse(json).data);
+        const nextPosts = forumPostsResponseSchema.parse(json).data;
+        setPosts(nextPosts);
+        setRoomCounts((previous) => ({
+          ...previous,
+          [category]: nextPosts.length
+        }));
         setState('success');
       })
       .catch(() => setState('error'));
@@ -15080,6 +17463,34 @@ function EventForum({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!authToken) return;
+    let cancelled = false;
+    Promise.all(
+      FORUM_CATEGORIES.map(async (room) => {
+        const response = await fetch(
+          `${API_BASE_URL}/events/${eventId}/forum/${room}`,
+          { headers: { authorization: `Bearer ${authToken}` } }
+        );
+        if (!response.ok) throw new Error('forum-room-count');
+        const json = await response.json();
+        return [
+          room,
+          forumPostsResponseSchema.parse(json).data.length
+        ] as const;
+      })
+    )
+      .then((entries) => {
+        if (!cancelled) {
+          setRoomCounts(Object.fromEntries(entries));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, eventId]);
 
   const submitPost = (parentId?: string) => {
     const body = (parentId ? replyDrafts[parentId] : draft)?.trim();
@@ -15148,86 +17559,150 @@ function EventForum({
   const topLevelPosts = posts.filter((post) => !post.parentId);
   const repliesFor = (postId: string) =>
     posts.filter((post) => post.parentId === postId);
+  const activeRoom = FORUM_ROOM_PRESENTATION[category];
+  const totalMessages = Object.values(roomCounts).reduce(
+    (sum, count) => sum + (count ?? 0),
+    0
+  );
 
   return (
     <div className="event-forum">
-      <div className="forum-tabs">
+      <div className="forum-community-intro">
+        <div>
+          <span className="forum-section-eyebrow">L’agora de l’événement</span>
+          <h2>Choisis ton espace de discussion</h2>
+          <p>
+            Quatre salons, un seul événement : va directement vers la
+            conversation qui t’intéresse.
+          </p>
+        </div>
+        <span className="forum-community-count">
+          <b>{totalMessages}</b>
+          message{totalMessages !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <div className="forum-rooms" role="tablist" aria-label="Salons du forum">
         {FORUM_CATEGORIES.map((option) => (
           <button
             type="button"
             key={option}
-            className={category === option ? 'active' : ''}
+            role="tab"
+            aria-selected={category === option}
+            className={`forum-room-card ${category === option ? 'active' : ''}`}
             onClick={() => setCategory(option)}
           >
-            {FORUM_CATEGORY_LABELS[option]}
+            <span className="forum-room-icon" aria-hidden="true">
+              {FORUM_ROOM_PRESENTATION[option].icon}
+            </span>
+            <span className="forum-room-copy">
+              <strong>{FORUM_CATEGORY_LABELS[option]}</strong>
+              <small>{FORUM_ROOM_PRESENTATION[option].description}</small>
+            </span>
+            <span className="forum-room-count">
+              {roomCounts[option] ?? '—'}
+            </span>
           </button>
         ))}
       </div>
 
-      {category === 'ticket_resale' && (
-        <p className="forum-disclaimer">
-          Discussion entre utilisateurs uniquement : Pulso n'intervient pas dans
-          la transaction, aucun paiement ni billet ne transite par la
-          plateforme.
-        </p>
-      )}
+      <section className="forum-feed-shell" aria-labelledby="forum-feed-title">
+        <div className="forum-feed-heading">
+          <span className="forum-room-icon" aria-hidden="true">
+            {activeRoom.icon}
+          </span>
+          <div>
+            <span className="forum-section-eyebrow">Salon sélectionné</span>
+            <h3 id="forum-feed-title">{FORUM_CATEGORY_LABELS[category]}</h3>
+            <p>{activeRoom.description}</p>
+          </div>
+          <span className="forum-feed-count">
+            {roomCounts[category] ?? 0} message
+            {(roomCounts[category] ?? 0) !== 1 ? 's' : ''}
+          </span>
+        </div>
 
-      <div className="forum-posts">
-        {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-        {state === 'error' && (
-          <p className="list-view-empty">
-            Impossible de charger le forum pour le moment.
+        {category === 'ticket_resale' && (
+          <p className="forum-disclaimer">
+            <span aria-hidden="true">!</span>
+            <span>
+              <strong>Échange entre particuliers uniquement.</strong> Pulso
+              n’intervient pas dans la transaction : aucun paiement ni billet ne
+              transite par la plateforme.
+            </span>
           </p>
         )}
-        {state === 'success' && topLevelPosts.length === 0 && (
-          <p className="list-view-empty">
-            Aucun message pour l'instant. Soyez le premier.
-          </p>
-        )}
-        {state === 'success' &&
-          topLevelPosts.map((post) => (
-            <ForumPostRow
-              key={post.id}
-              post={post}
-              userId={userId}
-              authToken={authToken}
-              onLike={toggleLike}
-              onDelete={removePost}
-              replies={repliesFor(post.id)}
-              expanded={expandedReplies.has(post.id)}
-              onToggleExpanded={() => toggleExpanded(post.id)}
-              replyDraft={replyDrafts[post.id] ?? ''}
-              onReplyDraftChange={(value) =>
-                setReplyDrafts((prev) => ({ ...prev, [post.id]: value }))
-              }
-              onSubmitReply={() => submitPost(post.id)}
-              posting={posting}
-            />
-          ))}
-      </div>
 
-      <form
-        className="forum-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submitPost();
-        }}
-      >
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Écrire un message…"
-          maxLength={2000}
-          rows={2}
-        />
-        <button
-          type="submit"
-          className="btn-secondary"
-          disabled={posting || !draft.trim()}
+        <form
+          className="forum-composer forum-main-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitPost();
+          }}
         >
-          Publier
-        </button>
-      </form>
+          <span className="friends-row-avatar forum-composer-avatar">
+            {renderUserAvatarContent(user)}
+          </span>
+          <div className="forum-composer-body">
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={activeRoom.placeholder}
+              aria-label={`Écrire dans le salon ${FORUM_CATEGORY_LABELS[category]}`}
+              maxLength={2000}
+              rows={3}
+            />
+            <div className="forum-composer-footer">
+              <span>{draft.length}/2000</span>
+              <button
+                type="submit"
+                className="btn-secondary"
+                disabled={posting || !draft.trim()}
+              >
+                {posting ? 'Publication…' : 'Publier'}
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <div className="forum-posts">
+          {state === 'loading' && (
+            <p className="list-view-empty">Chargement…</p>
+          )}
+          {state === 'error' && (
+            <p className="list-view-empty">
+              Impossible de charger le forum pour le moment.
+            </p>
+          )}
+          {state === 'success' && topLevelPosts.length === 0 && (
+            <div className="forum-empty-conversation">
+              <span aria-hidden="true">{activeRoom.icon}</span>
+              <strong>La conversation n’attend que toi.</strong>
+              <p>{activeRoom.emptyMessage}</p>
+            </div>
+          )}
+          {state === 'success' &&
+            topLevelPosts.map((post) => (
+              <ForumPostRow
+                key={post.id}
+                post={post}
+                userId={userId}
+                authToken={authToken}
+                onLike={toggleLike}
+                onDelete={removePost}
+                replies={repliesFor(post.id)}
+                expanded={expandedReplies.has(post.id)}
+                onToggleExpanded={() => toggleExpanded(post.id)}
+                replyDraft={replyDrafts[post.id] ?? ''}
+                onReplyDraftChange={(value) =>
+                  setReplyDrafts((prev) => ({ ...prev, [post.id]: value }))
+                }
+                onSubmitReply={() => submitPost(post.id)}
+                posting={posting}
+              />
+            ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -15245,7 +17720,12 @@ function ForumPostAuthorRow({
 }) {
   return (
     <div className="forum-post-meta">
-      <strong>{post.author.displayName}</strong>
+      <span className="forum-post-author">
+        <strong>{post.author.displayName}</strong>
+        <time dateTime={post.createdAt}>
+          {formatRelativeTime(post.createdAt)}
+        </time>
+      </span>
       {post.author.id === userId ? (
         <button type="button" className="text-btn" onClick={onDelete}>
           Supprimer
@@ -15314,7 +17794,8 @@ function ForumPostRow({
             onClick={() => onLike(post)}
           >
             <HeartIcon filled={post.likedByMe} />
-            {post.likeCount > 0 && post.likeCount}
+            <span>{post.likedByMe ? 'Aimé' : 'J’aime'}</span>
+            {post.likeCount > 0 && <b>{post.likeCount}</b>}
           </button>
           <button type="button" className="text-btn" onClick={onToggleExpanded}>
             {post.replyCount === 0
@@ -15351,7 +17832,8 @@ function ForumPostRow({
                     onClick={() => onLike(reply)}
                   >
                     <HeartIcon filled={reply.likedByMe} />
-                    {reply.likeCount > 0 && reply.likeCount}
+                    <span>{reply.likedByMe ? 'Aimé' : 'J’aime'}</span>
+                    {reply.likeCount > 0 && <b>{reply.likeCount}</b>}
                   </button>
                 </div>
               </div>

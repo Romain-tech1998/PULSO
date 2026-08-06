@@ -13,7 +13,7 @@ import {
 
 describe('MVP domain vocabulary', () => {
   it('keeps the accepted compact category family and Montréal timezone', () => {
-    expect(EVENT_CATEGORIES).toHaveLength(6);
+    expect(EVENT_CATEGORIES).toHaveLength(7);
     expect(MONTREAL_TIMEZONE).toBe('America/Toronto');
   });
 

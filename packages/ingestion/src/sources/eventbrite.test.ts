@@ -108,9 +108,21 @@ describe('mapEventbriteApifyEvent', () => {
     expect(event.category).toBe('unmapped');
   });
 
-  it('maps sports/community/travel/health categories to the other catch-all', () => {
+  it('maps Sports & Fitness to the dedicated sport category', () => {
+    const event = mapEventbriteApifyEvent(
+      {
+        ...REAL_MUSIC_EVENT,
+        tags: [
+          { prefix: 'EventbriteCategory', display_name: 'Sports & Fitness' }
+        ]
+      },
+      '2026-07-28T00:00:00.000Z'
+    );
+    expect(event.category).toBe('sport');
+  });
+
+  it('maps community/travel/health categories to the other catch-all', () => {
     for (const displayName of [
-      'Sports & Fitness',
       'Community & Culture',
       'Travel & Outdoor',
       'Health & Wellness'

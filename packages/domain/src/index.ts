@@ -4,10 +4,29 @@ export const EVENT_CATEGORIES = [
   'festival',
   'show',
   'comedy',
+  'sport',
   'other'
 ] as const;
 
 export const EVENT_STATUSES = ['scheduled', 'cancelled', 'postponed'] as const;
+
+// DEC-0017 provenance, deliberately orthogonal to TRUST_LABELS below:
+// trust describes how well a *sourced* record was corroborated, origin
+// describes where the record came from at all. Every ingested event is
+// 'directory'; the other two are account-created and never appear on the
+// anonymous surfaces.
+export const EVENT_ORIGINS = [
+  'directory',
+  'verified_organizer',
+  'community'
+] as const;
+
+// An after starts in the small hours. The window is what actually defines
+// one in Montréal (bars close at 03:00), and matching on it means the
+// filter also surfaces late-night events already in the ingested directory
+// rather than only app-created ones.
+export const AFTER_WINDOW_START_HOUR = 2;
+export const AFTER_WINDOW_END_HOUR = 6;
 export const FRESHNESS_STATES = ['fresh', 'stale', 'unknown'] as const;
 export const LOCATION_CONFIDENCE_STATES = ['confirmed', 'uncertain'] as const;
 export const TRUST_LABELS = [
@@ -84,6 +103,7 @@ export const CATEGORY_COLORS: Record<EventCategory, string> = {
   festival: '#FE7C5C',
   comedy: '#FFD700',
   show: '#00CED1',
+  sport: '#22C55E',
   // Was pure white - on the teardrop pin (white ring + white center dot),
   // that left the whole marker reading as "just a white dot" with no
   // shape definition. A real hue restores the contrast the other five
@@ -110,6 +130,9 @@ export interface DiscoveryFilters {
   price: PriceFilterValue;
   customStartDate?: string;
   customEndDate?: string;
+  // DEC-0017. Honoured only for a signed-in caller - the API ignores it
+  // otherwise, since the After filter is a connected-experience surface.
+  after?: boolean;
 }
 
 // 'today' rather than the originally-specified 'next7' (MAP-003) - revised

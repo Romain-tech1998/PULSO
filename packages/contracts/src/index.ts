@@ -2,6 +2,7 @@ import {
   DATE_FILTER_VALUES,
   DEFAULT_DISCOVERY_FILTERS,
   EVENT_CATEGORIES,
+  EVENT_ORIGINS,
   EVENT_STATUSES,
   FORUM_CATEGORIES,
   FRESHNESS_STATES,
@@ -86,7 +87,14 @@ export const mapBoundsQuerySchema = z
     // sidebar. All three fields are required together or not at all.
     nearLongitude: z.coerce.number().min(-180).max(180).optional(),
     nearLatitude: z.coerce.number().min(-90).max(90).optional(),
-    nearRadiusMeters: z.coerce.number().positive().max(50_000).optional()
+    nearRadiusMeters: z.coerce.number().positive().max(50_000).optional(),
+    // DEC-0017 After filter. Present in the shared bounds contract so the
+    // one query builder covers it; the API still ignores it for anonymous
+    // callers.
+    // Left as the raw string rather than transformed to a boolean: a
+    // transform would make the field required in MapBoundsQuery's output
+    // type and force every internal caller to pass it.
+    after: z.enum(['true', 'false']).optional()
   })
   .strict()
   .refine(
@@ -166,10 +174,9 @@ export const venuesQuerySchema = z
     { message: 'Bounds must have increasing west/east and south/north values.' }
   );
 
-// A venue with no upcoming event of its own - a hand-curated landmark added
-// as a fixed reference point in the Lieux view (see /venues), distinct from
-// PublicEvent's embedded `venue` object which always comes with a real
-// event attached.
+// A reviewed recurring venue used as an orientation point on the map (see
+// /venues), distinct from PublicEvent's embedded `venue` object which always
+// comes with a real event attached. The client de-duplicates the two sets.
 export const publicVenueSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
@@ -334,6 +341,82 @@ export const activityEntrySchema = z.discriminatedUnion('kind', [
 ]);
 export const activityResponseSchema = z.object({
   data: z.array(activityEntrySchema)
+});
+
+// DEC-0016: in-app notifications. Display text is composed client-side from
+// these referenced rows rather than stored as a frozen label, so a renamed
+// venue or a rescheduled event is reflected instead of preserved as a stale
+// claim.
+//
+// `id`/`readAt` are absent on 'upcoming_event' because that kind is derived
+// at read time from attendance and start time rather than stored - there is
+// nothing to mark read, and it disappears on its own once the event starts.
+export const notificationSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('venue_new_event'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    venueId: z.uuid(),
+    venueName: z.string(),
+    eventId: z.uuid(),
+    eventTitle: z.string(),
+    eventStartsAt: z.iso.datetime()
+  }),
+  z.object({
+    kind: z.literal('friend_request_received'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string(),
+    actorAvatarUrl: z.string().optional()
+  }),
+  z.object({
+    kind: z.literal('friend_request_accepted'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string(),
+    actorAvatarUrl: z.string().optional()
+  }),
+  z.object({
+    kind: z.literal('message_received'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string(),
+    actorAvatarUrl: z.string().optional()
+  }),
+  z.object({
+    kind: z.literal('forum_reply'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string(),
+    actorAvatarUrl: z.string().optional(),
+    eventId: z.uuid(),
+    eventTitle: z.string()
+  }),
+  z.object({
+    kind: z.literal('upcoming_event'),
+    createdAt: z.iso.datetime(),
+    eventId: z.uuid(),
+    eventTitle: z.string(),
+    eventStartsAt: z.iso.datetime(),
+    venueName: z.string()
+  })
+]);
+export type Notification = z.infer<typeof notificationSchema>;
+
+export const notificationsResponseSchema = z.object({
+  data: z.object({
+    notifications: z.array(notificationSchema),
+    unreadCount: z.number().int().min(0)
+  })
 });
 
 // PUT replaces the stored set with exactly the given ids - a plain
@@ -815,11 +898,32 @@ export const publicEventSchema = z.object({
       })
     )
     .optional(),
-  trust: z.object({
-    label: z.enum(TRUST_LABELS),
-    freshness: z.enum(FRESHNESS_STATES),
-    locationConfidence: z.enum(LOCATION_CONFIDENCE_STATES)
-  }),
+  // DEC-0017: absent on account-created events. The DATA-0001 trust
+  // vocabulary describes how well Pulso corroborated a *sourced* record and
+  // would be meaningless applied to a form submission, so a created event
+  // carries `origin` below instead of a fabricated label.
+  trust: z
+    .object({
+      label: z.enum(TRUST_LABELS),
+      freshness: z.enum(FRESHNESS_STATES),
+      locationConfidence: z.enum(LOCATION_CONFIDENCE_STATES)
+    })
+    .optional(),
+  // Provenance, orthogonal to trust. 'directory' is every ingested event.
+  // Optional rather than defaulted: absence means 'directory', which is
+  // every ingested event and every existing fixture, so the overwhelmingly
+  // common case stays free of ceremony.
+  origin: z.enum(EVENT_ORIGINS).optional(),
+  // Who created it, present only for the two account-created origins - the
+  // author needs to be identifiable for "delete your own" and for the
+  // interface to attribute the event honestly.
+  createdBy: z
+    .object({ userId: z.uuid(), displayName: z.string().min(1) })
+    .optional(),
+  // DEC-0017: the creator marked this as an after. The After filter also
+  // matches on start time, so an ingested late-night event qualifies
+  // without carrying this flag.
+  isAfter: z.boolean().optional(),
   externalDestination: z
     .object({
       label: z.string().min(1),
@@ -832,6 +936,43 @@ export const publicEventSchema = z.object({
 
 export const eventListResponseSchema = z.object({
   data: z.array(publicEventSchema)
+});
+
+// DEC-0017. The venue is either an existing Pulso venue (by id) or a new
+// one described in full - Pulso has no venue-search-by-name endpoint that
+// would let a form resolve a free-text venue, and inventing coordinates
+// from a typed address is exactly the kind of guess EVENT-002 forbids.
+export const createEventRequestSchema = z.object({
+  title: z.string().min(1).max(200),
+  category: z.enum(EVENT_CATEGORIES),
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime().optional(),
+  accessInformation: z.string().min(1).max(2000),
+  description: z.string().min(1).max(4000).optional(),
+  imageUrl: z.url().optional(),
+  isAfter: z.boolean().optional(),
+  price: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('free') }),
+    z.object({
+      kind: z.literal('paid'),
+      minimumAmount: z.number().nonnegative().optional()
+    }),
+    z.object({ kind: z.literal('unknown') })
+  ]),
+  venue: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('existing'), venueId: z.uuid() }),
+    z.object({
+      kind: z.literal('new'),
+      name: z.string().min(1).max(200),
+      address: z.string().min(1).max(300),
+      point: geographicPointSchema
+    })
+  ])
+});
+export type CreateEventRequest = z.infer<typeof createEventRequestSchema>;
+
+export const createdEventResponseSchema = z.object({
+  data: publicEventSchema
 });
 
 // Forums discovery grid (Phase 4.8) - one entry per upcoming event, not
@@ -1173,6 +1314,7 @@ export const CATEGORY_FILTER_OPTIONS: ReadonlyArray<{
   { value: 'festival' },
   { value: 'show' },
   { value: 'comedy' },
+  { value: 'sport' },
   { value: 'other' }
 ];
 
@@ -1219,6 +1361,7 @@ export function buildMapEventsQuery(
       parameters.set('dateEnd', filters.customEndDate);
     }
   }
+  if (filters.after) parameters.set('after', 'true');
   if (near) {
     parameters.set('nearLongitude', String(near.longitude));
     parameters.set('nearLatitude', String(near.latitude));
@@ -1275,9 +1418,13 @@ export interface EventPresentation {
   status: string;
   dateTime: string;
   price: string;
-  trust: string;
-  freshness: string;
-  location: string;
+  // Absent on account-created events (DEC-0017): they carry no DATA-0001
+  // trust label, and these three fields all describe one. An interface must
+  // show the event's `origin` there instead, not a placeholder that reads
+  // like a downgraded trust verdict.
+  trust?: string;
+  freshness?: string;
+  location?: string;
   description: string;
   organizer: string;
   externalAction?: string;
@@ -1300,17 +1447,20 @@ export function presentEvent(
           : translate(locale, 'price.from', {
               amount: formatCad(event.price.minimumAmount, locale)
             });
-  const trust = getTrustLabel(locale, event.trust.label);
+  const eventTrust = event.trust;
+  const trust = eventTrust
+    ? getTrustLabel(locale, eventTrust.label)
+    : undefined;
   const materialWarning =
     event.status === 'cancelled'
       ? translate(locale, 'event.warning.cancelled')
       : event.status === 'postponed'
         ? translate(locale, 'event.warning.postponed')
-        : event.trust.label === 'to_verify'
+        : eventTrust?.label === 'to_verify'
           ? translate(locale, 'event.warning.toVerify')
-          : event.trust.label === 'conflicting'
+          : eventTrust?.label === 'conflicting'
             ? translate(locale, 'event.warning.conflicting')
-            : event.trust.locationConfidence === 'uncertain'
+            : eventTrust?.locationConfidence === 'uncertain'
               ? translate(locale, 'event.warning.location')
               : undefined;
   // Always one of two fixed, generic labels - never the connector-provided
@@ -1336,19 +1486,23 @@ export function presentEvent(
     status: translate(locale, `status.${event.status}`),
     dateTime: startsAt,
     price,
-    trust,
-    freshness:
-      event.trust.freshness === 'stale'
-        ? translate(locale, 'event.freshness.stale', {
-            date: formatMontrealDate(event.source.observedAt, locale)
-          })
-        : translate(locale, 'event.freshness.unknown', {
-            date: formatMontrealDate(event.source.observedAt, locale)
-          }),
-    location:
-      event.trust.locationConfidence === 'confirmed'
-        ? translate(locale, 'location.confirmed')
-        : translate(locale, 'location.uncertain'),
+    ...(trust ? { trust } : {}),
+    ...(eventTrust
+      ? {
+          freshness:
+            eventTrust.freshness === 'stale'
+              ? translate(locale, 'event.freshness.stale', {
+                  date: formatMontrealDate(event.source.observedAt, locale)
+                })
+              : translate(locale, 'event.freshness.unknown', {
+                  date: formatMontrealDate(event.source.observedAt, locale)
+                }),
+          location:
+            eventTrust.locationConfidence === 'confirmed'
+              ? translate(locale, 'location.confirmed')
+              : translate(locale, 'location.uncertain')
+        }
+      : {}),
     description:
       event.description ?? translate(locale, 'event.descriptionUnknown'),
     organizer: event.organizer ?? translate(locale, 'event.organizerUnknown'),
