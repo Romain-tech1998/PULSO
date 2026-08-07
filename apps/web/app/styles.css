@@ -4899,6 +4899,41 @@ a.venue-detail-info-row:hover {
   padding: 0.25rem;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
 }
+/* Explorer's filters live in this same cluster now, separated from the
+   pin-kind toggle by a hairline: the three on the left choose *what* is
+   pinned, the one on the right narrows *which* of them. */
+.map-floating-divider {
+  align-self: center;
+  width: 1px;
+  height: 20px;
+  margin: 0 0.3rem;
+  background: var(--brand-border);
+}
+.map-floating-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.map-floating-filters.active {
+  background: linear-gradient(120deg, #7839ee, #ee2d8a) !important;
+  color: #fff !important;
+}
+.map-floating-filters-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: var(--brand-pink);
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+.map-floating-filters.active .map-floating-filters-count {
+  background: rgba(255, 255, 255, 0.24);
+}
+
 .map-floating-pin-toggle button {
   border: none;
   background: none;

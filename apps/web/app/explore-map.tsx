@@ -1047,6 +1047,14 @@ export function ExploreMap({
   }, [user, section]);
   const unreadMessagesCount = useUnreadMessagesCount(authToken, section);
   const afterEventCount = events.filter(isAfterEvent).length;
+  // Badge on Explorer's floating "Filtres" button: how many constraints are
+  // actually narrowing the map, so the button says whether it is worth
+  // opening without having to open it.
+  const activeFilterCount =
+    filters.categories.length +
+    (filters.price !== 'all' ? 1 : 0) +
+    (filters.date !== DEFAULT_DISCOVERY_FILTERS.date ? 1 : 0) +
+    (distanceFilterActive ? 1 : 0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   // DEC-0018. Held here rather than inside Sidebar so the Administration
   // route can be gated on it too - hiding the nav item is a UI courtesy,
@@ -4630,47 +4638,6 @@ export function ExploreMap({
                 }}
               >
                 <div className="map-shell explorer-map-shell">
-                  <MapFilterBar
-                    filters={filters}
-                    onChange={applyFilters}
-                    onOpenMore={() => setFiltersOpen((prev) => !prev)}
-                    locale={locale}
-                  />
-
-                  <div
-                    className="explorer-date-shortcuts"
-                    aria-label="Période d'exploration"
-                  >
-                    <button
-                      type="button"
-                      className={filters.date === 'today' ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('today')}
-                    >
-                      Aujourd'hui
-                    </button>
-                    <button
-                      type="button"
-                      className={filters.date === 'tonight' ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('tonight')}
-                    >
-                      Ce soir
-                    </button>
-                    <button
-                      type="button"
-                      className={filters.date === 'weekend' ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('weekend')}
-                    >
-                      Ce week-end
-                    </button>
-                    <button
-                      type="button"
-                      className={explorerTwoWeeksActive ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('two-weeks')}
-                    >
-                      14 jours
-                    </button>
-                  </div>
-
                   <div ref={explorerMapContainer} className="map" />
                   <div className="map-floating-pin-toggle">
                     <button
@@ -4693,6 +4660,38 @@ export function ExploreMap({
                       onClick={() => setExplorerPinKind('venue')}
                     >
                       Lieux <span>{venueGroups.length}</span>
+                    </button>
+                    {/* Explorer's floating chrome is one cluster now. The
+                        old top-left bar duplicated its own date filter - an
+                        "Aujourd'hui" dropdown sitting above an "Aujourd'hui"
+                        chip - and took a bite out of the map from a second
+                        corner. The three buttons on the left choose what is
+                        pinned; this one narrows which of them. */}
+                    <span className="map-floating-divider" aria-hidden="true" />
+                    <button
+                      type="button"
+                      className={`map-floating-filters ${filtersOpen ? 'active' : ''}`}
+                      aria-expanded={filtersOpen}
+                      onClick={() => setFiltersOpen((open) => !open)}
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M3 5h18M6 12h12M10 19h4" />
+                      </svg>
+                      Filtres
+                      {activeFilterCount > 0 && (
+                        <span className="map-floating-filters-count">
+                          {activeFilterCount}
+                        </span>
+                      )}
                     </button>
                   </div>
                   <div className="explorer-map-legend" aria-label="Légende">
