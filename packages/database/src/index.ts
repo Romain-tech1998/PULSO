@@ -85,6 +85,17 @@ export {
   type EventPhotosRepository
 } from './event-photos-repository.js';
 export {
+  OrganizerRequestExistsError,
+  PostgresOrganizerRepository,
+  type OrganizerRepository,
+  type OrganizerStatus
+} from './organizer-repository.js';
+export {
+  PostgresNotificationsRepository,
+  type NotificationsRepository,
+  type StoredNotificationKind
+} from './notifications-repository.js';
+export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';

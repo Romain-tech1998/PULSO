@@ -57,3 +57,11 @@ yarn-error.log*
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local OCR models (tesseract), downloaded not authored - 37 MB
+*.traineddata
+
+# Local scratch/output from ingestion pilots and agent runs
+/output/
+/tmp/
+/packages/ingestion/scratch/

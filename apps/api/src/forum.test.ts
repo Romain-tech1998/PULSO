@@ -1,6 +1,6 @@
 import type { PublicEvent } from '@pulso/contracts';
-import type { EventRepository } from '@pulso/database';
 import { EventNotFoundError, ForumPostNotFoundError } from '@pulso/database';
+import type { EventRepository } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
@@ -9,17 +9,11 @@ import {
   fakeFavoritesRepository,
   fakeForumPost,
   fakeForumRepository,
-  testUser
+  testUser,
+  fakeEventRepository
 } from './test-support.js';
 
-const event: EventRepository = {
-  findInBounds: async () => [],
-  findWithinDirectDistance: async () => [],
-  findById: async () => undefined,
-  findExternalDestination: async () => undefined,
-  findVenuesWithoutUpcomingEvents: async () => [],
-  findByIds: async () => []
-};
+const event = fakeEventRepository();
 
 const eventId = '00000000-0000-4000-8000-000000000020';
 

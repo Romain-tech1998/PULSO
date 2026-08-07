@@ -10,6 +10,8 @@ import {
   PostgresGroupsRepository,
   PostgresMessagesRepository,
   PostgresProfileRepository,
+  PostgresNotificationsRepository,
+  PostgresOrganizerRepository,
   PostgresRatingsRepository,
   PostgresReportsRepository,
   PostgresTrendsRepository
@@ -54,6 +56,8 @@ const app = buildApp(new PostgresEventRepository(pool), {
         profileRepository: new PostgresProfileRepository(pool),
         eventPhotosRepository: new PostgresEventPhotosRepository(pool),
         ratingsRepository: new PostgresRatingsRepository(pool),
+        notificationsRepository: new PostgresNotificationsRepository(pool),
+        organizerRepository: new PostgresOrganizerRepository(pool),
         uploadDir,
         publicUploadUrl,
         google

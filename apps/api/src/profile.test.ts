@@ -1,4 +1,3 @@
-import type { EventRepository } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
@@ -6,17 +5,11 @@ import {
   accountRepositories,
   fakeAuthRepository,
   fakeProfileRepository,
-  testUser
+  testUser,
+  fakeEventRepository
 } from './test-support.js';
 
-const event: EventRepository = {
-  findInBounds: async () => [],
-  findWithinDirectDistance: async () => [],
-  findById: async () => undefined,
-  findExternalDestination: async () => undefined,
-  findVenuesWithoutUpcomingEvents: async () => [],
-  findByIds: async () => []
-};
+const event = fakeEventRepository();
 
 describe('profile API', () => {
   it('rejects profile routes without a bearer token', async () => {

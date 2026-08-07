@@ -77,7 +77,7 @@ function resolveTrust(
 function resolveFreshness(
   observedAt: string,
   now: Date
-): PublicEvent['trust']['freshness'] {
+): NonNullable<PublicEvent['trust']>['freshness'] {
   const observed = new Date(observedAt);
   if (Number.isNaN(observed.getTime())) return 'unknown';
   return now.getTime() - observed.getTime() <= FRESHNESS_THRESHOLD_MS
@@ -87,7 +87,7 @@ function resolveFreshness(
 
 function resolveLocationConfidence(
   event: RawIngestedEvent
-): PublicEvent['trust']['locationConfidence'] {
+): NonNullable<PublicEvent['trust']>['locationConfidence'] {
   // 'geocoded' points come from Nominatim address lookup, not the source
   // itself, so they carry lower confidence than a source-provided point.
   return event.pointResolution === 'geocoded' ? 'uncertain' : 'confirmed';

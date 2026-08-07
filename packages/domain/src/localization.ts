@@ -57,7 +57,7 @@ const en = {
   'app.title': 'Explore Montréal',
   'app.logoHome': 'Pulso — Home',
   'app.description':
-    'Explore and filter fictional events for the next seven Montréal calendar days. No account or intelligent search is required.',
+    'Explore and filter Montréal events over the next seven calendar days. No account or intelligent search is required.',
   'language.label': 'Language',
   'language.fr': 'Français',
   'language.en': 'English',
@@ -75,8 +75,8 @@ const en = {
   'map.emptyWiden': 'Recenter on Montréal',
   'map.emptyClear': 'Clear filters',
   'map.emptyThisWeek': 'See Montréal this week',
-  'map.count.one': '1 matching fictional event in this map area.',
-  'map.count.many': '{count} matching fictional events in this map area.',
+  'map.count.one': '1 matching event in this map area.',
+  'map.count.many': '{count} matching events in this map area.',
   'map.previewAria': 'Preview {title}',
   'map.previewButton': 'Preview {title}',
   'common.retry': 'Retry',
@@ -222,13 +222,13 @@ const en = {
   'search.message.routingUnsupported':
     'Pulso cannot interpret travel time because the MVP provides no routing or implicit location.',
   'search.message.maximumPriceUnavailable':
-    'Pulso recognized the maximum price, but the current fictional data has no verified numeric prices, so it cannot claim a reliable match.',
+    'Pulso recognized the maximum price, but the current data has no verified numeric prices, so it cannot claim a reliable match.',
   'search.message.unsupported':
     'Pulso could not reliably map this request to the supported event, date, price, or ranking criteria. Manual filters remain available.',
   'search.message.clarificationRequired':
     'One explicit answer is required before Pulso can apply this constraint.',
-  'search.message.exactCount.one': '1 exact fictional match found.',
-  'search.message.exactCount.many': '{count} exact fictional matches found.',
+  'search.message.exactCount.one': '1 exact match found.',
+  'search.message.exactCount.many': '{count} exact matches found.',
   'search.message.alternative':
     'No event satisfies every hard constraint. These alternatives differ only as stated.',
   'search.message.noReliableResult':
@@ -266,7 +266,7 @@ const fr = {
   'app.title': 'Explorer Montréal',
   'app.logoHome': 'Pulso — Accueil',
   'app.description':
-    'Explorez et filtrez les événements fictifs des sept prochains jours civils à Montréal. Aucun compte ni recherche intelligente n’est requis.',
+    'Explorez et filtrez les événements montréalais des sept prochains jours. Aucun compte ni recherche intelligente n’est requis.',
   'language.label': 'Langue',
   'language.fr': 'Français',
   'language.en': 'English',
@@ -286,9 +286,8 @@ const fr = {
   'map.emptyWiden': 'Recentrer sur Montréal',
   'map.emptyClear': 'Effacer les filtres',
   'map.emptyThisWeek': 'Voir Montréal cette semaine',
-  'map.count.one': '1 événement fictif correspondant dans cette zone.',
-  'map.count.many':
-    '{count} événements fictifs correspondants dans cette zone.',
+  'map.count.one': '1 événement correspondant dans cette zone.',
+  'map.count.many': '{count} événements correspondants dans cette zone.',
   'map.previewAria': 'Aperçu de {title}',
   'map.previewButton': 'Aperçu de {title}',
   'common.retry': 'Réessayer',

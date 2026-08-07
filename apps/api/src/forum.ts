@@ -13,7 +13,8 @@ import type {
   AuthRepository,
   EventRepository,
   FavoritesRepository,
-  ForumRepository
+  ForumRepository,
+  NotificationsRepository
 } from '@pulso/database';
 import { EventNotFoundError, ForumPostNotFoundError } from '@pulso/database';
 import {
@@ -66,7 +67,8 @@ export function registerForumRoutes(
   forumRepository: ForumRepository,
   favoritesRepository: FavoritesRepository,
   attendanceRepository: AttendanceRepository,
-  eventRepository: EventRepository
+  eventRepository: EventRepository,
+  notificationsRepository: NotificationsRepository
 ) {
   app.get('/events/:eventId/forum/:category', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -88,6 +90,13 @@ export function registerForumRoutes(
         category,
         body,
         parentId
+      );
+      // Everyone following this forum except the author, who obviously
+      // knows they just posted (filtered inside notifyForumReply).
+      await notificationsRepository.notifyForumReply(
+        await forumRepository.getForumFollowerIds(eventId),
+        user.id,
+        eventId
       );
       return reply
         .status(201)

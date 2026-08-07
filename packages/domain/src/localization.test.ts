@@ -43,10 +43,10 @@ describe('typed bilingual catalogue', () => {
 
   it('interpolates Pulso-owned copy in both languages', () => {
     expect(translate('en', 'map.count.many', { count: 6 })).toBe(
-      '6 matching fictional events in this map area.'
+      '6 matching events in this map area.'
     );
     expect(translate('fr', 'map.count.many', { count: 6 })).toBe(
-      '6 événements fictifs correspondants dans cette zone.'
+      '6 événements correspondants dans cette zone.'
     );
   });
 

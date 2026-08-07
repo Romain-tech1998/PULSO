@@ -1,9 +1,9 @@
 # UX-0001 — MVP Screens and Flows
 
 **Identifier:** UX-0001
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Accepted
-**Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, UJ-0001, UJ-0002, DATA-0001
+**Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DEC-0014, UJ-0001, UJ-0002, DATA-0001
 
 ## Purpose
 
@@ -13,18 +13,20 @@ This document defines functional UX structure, not visual branding, high-fidelit
 
 ## Validation note
 
-The four-screen MVP structure is approved. Filters, intelligent search, event previews, explanations, and system feedback remain overlays or states rather than additional primary screens. The remaining decisions listed in this document belong to PRD-0001. Prototype usability testing may refine presentation and copy but must not change the Accepted MVP scope without a new documented decision.
+The six-screen MVP structure is approved. Filters, intelligent search, event previews, explanations, and system feedback remain overlays or states rather than additional primary screens. DEC-0014 adds Lieux and Venue Details without displacing Explore / Map as the primary experience. Prototype usability testing may refine presentation and copy but must not change the Accepted MVP scope without a new documented decision.
 
 ## 1. Information architecture
 
 ### Minimum product structure
 
-Pulso has four primary screens:
+Pulso has six primary screens:
 
 1. **Explore / Map** — default entry and center of the product.
 2. **Event Details** — complete view of one event selected from the map.
-3. **Favorites** — saved events on the current device, with optional authenticated synchronization.
-4. **Authentication** — contextual account creation or sign-in when an account-dependent action is chosen.
+3. **Lieux** — list of venues with qualifying programming in the fourteen-day venue window.
+4. **Venue Details** — enlarged sheet with venue information and its scheduled events.
+5. **Favorites** — saved events on the current device, with optional authenticated synchronization.
+6. **Authentication** — contextual account creation or sign-in when an account-dependent action is chosen.
 
 The Explore / Map screen owns these supporting overlays, components, and states:
 
@@ -40,6 +42,8 @@ Filters and intelligent search are not separate catalogues or mandatory steps. T
 
 - Product entry → Explore / Map.
 - Explore / Map marker → Event Preview → Event Details.
+- Explore / Map venue marker → Venue Details → Event Details when programming exists.
+- Lieux → Venue Details → Event Details.
 - Explore / Map intelligent-search entry → query state → results on Explore / Map.
 - Explore / Map filter control → filter overlay → filtered Explore / Map.
 - Favorite action → saved local state without authentication.
@@ -55,6 +59,8 @@ No account gate may precede Explore / Map, filters, intelligent search, event pr
 | --- | --- | --- | --- |
 | Explore / Map | Discover Montréal events through the primary map experience | Montréal map, event markers, previews, filters, optional intelligent search, data and system states | None |
 | Event Details | Support an informed event choice | Event information, source, freshness or confidence, status, external action, favorite action | None |
+| Lieux | Browse venues that have qualifying programming within fourteen Montréal calendar dates | Searchable venue cards, address, type, event count, empty and error states | None |
+| Venue Details | Understand a venue and inspect its near-term programming | Enlarged hero, factual summary, address, Aujourd'hui block, fourteen-day block, Event Details links | None |
 | Favorites | Reopen and remove saved events | Local or authenticated saved-event collection, event status and essential information, removal action, empty state | None for local favorites |
 | Authentication | Enable a voluntarily chosen account connection | Account creation or sign-in, local-favorite merge context, cancellation back to prior screen | Required only after the user chooses account connection or cross-device synchronization |
 
@@ -67,7 +73,15 @@ Filters, intelligent search, event previews, trust notices, and system feedback 
 - Explore / Map opens directly without a questionnaire, account prompt, or intelligent-search requirement.
 - The initial map presents Montréal and the qualifying scheduled MVP events available in the current result set.
 - The initial time range, geographic framing, and marker density rules must be finalized in PRD-0001.
-- Bars, restaurants, clubs, and other venues appear only through qualifying scheduled events; Pulso does not display a general venue directory.
+- Qualifying events remain the primary map content. Verified recurring nightlife and cultural venues may also remain visible as orientation markers without current programming under DEC-0014; they do not enter the Lieux list until they have an eligible event.
+
+### Lieux and Venue Details
+
+- Lieux contains only venues with at least one qualifying event from today through the end of the fourteenth Montréal calendar date.
+- Selecting a venue opens an enlarged sheet without requiring an account.
+- The sheet prioritizes identity, concise factual description, address, today's events, then later events in the fourteen-day window.
+- A verified map-only venue may open the same sheet with an explicit no-programming state.
+- Missing descriptive or practical information remains unavailable rather than inferred.
 
 ### Event markers and map movement
 
@@ -322,7 +336,7 @@ UX-0001 excludes:
 - digital identity;
 - proof or certification of age;
 - launch in or switching between multiple cities;
-- general directories of restaurants, bars, clubs, or venues without a qualifying scheduled event;
+- general directories of restaurants, retail, accommodation, or businesses outside DEC-0014's verified recurring nightlife and cultural venue exception;
 - mandatory account creation for browsing, filtering, searching, or opening Event Details;
 - mandatory chat or intelligent search;
 - a separate AI event catalogue;
@@ -346,7 +360,7 @@ Roadmap and Vision items must not influence the MVP screen structure or create a
 - Responsive web and mobile application expose the same product, rules, and data.
 - Event Details exposes essential event, source, trust, and external destination information.
 - Booking is an external redirect only, with affiliate links when available.
-- Native booking, payment, ticket storage, routing, itinerary, general venue directories, multiple cities, and identity features are excluded.
+- Native booking, payment, ticket storage, routing, itinerary, general business directories beyond DEC-0014, multiple cities, and identity features are excluded.
 - Accepted UJ-0001 and UJ-0002 define the target exploration and intelligent-search sequences.
 
 ### Details PRD-0001 must finalize

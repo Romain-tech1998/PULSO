@@ -39,6 +39,11 @@ import {
   intelligentSearchResponseSchema,
   meResponseSchema,
   createdEventResponseSchema,
+  createOrganizerRequestSchema,
+  geocodeResponseSchema,
+  myOrganizerStatusResponseSchema,
+  organizerRequestsResponseSchema,
+  myEventsResponseSchema,
   mutualEventIdsResponseSchema,
   myAttendanceResponseSchema,
   notificationsResponseSchema,
@@ -80,6 +85,7 @@ import {
   type SearchConstraintKey,
   type Message,
   type Notification as PulsoNotification,
+  type OrganizerRequest,
   type PublicEvent,
   type PublicUser,
   type PublicVenue,
@@ -299,6 +305,57 @@ interface ActiveSearch {
   query: string;
   manualFilters: DiscoveryFilters;
   disabledDerivedKeys: SearchConstraintKey[];
+}
+
+// DEC-0017: the API only returns account-created events - and only honours
+// the After filter - for an authenticated caller. Every event fetch in this
+// file therefore has to carry the bearer token, or a signed-in user's own
+// event silently vanishes from the map they just published it to.
+// Deliberately outside the category palette so it cannot be mistaken for
+// one - the same violet the After filter uses, since afters are the main
+// thing organizers create.
+const CREATED_EVENT_PIN_COLOR = '#7c3aed';
+
+// A native <select> for a two-option choice renders the OS dropdown, which
+// is unstyleable and looked pasted-on next to the brand controls beside it.
+// Two options is a toggle, not a menu.
+function AttendanceVisibilityToggle({
+  value,
+  onChange
+}: {
+  value: AttendanceVisibility;
+  onChange: (next: AttendanceVisibility) => void;
+}) {
+  return (
+    <div
+      className="attendance-visibility-toggle"
+      role="group"
+      aria-label="Visibilité de votre participation"
+    >
+      {(
+        [
+          ['private', 'Vous seul'],
+          ['friends', 'Vos amis']
+        ] as Array<[AttendanceVisibility, string]>
+      ).map(([option, label]) => (
+        <button
+          type="button"
+          key={option}
+          className={value === option ? 'active' : ''}
+          aria-pressed={value === option}
+          onClick={() => onChange(option)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function authHeaders(
+  authToken: string | undefined
+): Record<string, string> | undefined {
+  return authToken ? { authorization: `Bearer ${authToken}` } : undefined;
 }
 
 function boundsUrl(
@@ -905,6 +962,10 @@ export function ExploreMap({
   const [searchError, setSearchError] = useState(false);
   const [locale, setLocale] = useState(initialLocale);
   const { user, setUser, authToken, login, logout } = useAuth();
+  // Read inside long-lived map callbacks that must not be re-created (and
+  // re-subscribe their MapLibre handlers) every time the token resolves.
+  const authTokenRef = useRef(authToken);
+  authTokenRef.current = authToken;
   const { favorites, toggleFavorite } = useFavorites(authToken);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const { favoriteVenues, toggleFavoriteVenue } = useFavoriteVenues(authToken);
@@ -1004,6 +1065,24 @@ export function ExploreMap({
   const unreadMessagesCount = useUnreadMessagesCount(authToken, section);
   const afterEventCount = events.filter(isAfterEvent).length;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  // DEC-0018. Held here rather than inside Sidebar so the Administration
+  // route can be gated on it too - hiding the nav item is a UI courtesy,
+  // not an access control.
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!authToken) {
+      setIsAdmin(false);
+      return;
+    }
+    fetch(`${API_BASE_URL}/me/organizer`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setIsAdmin(myOrganizerStatusResponseSchema.parse(json).data.isAdmin)
+      )
+      .catch(() => setIsAdmin(false));
+  }, [authToken]);
   const notifications = useNotifications(authToken, section);
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
   const [lieuTab, setLieuTab] = useState<'map' | 'list' | 'calendar'>('list');
@@ -1224,7 +1303,11 @@ export function ExploreMap({
                 radiusMeters: distanceKmRef.current * 1000
               }
             : undefined;
-        const response = await fetch(boundsUrl(bounds, activeFilters, near));
+        const headers = authHeaders(authTokenRef.current);
+        const response = await fetch(
+          boundsUrl(bounds, activeFilters, near),
+          headers ? { headers } : {}
+        );
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
         setEvents(result.data);
@@ -1335,6 +1418,15 @@ export function ExploreMap({
     setSelected(undefined);
     void loadEvents(currentBounds.current);
   }
+
+  // The token resolves after the first map load, so without this a user's
+  // own created events stay missing from the map until something else
+  // happens to trigger a refetch (DEC-0017).
+  useEffect(() => {
+    if (!authToken) return;
+    void loadEvents(currentBounds.current);
+    void loadVenueMapData(currentBounds.current);
+  }, [authToken, loadEvents, loadVenueMapData]);
 
   useEffect(() => {
     if (!container.current) return;
@@ -2270,8 +2362,16 @@ export function ExploreMap({
             },
             properties: {
               id: event.id,
+              // An account-created event gets its own colour rather than
+              // its category's: on a map of sourced programming, "who put
+              // this here" is the distinction that matters most, and
+              // DEC-0017 requires the origin to be visible wherever a
+              // created event is shown.
               color:
-                CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
+                event.origin && event.origin !== 'directory'
+                  ? CREATED_EVENT_PIN_COLOR
+                  : (CATEGORY_COLORS[event.category] ??
+                    CATEGORY_COLORS['other']),
               category: event.category
             }
           }))
@@ -2627,8 +2727,16 @@ export function ExploreMap({
             },
             properties: {
               id: event.id,
+              // An account-created event gets its own colour rather than
+              // its category's: on a map of sourced programming, "who put
+              // this here" is the distinction that matters most, and
+              // DEC-0017 requires the origin to be visible wherever a
+              // created event is shown.
               color:
-                CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
+                event.origin && event.origin !== 'directory'
+                  ? CREATED_EVENT_PIN_COLOR
+                  : (CATEGORY_COLORS[event.category] ??
+                    CATEGORY_COLORS['other']),
               category: event.category
             }
           }))
@@ -3105,11 +3213,18 @@ export function ExploreMap({
           authToken={authToken}
           user={user}
           unreadMessagesCount={unreadMessagesCount}
+          isAdmin={isAdmin}
           onOpenAccount={() => {
             setAboutOpen(false);
             setForumPanelMode(false);
             setSection('compte');
           }}
+          onOpenEvent={(eventId) =>
+            void openDetails(eventId, {
+              asForumPanel: true,
+              forumEventFirst: true
+            })
+          }
         />
       )}
 
@@ -3606,6 +3721,19 @@ export function ExploreMap({
             }
             onNavigate={setSection}
           />
+        ) : user && isAdmin && section === 'administration' ? (
+          <AdministrationPage authToken={authToken} />
+        ) : user && section === 'organisateur' ? (
+          <OrganisateurPage
+            authToken={authToken}
+            locale={locale}
+            onOpenEvent={(eventId) =>
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true
+              })
+            }
+          />
         ) : user && section === 'evenement' ? (
           <EventsPage
             authToken={authToken}
@@ -3618,6 +3746,7 @@ export function ExploreMap({
               })
             }
             onNavigateToMap={() => setSection('explorer')}
+            onNavigateToOrganisateur={() => setSection('organisateur')}
             locale={locale}
           />
         ) : user && section === 'lieu' ? (
@@ -5506,7 +5635,9 @@ type SidebarIconKind =
   | 'groupes'
   | 'messages'
   | 'amis'
-  | 'favoris';
+  | 'favoris'
+  | 'organisateur'
+  | 'administration';
 
 function SidebarNavIcon({ kind }: { kind: SidebarIconKind }) {
   const paths: Record<SidebarIconKind, ReactNode> = {
@@ -5562,6 +5693,19 @@ function SidebarNavIcon({ kind }: { kind: SidebarIconKind }) {
     ),
     favoris: (
       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    ),
+    organisateur: (
+      <>
+        <rect x="3" y="4" width="18" height="17" rx="2" />
+        <path d="M16 2v4M8 2v4M3 10h18" />
+        <path d="M12 14v4M10 16h4" />
+      </>
+    ),
+    administration: (
+      <>
+        <path d="M12 3l7.5 3.3v5c0 4.6-3.2 8.9-7.5 10-4.3-1.1-7.5-5.4-7.5-10v-5z" />
+        <path d="M9.2 12.2l1.9 1.9 3.7-3.8" />
+      </>
     )
   };
   return (
@@ -5649,6 +5793,35 @@ function describeNotification(entry: PulsoNotification): {
             <strong>{entry.actorDisplayName}</strong>
             {' a écrit dans le forum de '}
             <strong>{entry.eventTitle}</strong>
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt)
+      };
+    case 'organizer_request_received':
+      return {
+        icon: 'administration',
+        text: (
+          <>
+            <strong>{entry.actorDisplayName}</strong>
+            {' demande à gérer '}
+            <strong>{entry.venueName}</strong>
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt)
+      };
+    case 'organizer_request_resolved':
+      return {
+        icon: 'organisateur',
+        text: entry.approved ? (
+          <>
+            {'Tu es organisateur vérifié de '}
+            <strong>{entry.venueName}</strong>
+          </>
+        ) : (
+          <>
+            {'Ta demande pour '}
+            <strong>{entry.venueName}</strong>
+            {" n'a pas été retenue"}
           </>
         ),
         detail: formatRelativeTime(entry.createdAt)
@@ -7614,7 +7787,9 @@ type ConnectedSection =
   | 'forums'
   | 'groupes'
   | 'messages'
-  | 'amis';
+  | 'amis'
+  | 'organisateur'
+  | 'administration';
 
 const SIDEBAR_NAV_ITEMS: Array<{
   section: ConnectedSection;
@@ -7629,8 +7804,21 @@ const SIDEBAR_NAV_ITEMS: Array<{
   { section: 'groupes', label: 'Groupes', icon: 'groupes' },
   { section: 'messages', label: 'Messages', icon: 'messages' },
   { section: 'amis', label: 'Amis', icon: 'amis' },
-  { section: 'favoris', label: 'Favoris', icon: 'favoris' }
+  { section: 'favoris', label: 'Favoris', icon: 'favoris' },
+  { section: 'organisateur', label: 'Organisateur', icon: 'organisateur' }
 ];
+
+// DEC-0018: appended only for an administrator. A non-admin never sees the
+// destination, and every /admin route answers 403 regardless.
+const ADMIN_NAV_ITEM: {
+  section: ConnectedSection;
+  label: string;
+  icon: SidebarIconKind;
+} = {
+  section: 'administration',
+  label: 'Administration',
+  icon: 'administration'
+};
 
 // Primary navigation rail for the connected experience (Phase 4). Only
 // rendered when signed in - the anonymous map/explore experience keeps its
@@ -7642,13 +7830,17 @@ function Sidebar({
   authToken,
   user,
   unreadMessagesCount,
-  onOpenAccount
+  isAdmin,
+  onOpenAccount,
+  onOpenEvent
 }: {
   activeSection: ConnectedSection;
   onNavigate: (section: ConnectedSection) => void;
   authToken: string | undefined;
   user: User;
   unreadMessagesCount: number;
+  isAdmin: boolean;
+  onOpenEvent: (eventId: string) => void;
   onOpenAccount: () => void;
 }) {
   const [friendCode, setFriendCode] = useState<string>();
@@ -7684,6 +7876,25 @@ function Sidebar({
 
   const pinnedGroups = myGroups.filter((group) => group.pinned);
 
+  // DEC-0017 v1.2: the organizer's own pinned events sit in Raccourcis
+  // beside pinned groups - the two things a user actually returns to.
+  const [pinnedEvents, setPinnedEvents] = useState<PublicEvent[]>([]);
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/events`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setPinnedEvents(
+          myEventsResponseSchema
+            .parse(json)
+            .data.filter((event) => event.pinned)
+        )
+      )
+      .catch(() => {});
+  }, [authToken, activeSection]);
+
   return (
     <aside className="primary-sidebar">
       <button
@@ -7696,7 +7907,10 @@ function Sidebar({
       </button>
 
       <nav className="primary-sidebar-nav">
-        {SIDEBAR_NAV_ITEMS.map((item) => (
+        {(isAdmin
+          ? [...SIDEBAR_NAV_ITEMS, ADMIN_NAV_ITEM]
+          : SIDEBAR_NAV_ITEMS
+        ).map((item) => (
           <button
             type="button"
             key={item.section}
@@ -7726,7 +7940,7 @@ function Sidebar({
           4.14) - "Groupes" above is the real entry point to the full panel
           (and its own create-group form), not a "Créer un groupe" shortcut
           duplicated down here. */}
-      {pinnedGroups.length > 0 && (
+      {(pinnedGroups.length > 0 || pinnedEvents.length > 0) && (
         <div className="primary-sidebar-group">
           <h3 className="primary-sidebar-group-title">Raccourcis</h3>
           {pinnedGroups.map((group) => (
@@ -7740,6 +7954,22 @@ function Sidebar({
                 {group.name.slice(0, 1).toUpperCase()}
               </span>
               {group.name}
+            </button>
+          ))}
+          {pinnedEvents.map((event) => (
+            <button
+              type="button"
+              key={event.id}
+              className="primary-sidebar-nav-item"
+              onClick={() => onOpenEvent(event.id)}
+            >
+              <span
+                className="primary-sidebar-group-avatar primary-sidebar-event-avatar"
+                aria-hidden="true"
+              >
+                <CategoryIcon category={event.category} size={14} />
+              </span>
+              {event.title}
             </button>
           ))}
         </div>
@@ -8006,6 +8236,7 @@ function EventsPage({
   onToggleFavorite,
   onOpenEventForum,
   onNavigateToMap,
+  onNavigateToOrganisateur,
   locale
 }: {
   authToken: string | undefined;
@@ -8013,6 +8244,7 @@ function EventsPage({
   onToggleFavorite: (eventId: string) => void;
   onOpenEventForum: (eventId: string) => void;
   onNavigateToMap: () => void;
+  onNavigateToOrganisateur: () => void;
   locale: SupportedLocale;
 }) {
   const [period, setPeriod] = useState<EventsPeriod>('today');
@@ -8022,7 +8254,6 @@ function EventsPage({
   const [query, setQuery] = useState('');
   // DEC-0017. Connected-only, like the created events it surfaces.
   const [afterOnly, setAfterOnly] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
@@ -8166,10 +8397,12 @@ function EventsPage({
             </div>
           </div>
           <div className="events-hero-actions">
+            {/* Creation lives in Organisateur now (DEC-0017 v1.2) - this
+                stays as a shortcut rather than a second implementation. */}
             <button
               type="button"
               className="btn-primary events-hero-create-btn"
-              onClick={() => setCreateOpen(true)}
+              onClick={onNavigateToOrganisateur}
             >
               Créer un événement
             </button>
@@ -8183,18 +8416,6 @@ function EventsPage({
             </button>
           </div>
         </div>
-
-        {createOpen && (
-          <CreateEventModal
-            authToken={authToken}
-            venues={groupEventsByVenue(events)}
-            locale={locale}
-            onClose={() => setCreateOpen(false)}
-            onCreated={(created) =>
-              setEvents((current) => [created, ...current])
-            }
-          />
-        )}
 
         <div className="events-discovery-controls">
           <div className="details-tabs events-period-tabs">
@@ -8466,124 +8687,214 @@ function EventsPage({
 }
 
 /**
- * DEC-0017 event organizer. Connected-experience only, and it says so: a
- * created event never appears on the anonymous map, and hiding that would
- * leave an organizer expecting reach the feature does not give them.
+ * DEC-0017 v1.2 event editor - a full page inside Organisateur, not a modal.
+ * Creating an event is a composed task with a dozen fields; a scrolling
+ * dialog over a dimmed page was the wrong container for it.
  *
- * The venue is picked from venues Pulso already knows rather than typed as
- * free text - there is no geocoder in the client, and deriving coordinates
- * from a typed address is exactly the guess EVENT-002 forbids.
+ * Connected-experience only, and it says so: a created event never appears
+ * on the anonymous map, and hiding that would leave an organizer expecting
+ * reach the feature does not give them.
+ *
+ * The address is typed and resolved to coordinates server-side. Resolution
+ * failure blocks publication rather than falling back to an approximate pin
+ * - a pin Pulso cannot place is worse than no pin, and guessing is exactly
+ * what EVENT-002 forbids. The organizer may still withhold the street line
+ * from the public (a "select" after) - the coordinates stay, the text does
+ * not.
+ *
+ * Native ticketing is absent by decision (DEC-0017 v1.1): the ticketing
+ * field is an external link, handled by the same redirect an ingested
+ * Ticketmaster event uses.
  */
-function CreateEventModal({
+function EventEditor({
   authToken,
-  venues,
   locale,
-  onClose,
-  onCreated
+  existing,
+  onCancel,
+  onSaved
 }: {
   authToken: string | undefined;
-  venues: VenueGroup[];
   locale: SupportedLocale;
-  onClose: () => void;
-  onCreated: (event: PublicEvent) => void;
+  existing?: PublicEvent | undefined;
+  onCancel: () => void;
+  onSaved: (event: PublicEvent) => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<EventCategory>('nightlife');
-  const [venueId, setVenueId] = useState('');
-  const [startsAt, setStartsAt] = useState('');
-  const [endsAt, setEndsAt] = useState('');
-  const [accessInformation, setAccessInformation] = useState('');
-  const [description, setDescription] = useState('');
-  const [priceKind, setPriceKind] = useState<'free' | 'paid' | 'unknown'>(
-    'free'
+  const toLocalInput = (iso: string | undefined) =>
+    iso ? new Date(iso).toISOString().slice(0, 16) : '';
+
+  const [title, setTitle] = useState(existing?.title ?? '');
+  const [category, setCategory] = useState<EventCategory>(
+    existing?.category ?? 'nightlife'
   );
-  const [isAfter, setIsAfter] = useState(false);
+  const [address, setAddress] = useState(
+    existing?.addressHidden ? '' : (existing?.venue.address ?? '')
+  );
+  const [venueName, setVenueName] = useState(existing?.venue.name ?? '');
+  const [addressHidden, setAddressHidden] = useState(
+    existing?.addressHidden ?? false
+  );
+  const [resolved, setResolved] = useState<{
+    longitude: number;
+    latitude: number;
+    label: string;
+  }>();
+  const [geocodeState, setGeocodeState] = useState<
+    'idle' | 'checking' | 'notFound' | 'unavailable'
+  >('idle');
+  const [startsAt, setStartsAt] = useState(toLocalInput(existing?.startsAt));
+  const [endsAt, setEndsAt] = useState(toLocalInput(existing?.endsAt));
+  const [accessInformation, setAccessInformation] = useState(
+    existing?.accessInformation ?? ''
+  );
+  const [description, setDescription] = useState(existing?.description ?? '');
+  const [ticketingUrl, setTicketingUrl] = useState('');
+  const [priceKind, setPriceKind] = useState<'free' | 'paid' | 'unknown'>(
+    existing?.price.kind ?? 'free'
+  );
+  const [isAfter, setIsAfter] = useState(existing?.isAfter ?? false);
+  const [cover, setCover] = useState<File>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+
+  const isEdit = Boolean(existing);
+  // Editing keeps the event at its existing venue, so no lookup is needed;
+  // creating one needs a resolved point before it can be pinned.
+  const addressReady = isEdit || Boolean(resolved);
 
   const canSubmit =
     Boolean(authToken) &&
     title.trim().length > 0 &&
-    venueId.length > 0 &&
     startsAt.length > 0 &&
     accessInformation.trim().length > 0 &&
+    addressReady &&
     !saving;
+
+  const checkAddress = () => {
+    if (!authToken || address.trim().length < 4) return;
+    setGeocodeState('checking');
+    setResolved(undefined);
+    fetch(
+      `${API_BASE_URL}/me/events/geocode?address=${encodeURIComponent(address.trim())}`,
+      { headers: { authorization: `Bearer ${authToken}` } }
+    )
+      .then((response) =>
+        response.ok ? response.json() : Promise.reject(response)
+      )
+      .then((json) => {
+        const data = geocodeResponseSchema.parse(json).data;
+        if (!data) {
+          setGeocodeState('notFound');
+          return;
+        }
+        setResolved(data);
+        setGeocodeState('idle');
+      })
+      .catch(() => setGeocodeState('unavailable'));
+  };
+
+  const uploadCover = async (eventId: string) => {
+    if (!cover || !authToken) return;
+    const body = new FormData();
+    body.append('file', cover);
+    await fetch(`${API_BASE_URL}/me/events/${eventId}/cover`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` },
+      body
+    }).catch(() => {});
+  };
 
   const submit = () => {
     if (!authToken || !canSubmit) return;
     setSaving(true);
     setError(undefined);
-    fetch(`${API_BASE_URL}/me/events`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        title: title.trim(),
-        category,
-        startsAt: new Date(startsAt).toISOString(),
-        ...(endsAt ? { endsAt: new Date(endsAt).toISOString() } : {}),
-        accessInformation: accessInformation.trim(),
-        ...(description.trim() ? { description: description.trim() } : {}),
-        isAfter,
-        price: { kind: priceKind },
-        venue: { kind: 'existing', venueId }
-      })
-    })
+    const payload = {
+      title: title.trim(),
+      category,
+      startsAt: new Date(startsAt).toISOString(),
+      ...(endsAt ? { endsAt: new Date(endsAt).toISOString() } : {}),
+      accessInformation: accessInformation.trim(),
+      ...(description.trim() ? { description: description.trim() } : {}),
+      ...(ticketingUrl.trim() ? { ticketingUrl: ticketingUrl.trim() } : {}),
+      addressHidden,
+      isAfter,
+      price: { kind: priceKind }
+    };
+    const request = existing
+      ? fetch(`${API_BASE_URL}/me/events/${existing.id}`, {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${authToken}`
+          },
+          body: JSON.stringify(payload)
+        })
+      : fetch(`${API_BASE_URL}/me/events`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            ...payload,
+            venue: {
+              kind: 'new',
+              name: venueName.trim() || address.trim(),
+              address: address.trim(),
+              point: {
+                longitude: resolved!.longitude,
+                latitude: resolved!.latitude
+              }
+            }
+          })
+        });
+
+    request
       .then((response) =>
         response.ok ? response.json() : Promise.reject(response)
       )
-      .then((json) => {
-        onCreated(createdEventResponseSchema.parse(json).data);
-        onClose();
+      .then(async (json) => {
+        const saved = createdEventResponseSchema.parse(json).data;
+        await uploadCover(saved.id);
+        onSaved(saved);
       })
       .catch(() => {
         setError(
-          "L'événement n'a pas pu être publié. Vérifie la date et réessaie."
+          "L'événement n'a pas pu être enregistré. Vérifie la date et réessaie."
         );
       })
       .finally(() => setSaving(false));
   };
 
   return (
-    <div className="create-event-backdrop" onClick={onClose}>
-      <div
-        className="create-event-modal"
-        role="dialog"
-        aria-label="Créer un événement"
-        onClick={(clickEvent) => clickEvent.stopPropagation()}
-      >
-        <div className="create-event-header">
-          <div>
-            <span className="create-event-kicker">Organisateur</span>
-            <h2>Créer un événement</h2>
-          </div>
-          <button
-            type="button"
-            className="close-button"
-            onClick={onClose}
-            aria-label="Fermer"
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+    <div className="event-editor">
+      <button type="button" className="event-editor-back" onClick={onCancel}>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
+        Retour à mes événements
+      </button>
 
+      <div className="event-editor-head">
+        <span className="create-event-kicker">Organisateur</span>
+        <h1>{isEdit ? 'Modifier un événement' : 'Créer un événement'}</h1>
         <p className="create-event-notice">
           {
             "Ton événement sera visible uniquement dans l'espace connecté de Pulso, pas sur la carte publique. Il portera la mention « Communauté », ou « Organisateur vérifié » si ton compte est rattaché à ce lieu."
           }
         </p>
+      </div>
 
+      <section className="event-editor-section">
+        <h2>L&apos;essentiel</h2>
         <label className="create-event-field">
           <span>Titre</span>
           <input
@@ -8593,7 +8904,6 @@ function CreateEventModal({
             maxLength={200}
           />
         </label>
-
         <div className="create-event-row">
           <label className="create-event-field">
             <span>Catégorie</span>
@@ -8626,22 +8936,25 @@ function CreateEventModal({
             </select>
           </label>
         </div>
-
-        <label className="create-event-field">
-          <span>Lieu</span>
-          <select
-            value={venueId}
-            onChange={(changeEvent) => setVenueId(changeEvent.target.value)}
-          >
-            <option value="">Choisis un lieu…</option>
-            {venues.map((venue) => (
-              <option key={venue.id} value={venue.id}>
-                {venue.name}
-              </option>
-            ))}
-          </select>
+        <label className="create-event-after">
+          <input
+            type="checkbox"
+            checked={isAfter}
+            onChange={(changeEvent) => setIsAfter(changeEvent.target.checked)}
+          />
+          <span>
+            <strong>{"C'est un after"}</strong>
+            <small>
+              {
+                'Il apparaîtra dans le filtre After. Un événement qui commence entre 2 h et 6 h y apparaît de toute façon.'
+              }
+            </small>
+          </span>
         </label>
+      </section>
 
+      <section className="event-editor-section">
+        <h2>Quand</h2>
         <div className="create-event-row">
           <label className="create-event-field">
             <span>Début</span>
@@ -8660,7 +8973,111 @@ function CreateEventModal({
             />
           </label>
         </div>
+      </section>
 
+      <section className="event-editor-section">
+        <h2>Où</h2>
+        {isEdit ? (
+          <label className="create-event-field">
+            <span>Lieu</span>
+            <input value={existing?.venue.name ?? ''} disabled />
+            <small className="create-event-hint">
+              Déplacer un événement ailleurs, c&apos;est un autre événement —
+              crée-en un nouveau.
+            </small>
+          </label>
+        ) : (
+          <>
+            <label className="create-event-field">
+              <span>Nom du lieu (optionnel)</span>
+              <input
+                value={venueName}
+                onChange={(changeEvent) =>
+                  setVenueName(changeEvent.target.value)
+                }
+                placeholder="Loft Saint-Henri"
+                maxLength={200}
+              />
+            </label>
+            <label className="create-event-field">
+              <span>Adresse précise</span>
+              <div className="create-event-address">
+                <input
+                  value={address}
+                  onChange={(changeEvent) => {
+                    setAddress(changeEvent.target.value);
+                    setResolved(undefined);
+                    setGeocodeState('idle');
+                  }}
+                  placeholder="1 rue Notre-Dame Ouest, Montréal"
+                  maxLength={300}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={checkAddress}
+                  disabled={address.trim().length < 4}
+                >
+                  Vérifier
+                </button>
+              </div>
+              {geocodeState === 'checking' && (
+                <small className="create-event-hint">Vérification…</small>
+              )}
+              {geocodeState === 'notFound' && (
+                <small className="create-event-hint create-event-hint-error">
+                  Adresse introuvable. Pulso ne place pas un repère au hasard —
+                  précise l&apos;adresse.
+                </small>
+              )}
+              {geocodeState === 'unavailable' && (
+                <small className="create-event-hint create-event-hint-error">
+                  Vérification indisponible pour le moment. Réessaie.
+                </small>
+              )}
+              {resolved && (
+                <small className="create-event-hint create-event-hint-ok">
+                  ✓ {resolved.label}
+                </small>
+              )}
+            </label>
+          </>
+        )}
+
+        {/* The address is still resolved and the event still gets a real
+            pin - only the street line is withheld. An event Pulso cannot
+            place at all is not something it will publish. */}
+        <label className="create-event-after">
+          <input
+            type="checkbox"
+            checked={addressHidden}
+            onChange={(changeEvent) =>
+              setAddressHidden(changeEvent.target.checked)
+            }
+          />
+          <span>
+            <strong>Ne pas afficher l&apos;adresse publiquement</strong>
+            <small>
+              Pour un after plus select. Le repère reste sur la carte au bon
+              endroit, mais l&apos;adresse exacte n&apos;est pas affichée —
+              donne le nécessaire dans «&nbsp;Comment y accéder&nbsp;».
+            </small>
+          </span>
+        </label>
+      </section>
+
+      <section className="event-editor-section">
+        <h2>Détails</h2>
+        <label className="create-event-field">
+          <span>Photo de couverture (optionnel)</span>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(changeEvent) =>
+              setCover(changeEvent.target.files?.[0] ?? undefined)
+            }
+          />
+        </label>
         <label className="create-event-field">
           <span>Comment y accéder</span>
           <textarea
@@ -8672,48 +9089,610 @@ function CreateEventModal({
             rows={2}
           />
         </label>
-
         <label className="create-event-field">
           <span>Description (optionnel)</span>
           <textarea
             value={description}
             onChange={(changeEvent) => setDescription(changeEvent.target.value)}
-            rows={3}
+            rows={4}
           />
         </label>
+      </section>
 
-        <label className="create-event-after">
+      <section className="event-editor-section">
+        <h2>Billetterie</h2>
+        <label className="create-event-field">
+          <span>Lien billetterie (optionnel)</span>
           <input
-            type="checkbox"
-            checked={isAfter}
-            onChange={(changeEvent) => setIsAfter(changeEvent.target.checked)}
+            value={ticketingUrl}
+            onChange={(changeEvent) =>
+              setTicketingUrl(changeEvent.target.value)
+            }
+            placeholder="https://…"
           />
-          <span>
-            <strong>{"C'est un after"}</strong>
-            <small>
-              {
-                'Il apparaîtra dans le filtre After. Un événement qui commence entre 2 h et 6 h y apparaît de toute façon.'
-              }
-            </small>
-          </span>
+          <small className="create-event-hint">
+            Pulso ne vend pas de billets : ce lien redirige vers ta billetterie,
+            comme pour un événement Ticketmaster.
+          </small>
         </label>
+      </section>
 
-        {error && <p className="create-event-error">{error}</p>}
+      {error && <p className="create-event-error">{error}</p>}
 
-        <div className="create-event-actions">
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            Annuler
+      <div className="event-editor-actions">
+        <button type="button" className="btn-secondary" onClick={onCancel}>
+          Annuler
+        </button>
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={!canSubmit}
+          onClick={submit}
+        >
+          {saving ? 'Enregistrement…' : isEdit ? 'Enregistrer' : 'Publier'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * DEC-0017 v1.1 organizer workspace. The account's own created events, with
+ * real management: edit, cover photo, geocoded address, external ticketing
+ * link. Native ticketing is deliberately absent - see DEC-0017 v1.1.
+ */
+/**
+ * DEC-0018 administration console. Currently one queue: pending organizer
+ * requests. Gated on `users.is_admin`, which is set directly in the
+ * database - the destination is hidden for everyone else, and every /admin
+ * route answers 403 regardless of what the interface shows.
+ */
+/**
+ * DEC-0018: where an account asks to become the verified organizer of a
+ * venue, and where it sees the venues it already manages. The venue list
+ * comes from the events already loaded for the fourteen-day window rather
+ * than a venue search endpoint Pulso does not have.
+ */
+function OrganizerStatusBlock({
+  authToken
+}: {
+  authToken: string | undefined;
+}) {
+  const [status, setStatus] = useState<{
+    isAdmin: boolean;
+    verifiedVenues: Array<{ venueId: string; venueName: string }>;
+    pendingRequests: OrganizerRequest[];
+  }>();
+  const [venues, setVenues] = useState<VenueGroup[]>([]);
+  const [venueId, setVenueId] = useState('');
+  const [justification, setJustification] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  const [open, setOpen] = useState(false);
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/organizer`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setStatus(myOrganizerStatusResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  useEffect(() => {
+    const venueWindow = getVenueDiscoveryDateRange(new Date());
+    fetch(
+      `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, {
+        date: 'custom',
+        categories: [],
+        price: 'all',
+        customStartDate: venueWindow.start,
+        customEndDate: venueWindow.end
+      })}`
+    )
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setVenues(groupEventsByVenue(eventListResponseSchema.parse(json).data))
+      )
+      .catch(() => {});
+  }, []);
+
+  const submit = () => {
+    if (!authToken) return;
+    const parsed = createOrganizerRequestSchema.safeParse({
+      venueId,
+      justification: justification.trim()
+    });
+    if (!parsed.success) {
+      setError(
+        'Choisis un lieu et explique ton lien avec lui (10 caractères minimum).'
+      );
+      return;
+    }
+    setSaving(true);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/me/organizer/requests`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify(parsed.data)
+    })
+      .then((response) => {
+        if (response.status === 409) {
+          throw new Error('Une demande est déjà en attente pour ce lieu.');
+        }
+        if (!response.ok) throw new Error('failed');
+        setJustification('');
+        setVenueId('');
+        setOpen(false);
+        reload();
+      })
+      .catch((caught: Error) =>
+        setError(
+          caught.message === 'failed'
+            ? "La demande n'a pas pu être envoyée."
+            : caught.message
+        )
+      )
+      .finally(() => setSaving(false));
+  };
+
+  if (!status) return null;
+
+  return (
+    <section className="organizer-status">
+      <div className="organizer-status-head">
+        <div>
+          <h2 className="organisateur-group-title">Statut organisateur</h2>
+          {status.verifiedVenues.length > 0 ? (
+            <p className="organizer-status-line">
+              Tu es organisateur vérifié de{' '}
+              <strong>
+                {status.verifiedVenues.map((v) => v.venueName).join(', ')}
+              </strong>
+              .
+            </p>
+          ) : (
+            <p className="organizer-status-line">
+              {
+                'Tes événements sont publiés en « Communauté ». Demande à gérer un lieu pour publier en son nom.'
+              }
+            </p>
+          )}
+          {status.pendingRequests.length > 0 && (
+            <p className="organizer-status-line organizer-status-pending">
+              Demande en attente pour{' '}
+              {status.pendingRequests.map((r) => r.venueName).join(', ')}.
+            </p>
+          )}
+        </div>
+        {status.pendingRequests.length === 0 && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setOpen((current) => !current)}
+          >
+            {open ? 'Annuler' : 'Demander un lieu'}
           </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="organizer-status-form">
+          <label className="create-event-field">
+            <span>Lieu</span>
+            <select
+              value={venueId}
+              onChange={(changeEvent) => setVenueId(changeEvent.target.value)}
+            >
+              <option value="">Choisis un lieu…</option>
+              {venues.map((venue) => (
+                <option key={venue.id} value={venue.id}>
+                  {venue.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="create-event-field">
+            <span>Ton lien avec ce lieu</span>
+            <textarea
+              rows={3}
+              value={justification}
+              onChange={(changeEvent) =>
+                setJustification(changeEvent.target.value)
+              }
+              placeholder="Je programme les soirées de ce bar depuis 2024…"
+            />
+            <small className="create-event-hint">
+              Une personne lit chaque demande. Pulso ne vérifie rien
+              automatiquement.
+            </small>
+          </label>
+          {error && <p className="create-event-error">{error}</p>}
+          <div className="create-event-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={saving}
+              onClick={submit}
+            >
+              {saving ? 'Envoi…' : 'Envoyer la demande'}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AdministrationPage({ authToken }: { authToken: string | undefined }) {
+  const [requests, setRequests] = useState<OrganizerRequest[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState<string>();
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/admin/organizer-requests`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setRequests(organizerRequestsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const resolve = (id: string, approve: boolean) => {
+    if (!authToken) return;
+    setBusy(id);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/admin/organizer-requests/${id}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ approve })
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        reload();
+      })
+      .catch(() => setError("La décision n'a pas pu être enregistrée."))
+      .finally(() => setBusy(undefined));
+  };
+
+  return (
+    <div className="map-container-wrapper organisateur-page">
+      <div className="events-hero organisateur-hero">
+        <div className="events-hero-text">
+          <p className="events-hero-kicker">Administration</p>
+          <h1>Demandes d&apos;organisateur.</h1>
+          <p className="events-hero-eyebrow">
+            Chaque demande t&apos;est notifiée dans Pulso. Approuver rattache le
+            compte au lieu ; refuser ne crée aucun lien.
+          </p>
+          <div className="events-hero-stats">
+            <span className="events-hero-stat">
+              <strong>{requests.length}</strong> en attente
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">
+          Impossible de charger les demandes pour le moment.
+        </p>
+      )}
+      {error && <p className="create-event-error">{error}</p>}
+
+      {state === 'success' && requests.length === 0 && (
+        <div className="empty-state-card organisateur-empty">
+          <span className="empty-state-icon" aria-hidden="true">
+            <SidebarNavIcon kind="administration" />
+          </span>
+          <p>Aucune demande en attente</p>
+          <p>Tu seras notifié dès qu&apos;un compte demande à gérer un lieu.</p>
+        </div>
+      )}
+
+      <div className="organisateur-list">
+        {requests.map((entry) => (
+          <div className="admin-request" key={entry.id}>
+            <div className="admin-request-main">
+              <strong>{entry.venueName}</strong>
+              <span className="admin-request-venue">{entry.venueAddress}</span>
+              <span className="admin-request-who">
+                Demandé par {entry.requester.displayName} ·{' '}
+                {entry.requester.email}
+              </span>
+              <p className="admin-request-justification">
+                {entry.justification}
+              </p>
+              <span className="admin-request-when">
+                {formatRelativeTime(entry.createdAt)}
+              </span>
+            </div>
+            <div className="admin-request-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy === entry.id}
+                onClick={() => resolve(entry.id, false)}
+              >
+                Refuser
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={busy === entry.id}
+                onClick={() => resolve(entry.id, true)}
+              >
+                Approuver
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OrganisateurPage({
+  authToken,
+  locale,
+  onOpenEvent
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+  onOpenEvent: (eventId: string) => void;
+}) {
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [editing, setEditing] = useState<PublicEvent | 'new'>();
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/events`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setEvents(myEventsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const [actionError, setActionError] = useState<string>();
+
+  // fetch only rejects on a network failure, so the previous `.then(reload)`
+  // swallowed every server error and re-rendered the unchanged list - the
+  // button looked dead rather than failed.
+  const remove = (eventId: string) => {
+    if (!authToken) return;
+    setActionError(undefined);
+    fetch(`${API_BASE_URL}/me/events/${eventId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        reload();
+      })
+      .catch(() =>
+        setActionError("L'événement n'a pas pu être supprimé. Réessaie.")
+      );
+  };
+
+  const togglePin = (event: PublicEvent) => {
+    if (!authToken) return;
+    setActionError(undefined);
+    fetch(`${API_BASE_URL}/me/events/${event.id}/pin`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ pinned: !event.pinned })
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        reload();
+      })
+      .catch(() => setActionError("L'épinglage n'a pas pu être enregistré."));
+  };
+
+  const now = Date.now();
+  const upcoming = events.filter(
+    (event) => new Date(event.startsAt).getTime() >= now
+  );
+  const past = events.filter(
+    (event) => new Date(event.startsAt).getTime() < now
+  );
+
+  if (editing) {
+    return (
+      <div className="map-container-wrapper organisateur-page">
+        <EventEditor
+          authToken={authToken}
+          locale={locale}
+          existing={editing === 'new' ? undefined : editing}
+          onCancel={() => setEditing(undefined)}
+          onSaved={() => {
+            setEditing(undefined);
+            reload();
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="map-container-wrapper organisateur-page">
+      <div className="events-hero organisateur-hero">
+        <div className="events-hero-text">
+          <p className="events-hero-kicker">Organisateur</p>
+          <h1>Tes événements.</h1>
+          <p className="events-hero-eyebrow">
+            Crée et gère tes soirées. Elles sont visibles dans l&apos;espace
+            connecté de Pulso, pas sur la carte publique.
+          </p>
+          <div className="events-hero-stats">
+            <span className="events-hero-stat">
+              <strong>{upcoming.length}</strong> à venir
+            </span>
+            <span className="events-hero-stat">
+              <strong>{past.length}</strong> passé{past.length > 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => setEditing('new')}
+        >
+          Créer un événement
+        </button>
+      </div>
+
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">
+          Impossible de charger tes événements pour le moment.
+        </p>
+      )}
+      {actionError && <p className="create-event-error">{actionError}</p>}
+
+      <OrganizerStatusBlock authToken={authToken} />
+
+      {state === 'success' && events.length === 0 && (
+        <div className="empty-state-card organisateur-empty">
+          <span className="empty-state-icon" aria-hidden="true">
+            <SidebarNavIcon kind="organisateur" />
+          </span>
+          <p>Aucun événement publié</p>
+          <p>
+            Crée ta première soirée : elle apparaîtra dans Événements et sur la
+            carte connectée, avec le filtre After si c&apos;en est un.
+          </p>
           <button
             type="button"
             className="btn-primary"
-            disabled={!canSubmit}
-            onClick={submit}
+            onClick={() => setEditing('new')}
           >
-            {saving ? 'Publication…' : 'Publier'}
+            Créer un événement
           </button>
         </div>
-      </div>
+      )}
+
+      {[
+        { label: 'À venir', list: upcoming },
+        { label: 'Passés', list: past }
+      ]
+        .filter((group) => group.list.length > 0)
+        .map((group) => (
+          <section className="organisateur-group" key={group.label}>
+            <h2 className="organisateur-group-title">{group.label}</h2>
+            <div className="organisateur-list">
+              {group.list.map((event) => (
+                <div className="organisateur-row" key={event.id}>
+                  <span
+                    className="organisateur-row-cover"
+                    style={
+                      event.imageUrl
+                        ? { backgroundImage: `url(${event.imageUrl})` }
+                        : undefined
+                    }
+                  >
+                    {!event.imageUrl && (
+                      <CategoryIcon category={event.category} size={18} />
+                    )}
+                  </span>
+                  <span className="organisateur-row-main">
+                    <strong>{event.title}</strong>
+                    <span>
+                      {event.venue.name} · {formatEventDateTime(event.startsAt)}
+                    </span>
+                    <span className="organisateur-row-tags">
+                      <span
+                        className={`organisateur-origin origin-${event.origin ?? 'directory'}`}
+                      >
+                        {event.origin === 'verified_organizer'
+                          ? 'Organisateur vérifié'
+                          : 'Communauté'}
+                      </span>
+                      {event.isAfter && (
+                        <span className="organisateur-after">After</span>
+                      )}
+                      {event.externalDestination?.kind === 'ticketing' && (
+                        <span className="organisateur-ticketing">
+                          Billetterie externe
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                  <span className="organisateur-row-actions">
+                    <button
+                      type="button"
+                      className="text-btn"
+                      onClick={() => onOpenEvent(event.id)}
+                    >
+                      Voir
+                    </button>
+                    <button
+                      type="button"
+                      className={`text-btn ${event.pinned ? 'organisateur-pinned' : ''}`}
+                      aria-pressed={event.pinned === true}
+                      onClick={() => togglePin(event)}
+                    >
+                      {event.pinned ? 'Épinglé' : 'Épingler'}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-btn"
+                      onClick={() => setEditing(event)}
+                    >
+                      Modifier
+                    </button>
+                    <button
+                      type="button"
+                      className="text-btn organisateur-delete"
+                      onClick={() => remove(event.id)}
+                    >
+                      Supprimer
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
     </div>
   );
 }
@@ -16047,26 +17026,31 @@ function EventHero({
       }
     >
       <div className="details-hero-actions">
-        {!hideBackButton && (
-          <button type="button" className="back-button" onClick={onBack}>
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-            Retour
-          </button>
-        )}
-        {inlineBadge && (
-          <div className="details-badge details-badge-inline">
-            {SHORT_CATEGORY_LABELS[locale][event.category]}
-          </div>
-        )}
+        {/* Back and the category badge are one left-hand group: with all
+            three as direct space-between children the badge floated into
+            the middle of the banner, detached from both. */}
+        <div className="details-hero-actions-left">
+          {!hideBackButton && (
+            <button type="button" className="back-button" onClick={onBack}>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              Retour
+            </button>
+          )}
+          {inlineBadge && (
+            <div className="details-badge details-badge-inline">
+              {SHORT_CATEGORY_LABELS[locale][event.category]}
+            </div>
+          )}
+        </div>
         <div className="details-hero-actions-right">
           <button
             type="button"
@@ -16535,19 +17519,10 @@ function EventDetails({
                   {attendanceVisibility ? '✓ Vous y allez' : "🎟️ J'y vais"}
                 </button>
                 {attendanceVisibility && (
-                  <select
-                    className="attendance-visibility-select"
+                  <AttendanceVisibilityToggle
                     value={attendanceVisibility}
-                    onChange={(changeEvent) =>
-                      onSetAttendance(
-                        changeEvent.target.value as AttendanceVisibility
-                      )
-                    }
-                    aria-label="Visibilité de votre participation"
-                  >
-                    <option value="private">Visible par vous seul</option>
-                    <option value="friends">Visible par vos amis</option>
-                  </select>
+                    onChange={onSetAttendance}
+                  />
                 )}
               </div>
               {friendsAttending.length > 0 ? (
@@ -16901,19 +17876,10 @@ function ForumPanel({
               {attendanceVisibility ? '✓ Vous y allez' : "🎟️ J'y vais"}
             </button>
             {attendanceVisibility && (
-              <select
-                className="attendance-visibility-select"
+              <AttendanceVisibilityToggle
                 value={attendanceVisibility}
-                onChange={(changeEvent) =>
-                  onSetAttendance(
-                    changeEvent.target.value as AttendanceVisibility
-                  )
-                }
-                aria-label="Visibilité de votre participation"
-              >
-                <option value="private">Visible par vous seul</option>
-                <option value="friends">Visible par vos amis</option>
-              </select>
+                onChange={onSetAttendance}
+              />
             )}
             <button
               type="button"

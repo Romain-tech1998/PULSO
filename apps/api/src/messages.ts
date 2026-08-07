@@ -5,7 +5,11 @@ import {
   sendMessageRequestSchema,
   unreadCountResponseSchema
 } from '@pulso/contracts';
-import type { AuthRepository, MessagesRepository } from '@pulso/database';
+import type {
+  AuthRepository,
+  MessagesRepository,
+  NotificationsRepository
+} from '@pulso/database';
 import { NotFriendsError } from '@pulso/database';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -23,7 +27,8 @@ const friendParamsSchema = z.object({ friendUserId: z.uuid() });
 export function registerMessagesRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
-  messagesRepository: MessagesRepository
+  messagesRepository: MessagesRepository,
+  notificationsRepository: NotificationsRepository
 ) {
   app.post('/me/friends/:friendUserId/messages', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -35,6 +40,11 @@ export function registerMessagesRoutes(
         user.id,
         friendUserId,
         body
+      );
+      // Recipient only, never the sender (DEC-0016 acceptance criterion 4).
+      await notificationsRepository.notifyMessageReceived(
+        friendUserId,
+        user.id
       );
       return reply
         .status(201)

@@ -103,6 +103,9 @@ export interface ForumRepository {
   unfollowForum(eventId: string, userId: string): Promise<void>;
   isFollowingForum(eventId: string, userId: string): Promise<boolean>;
   getFollowedEventIds(userId: string): Promise<string[]>;
+  // Reverse of getFollowedEventIds - who to notify when someone posts in
+  // this event's forum (DEC-0016 trigger 5).
+  getForumFollowerIds(eventId: string): Promise<string[]>;
 }
 
 interface PostRow {
@@ -339,6 +342,14 @@ export class PostgresForumRepository implements ForumRepository {
       if (isForeignKeyViolation(error)) throw new EventNotFoundError();
       throw error;
     }
+  }
+
+  async getForumFollowerIds(eventId: string): Promise<string[]> {
+    const result = await this.pool.query<{ user_id: string }>(
+      `SELECT user_id FROM forum_follows WHERE event_id = $1`,
+      [eventId]
+    );
+    return result.rows.map((row) => row.user_id);
   }
 
   async unfollowForum(eventId: string, userId: string): Promise<void> {

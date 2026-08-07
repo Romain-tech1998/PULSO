@@ -1,9 +1,9 @@
 # PRD-0001 — Pulso Montréal MVP
 
 **Identifier:** PRD-0001
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Accepted
-**Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001
+**Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DEC-0014, DATA-0001, UJ-0001, UJ-0002, UX-0001
 
 ## Purpose
 
@@ -32,7 +32,7 @@ Coverage, freshness, data quality, redirect success, and usability remain bindin
 
 ## 4. Non-goals
 
-The MVP excludes native booking or payment; ticket or title storage; native routing, navigation, transportation planning, or itinerary; identity or age verification; multiple cities; general venue or restaurant listings without a qualifying scheduled event; mandatory accounts; mandatory AI or chat; social features; profiles; stored preferences; recommendation history or account-history personalization; and all other Roadmap or Vision functionality.
+The MVP excludes native booking or payment; ticket or title storage; native routing, navigation, transportation planning, or itinerary; identity or age verification; multiple cities; general restaurant, retail, accommodation, or business directories; mandatory accounts; mandatory AI or chat; social features; profiles; stored preferences; recommendation history or account-history personalization; and all other Roadmap or Vision functionality. DEC-0014 permits only a narrow, verified map exception for recurring nightlife and cultural venues.
 
 ## 5. Target users and primary situations
 
@@ -45,12 +45,14 @@ These are situations, not demographic personas. This PRD makes no market-size or
 
 ## 6. Product structure
 
-The Accepted MVP has four primary screens:
+The Accepted MVP has six primary screens:
 
 1. **Explore / Map** — default entry and primary experience.
 2. **Event Details** — complete view of a selected event.
-3. **Favorites** — saved events on the current device, with optional authenticated synchronization.
-4. **Authentication** — contextual entry when the user voluntarily chooses account connection or cross-device synchronization.
+3. **Lieux** — event-led venue list limited to the fourteen-day venue window.
+4. **Venue Details** — enlarged venue sheet with practical information and scheduled events.
+5. **Favorites** — saved events on the current device, with optional authenticated synchronization.
+6. **Authentication** — contextual entry when the user voluntarily chooses account connection or cross-device synchronization.
 
 Filters, intelligent search, event previews, match explanations, trust notices, and system feedback are overlays or states, not additional primary screens.
 
@@ -65,7 +67,7 @@ Requirements are implementation-neutral and stable within their domain. **P0** m
 | MAP-001 | Open directly on an explorable Montréal map without account, location permission, questionnaire, or query. | P0 | A new signed-out session reaches a populated or explicit system state without an auth, location-permission, or search gate. | PDR-0001, PDR-0002, UJ-0001, UX-0001 |
 | MAP-002 | Use Montréal as the only launch geography. | P0 | MVP map results contain only qualifying Montréal events; no city switcher exists. | MVP-0001 |
 | MAP-003 | Initial results cover events starting from the current time through the end of the next seven Montréal calendar days. | P0 | Opening Explore applies and exposes this window; users can change it through filters. | Product-owner decision; UX-0001; PDR-0001 simplicity |
-| MAP-004 | Display correctly geolocated events as markers and group markers whenever density makes individual markers unreadable, without prescribing an algorithm. | P0 | Users can distinguish dense areas, expand a group through map interaction, and never see an ungeolocated event represented as precisely located. | Product-owner decision; UJ-0001, DATA-0001, UX-0001 |
+| MAP-004 | Display correctly geolocated events and eligible verified recurring venues as markers, and group markers whenever density makes individual markers unreadable, without prescribing an algorithm. | P0 | Users can distinguish dense areas, expand a group through map interaction, and never see an event or venue with unusable coordinates represented as precisely located. | Product-owner decision; DEC-0014, UJ-0001, DATA-0001, UX-0001 |
 | MAP-005 | Refresh visible results for the current map area after movement or zoom while retaining active criteria. | P0 | A map-area change can update results; manual and query-derived criteria remain active until changed or cleared. | PDR-0002, UX-0001 |
 | MAP-006 | Open an event preview from a marker with name, date/time, venue, price/free when known, category, material status warning, and Event Details action. | P0 | Every selectable marker exposes the required known fields and does not conceal stale, uncertain, cancelled, or postponed status. | UJ-0001, UX-0001 |
 | MAP-007 | Represent loading, empty, error, stale, uncertain, cancelled, and postponed conditions without making the map unusable. | P0 | Each condition renders distinct user feedback and an applicable recovery or continuation path. | PDR-0001, UJ-0001, UX-0001 |
@@ -126,7 +128,18 @@ Optional when known and usable: end date/time; short description; image; organiz
 | EVENT-004 | Show cancellation or postponement prominently in previews, details, and favorites. | P0 | Status fixtures cannot be mistaken for ordinary active events; old schedule is not presented as current after postponement. | DATA-0001, UX-0001 |
 | EVENT-005 | Preserve source and last-verification traceability on Event Details. | P0 | Every published event exposes a source identity/link and last verification date. | DATA-0001 |
 | EVENT-006 | Merge product duplicates into one event while retaining multiple source records and applicable external links internally. | P0 | Duplicate fixtures produce one discoverable event and retain traceable contributing sources. | DATA-0001 |
-| EVENT-007 | Keep venue eligibility tied to a qualifying scheduled event. | P0 | No general restaurant, bar, club, or venue record appears without a qualifying event. | MVP-0001, INDEX-0001 |
+| EVENT-007 | Keep the Lieux list tied to a qualifying scheduled event in the fourteen-day venue window while allowing the verified recurring-venue map exception. | P0 | A venue without an eligible event is absent from Lieux; a verified recurring nightlife or cultural venue may remain on the map without creating a synthetic event. | MVP-0001, DEC-0014 |
+
+## 11A. Venue discovery and details requirements
+
+| ID | Requirement and user-visible behavior | Priority | Acceptance criteria | Source |
+| --- | --- | --- | --- | --- |
+| VENUE-001 | Show in Lieux only venues with at least one qualifying event from the current Montréal calendar date through the end of the fourteenth Montréal calendar date, inclusive. | P0 | Boundary fixtures inside the window appear; fixtures outside it and venues without events do not. | DEC-0014 |
+| VENUE-002 | Permit verified recurring nightlife and cultural venues without current programming to remain visible as venue markers on the map. | P0 | An eligible verified venue is map-visible but does not affect event results or event counts. | DEC-0014 |
+| VENUE-003 | Open an enlarged venue sheet from a venue list card or venue marker. | P0 | Selection reveals the venue without an account and preserves a return path to the prior context. | DEC-0014 |
+| VENUE-004 | Present known venue identity, type, address, image, concise factual description, and external map-orientation action without inventing missing information. | P0 | Partial venue fixtures remain usable and disclose unavailable information. | DEC-0014, PDR-0001 |
+| VENUE-005 | Separate venue programming into Aujourd'hui and Dans les 14 prochains jours blocks and open the existing Event Details surface from each event row. | P0 | Montréal date-boundary tests place each event once in the correct block. | DEC-0014 |
+| VENUE-006 | Clearly state when no official programming is recorded for a map-only venue. | P0 | A map-only venue never displays a fabricated event or an implied active programme. | DEC-0014, DATA-0001 |
 | EVENT-008 | Remove ended events from active exploration while permitting retained records outside active discovery. | P0 | Ended fixtures do not appear in ordinary active map results. | DATA-0001 |
 | EVENT-009 | Show an image only when usage is allowed; otherwise preserve a complete non-image information flow. | P0 | Missing or disallowed-image fixtures remain usable and show no unauthorized placeholder content. | DATA-0001 |
 
@@ -335,7 +348,7 @@ PRD implementation is product-complete only when:
 1. Every P0 requirement and non-deferred P1 requirement has passing acceptance evidence on applicable surfaces.
 2. All end-to-end scenarios pass, including signed-out and failure paths.
 3. Prototype/product validation demonstrates the under-60-second target for both Accepted journeys.
-4. The four-screen structure is preserved and no excluded capability exists.
+4. The six-screen structure is preserved and no excluded capability exists.
 5. Event source, freshness, trust, geolocation, duplicate, cancellation, postponement, and correction behaviors meet approved thresholds.
 6. External actions identify destinations, use standard fallback, and never create a native transaction.
 7. Desktop web, mobile web, and mobile application meet functional parity.

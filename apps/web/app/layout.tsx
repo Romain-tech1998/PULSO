@@ -31,7 +31,11 @@ const satoshi = localFont({
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await resolveRequestLocale();
+  const allowIndexing = process.env.NEXT_PUBLIC_ALLOW_INDEXING === 'true';
   return {
+    // Mirrors robots.ts: the meta tag covers pages a crawler reaches by a
+    // direct link, which robots.txt alone does not stop from being indexed.
+    robots: allowIndexing ? undefined : { index: false, follow: false },
     metadataBase: new URL(
       process.env.NEXT_PUBLIC_BASE_URL ?? 'https://pulso.app'
     ),

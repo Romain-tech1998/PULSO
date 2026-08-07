@@ -88,9 +88,9 @@ describe('mapRawEventToPublicEvent', () => {
     if (!('event' in result)) throw new Error('expected event');
 
     expect(result.event.title).toBe('Charlotte Cardin');
-    expect(result.event.trust.label).toBe('probable');
-    expect(result.event.trust.freshness).toBe('fresh');
-    expect(result.event.trust.locationConfidence).toBe('confirmed');
+    expect(result.event.trust?.label).toBe('probable');
+    expect(result.event.trust?.freshness).toBe('fresh');
+    expect(result.event.trust?.locationConfidence).toBe('confirmed');
     expect(result.event.venue.point).toEqual({
       longitude: -73.5605,
       latitude: 45.5106
@@ -120,7 +120,7 @@ describe('mapRawEventToPublicEvent', () => {
       { now }
     );
     if (!('event' in result)) throw new Error('expected event');
-    expect(result.event.trust.label).toBe('confirmed');
+    expect(result.event.trust?.label).toBe('confirmed');
   });
 
   it('marks geocoded points as lower location confidence', () => {
@@ -129,7 +129,7 @@ describe('mapRawEventToPublicEvent', () => {
       { now }
     );
     if (!('event' in result)) throw new Error('expected event');
-    expect(result.event.trust.locationConfidence).toBe('uncertain');
+    expect(result.event.trust?.locationConfidence).toBe('uncertain');
   });
 
   it('marks stale freshness when observedAt is old', () => {
@@ -138,7 +138,7 @@ describe('mapRawEventToPublicEvent', () => {
       { now }
     );
     if (!('event' in result)) throw new Error('expected event');
-    expect(result.event.trust.freshness).toBe('stale');
+    expect(result.event.trust?.freshness).toBe('stale');
   });
 
   it('skips events with an unmapped category rather than guessing', () => {
@@ -242,7 +242,7 @@ describe('mapAndDeduplicateRawEvents', () => {
 
     expect(result.events).toHaveLength(1);
     expect(result.events[0]?.event.source.name).toBe('Ville de Montréal');
-    expect(result.events[0]?.event.trust.label).toBe('confirmed');
+    expect(result.events[0]?.event.trust?.label).toBe('confirmed');
     expect(result.events[0]?.additionalSources).toHaveLength(1);
     expect(result.events[0]?.additionalSources[0]?.name).toBe('Ticketmaster');
   });

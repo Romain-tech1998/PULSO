@@ -1,9 +1,9 @@
 # RFC-0001 — Pulso Core Architecture
 
 **Identifier:** RFC-0001
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Accepted
-**Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DATA-0001, UJ-0001, UJ-0002, UX-0001, PRD-0001
+**Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DEC-0014, DATA-0001, UJ-0001, UJ-0002, UX-0001, PRD-0001
 
 ## Purpose
 
@@ -149,7 +149,7 @@ One backend codebase contains modules for Discovery, Events, Search, Identity, F
 | Entity | Proposed fields and rules |
 | --- | --- |
 | Event | UUID; canonical name; category; start/end UTC; original Montréal-local values; status/trust; venue; optional organizer/description/image; publish/archive timestamps |
-| Venue | UUID; name; address; validated point; geocode precision/status; Montréal config reference |
+| Venue | UUID; name; address; validated point; geocode precision/status; category; optional sourced description/image; recurring-venue eligibility and verification evidence; Montréal config reference |
 | Organizer | UUID; optional name and verified references |
 | Source | UUID; source name/type; approved mechanism/config and policy version |
 | EventSource | Event/source; external ID/URL; observed facts where permitted; acquired/verified time; evidence/checksum |
@@ -171,6 +171,8 @@ Required/nullability follows PRD EVENT. External URLs are nullable when reliable
 - Direct-distance queries use explicitly supplied coordinates and indexed spatial predicates.
 - No routes, travel time, or implicit user location.
 - API returns points; clients group markers. Prototype owns exact thresholds/presentation.
+- Venue bounds reads may return two explicitly distinguishable sets: venues represented by eligible events and verified recurring orientation venues without current programming. The latter never creates or implies a synthetic event.
+- The Lieux list uses an indexed event/venue join bounded from the current Montréal date through the end of the fourteenth Montréal calendar date; map-only recurring venues are excluded from this list.
 - Geocoder interface returns coordinate, precision/confidence, normalized address, and evidence.
 - Missing/uncertain geolocation prevents a precise marker and queues review.
 - Validate coordinate ranges/order; unexpected Montréal bounds warn rather than silently coerce.
@@ -328,7 +330,7 @@ Vendor choice cannot alter domain contracts. No Kubernetes, service mesh, stream
 4. Build read-only bounds/details API and early map spikes on web/mobile.
 5. Build Explore, filters, previews, details, trust/status, and redirects; validate mobile contracts concurrently.
 6. Add managed auth boundary and favorites.
-7. Complete mobile four-screen parity; do not defer mobile until the end.
+7. Complete mobile six-screen parity; do not defer mobile until the end.
 8. Add provider-neutral intelligent search and deterministic fallback.
 9. Add ingestion framework, jobs, correction/audit, and deduplication with synthetic adapters.
 10. Complete source research, then first permitted adapter.

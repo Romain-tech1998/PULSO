@@ -1,8 +1,10 @@
 import type { PublicEvent } from '@pulso/contracts';
-import type { EventRepository } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
+import type { EventRepository } from '@pulso/database';
+
 import { buildApp } from './app.js';
+import { fakeEventRepository } from './test-support.js';
 
 const event: PublicEvent = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -37,6 +39,7 @@ const event: PublicEvent = {
 };
 
 const repository: EventRepository = {
+  ...fakeEventRepository(),
   findInBounds: async () => [event],
   findWithinDirectDistance: async () => [{ ...event, distanceMeters: 0 }],
   findById: async (id) => (id === event.id ? event : undefined),

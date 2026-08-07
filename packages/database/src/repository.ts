@@ -5,8 +5,10 @@ import type {
   PublicVenue,
   VenuesQuery
 } from '@pulso/contracts';
+import { AFTER_WINDOW_END_HOUR, AFTER_WINDOW_START_HOUR } from '@pulso/domain';
 import type { DiscoveryWindow } from '@pulso/domain';
 import type { EventCategory, VenueCategory } from '@pulso/domain';
+import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
 export interface ExternalDestinationRecord {
@@ -16,11 +18,45 @@ export interface ExternalDestinationRecord {
   eventStatus: PublicEvent['status'];
 }
 
+// DEC-0017. `includeCreated` defaults to false everywhere so the anonymous
+// surfaces stay the sourced directory by construction - a caller has to opt
+// in to account-created content, rather than a forgotten flag leaking it.
+export interface EventQueryOptions {
+  excludedCategories?: EventCategory[];
+  includeCreated?: boolean;
+  after?: boolean;
+}
+
+export interface CreateEventInput {
+  title: string;
+  category: EventCategory;
+  startsAt: string;
+  endsAt?: string | undefined;
+  accessInformation: string;
+  description?: string | undefined;
+  imageUrl?: string | undefined;
+  isAfter: boolean;
+  ticketingUrl?: string | undefined;
+  addressHidden?: boolean | undefined;
+  price: {
+    kind: 'free' | 'paid' | 'unknown';
+    minimumAmount?: number | undefined;
+  };
+  venue:
+    | { kind: 'existing'; venueId: string }
+    | {
+        kind: 'new';
+        name: string;
+        address: string;
+        point: { longitude: number; latitude: number };
+      };
+}
+
 export interface EventRepository {
   findInBounds(
     bounds: MapBoundsQuery,
     window: DiscoveryWindow,
-    options?: { excludedCategories?: EventCategory[] }
+    options?: EventQueryOptions
   ): Promise<PublicEvent[]>;
   findWithinDirectDistance(query: DirectDistanceQuery): Promise<PublicEvent[]>;
   findById(id: string): Promise<PublicEvent | undefined>;
@@ -29,6 +65,28 @@ export interface EventRepository {
     id: string
   ): Promise<ExternalDestinationRecord | undefined>;
   findVenuesWithoutUpcomingEvents(bounds: VenuesQuery): Promise<PublicVenue[]>;
+  // Returns the created event as the caller will see it, so the client does
+  // not have to guess what the server derived (origin, creator name).
+  createEvent(userId: string, input: CreateEventInput): Promise<PublicEvent>;
+  // DEC-0017 v1.1. Returns undefined when the event is not the caller's own
+  // created event, so the route can 404 without disclosing existence.
+  updateCreatedEvent(
+    userId: string,
+    eventId: string,
+    input: Omit<CreateEventInput, 'venue'>
+  ): Promise<PublicEvent | undefined>;
+  deleteCreatedEvent(userId: string, eventId: string): Promise<boolean>;
+  listCreatedEvents(userId: string): Promise<PublicEvent[]>;
+  setCreatedEventPinned(
+    userId: string,
+    eventId: string,
+    pinned: boolean
+  ): Promise<boolean>;
+  setCreatedEventImage(
+    userId: string,
+    eventId: string,
+    imageUrl: string
+  ): Promise<boolean>;
 }
 
 const publicEventSelect = `
@@ -57,6 +115,12 @@ const publicEventSelect = `
     e.freshness,
     e.location_confidence,
     e.additional_sources,
+    e.origin,
+    e.is_after,
+    e.address_hidden,
+    e.pinned,
+    e.created_by_user_id,
+    creator.display_name AS creator_display_name,
     v.id AS venue_id,
     v.name AS venue_name,
     v.address,
@@ -88,9 +152,15 @@ interface EventRow {
   external_destination_url: string | null;
   external_destination_status: 'available' | 'unavailable' | null;
   external_destination_kind: 'event_source' | 'ticketing' | null;
-  trust_label: PublicEvent['trust']['label'];
-  freshness: PublicEvent['trust']['freshness'];
-  location_confidence: PublicEvent['trust']['locationConfidence'];
+  origin: NonNullable<PublicEvent['origin']>;
+  is_after: boolean;
+  address_hidden: boolean;
+  pinned: boolean;
+  created_by_user_id: string | null;
+  creator_display_name: string | null;
+  trust_label: NonNullable<PublicEvent['trust']>['label'];
+  freshness: NonNullable<PublicEvent['trust']>['freshness'];
+  location_confidence: NonNullable<PublicEvent['trust']>['locationConfidence'];
   additional_sources: NonNullable<PublicEvent['additionalSources']>;
   venue_id: string;
   venue_name: string;
@@ -141,12 +211,29 @@ function toPublicEvent(row: EventRow): PublicEvent {
       url: row.source_url,
       observedAt: row.observed_at.toISOString()
     },
-    trust: {
-      label: row.trust_label,
-      freshness: row.freshness,
-      locationConfidence: row.location_confidence
-    }
+    // DEC-0017: an account-created event carries no DATA-0001 trust label,
+    // so the whole trust object is absent rather than filled with a
+    // downgraded-looking placeholder.
+    ...(row.origin === 'directory'
+      ? {
+          trust: {
+            label: row.trust_label,
+            freshness: row.freshness,
+            locationConfidence: row.location_confidence
+          }
+        }
+      : {})
   };
+  if (row.origin !== 'directory') event.origin = row.origin;
+  if (row.is_after) event.isAfter = true;
+  if (row.address_hidden) event.addressHidden = true;
+  if (row.pinned) event.pinned = true;
+  if (row.created_by_user_id && row.creator_display_name) {
+    event.createdBy = {
+      userId: row.created_by_user_id,
+      displayName: row.creator_display_name
+    };
+  }
   if (row.additional_sources.length > 0)
     event.additionalSources = row.additional_sources;
   if (row.ends_at) event.endsAt = row.ends_at.toISOString();
@@ -174,12 +261,13 @@ export class PostgresEventRepository implements EventRepository {
   async findInBounds(
     bounds: MapBoundsQuery,
     window: DiscoveryWindow,
-    options: { excludedCategories?: EventCategory[] } = {}
+    options: EventQueryOptions = {}
   ): Promise<PublicEvent[]> {
     const result = await this.pool.query<EventRow>(
       `${publicEventSelect}
        FROM events e
        JOIN venues v ON v.id = e.venue_id
+       LEFT JOIN users creator ON creator.id = e.created_by_user_id
        WHERE v.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
          AND e.starts_at >= $5
          AND e.starts_at <= $6
@@ -194,6 +282,21 @@ export class PostgresEventRepository implements EventRepository {
              ST_SetSRID(ST_MakePoint($10, $11), 4326)::geography,
              $12
            )
+         )
+         -- DEC-0017 acceptance criterion 2: created events never reach an
+         -- anonymous caller, and the default is to exclude them.
+         AND ($13::boolean OR e.origin = 'directory')
+         -- The After filter is the flag OR the small-hours window, so it
+         -- also catches late-night events already in the directory.
+         AND (
+           NOT $14::boolean
+           OR e.is_after
+           OR EXTRACT(
+                HOUR FROM (e.starts_at AT TIME ZONE 'America/Toronto')
+              ) >= $15
+              AND EXTRACT(
+                HOUR FROM (e.starts_at AT TIME ZONE 'America/Toronto')
+              ) < $16
          )
        ORDER BY e.starts_at, e.id`,
       [
@@ -210,10 +313,242 @@ export class PostgresEventRepository implements EventRepository {
           : null,
         bounds.nearLongitude ?? null,
         bounds.nearLatitude ?? null,
-        bounds.nearRadiusMeters ?? null
+        bounds.nearRadiusMeters ?? null,
+        options.includeCreated === true,
+        options.after === true,
+        AFTER_WINDOW_START_HOUR,
+        AFTER_WINDOW_END_HOUR
       ]
     );
     return result.rows.map(toPublicEvent);
+  }
+
+  /**
+   * DEC-0017. The origin is derived server-side from whether the account
+   * holds a `venue_organizers` row for the chosen venue - a client cannot
+   * claim to be a verified organizer, it can only turn out to be one.
+   *
+   * `source` points at Pulso itself rather than a fabricated external URL:
+   * that is genuinely where the record came from, and PRD-0001 already
+   * allows a verified organizer to supply traceability in place of a public
+   * booking URL. `trust_label` stays null - see DEC-0017.
+   */
+  async createEvent(
+    userId: string,
+    input: CreateEventInput
+  ): Promise<PublicEvent> {
+    const eventId = randomUUID();
+    let venueId: string;
+    if (input.venue.kind === 'existing') {
+      venueId = input.venue.venueId;
+    } else {
+      venueId = randomUUID();
+      await this.pool.query(
+        `INSERT INTO venues (id, name, address, location)
+         VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326))`,
+        [
+          venueId,
+          input.venue.name,
+          input.venue.address,
+          input.venue.point.longitude,
+          input.venue.point.latitude
+        ]
+      );
+    }
+
+    const verified = await this.pool.query(
+      `SELECT 1 FROM venue_organizers WHERE user_id = $1 AND venue_id = $2`,
+      [userId, venueId]
+    );
+    const origin =
+      verified.rows.length > 0 ? 'verified_organizer' : 'community';
+
+    await this.pool.query(
+      `INSERT INTO events (
+         id, venue_id, title, category, status, starts_at, ends_at, timezone,
+         source_name, source_url, observed_at, freshness, location_confidence,
+         price_kind, price_minimum_amount, image_url, description,
+         access_information, origin, created_by_user_id, is_after,
+         address_hidden
+       ) VALUES (
+         $1, $2, $3, $4, 'scheduled', $5, $6, 'America/Toronto',
+         $7, $8, now(), NULL, NULL,
+         $9, $10, $11, $12,
+         $13, $14, $15, $16, $17
+       )`,
+      [
+        eventId,
+        venueId,
+        input.title,
+        input.category,
+        input.startsAt,
+        input.endsAt ?? null,
+        origin === 'verified_organizer'
+          ? 'Pulso — organisateur vérifié'
+          : 'Pulso — membre',
+        `pulso://events/${eventId}`,
+        input.price.kind,
+        input.price.kind === 'paid'
+          ? (input.price.minimumAmount ?? null)
+          : null,
+        input.imageUrl ?? null,
+        input.description ?? null,
+        input.accessInformation,
+        origin,
+        userId,
+        input.isAfter,
+        input.addressHidden ?? false
+      ]
+    );
+
+    if (input.ticketingUrl)
+      await this.setTicketing(eventId, input.ticketingUrl);
+
+    const created = await this.findById(eventId);
+    if (!created) throw new Error('The created event could not be read back.');
+    return created;
+  }
+
+  // Reuses the same external-destination shape an ingested ticketing link
+  // uses, so the UI's "clearly identified external destination" treatment
+  // applies unchanged (UX-0001).
+  private async setTicketing(eventId: string, url: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE events SET
+         external_destination_label = 'Billetterie de l''organisateur',
+         external_destination_url = $2,
+         external_destination_status = 'available',
+         external_destination_kind = 'ticketing'
+       WHERE id = $1`,
+      [eventId, url]
+    );
+  }
+
+  async updateCreatedEvent(
+    userId: string,
+    eventId: string,
+    input: Omit<CreateEventInput, 'venue'>
+  ): Promise<PublicEvent | undefined> {
+    const result = await this.pool.query(
+      `UPDATE events SET
+         title = $3, category = $4, starts_at = $5, ends_at = $6,
+         price_kind = $7, price_minimum_amount = $8,
+         description = $9, access_information = $10, is_after = $11,
+         address_hidden = $12
+       WHERE id = $1 AND created_by_user_id = $2 AND origin <> 'directory'`,
+      [
+        eventId,
+        userId,
+        input.title,
+        input.category,
+        input.startsAt,
+        input.endsAt ?? null,
+        input.price.kind,
+        input.price.kind === 'paid'
+          ? (input.price.minimumAmount ?? null)
+          : null,
+        input.description ?? null,
+        input.accessInformation,
+        input.isAfter,
+        input.addressHidden ?? false
+      ]
+    );
+    if ((result.rowCount ?? 0) === 0) return undefined;
+    if (input.ticketingUrl)
+      await this.setTicketing(eventId, input.ticketingUrl);
+    return this.findById(eventId);
+  }
+
+  async listCreatedEvents(userId: string): Promise<PublicEvent[]> {
+    const result = await this.pool.query<EventRow>(
+      `${publicEventSelect}
+       FROM events e
+       JOIN venues v ON v.id = e.venue_id
+       LEFT JOIN users creator ON creator.id = e.created_by_user_id
+       WHERE e.created_by_user_id = $1
+       ORDER BY e.starts_at DESC`,
+      [userId]
+    );
+    return result.rows.map(toPublicEvent);
+  }
+
+  async setCreatedEventPinned(
+    userId: string,
+    eventId: string,
+    pinned: boolean
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE events SET pinned = $3
+       WHERE id = $1 AND created_by_user_id = $2 AND origin <> 'directory'`,
+      [eventId, userId, pinned]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async setCreatedEventImage(
+    userId: string,
+    eventId: string,
+    imageUrl: string
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE events SET image_url = $3
+       WHERE id = $1 AND created_by_user_id = $2 AND origin <> 'directory'`,
+      [eventId, userId, imageUrl]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Scoped by created_by_user_id, so deleting someone else's event is a
+  // no-op returning false rather than a cross-account delete (DEC-0017
+  // acceptance criterion 8).
+  async deleteCreatedEvent(userId: string, eventId: string): Promise<boolean> {
+    // Six tables reference events, all NO ACTION - so an event anyone had
+    // engaged with (attendance, a forum post, a favorite) could not be
+    // deleted at all: Postgres raised a foreign-key violation and the
+    // organizer just saw a button that did nothing. The dependants are
+    // removed explicitly, in one transaction, rather than by widening those
+    // constraints to CASCADE - an ingested event must keep failing loudly
+    // if anything ever tries to delete it out from under real engagement.
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const owned = await client.query(
+        `SELECT 1 FROM events
+         WHERE id = $1 AND created_by_user_id = $2 AND origin <> 'directory'`,
+        [eventId, userId]
+      );
+      if (owned.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return false;
+      }
+      for (const table of [
+        'event_attendance',
+        'event_photos',
+        'forum_follows',
+        'forum_posts',
+        'user_favorite_events',
+        'notifications'
+      ]) {
+        await client.query(`DELETE FROM ${table} WHERE event_id = $1`, [
+          eventId
+        ]);
+      }
+      // A group outlives the event it was created around - it keeps its
+      // members and its conversation, it just stops pointing at a row that
+      // no longer exists.
+      await client.query(
+        `UPDATE groups SET event_id = NULL WHERE event_id = $1`,
+        [eventId]
+      );
+      await client.query(`DELETE FROM events WHERE id = $1`, [eventId]);
+      await client.query('COMMIT');
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async findWithinDirectDistance(
@@ -227,6 +562,7 @@ export class PostgresEventRepository implements EventRepository {
        ) AS distance_meters
        FROM events e
        JOIN venues v ON v.id = e.venue_id
+       LEFT JOIN users creator ON creator.id = e.created_by_user_id
        WHERE ST_DWithin(
          v.location::geography,
          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
@@ -243,6 +579,7 @@ export class PostgresEventRepository implements EventRepository {
       `${publicEventSelect}
        FROM events e
        JOIN venues v ON v.id = e.venue_id
+       LEFT JOIN users creator ON creator.id = e.created_by_user_id
        WHERE e.id = $1`,
       [id]
     );
@@ -260,6 +597,7 @@ export class PostgresEventRepository implements EventRepository {
       `${publicEventSelect}
        FROM events e
        JOIN venues v ON v.id = e.venue_id
+       LEFT JOIN users creator ON creator.id = e.created_by_user_id
        WHERE e.id = ANY($1)`,
       [ids]
     );
@@ -293,15 +631,11 @@ export class PostgresEventRepository implements EventRepository {
     };
   }
 
-  // Surfaces venues that were never attached to any event at all - every
-  // venue produced by ingestion (Ville de Montréal, Ticketmaster) always
-  // arrives together with an event row (see upsertPublicEvents), so the
-  // only venues with zero event rows, ever, are hand-curated landmarks like
-  // seed-curated-venues.ts. Deliberately not "no *upcoming* event": that
-  // would also catch the long tail of real venues whose only ingested
-  // events happen to be in the past, which is a normal, common state for
-  // Ville de Montréal's one-off events and not what the Lieux view's fixed
-  // reference points are meant to single out.
+  // Surfaces every verified recurring orientation venue. A hand-set category
+  // is the current verification boundary: ingestion never guesses it, while
+  // curated venues and reviewed known venues receive one explicitly. The
+  // client merges these landmarks with venues having events in its 14-day
+  // programming window, so a known place remains navigable between events.
   async findVenuesWithoutUpcomingEvents(
     bounds: VenuesQuery
   ): Promise<PublicVenue[]> {
@@ -327,7 +661,7 @@ export class PostgresEventRepository implements EventRepository {
          GROUP BY venue_id
        ) r ON r.venue_id = v.id
        WHERE v.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
-         AND NOT EXISTS (SELECT 1 FROM events e WHERE e.venue_id = v.id)
+         AND v.category IS NOT NULL
        ORDER BY r.average DESC NULLS LAST, v.name`,
       [bounds.west, bounds.south, bounds.east, bounds.north]
     );

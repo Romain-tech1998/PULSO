@@ -4,6 +4,7 @@ import type {
   AuthRepository,
   EventPhoto,
   EventPhotosRepository,
+  EventRepository,
   FavoritesRepository,
   ForumPost,
   ForumRepository,
@@ -15,6 +16,8 @@ import type {
   GroupsRepository,
   Message,
   MessagesRepository,
+  NotificationsRepository,
+  OrganizerRepository,
   ProfileRepository,
   RatingsRepository,
   ReportsRepository,
@@ -39,6 +42,30 @@ export const testGoogleConfig: GoogleAuthConfig = {
   callbackUri: 'http://localhost:3001/auth/google/callback',
   appCallbackUrl: 'http://localhost:3000/auth/callback'
 };
+
+// Every account-layer test previously declared its own inline
+// EventRepository stub; they all drifted apart whenever the interface grew.
+export function fakeEventRepository(
+  overrides: Partial<EventRepository> = {}
+): EventRepository {
+  return {
+    findInBounds: async () => [],
+    findWithinDirectDistance: async () => [],
+    findById: async () => undefined,
+    findExternalDestination: async () => undefined,
+    findVenuesWithoutUpcomingEvents: async () => [],
+    findByIds: async () => [],
+    createEvent: async () => {
+      throw new Error('createEvent is not stubbed in this test.');
+    },
+    updateCreatedEvent: async () => undefined,
+    deleteCreatedEvent: async () => false,
+    listCreatedEvents: async () => [],
+    setCreatedEventPinned: async () => false,
+    setCreatedEventImage: async () => false,
+    ...overrides
+  };
+}
 
 export function fakeAuthRepository(
   overrides: Partial<AuthRepository> = {}
@@ -81,16 +108,16 @@ export function fakeFriendsRepository(
 ): FriendsRepository {
   return {
     getFriendCode: async () => 'abcd1234',
-    sendRequest: async () => undefined,
+    sendRequest: async () => friend.id,
     getPendingRequests: async () => [],
-    respondToRequest: async () => undefined,
+    respondToRequest: async () => friend.id,
     getFriends: async () => [],
     removeFriend: async () => undefined,
     isFriend: async () => true,
     getMutualFriendCounts: async () => new Map(),
     getSuggestions: async () => [],
     getFriendProfile: async () => undefined,
-    sendRequestToUser: async () => undefined,
+    sendRequestToUser: async (_requesterId, addresseeId) => addresseeId,
     ...overrides
   };
 }
@@ -156,6 +183,7 @@ export function fakeForumRepository(
     unfollowForum: async () => undefined,
     isFollowingForum: async () => false,
     getFollowedEventIds: async () => [],
+    getForumFollowerIds: async () => [],
     ...overrides
   };
 }
@@ -225,6 +253,45 @@ export function fakeRatingsRepository(
     clearRating: async () => undefined,
     getMyRating: async () => undefined,
     getAverageRatingsForVenues: async () => new Map(),
+    ...overrides
+  };
+}
+
+export function fakeNotificationsRepository(
+  overrides: Partial<NotificationsRepository> = {}
+): NotificationsRepository {
+  return {
+    list: async () => [],
+    countUnread: async () => 0,
+    markAllRead: async () => undefined,
+    markRead: async () => undefined,
+    notifyFriendRequestReceived: async () => undefined,
+    notifyFriendRequestAccepted: async () => undefined,
+    notifyMessageReceived: async () => undefined,
+    notifyForumReply: async () => undefined,
+    notifyVenueFollowersOfNewEvent: async () => 0,
+    notifyOrganizerRequestReceived: async () => undefined,
+    notifyOrganizerRequestResolved: async () => undefined,
+    ...overrides
+  };
+}
+
+export function fakeOrganizerRepository(
+  overrides: Partial<OrganizerRepository> = {}
+): OrganizerRepository {
+  return {
+    getStatus: async () => ({
+      isAdmin: false,
+      verifiedVenues: [],
+      pendingRequests: []
+    }),
+    createRequest: async () => {
+      throw new Error('createRequest is not stubbed in this test.');
+    },
+    listPendingRequests: async () => [],
+    resolveRequest: async () => undefined,
+    listAdminUserIds: async () => [],
+    isAdmin: async () => false,
     ...overrides
   };
 }
@@ -381,6 +448,8 @@ export function accountRepositories(
     profileRepository?: ProfileRepository;
     eventPhotosRepository?: EventPhotosRepository;
     ratingsRepository?: RatingsRepository;
+    notificationsRepository?: NotificationsRepository;
+    organizerRepository?: OrganizerRepository;
     uploadDir?: string;
     publicUploadUrl?: string;
   } = {}
@@ -402,6 +471,10 @@ export function accountRepositories(
     eventPhotosRepository:
       overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
     ratingsRepository: overrides.ratingsRepository ?? fakeRatingsRepository(),
+    notificationsRepository:
+      overrides.notificationsRepository ?? fakeNotificationsRepository(),
+    organizerRepository:
+      overrides.organizerRepository ?? fakeOrganizerRepository(),
     uploadDir: overrides.uploadDir ?? testUploadDir,
     publicUploadUrl: overrides.publicUploadUrl ?? testPublicUploadUrl,
     google: testGoogleConfig

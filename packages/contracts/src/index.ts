@@ -402,6 +402,26 @@ export const notificationSchema = z.discriminatedUnion('kind', [
     eventTitle: z.string()
   }),
   z.object({
+    kind: z.literal('organizer_request_received'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string().min(1),
+    actorAvatarUrl: z.string().optional(),
+    venueId: z.uuid(),
+    venueName: z.string().min(1)
+  }),
+  z.object({
+    kind: z.literal('organizer_request_resolved'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    venueId: z.uuid(),
+    venueName: z.string().min(1),
+    approved: z.boolean()
+  }),
+  z.object({
     kind: z.literal('upcoming_event'),
     createdAt: z.iso.datetime(),
     eventId: z.uuid(),
@@ -924,6 +944,11 @@ export const publicEventSchema = z.object({
   // matches on start time, so an ingested late-night event qualifies
   // without carrying this flag.
   isAfter: z.boolean().optional(),
+  // True when the organizer withheld the street address. The venue's
+  // `address` then carries a coarse label instead of the exact line.
+  addressHidden: z.boolean().optional(),
+  // DEC-0017 v1.2: pinned by its creator into the sidebar's Raccourcis.
+  pinned: z.boolean().optional(),
   externalDestination: z
     .object({
       label: z.string().min(1),
@@ -951,6 +976,14 @@ export const createEventRequestSchema = z.object({
   description: z.string().min(1).max(4000).optional(),
   imageUrl: z.url().optional(),
   isAfter: z.boolean().optional(),
+  // DEC-0017 v1.1: an external checkout, never a Pulso one. Surfaced with
+  // the same "clearly identified external destination" treatment every
+  // ingested ticketing link already gets (UX-0001).
+  ticketingUrl: z.url().optional(),
+  // DEC-0017 v1.2: a "select" after can withhold its street address. The
+  // event still carries real coordinates - it is a map pin either way -
+  // but the exact line is shown only to its organizer.
+  addressHidden: z.boolean().optional(),
   price: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('free') }),
     z.object({
@@ -973,6 +1006,75 @@ export type CreateEventRequest = z.infer<typeof createEventRequestSchema>;
 
 export const createdEventResponseSchema = z.object({
   data: publicEventSchema
+});
+
+// DEC-0017 v1.1. Editing reuses the creation shape minus the venue: moving
+// an event to a different place is a different event, not an edit.
+export const updateEventRequestSchema = createEventRequestSchema.omit({
+  venue: true
+});
+export type UpdateEventRequest = z.infer<typeof updateEventRequestSchema>;
+
+// The organizer workspace lists the account's own events, past ones
+// included - an organizer needs to see what they ran, not only what is
+// still ahead.
+// DEC-0018 organizer requests.
+export const organizerRequestSchema = z.object({
+  id: z.uuid(),
+  venueId: z.uuid(),
+  venueName: z.string().min(1),
+  venueAddress: z.string().min(1),
+  justification: z.string().min(1),
+  status: z.enum(['pending', 'approved', 'declined']),
+  createdAt: z.iso.datetime(),
+  requester: z.object({
+    id: z.uuid(),
+    displayName: z.string().min(1),
+    email: z.string().min(1)
+  })
+});
+export type OrganizerRequest = z.infer<typeof organizerRequestSchema>;
+
+export const createOrganizerRequestSchema = z.object({
+  venueId: z.uuid(),
+  justification: z.string().min(10).max(2000)
+});
+
+export const organizerRequestsResponseSchema = z.object({
+  data: z.array(organizerRequestSchema)
+});
+
+export const resolveOrganizerRequestSchema = z.object({
+  approve: z.boolean()
+});
+
+// What the signed-in account may currently do as an organizer: the venues
+// it is verified for, plus any request still awaiting a decision.
+export const myOrganizerStatusResponseSchema = z.object({
+  data: z.object({
+    isAdmin: z.boolean(),
+    verifiedVenues: z.array(
+      z.object({ venueId: z.uuid(), venueName: z.string().min(1) })
+    ),
+    pendingRequests: z.array(organizerRequestSchema)
+  })
+});
+
+export const myEventsResponseSchema = z.object({
+  data: z.array(publicEventSchema)
+});
+
+// A typed address resolved to real coordinates server-side. `undefined`
+// coordinates mean resolution failed and publication must be refused
+// rather than pinned at a guess (DEC-0017 v1.1).
+export const geocodeResponseSchema = z.object({
+  data: z
+    .object({
+      longitude: z.number().min(-180).max(180),
+      latitude: z.number().min(-90).max(90),
+      label: z.string().min(1)
+    })
+    .nullable()
 });
 
 // Forums discovery grid (Phase 4.8) - one entry per upcoming event, not

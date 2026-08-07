@@ -4,9 +4,9 @@ import { createPool } from './client.js';
 
 /**
  * Hand-picked, real Montréal venues with no ingested events yet, added as
- * fixed reference points in the Lieux view. No event is inserted for any of
+ * verified recurring orientation points on the map. No event is inserted for any of
  * these - see the `venues` table's definition, which has never required an
- * event to exist. The Lieux view's /venues endpoint
+ * event to exist. The map's /venues endpoint
  * (findVenuesWithoutUpcomingEvents) is what surfaces them.
  *
  * Two batches, two verification methods, both real either way:

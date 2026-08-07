@@ -52,13 +52,18 @@ export interface FriendSuggestion {
 
 export interface FriendsRepository {
   getFriendCode(userId: string): Promise<string>;
-  sendRequest(requesterId: string, friendCode: string): Promise<void>;
+  // Returns the addressee's user id so the caller can notify them
+  // (DEC-0016 trigger 2).
+  sendRequest(requesterId: string, friendCode: string): Promise<string>;
   getPendingRequests(userId: string): Promise<FriendRequest[]>;
+  // Returns the requester's user id when the request was accepted, so the
+  // caller can notify them (DEC-0016 trigger 3); undefined on decline -
+  // DEC-0016 authorizes no notification for a declined request.
   respondToRequest(
     userId: string,
     requestId: string,
     action: 'accept' | 'decline'
-  ): Promise<void>;
+  ): Promise<string | undefined>;
   getFriends(userId: string): Promise<PublicUser[]>;
   removeFriend(userId: string, friendUserId: string): Promise<void>;
   // Guards the new friend-scoped routes below (profile, activity, mutual
@@ -84,7 +89,7 @@ export interface FriendsRepository {
   // ever exposes a real user id (never a friend_code, per DEC-0011), so
   // sending a request to one needs this by-id variant alongside the
   // existing by-code sendRequest above.
-  sendRequestToUser(requesterId: string, addresseeId: string): Promise<void>;
+  sendRequestToUser(requesterId: string, addresseeId: string): Promise<string>;
 }
 
 interface PublicUserRow {
@@ -115,7 +120,7 @@ export class PostgresFriendsRepository implements FriendsRepository {
   // Not fully race-safe between the existence check and the insert (two
   // simultaneous requests in opposite directions could both succeed) - an
   // acceptable gap for a personal social feature, not a security boundary.
-  async sendRequest(requesterId: string, friendCode: string): Promise<void> {
+  async sendRequest(requesterId: string, friendCode: string): Promise<string> {
     const addressee = await this.pool.query<{ id: string }>(
       `SELECT id FROM users WHERE friend_code = $1`,
       [friendCode]
@@ -123,6 +128,7 @@ export class PostgresFriendsRepository implements FriendsRepository {
     const addresseeId = addressee.rows[0]?.id;
     if (!addresseeId) throw new FriendCodeNotFoundError();
     await this.insertPendingRequest(requesterId, addresseeId);
+    return addresseeId;
   }
 
   // "Suggestions pour toi"'s one-click add - same rules as sendRequest
@@ -130,8 +136,9 @@ export class PostgresFriendsRepository implements FriendsRepository {
   async sendRequestToUser(
     requesterId: string,
     addresseeId: string
-  ): Promise<void> {
+  ): Promise<string> {
     await this.insertPendingRequest(requesterId, addresseeId);
+    return addresseeId;
   }
 
   private async insertPendingRequest(
@@ -190,23 +197,24 @@ export class PostgresFriendsRepository implements FriendsRepository {
     userId: string,
     requestId: string,
     action: 'accept' | 'decline'
-  ): Promise<void> {
-    const existing = await this.pool.query(
-      `SELECT 1 FROM friendships WHERE id = $1 AND addressee_id = $2 AND status = 'pending'`,
+  ): Promise<string | undefined> {
+    const existing = await this.pool.query<{ requester_id: string }>(
+      `SELECT requester_id FROM friendships
+       WHERE id = $1 AND addressee_id = $2 AND status = 'pending'`,
       [requestId, userId]
     );
-    if (existing.rows.length === 0) throw new FriendRequestNotFoundError();
+    const requesterId = existing.rows[0]?.requester_id;
+    if (!requesterId) throw new FriendRequestNotFoundError();
 
     if (action === 'accept') {
       await this.pool.query(
         `UPDATE friendships SET status = 'accepted' WHERE id = $1`,
         [requestId]
       );
-    } else {
-      await this.pool.query(`DELETE FROM friendships WHERE id = $1`, [
-        requestId
-      ]);
+      return requesterId;
     }
+    await this.pool.query(`DELETE FROM friendships WHERE id = $1`, [requestId]);
+    return undefined;
   }
 
   async getFriends(userId: string): Promise<PublicUser[]> {

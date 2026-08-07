@@ -2,8 +2,7 @@ import {
   CannotFriendSelfError,
   FriendCodeNotFoundError,
   FriendRequestNotFoundError,
-  FriendshipAlreadyExistsError,
-  type EventRepository
+  FriendshipAlreadyExistsError
 } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
@@ -15,17 +14,11 @@ import {
   fakeFriendsRepository,
   fakeProfileRepository,
   friend,
-  testUser
+  testUser,
+  fakeEventRepository
 } from './test-support.js';
 
-const event: EventRepository = {
-  findInBounds: async () => [],
-  findWithinDirectDistance: async () => [],
-  findById: async () => undefined,
-  findExternalDestination: async () => undefined,
-  findVenuesWithoutUpcomingEvents: async () => [],
-  findByIds: async () => []
-};
+const event = fakeEventRepository();
 
 describe('friend code API', () => {
   it('rejects /me/friend-code without a bearer token', async () => {
@@ -67,6 +60,7 @@ describe('friend requests API', () => {
         friendsRepository: fakeFriendsRepository({
           sendRequest: async (requesterId, friendCode) => {
             received = { requesterId, friendCode };
+            return friend.id;
           }
         })
       })
@@ -93,6 +87,7 @@ describe('friend requests API', () => {
         friendsRepository: fakeFriendsRepository({
           sendRequestToUser: async (requesterId, addresseeId) => {
             received = { requesterId, addresseeId };
+            return addresseeId;
           }
         })
       })

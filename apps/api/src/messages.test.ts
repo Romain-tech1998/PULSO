@@ -1,4 +1,4 @@
-import { NotFriendsError, type EventRepository } from '@pulso/database';
+import { NotFriendsError } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
@@ -7,17 +7,11 @@ import {
   fakeMessage,
   fakeMessagesRepository,
   friend,
-  testUser
+  testUser,
+  fakeEventRepository
 } from './test-support.js';
 
-const event: EventRepository = {
-  findInBounds: async () => [],
-  findWithinDirectDistance: async () => [],
-  findById: async () => undefined,
-  findExternalDestination: async () => undefined,
-  findVenuesWithoutUpcomingEvents: async () => [],
-  findByIds: async () => []
-};
+const event = fakeEventRepository();
 
 describe('direct messages API', () => {
   it('rejects messaging routes without a bearer token', async () => {

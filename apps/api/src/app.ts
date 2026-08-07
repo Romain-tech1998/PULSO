@@ -20,6 +20,8 @@ import type {
   FriendsRepository,
   GroupsRepository,
   MessagesRepository,
+  NotificationsRepository,
+  OrganizerRepository,
   ProfileRepository,
   RatingsRepository,
   ReportsRepository,
@@ -38,11 +40,18 @@ import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 
-import { registerAuthRoutes, type GoogleAuthConfig } from './auth.js';
+import {
+  registerAuthRoutes,
+  resolveBearerUser,
+  type GoogleAuthConfig
+} from './auth.js';
+import { registerCreatedEventsRoutes } from './created-events.js';
 import { registerEventPhotosRoutes } from './event-photos.js';
 import { registerForumRoutes } from './forum.js';
 import { registerGroupsRoutes } from './groups.js';
 import { registerMessagesRoutes } from './messages.js';
+import { registerNotificationsRoutes } from './notifications.js';
+import { registerOrganizerRoutes } from './organizer.js';
 import { registerProfileRoutes } from './profile.js';
 import { registerRatingsRoutes } from './ratings.js';
 import { registerReportsRoutes } from './reports.js';
@@ -71,6 +80,8 @@ export function buildApp(
     reportsRepository?: ReportsRepository;
     groupsRepository?: GroupsRepository;
     profileRepository?: ProfileRepository;
+    notificationsRepository?: NotificationsRepository;
+    organizerRepository?: OrganizerRepository;
     eventPhotosRepository?: EventPhotosRepository;
     ratingsRepository?: RatingsRepository;
     // Where uploaded photo files live on disk, and the base URL the API
@@ -107,6 +118,8 @@ export function buildApp(
     options.profileRepository &&
     options.eventPhotosRepository &&
     options.ratingsRepository &&
+    options.notificationsRepository &&
+    options.organizerRepository &&
     options.uploadDir &&
     options.publicUploadUrl &&
     options.google
@@ -123,7 +136,8 @@ export function buildApp(
       options.authRepository,
       options.friendsRepository,
       options.attendanceRepository,
-      options.profileRepository
+      options.profileRepository,
+      options.notificationsRepository
     );
     registerForumRoutes(
       app,
@@ -131,12 +145,14 @@ export function buildApp(
       options.forumRepository,
       options.favoritesRepository,
       options.attendanceRepository,
-      repository
+      repository,
+      options.notificationsRepository
     );
     registerMessagesRoutes(
       app,
       options.authRepository,
-      options.messagesRepository
+      options.messagesRepository,
+      options.notificationsRepository
     );
     registerReportsRoutes(
       app,
@@ -165,6 +181,24 @@ export function buildApp(
       app,
       options.authRepository,
       options.ratingsRepository
+    );
+    registerNotificationsRoutes(
+      app,
+      options.authRepository,
+      options.notificationsRepository
+    );
+    registerOrganizerRoutes(
+      app,
+      options.authRepository,
+      options.organizerRepository,
+      options.notificationsRepository
+    );
+    registerCreatedEventsRoutes(
+      app,
+      options.authRepository,
+      repository,
+      options.uploadDir,
+      options.publicUploadUrl
     );
   }
 
@@ -205,8 +239,15 @@ export function buildApp(
   // handler per route.
   app.options('/*', async (_request, reply) => reply.status(204).send());
 
+  // DEC-0017: account-created events are connected-experience only, so this
+  // opts in to them exactly when the request carries a valid session. An
+  // anonymous caller - including one that passes ?after=true - still gets
+  // the sourced directory and nothing else.
   app.get('/events', async (request) => {
     const query = mapBoundsQuerySchema.parse(request.query);
+    const signedIn = options.authRepository
+      ? Boolean(await resolveBearerUser(request, options.authRepository))
+      : false;
     return eventListResponseSchema.parse({
       data: await repository.findInBounds(
         query,
@@ -214,7 +255,8 @@ export function buildApp(
           date: query.date,
           ...(query.dateStart ? { customStartDate: query.dateStart } : {}),
           ...(query.dateEnd ? { customEndDate: query.dateEnd } : {})
-        })
+        }),
+        { includeCreated: signedIn, after: signedIn && query.after === 'true' }
       )
     });
   });

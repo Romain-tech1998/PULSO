@@ -340,7 +340,7 @@ function detectQueryLanguage(
   return french > english ? 'fr' : english > french ? 'en' : preferredLocale;
 }
 
-const trustScore: Record<PublicEvent['trust']['label'], number> = {
+const trustScore: Record<NonNullable<PublicEvent['trust']>['label'], number> = {
   confirmed: 3,
   probable: 2,
   to_verify: 1,
@@ -404,11 +404,15 @@ export function rankAndExplainEvents(
                 : 'search.reason.lowerPriceUnknown'
         });
       }
-      if (signals.has('higher_trust')) {
-        score += trustScore[event.trust.label] * 10;
+      // Account-created events carry no trust label (DEC-0017), so the
+      // trust signal simply does not apply to them rather than scoring them
+      // as if they were a poorly-corroborated sourced record.
+      const eventTrust = event.trust;
+      if (signals.has('higher_trust') && eventTrust) {
+        score += trustScore[eventTrust.label] * 10;
         reasons.push({
           code: 'search.reason.trust',
-          params: { trust: event.trust.label }
+          params: { trust: eventTrust.label }
         });
       }
       if (reasons.length === 0) {

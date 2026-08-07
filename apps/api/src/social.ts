@@ -20,6 +20,7 @@ import type {
   AttendanceRepository,
   AuthRepository,
   FriendsRepository,
+  NotificationsRepository,
   ProfileRepository
 } from '@pulso/database';
 import {
@@ -62,7 +63,8 @@ export function registerSocialRoutes(
   authRepository: AuthRepository,
   friendsRepository: FriendsRepository,
   attendanceRepository: AttendanceRepository,
-  profileRepository: ProfileRepository
+  profileRepository: ProfileRepository,
+  notificationsRepository: NotificationsRepository
 ) {
   app.get('/me/friend-code', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -75,8 +77,12 @@ export function registerSocialRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const body = sendFriendRequestSchema.parse(request.body);
+    let addresseeId: string;
     try {
-      await friendsRepository.sendRequest(user.id, body.friendCode);
+      addresseeId = await friendsRepository.sendRequest(
+        user.id,
+        body.friendCode
+      );
     } catch (error) {
       if (error instanceof FriendCodeNotFoundError) {
         return reply.status(404).send({
@@ -95,6 +101,10 @@ export function registerSocialRoutes(
       }
       throw error;
     }
+    await notificationsRepository.notifyFriendRequestReceived(
+      addresseeId,
+      user.id
+    );
     return reply.status(204).send();
   });
 
@@ -119,6 +129,10 @@ export function registerSocialRoutes(
       }
       throw error;
     }
+    await notificationsRepository.notifyFriendRequestReceived(
+      friendUserId,
+      user.id
+    );
     return reply.status(204).send();
   });
 
@@ -134,8 +148,13 @@ export function registerSocialRoutes(
     if (!user) return sendUnauthenticated(reply);
     const { id } = requestParamsSchema.parse(request.params);
     const { action } = respondFriendRequestSchema.parse(request.body);
+    let acceptedRequesterId: string | undefined;
     try {
-      await friendsRepository.respondToRequest(user.id, id, action);
+      acceptedRequesterId = await friendsRepository.respondToRequest(
+        user.id,
+        id,
+        action
+      );
     } catch (error) {
       if (error instanceof FriendRequestNotFoundError) {
         return reply.status(404).send({
@@ -143,6 +162,12 @@ export function registerSocialRoutes(
         });
       }
       throw error;
+    }
+    if (acceptedRequesterId) {
+      await notificationsRepository.notifyFriendRequestAccepted(
+        acceptedRequesterId,
+        user.id
+      );
     }
     return reply.status(204).send();
   });
