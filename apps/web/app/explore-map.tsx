@@ -1048,6 +1048,25 @@ export function ExploreMap({
   const unreadMessagesCount = useUnreadMessagesCount(authToken, section);
   const afterEventCount = events.filter(isAfterEvent).length;
 
+  // MapLibre mounts its compact attribution already expanded
+  // (`maplibregl-compact-show`), so every map opened with a full credit
+  // strip across its bottom edge. Collapsing it back leaves the ODbL credit
+  // one click away - which is what compact mode is for - without removing
+  // it, since dropping the credit would breach the OpenStreetMap licence.
+  // Re-runs on section changes because each surface mounts its own map.
+  useEffect(() => {
+    const collapse = () => {
+      for (const element of document.querySelectorAll(
+        '.maplibregl-ctrl-attrib.maplibregl-compact-show'
+      )) {
+        element.classList.remove('maplibregl-compact-show');
+      }
+    };
+    collapse();
+    const timer = window.setTimeout(collapse, 1200);
+    return () => window.clearTimeout(timer);
+  }, [section]);
+
   // The anonymous tree only renders these four sections. Losing the account
   // while standing anywhere else - signing out, or a session expiring into
   // a 401 - otherwise left the navbar up with an empty content area, since
@@ -1437,7 +1456,12 @@ export function ExploreMap({
       container: container.current,
       center: MONTREAL_CENTER,
       zoom: 11,
-      style: MAP_STYLE_URL
+      // OpenStreetMap data is ODbL: the credit is a licence obligation, so
+      // it cannot be removed - but MapLibre's own `compact` mode collapses
+      // it to a small (i) that expands on click, which is the intended way
+      // to keep it discreet while still shipping it.
+      style: MAP_STYLE_URL,
+      attributionControl: { compact: true }
     });
 
     instance.on('load', () => {
@@ -2076,7 +2100,12 @@ export function ExploreMap({
       container: lieuMapContainer.current,
       center: MONTREAL_CENTER,
       zoom: 11,
-      style: MAP_STYLE_URL
+      // OpenStreetMap data is ODbL: the credit is a licence obligation, so
+      // it cannot be removed - but MapLibre's own `compact` mode collapses
+      // it to a small (i) that expands on click, which is the intended way
+      // to keep it discreet while still shipping it.
+      style: MAP_STYLE_URL,
+      attributionControl: { compact: true }
     });
 
     instance.on('load', () => {
@@ -2408,7 +2437,12 @@ export function ExploreMap({
       container: explorerMapContainer.current,
       center: MONTREAL_CENTER,
       zoom: 11,
-      style: MAP_STYLE_URL
+      // OpenStreetMap data is ODbL: the credit is a licence obligation, so
+      // it cannot be removed - but MapLibre's own `compact` mode collapses
+      // it to a small (i) that expands on click, which is the intended way
+      // to keep it discreet while still shipping it.
+      style: MAP_STYLE_URL,
+      attributionControl: { compact: true }
     });
 
     instance.on('load', () => {
@@ -2782,7 +2816,9 @@ export function ExploreMap({
         container,
         center: MONTREAL_CENTER,
         zoom: 11,
-        style: MAP_STYLE_URL
+        // Same ODbL obligation as the other maps - compacted, not removed.
+        style: MAP_STYLE_URL,
+        attributionControl: { compact: true }
       });
 
       instance.on('load', () => {

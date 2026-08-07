@@ -13383,3 +13383,29 @@ a.venue-detail-info-row:hover {
     max-width: 82%;
   }
 }
+
+/* MapLibre's compact attribution ships expanded on first paint, so it sat
+   as a full-width credit strip across the bottom of every map. Collapsed to
+   its (i) until clicked - the ODbL credit is still one click away, which is
+   exactly what compact mode is for. Never display:none: removing the credit
+   would breach the OpenStreetMap licence. */
+.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show)
+  .maplibregl-ctrl-attrib-inner {
+  display: none;
+}
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  min-height: 24px;
+  border-radius: 999px;
+  background: rgba(16, 14, 25, 0.72);
+  backdrop-filter: blur(8px);
+}
+.maplibregl-ctrl-attrib.maplibregl-compact-show {
+  border-radius: 0.6rem;
+}
+.maplibregl-ctrl-attrib-button {
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+.maplibregl-ctrl-attrib-button:hover {
+  opacity: 1;
+}
