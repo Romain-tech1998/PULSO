@@ -3490,9 +3490,9 @@ h6 {
   flex-direction: column;
   gap: 0.2rem;
   min-width: 0;
-  padding: 0.35rem;
+  padding: 0.4rem;
   border: 1px solid var(--brand-border);
-  border-radius: 0.9rem;
+  border-radius: 1.4rem;
   background: var(--surface-raised);
 }
 
@@ -3500,8 +3500,8 @@ h6 {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.7rem 0.85rem;
-  border-radius: 0.65rem;
+  padding: 0.72rem 0.9rem;
+  border-radius: 1rem;
   color: var(--text-muted);
   font-weight: 600;
   transition:
@@ -3536,9 +3536,9 @@ h6 {
 
 .view-toggle-fav {
   flex-shrink: 0;
-  width: 46px;
-  height: 46px;
-  border-radius: 0.9rem;
+  width: 48px;
+  height: 48px;
+  border-radius: 1.4rem;
   border: 1px solid var(--brand-border);
   background: var(--surface-raised);
   color: var(--text-muted);
@@ -3581,18 +3581,29 @@ h6 {
   margin-top: -1.35rem;
 }
 .filter-group:first-of-type {
-  border-top-left-radius: 0.9rem;
-  border-top-right-radius: 0.9rem;
+  border-top-left-radius: 1.4rem;
+  border-top-right-radius: 1.4rem;
 }
 .filter-group:last-of-type {
   border-bottom: 1px solid var(--brand-border);
-  border-bottom-left-radius: 0.9rem;
-  border-bottom-right-radius: 0.9rem;
+  border-bottom-left-radius: 1.4rem;
+  border-bottom-right-radius: 1.4rem;
 }
 /* The hairline sits on the header, not the group, so it disappears under an
    expanded body instead of cutting it off from its own title. */
-.filter-group + .filter-group > .filter-group-header {
-  border-top: 1px solid rgba(255, 255, 255, 0.055);
+/* Inset rather than edge-to-edge: a hairline touching both walls cuts the
+   panel into slabs, which is what made it read as square. */
+.filter-group + .filter-group > .filter-group-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 1rem;
+  right: 1rem;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.filter-group-header {
+  position: relative;
 }
 
 .filter-group-header {
@@ -3838,7 +3849,7 @@ h6 {
 .promo-card {
   margin-top: auto;
   background: var(--surface-raised);
-  border-radius: 1rem;
+  border-radius: 1.4rem;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
@@ -3866,8 +3877,8 @@ h6 {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  padding: 0.55rem 0.85rem;
-  border-radius: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 1rem;
   border: 1px solid var(--brand-border);
   background: var(--surface-base);
   text-align: left;
