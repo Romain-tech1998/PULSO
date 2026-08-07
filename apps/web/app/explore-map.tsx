@@ -16234,9 +16234,9 @@ function SearchPanel({
   // which also throws the query away rather than just closing the panel.
   const panelRef = useRef<HTMLElement>(null);
   const [dismissed, setDismissed] = useState(false);
-  useEffect(() => setDismissed(false), [result]);
+  useEffect(() => setDismissed(false), [result, error]);
   useEffect(() => {
-    if (!result || dismissed) return;
+    if ((!result && !error) || dismissed) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!panelRef.current?.contains(event.target as Node)) {
         setDismissed(true);
@@ -16251,7 +16251,7 @@ function SearchPanel({
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [result, dismissed]);
+  }, [result, error, dismissed]);
 
   return (
     <aside
@@ -16297,7 +16297,7 @@ function SearchPanel({
         </div>
       </form>
 
-      {(processing || error || (result && !dismissed)) && (
+      {(processing || ((error || result) && !dismissed)) && (
         <div className="search-dropdown">
           <div className="search-dropdown-content">
             {processing && (
