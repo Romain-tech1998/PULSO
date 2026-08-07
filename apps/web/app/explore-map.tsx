@@ -2256,18 +2256,23 @@ export function ExploreMap({
   }, [filteredVenueGroups, pushVenuesToMap]);
 
   // Initial view for the Événement/Lieu maps (not Explorer, which is
-  // deliberately a wider, global view): centered on the visitor's own
-  // location once geolocation resolves, falling back to the Montréal
-  // center if it's denied/unavailable - a tight ~1km-radius view either
-  // way rather than the default city-wide zoom. Fires at most once so it
-  // never fights a pan/zoom the visitor makes themselves afterwards.
+  // deliberately a wider, city-wide view). Zooming to a ~1km radius only
+  // makes sense around the visitor's *own* position: with geolocation
+  // denied or unavailable - the default for a first anonymous visit - the
+  // same jump landed on downtown Montréal at street level, where a visitor
+  // saw "1 événement dans cette zone" instead of the city. Without a real
+  // location there is nothing to zoom to, so the map keeps its city-wide
+  // starting zoom. Fires at most once so it never fights a pan/zoom the
+  // visitor makes themselves afterwards.
   const hasAppliedInitialCenter = useRef(false);
   useEffect(() => {
     if (geoStatus === 'pending' || hasAppliedInitialCenter.current) return;
     hasAppliedInitialCenter.current = true;
-    const center: [number, number] = userLocation
-      ? [userLocation.longitude, userLocation.latitude]
-      : MONTREAL_CENTER;
+    if (!userLocation) return;
+    const center: [number, number] = [
+      userLocation.longitude,
+      userLocation.latitude
+    ];
     map.current?.jumpTo({ center, zoom: 14 });
     lieuMap.current?.jumpTo({ center, zoom: 14 });
   }, [geoStatus, userLocation]);
@@ -3807,7 +3812,8 @@ export function ExploreMap({
                             : events.length;
                           return `${count} événement${count !== 1 ? 's' : ''} dans cette zone`;
                         })()
-                      : `${filteredVenueGroups.length} lieu${filteredVenueGroups.length !== 1 ? 's' : ''} dans cette zone`}
+                      : // "lieu" pluralizes in -x, not -s.
+                        `${filteredVenueGroups.length} lieu${filteredVenueGroups.length !== 1 ? 'x' : ''} dans cette zone`}
                   </p>
 
                   <div className="view-toggles">
