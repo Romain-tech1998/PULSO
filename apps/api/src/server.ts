@@ -16,20 +16,22 @@ import {
   PostgresReportsRepository,
   PostgresTrendsRepository
 } from '@pulso/database';
-import { join } from 'node:path';
-
 import { buildApp } from './app.js';
+import { resolveApiConfig } from './config.js';
+
+// Throws before anything else happens if the deployment configuration is
+// incomplete - see config.ts for why a silent localhost fallback is worse
+// than refusing to boot.
+const config = resolveApiConfig();
 
 const pool = createPool();
 
-const apiBaseUrl = `http://${process.env.API_HOST ?? '127.0.0.1'}:${process.env.API_PORT ?? 3001}`;
-// Local disk storage for uploaded event photos (Phase 4.8 follow-up) -
-// matches the project's current pre-deployment stage rather than adding a
-// cloud object store dependency before the product is feature-complete
-// (see DEC-0012 v1.2).
-const uploadDir =
-  process.env.EVENT_PHOTOS_UPLOAD_DIR ?? join(process.cwd(), 'uploads');
-const publicUploadUrl = `${apiBaseUrl}/uploads`;
+const apiBaseUrl = config.publicUrl;
+// Disk storage for uploaded photos (DEC-0012 v1.2). In production this must
+// be a persistent volume: config.ts refuses to start without an explicit
+// path, because an ephemeral filesystem loses every upload on redeploy.
+const uploadDir = config.uploadDir;
+const publicUploadUrl = config.publicUploadUrl;
 const google =
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? {
@@ -65,8 +67,7 @@ const app = buildApp(new PostgresEventRepository(pool), {
     : {})
 });
 
-const host = process.env.API_HOST ?? '127.0.0.1';
-const port = Number(process.env.API_PORT ?? 3001);
+const { host, port } = config;
 
 try {
   await app.listen({ host, port });

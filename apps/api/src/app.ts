@@ -33,6 +33,7 @@ import {
 } from '@pulso/domain';
 import {
   interpretDeterministicSearch,
+  interpretIntelligentSearch,
   rankAndExplainEvents
 } from '@pulso/search';
 import fastifyMultipart from '@fastify/multipart';
@@ -45,6 +46,7 @@ import {
   resolveBearerUser,
   type GoogleAuthConfig
 } from './auth.js';
+import { resolveAllowedOrigin, resolveApiConfig } from './config.js';
 import { registerCreatedEventsRoutes } from './created-events.js';
 import { registerEventPhotosRoutes } from './event-photos.js';
 import { registerForumRoutes } from './forum.js';
@@ -94,6 +96,7 @@ export function buildApp(
   } = {}
 ) {
   const app = Fastify({ logger: options.logger ?? false });
+  const apiConfig = resolveApiConfig();
 
   if (options.uploadDir) {
     app.register(fastifyMultipart, {
@@ -222,8 +225,13 @@ export function buildApp(
 
   app.get('/health', async () => ({ status: 'ok' }));
 
-  app.addHook('onSend', async (_request, reply, payload) => {
-    reply.header('access-control-allow-origin', '*');
+  // `*` while everything is on localhost; once the API answers on a public
+  // domain it should only answer to Pulso's own front end (config.ts).
+  app.addHook('onSend', async (request, reply, payload) => {
+    reply.header(
+      'access-control-allow-origin',
+      resolveAllowedOrigin(apiConfig, request.headers.origin)
+    );
     reply.header(
       'access-control-allow-methods',
       'GET, POST, PUT, DELETE, OPTIONS'
@@ -263,11 +271,42 @@ export function buildApp(
 
   app.post('/search', async (request) => {
     const search = intelligentSearchRequestSchema.parse(request.body);
-    const interpreted = interpretDeterministicSearch(
-      search.query,
-      search.disabledDerivedKeys,
-      search.locale
-    );
+    let interpreted;
+    try {
+      if (!process.env.OPENAI_API_KEY)
+        throw new Error('OPENAI_API_KEY is not set');
+      interpreted = await interpretIntelligentSearch(
+        search.query,
+        search.locale
+      );
+      // Remove disabled keys if any, to respect manual overrides
+      if (search.disabledDerivedKeys.length > 0) {
+        for (const key of search.disabledDerivedKeys) {
+          if (key === 'date') delete interpreted.derivedFilters.date;
+          if (key === 'price') delete interpreted.derivedFilters.price;
+          if (key === 'categories')
+            delete interpreted.derivedFilters.categories;
+          if (key === 'excluded_categories')
+            interpreted.excludedCategories = [];
+          interpreted.constraints = interpreted.constraints.filter(
+            (c) => c.key !== key
+          );
+        }
+      }
+    } catch (error) {
+      // Logged with the cause: a silent fallback hides an AI search that is
+      // failing every single call behind results that still look plausible.
+      request.log.warn(
+        { err: error },
+        'AI search failed or unavailable, falling back to deterministic search'
+      );
+      interpreted = interpretDeterministicSearch(
+        search.query,
+        search.disabledDerivedKeys,
+        search.locale
+      );
+    }
+
     const manualFilters = normalizeDiscoveryFilters(search.manualFilters);
     const effectiveFilters: DiscoveryFilters = {
       ...manualFilters,
