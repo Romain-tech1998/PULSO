@@ -1287,6 +1287,14 @@ export function ExploreMap({
               query: activeSearch.current.query,
               locale: localeRef.current,
               bounds,
+              near:
+                userLocationRef.current && distanceFilterActiveRef.current
+                  ? {
+                      longitude: userLocationRef.current.longitude,
+                      latitude: userLocationRef.current.latitude,
+                      radiusMeters: distanceKmRef.current * 1000
+                    }
+                  : undefined,
               manualFilters: activeSearch.current.manualFilters,
               disabledDerivedKeys: activeSearch.current.disabledDerivedKeys
             })
@@ -1301,19 +1309,70 @@ export function ExploreMap({
           );
           filtersRef.current = effectiveFilters;
           setFilters(effectiveFilters);
-          const foundEvents = result.data.map(({ event }) => event);
-          setEvents(foundEvents);
+          let finalEvents = result.data.map(({ event }) => event);
+
+          if (
+            result.suggestedNearMe &&
+            userLocationRef.current &&
+            !distanceFilterActiveRef.current
+          ) {
+            distanceFilterActiveRef.current = true;
+            setDistanceFilterActive(true);
+            try {
+              const headers = authHeaders(authTokenRef.current);
+              const near = {
+                longitude: userLocationRef.current.longitude,
+                latitude: userLocationRef.current.latitude,
+                radiusMeters: distanceKmRef.current * 1000
+              };
+              const response = await fetch(
+                boundsUrl(bounds, effectiveFilters, near),
+                headers ? { headers } : {}
+              );
+              if (response.ok) {
+                const eventResult = eventListResponseSchema.parse(
+                  await response.json()
+                );
+                finalEvents = eventResult.data;
+              }
+            } catch (err) {
+              console.warn(
+                'Failed to fetch near events for AI suggestion',
+                err
+              );
+            }
+          }
+
+          setEvents(finalEvents);
           setEventsLoadState('success');
           localStorage.setItem(
             'pulso-offline-events',
-            JSON.stringify(foundEvents)
+            JSON.stringify(finalEvents)
           );
           setSelected((current) =>
-            current && foundEvents.some(({ id }) => id === current.id)
+            current && finalEvents.some(({ id }) => id === current.id)
               ? current
               : undefined
           );
           setSearchProcessing(false);
+          if (result.suggestedLocation && map.current) {
+            const currentCenter = map.current.getCenter();
+            const dLng = Math.abs(
+              currentCenter.lng - result.suggestedLocation.longitude
+            );
+            const dLat = Math.abs(
+              currentCenter.lat - result.suggestedLocation.latitude
+            );
+            if (dLng > 0.01 || dLat > 0.01) {
+              map.current.easeTo({
+                center: [
+                  result.suggestedLocation.longitude,
+                  result.suggestedLocation.latitude
+                ],
+                zoom: 14
+              });
+            }
+          }
           return;
         }
         const userLoc = userLocationRef.current;
@@ -1362,9 +1421,15 @@ export function ExploreMap({
     }
     filtersRef.current = nextFilters;
     setFilters(nextFilters);
-    if (selected) {
-      setSelected(undefined);
-    }
+    // Changing a filter can remove the very thing an open panel describes,
+    // so everything anchored to the previous result set closes with it -
+    // only `selected` did, which left a full event or venue sheet sitting
+    // beside a map that no longer contained it.
+    if (selected) setSelected(undefined);
+    setDetails({ kind: 'closed' });
+    setVenueDetailsGroup(undefined);
+    setPickerList(undefined);
+    setVenuePickerList(undefined);
     void loadEvents(currentBounds.current, nextFilters);
   }
 
@@ -16164,8 +16229,33 @@ function SearchPanel({
   onPreview: (event: PublicEvent) => void;
   locale: SupportedLocale;
 }) {
+  // The results panel overlays the map, so clicking the map to dismiss it is
+  // the obvious gesture - it used to require finding "Effacer la recherche",
+  // which also throws the query away rather than just closing the panel.
+  const panelRef = useRef<HTMLElement>(null);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => setDismissed(false), [result]);
+  useEffect(() => {
+    if (!result || dismissed) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!panelRef.current?.contains(event.target as Node)) {
+        setDismissed(true);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDismissed(true);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [result, dismissed]);
+
   return (
     <aside
+      ref={panelRef}
       className="search-panel"
       aria-label={translate(locale, 'search.panelAria')}
     >
@@ -16207,7 +16297,7 @@ function SearchPanel({
         </div>
       </form>
 
-      {(processing || error || result) && (
+      {(processing || error || (result && !dismissed)) && (
         <div className="search-dropdown">
           <div className="search-dropdown-content">
             {processing && (

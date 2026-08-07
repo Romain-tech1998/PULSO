@@ -25,6 +25,7 @@ export const SEARCH_MESSAGE_CODES = [
   'search.clarification.location',
   'search.clarification.date',
   'search.clarification.price',
+  'search.clarification.atmosphere',
   'search.message.routingUnsupported',
   'search.message.maximumPriceUnavailable',
   'search.message.unsupported',
@@ -220,6 +221,8 @@ const en = {
     'Which explicit location should Pulso use as the direct-distance reference? No location is assumed.',
   'search.clarification.date': 'Which one date range should Pulso use?',
   'search.clarification.price': 'Should the price filter be Free or Paid?',
+  'search.clarification.atmosphere':
+    'What kind of vibe or atmosphere are you looking for?',
   'search.message.routingUnsupported':
     'Pulso cannot interpret travel time because the MVP provides no routing or implicit location.',
   'search.message.maximumPriceUnavailable':
@@ -442,17 +445,18 @@ const fr = {
   'search.clarification.date': 'Quelle période Pulso doit-il utiliser?',
   'search.clarification.price':
     'Le filtre de prix doit-il être Gratuit ou Payant?',
+  'search.clarification.atmosphere':
+    'Quelle ambiance ou style de soirée recherches-tu ?',
   'search.message.routingUnsupported':
     'Pulso ne peut pas interpréter un temps de trajet, car le MVP ne fournit aucun itinéraire ni emplacement implicite.',
   'search.message.maximumPriceUnavailable':
-    'Pulso a reconnu le prix maximal, mais les données fictives actuelles ne contiennent aucun prix numérique vérifié; aucune correspondance fiable ne peut donc être affirmée.',
+    'Pulso a reconnu le prix maximal, mais les données actuelles ne contiennent aucun prix numérique vérifié; aucune correspondance fiable ne peut donc être affirmée.',
   'search.message.unsupported':
     'Pulso n’a pas pu associer cette demande de manière fiable aux critères pris en charge pour les événements, les dates, les prix ou le classement. Les filtres manuels restent disponibles.',
   'search.message.clarificationRequired':
     'Une réponse explicite est requise avant que Pulso puisse appliquer cette contrainte.',
-  'search.message.exactCount.one': '1 correspondance fictive exacte trouvée.',
-  'search.message.exactCount.many':
-    '{count} correspondances fictives exactes trouvées.',
+  'search.message.exactCount.one': '1 correspondance exacte trouvée.',
+  'search.message.exactCount.many': '{count} correspondances exactes trouvées.',
   'search.message.alternative':
     'Aucun événement ne satisfait toutes les contraintes strictes. Ces alternatives diffèrent uniquement de la manière indiquée.',
   'search.message.noReliableResult':
