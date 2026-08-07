@@ -1,5 +1,5 @@
 import { generateObject } from 'ai';
-import { openai } from '@ai-sdk/openai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 import type { DeterministicInterpretation } from './index.js';
 import {
@@ -57,13 +57,14 @@ const searchOutputSchema = z.object({
 
 export async function interpretIntelligentSearch(
   query: string,
+  apiKey: string,
   preferredLocale: SupportedLocale = 'en'
 ): Promise<DeterministicInterpretation> {
   const systemPrompt = `You are the intelligent search assistant for Pulso, a nightlife and events application in Montreal.
 Your goal is to extract structured search criteria from a user's natural language query.
 
 # Rules:
-1. We only support Montreal. If the user asks for another city, set resolution to "no_reliable_result" and add a constraint message "search.constraint.bounds".
+1. We only support Montreal. If the user asks for another city, set resolution to "no_reliable_result" and add a message with code "search.message.montrealOnly". Do not output any constraints.
 2. If the user says "near me", "close by", return resolution "clarification" with clarification code "search.clarification.location".
 3. Map the user's intent to these EVENT_CATEGORIES: ${EVENT_CATEGORIES.join(', ')}.
 4. Map the user's date to DATE_FILTER_VALUES: ${DATE_FILTER_VALUES.join(', ')}.
@@ -75,9 +76,14 @@ Your goal is to extract structured search criteria from a user's natural languag
 
 Output the JSON strictly matching the schema.`;
 
+  const openrouter = createOpenAI({
+    baseURL: 'https://openrouter.ai/api/v1',
+    apiKey
+  });
+
   try {
     const { object } = await generateObject({
-      model: openai('gpt-4o-mini'),
+      model: openrouter('openai/gpt-4o-mini'),
       schema: searchOutputSchema,
       prompt: query,
       system: systemPrompt

@@ -32,6 +32,7 @@ export const SEARCH_MESSAGE_CODES = [
   'search.message.exactCount',
   'search.message.alternative',
   'search.message.noReliableResult',
+  'search.message.montrealOnly',
   'search.reason.category',
   'search.reason.price',
   'search.reason.date',
@@ -233,6 +234,8 @@ const en = {
     'No event satisfies every hard constraint. These alternatives differ only as stated.',
   'search.message.noReliableResult':
     'No reliable exact match or one-step explained alternative is available in this map area.',
+  'search.message.montrealOnly':
+    'Pulso only supports Montreal for now. Other cities will be added later!',
   'search.reason.category': 'Category matches: {category}',
   'search.reason.price': 'Price matches: {price}',
   'search.reason.date': 'Date matches: {date}',
@@ -454,6 +457,8 @@ const fr = {
     'Aucun événement ne satisfait toutes les contraintes strictes. Ces alternatives diffèrent uniquement de la manière indiquée.',
   'search.message.noReliableResult':
     'Aucune correspondance exacte fiable ni alternative expliquée en une étape n’est disponible dans cette zone.',
+  'search.message.montrealOnly':
+    "Pulso ne gère que Montréal pour le moment. D'autres villes arriveront plus tard !",
   'search.reason.category': 'Catégorie correspondante : {category}',
   'search.reason.price': 'Prix correspondant : {price}',
   'search.reason.date': 'Date correspondante : {date}',

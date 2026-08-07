@@ -273,10 +273,11 @@ export function buildApp(
     const search = intelligentSearchRequestSchema.parse(request.body);
     let interpreted;
     try {
-      if (!process.env.OPENAI_API_KEY)
-        throw new Error('OPENAI_API_KEY is not set');
+      if (!process.env.OPENROUTER_API_KEY)
+        throw new Error('OPENROUTER_API_KEY is not set');
       interpreted = await interpretIntelligentSearch(
         search.query,
+        process.env.OPENROUTER_API_KEY,
         search.locale
       );
       // Remove disabled keys if any, to respect manual overrides
