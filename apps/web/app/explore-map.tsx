@@ -1047,6 +1047,18 @@ export function ExploreMap({
   }, [user, section]);
   const unreadMessagesCount = useUnreadMessagesCount(authToken, section);
   const afterEventCount = events.filter(isAfterEvent).length;
+
+  // The anonymous tree only renders these four sections. Losing the account
+  // while standing anywhere else - signing out, or a session expiring into
+  // a 401 - otherwise left the navbar up with an empty content area, since
+  // every connected branch is guarded by `user &&` and none of the
+  // anonymous ones match.
+  useEffect(() => {
+    if (user) return;
+    const anonymous = ['evenement', 'lieu', 'explorer', 'favoris'];
+    if (!anonymous.includes(section)) setSection('evenement');
+  }, [user, section]);
+
   // Badge on Explorer's floating "Filtres" button: how many constraints are
   // actually narrowing the map, so the button says whether it is worth
   // opening without having to open it.
@@ -4989,7 +5001,17 @@ export function ExploreMap({
                   user={user}
                   authToken={authToken}
                   onUserUpdated={setUser}
-                  onLogout={logout}
+                  onLogout={() => {
+                    // Signing out from a connected-only destination left
+                    // `section` on something the anonymous tree has no
+                    // branch for, so the navbar rendered and the content
+                    // area came up empty. Land back on the anonymous
+                    // default rather than nowhere.
+                    setSection('evenement');
+                    setForumPanelMode(false);
+                    setAboutOpen(false);
+                    logout();
+                  }}
                   locale={locale}
                   onChangeLocale={selectLocale}
                   attendance={attendance}
