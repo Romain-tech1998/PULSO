@@ -3435,16 +3435,24 @@ h6 {
   display: none;
 }
 
+/* The anonymous sidebar used flat text and a lone purple wash, while the
+   connected rail had a gradient active state and carded groups. Same
+   product, so the same visual language: gradient title, a surface behind
+   the view switcher, and the rail's pink inset accent on the active item. */
 .sidebar-section-title {
-  font-size: 1.5rem;
-  margin-bottom: 0.35rem;
-  color: var(--brand-purple);
+  margin-bottom: 0.3rem;
+  font-size: 1.55rem;
+  letter-spacing: -0.02em;
+  background: linear-gradient(100deg, #a78bfa, #ff2a7a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .sidebar-results-count {
-  margin: 0 0 1rem;
-  font-size: 0.82rem;
-  color: var(--text-secondary);
+  margin: 0 0 1.25rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3458,18 +3466,25 @@ h6 {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.2rem;
   min-width: 0;
+  padding: 0.35rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.9rem;
+  background: var(--surface-raised);
 }
 
 .view-toggle-btn {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  border-radius: 0.75rem;
-  color: var(--text-secondary);
-  transition: all 0.2s;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.65rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  transition:
+    background 0.2s,
+    color 0.2s;
 }
 
 .view-toggle-btn svg {
@@ -3477,21 +3492,33 @@ h6 {
 }
 
 .view-toggle-btn:hover {
-  background: var(--surface-base);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
 }
 
+/* Same treatment as .primary-sidebar-nav-item.active in the connected rail. */
 .view-toggle-btn.active {
-  background: rgba(91, 63, 224, 0.22);
+  background: linear-gradient(
+    90deg,
+    rgba(167, 62, 232, 0.22),
+    rgba(255, 42, 122, 0.1)
+  );
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--brand-pink);
+}
+
+.view-toggle-btn.active svg {
+  color: var(--brand-pink);
 }
 
 .view-toggle-fav {
   flex-shrink: 0;
-  width: 40px;
-  border-radius: 0.75rem;
+  width: 44px;
+  border-radius: 0.9rem;
   border: 1px solid var(--brand-border);
-  color: var(--text-secondary);
+  background: var(--surface-raised);
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3499,8 +3526,8 @@ h6 {
 }
 
 .view-toggle-fav:hover {
-  background: var(--surface-base);
-  color: var(--text-primary);
+  border-color: rgba(255, 42, 122, 0.45);
+  color: var(--brand-pink);
 }
 
 .view-toggle-fav.active {

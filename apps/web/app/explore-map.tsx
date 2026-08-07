@@ -153,33 +153,16 @@ const INITIAL_BOUNDS = {
 };
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
-// Style dark garanti sans clé - MapLibre démo dark
-const MAP_STYLE_DARK: maplibregl.StyleSpecification = {
-  version: 8,
-  name: 'Pulso Dark',
-  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-  sources: {
-    carto: {
-      type: 'raster',
-      tiles: [
-        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
-      ],
-      tileSize: 256,
-      attribution: '&copy; OpenStreetMap &copy; CartoDB'
-    }
-  },
-  layers: [
-    {
-      id: 'carto-dark',
-      type: 'raster',
-      source: 'carto'
-    }
-  ]
-};
+// Pulso's own vector style, served from public/ - the project's art
+// direction (deep violet #100e19, muted roads) rather than a generic grey
+// basemap. It used to sit behind NEXT_PUBLIC_MAP_STYLE_URL, so whenever
+// that variable was missing - Next reads .env from apps/web, not from the
+// monorepo root - every map silently fell back to a flat CartoDB raster
+// that looked nothing like the rest of the product.
+const MAP_STYLE_PULSO = '/map-styles/pulso-dark.json';
+
 const MAP_STYLE_URL: string | maplibregl.StyleSpecification =
-  process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? MAP_STYLE_DARK;
+  process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? MAP_STYLE_PULSO;
 
 const PIN_WIDTH = 38;
 const PIN_HEIGHT = 44;
@@ -3810,10 +3793,11 @@ export function ExploreMap({
                                 favorites.includes(event.id)
                               ).length
                             : events.length;
-                          return `${count} événement${count !== 1 ? 's' : ''} dans cette zone`;
+                          // French takes the singular for 0 as well as 1.
+                          return `${count} événement${count > 1 ? 's' : ''} dans cette zone`;
                         })()
                       : // "lieu" pluralizes in -x, not -s.
-                        `${filteredVenueGroups.length} lieu${filteredVenueGroups.length !== 1 ? 'x' : ''} dans cette zone`}
+                        `${filteredVenueGroups.length} lieu${filteredVenueGroups.length > 1 ? 'x' : ''} dans cette zone`}
                   </p>
 
                   <div className="view-toggles">
