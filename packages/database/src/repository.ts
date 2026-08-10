@@ -719,9 +719,18 @@ export class PostgresEventRepository implements EventRepository {
            (
              $6::text IS NOT NULL
              AND (
-               pulso_fold(e.title) LIKE '%' || pulso_fold($6) || '%'
-               OR pulso_fold(e.organizer_name) LIKE '%' || pulso_fold($6) || '%'
-               OR pulso_fold(v.name) LIKE '%' || pulso_fold($6) || '%'
+               -- Word by word for the same reason as searchVenues below:
+               -- the stopwords are already gone, so requiring one contiguous
+               -- run makes an event unfindable by its own full title.
+               NOT EXISTS (
+                 SELECT 1
+                 FROM unnest(string_to_array(pulso_fold($6), ' ')) AS token(word)
+                 WHERE token.word <> ''
+                   AND pulso_fold(
+                         e.title || ' ' ||
+                         coalesce(e.organizer_name, '') || ' ' || v.name
+                       ) NOT LIKE '%' || token.word || '%'
+               )
              )
            )
            OR (
@@ -804,9 +813,20 @@ export class PostgresEventRepository implements EventRepository {
        FROM venues v
        WHERE (
            $1::text IS NOT NULL
-           AND (
-             pulso_fold(v.name) LIKE '%' || pulso_fold($1) || '%'
-             OR pulso_fold(v.address) LIKE '%' || pulso_fold($1) || '%'
+           -- Every word must appear, anywhere, rather than the whole query
+           -- appearing as one contiguous run. The interpreter strips
+           -- stopwords before this runs, so "quai des brumes" arrives as
+           -- "quai brumes" - which is not a substring of "Quai des Brumes",
+           -- and the bar was unfindable by its own full name. Any venue with
+           -- an internal stopword had the same problem: "Café de la Paix",
+           -- "Salle du Théâtre". Matching word by word is also what makes a
+           -- half-remembered name work at all.
+           AND NOT EXISTS (
+             SELECT 1
+             FROM unnest(string_to_array(pulso_fold($1), ' ')) AS token(word)
+             WHERE token.word <> ''
+               AND pulso_fold(v.name || ' ' || v.address)
+                   NOT LIKE '%' || token.word || '%'
            )
          )
          OR (
