@@ -31,10 +31,14 @@ import {
   createFilteredDiscoveryWindow,
   type DiscoveryFilters
 } from '@pulso/domain';
+import type { SupportedLocale } from '@pulso/domain/localization';
+import type { LiveVenueCandidate } from '@pulso/ingestion';
 import {
   interpretDeterministicSearch,
   interpretIntelligentSearch,
-  rankAndExplainEvents
+  rankAndExplainEvents,
+  refineSearchText,
+  type DeterministicInterpretation
 } from '@pulso/search';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
@@ -62,6 +66,14 @@ import { registerSocialRoutes } from './social.js';
 const MAX_PHOTO_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 const eventParamsSchema = z.object({ id: z.uuid() });
+
+// Enough to pick from without turning the picker into a scrollable directory.
+const VENUE_SEARCH_LIMIT = 20;
+const venueSearchQuerySchema = z.object({
+  // Two characters match half the city, which reads as "Pulso ignored what I
+  // typed" rather than as a search.
+  query: z.string().trim().min(3).max(120)
+});
 
 export function buildApp(
   repository: EventRepository,
@@ -93,6 +105,20 @@ export function buildApp(
     uploadDir?: string;
     publicUploadUrl?: string;
     google?: GoogleAuthConfig;
+    // The live venue lookup behind a search that found nothing (see
+    // @pulso/ingestion lookup-venue.ts). Injected rather than imported so the
+    // test suite never reaches the network, and so a deployment can turn the
+    // behaviour off by simply not passing it - search then answers exactly as
+    // it did before, which is a real degradation but not a failure.
+    lookupVenues?: (text: string) => Promise<LiveVenueCandidate[]>;
+    // Stands in for the OpenRouter call. Without it the AI branch is only
+    // reachable by holding a live API key, which left the behaviour that
+    // depends on what the *model* answered - notably a refusal Pulso has to
+    // second-guess - with no test at all.
+    interpretQuery?: (
+      query: string,
+      locale: SupportedLocale
+    ) => Promise<DeterministicInterpretation>;
   } = {}
 ) {
   const app = Fastify({ logger: options.logger ?? false });
@@ -194,7 +220,8 @@ export function buildApp(
       app,
       options.authRepository,
       options.organizerRepository,
-      options.notificationsRepository
+      options.notificationsRepository,
+      repository
     );
     registerCreatedEventsRoutes(
       app,
@@ -273,13 +300,23 @@ export function buildApp(
     const search = intelligentSearchRequestSchema.parse(request.body);
     let interpreted;
     try {
-      if (!process.env.OPENROUTER_API_KEY)
-        throw new Error('OPENROUTER_API_KEY is not set');
-      interpreted = await interpretIntelligentSearch(
-        search.query,
-        process.env.OPENROUTER_API_KEY,
-        search.locale
-      );
+      if (options.interpretQuery) {
+        interpreted = await options.interpretQuery(search.query, search.locale);
+      } else {
+        if (!process.env.OPENROUTER_API_KEY)
+          throw new Error('OPENROUTER_API_KEY is not set');
+        interpreted = await interpretIntelligentSearch(
+          search.query,
+          process.env.OPENROUTER_API_KEY,
+          search.locale,
+          // Swap models without a code change: any OpenRouter model id works,
+          // e.g. PULSO_AI_MODEL=openai/gpt-4o for harder queries. Unset keeps
+          // the small default.
+          process.env.PULSO_AI_MODEL
+            ? { model: process.env.PULSO_AI_MODEL }
+            : {}
+        );
+      }
       // Remove disabled keys if any, to respect manual overrides
       if (search.disabledDerivedKeys.length > 0) {
         for (const key of search.disabledDerivedKeys) {
@@ -335,12 +372,16 @@ export function buildApp(
 
     const responseBase = {
       interpretation: {
-        engine: 'deterministic' as const,
+        engine: interpreted.engine,
         language: interpreted.language,
         constraints: interpreted.constraints,
         rankingSignals: interpreted.rankingSignals,
         effectiveFilters
-      }
+      },
+      ...(interpreted.suggestedLocation
+        ? { suggestedLocation: interpreted.suggestedLocation }
+        : {}),
+      ...(interpreted.suggestedNearMe ? { suggestedNearMe: true } : {})
     };
     if (interpreted.resolution === 'clarification') {
       return intelligentSearchResponseSchema.parse({
@@ -352,16 +393,218 @@ export function buildApp(
       });
     }
     if (interpreted.resolution === 'no_reliable_result') {
+      // "I cannot map this to a date, a price or a category" is not the same
+      // claim as "there is nothing to find", and returning here treated them
+      // as one - the directory was never asked. Observed live: "clébard"
+      // dead-ended while "Clébard" was answered, the same bar found or not
+      // found on a capital letter, because the model reads a capitalized word
+      // as a proper noun and a lowercase one as vocabulary.
+      //
+      // So look before concluding there is nothing. The model's judgement is
+      // not overridden on a guess: the refusal stands untouched unless the
+      // directory actually holds something by that name.
+      const residual =
+        interpreted.message?.code === 'search.message.unsupported'
+          ? refineSearchText(search.query)
+          : undefined;
+      const rescued = residual
+        ? await repository.searchVenues({ text: residual })
+        : [];
+      if (rescued.length === 0) {
+        return intelligentSearchResponseSchema.parse({
+          ...responseBase,
+          condition: 'no_reliable_result',
+          message: interpreted.message,
+          data: []
+        });
+      }
       return intelligentSearchResponseSchema.parse({
         ...responseBase,
-        condition: 'no_reliable_result',
-        message: interpreted.message,
+        condition: 'exact',
+        message: {
+          code: 'search.message.exactCount',
+          params: { count: rescued.length }
+        },
+        searchText: residual,
+        venues: rescued,
+        // Places, not an evening: the query the model could not read as a
+        // request for events is not answered with events it never asked for.
         data: []
       });
     }
 
-    const boundsQuery = toMapBoundsQuery(search.bounds, effectiveFilters);
+    const boundsQuery = toMapBoundsQuery(
+      search.bounds,
+      effectiveFilters,
+      search.near
+    );
     const now = options.now?.() ?? new Date();
+
+    // A query that named something is answered differently from one that
+    // described an evening. It searches the whole directory rather than the
+    // visible map - "Centre Bell" means the Centre Bell, not "the Centre Bell
+    // if it is currently on screen" - and, when the visitor named no date, it
+    // looks further ahead than the seven-day browsing window, since a show
+    // three weeks out is still the show they asked for.
+    const namedSearch =
+      interpreted.searchText !== undefined ||
+      (interpreted.venueCategories?.length ?? 0) > 0;
+    if (namedSearch) {
+      const namedWindow = interpreted.derivedFilters.date
+        ? createFilteredDiscoveryWindow(now, effectiveFilters)
+        : { startsAt: now, endsAt: addDays(now, NAMED_SEARCH_HORIZON_DAYS) };
+
+      // "bar" on its own is a request for bars, not for whatever happens to
+      // be programmed in one. Answering it with 42 events buried the twelve
+      // actual bars under them. A kind of place with nothing else attached
+      // is therefore answered with places; add a date, a category or a name
+      // ("bar ce soir", "bar jazz") and the events come back.
+      const venueLedSearch =
+        (interpreted.venueCategories?.length ?? 0) > 0 &&
+        interpreted.searchText === undefined &&
+        Object.keys(interpreted.derivedFilters).length === 0;
+
+      const [namedEvents, namedVenues] = await Promise.all([
+        venueLedSearch
+          ? Promise.resolve([])
+          : repository.searchEvents(
+              {
+                ...(interpreted.searchText
+                  ? { text: interpreted.searchText }
+                  : {}),
+                ...(interpreted.venueCategories
+                  ? { venueCategories: interpreted.venueCategories }
+                  : {}),
+                categories: effectiveFilters.categories,
+                price: effectiveFilters.price
+              },
+              namedWindow,
+              { excludedCategories: interpreted.excludedCategories }
+            ),
+        repository.searchVenues(
+          {
+            ...(interpreted.searchText ? { text: interpreted.searchText } : {}),
+            ...(interpreted.venueCategories
+              ? { categories: interpreted.venueCategories }
+              : {})
+          },
+          venueLedSearch ? VENUE_LED_RESULT_LIMIT : undefined
+        )
+      ]);
+
+      if (namedEvents.length > 0 || namedVenues.length > 0) {
+        return intelligentSearchResponseSchema.parse({
+          ...responseBase,
+          condition: 'exact',
+          message: {
+            code: 'search.message.exactCount',
+            params: { count: namedEvents.length + namedVenues.length }
+          },
+          ...(interpreted.searchText
+            ? { searchText: interpreted.searchText }
+            : {}),
+          venues: namedVenues,
+          data: rankAndExplainEvents(namedEvents, interpreted, 'exact')
+        });
+      }
+
+      // Nothing in Pulso's own directory carries that name. Before telling
+      // someone the bar they are standing outside does not exist, ask
+      // OpenStreetMap once - and keep the answer, so the next visitor gets it
+      // from Pulso rather than from a stranger's server.
+      //
+      // Guarded by shouldLookUpVenue, which refuses a query Pulso has already
+      // looked up and failed: the point is to answer real names, not to turn
+      // every typo into traffic on a volunteer-run service.
+      if (interpreted.searchText && options.lookupVenues) {
+        const lookupText = interpreted.searchText;
+        if (await repository.shouldLookUpVenue(lookupText)) {
+          const found = await options.lookupVenues(lookupText);
+          // Called even when nothing was found: "Montréal has no such place"
+          // is the answer most worth remembering, since it is the one that
+          // would otherwise be asked again on every repeat of the query.
+          const savedVenues = await repository.saveLookedUpVenues(
+            lookupText,
+            found
+          );
+          if (savedVenues.length > 0) {
+            return intelligentSearchResponseSchema.parse({
+              ...responseBase,
+              condition: 'exact',
+              message: {
+                code: 'search.message.foundLive',
+                params: { count: savedVenues.length }
+              },
+              searchText: lookupText,
+              venues: savedVenues,
+              // A place, not an evening. These have no programming attached -
+              // that is precisely why they were missing - so `data` stays
+              // empty rather than being padded with unrelated events.
+              data: []
+            });
+          }
+        }
+      }
+
+      // Nothing carries that name. If the query said anything else Pulso can
+      // act on, answer *that* rather than dead-ending - and label the gap, so
+      // the visitor sees which part went unanswered instead of wondering why
+      // these results came back.
+      //
+      // Dead-ending here is what made "un evenement humouristique" return
+      // nothing: one unrecognised word was treated as a name, matched no
+      // record, and took the whole query down with it.
+      const hasOtherCriteria =
+        Object.keys(interpreted.derivedFilters).length > 0 ||
+        interpreted.excludedCategories.length > 0;
+      if (hasOtherCriteria) {
+        const fallbackWindow = createFilteredDiscoveryWindow(
+          now,
+          effectiveFilters
+        );
+        const fallbackEvents = await repository.findInBounds(
+          boundsQuery,
+          fallbackWindow,
+          { excludedCategories: interpreted.excludedCategories }
+        );
+        if (fallbackEvents.length > 0) {
+          return intelligentSearchResponseSchema.parse({
+            ...responseBase,
+            condition: 'alternative',
+            message: { code: 'search.message.alternative' },
+            ...(interpreted.searchText
+              ? { searchText: interpreted.searchText }
+              : {}),
+            venues: [],
+            data: rankAndExplainEvents(
+              fallbackEvents,
+              interpreted,
+              'alternative',
+              interpreted.searchText
+                ? [
+                    {
+                      code: 'search.difference.searchText' as const,
+                      params: { text: interpreted.searchText }
+                    }
+                  ]
+                : []
+            )
+          });
+        }
+      }
+
+      return intelligentSearchResponseSchema.parse({
+        ...responseBase,
+        condition: 'no_reliable_result',
+        message: { code: 'search.message.noReliableResult' },
+        ...(interpreted.searchText
+          ? { searchText: interpreted.searchText }
+          : {}),
+        venues: [],
+        data: []
+      });
+    }
+
     const window = createFilteredDiscoveryWindow(now, effectiveFilters);
     const exactEvents = await repository.findInBounds(boundsQuery, window, {
       excludedCategories: interpreted.excludedCategories
@@ -384,7 +627,8 @@ export function buildApp(
       manualFilters,
       effectiveFilters,
       interpreted,
-      now
+      now,
+      search.near
     );
     if (alternative) {
       return intelligentSearchResponseSchema.parse({
@@ -467,6 +711,29 @@ export function buildApp(
     });
   });
 
+  /**
+   * Finding a venue by name, anywhere in the directory.
+   *
+   * The two surfaces that need to name a place - claiming one as its
+   * organizer, and hosting an event in one - were both built on the events
+   * already loaded for the fourteen-day window, because no venue search
+   * endpoint existed. That was workable while the directory only held venues
+   * an event had put there. It is not workable now: of 1412 venues, the vast
+   * majority have no programming at all, so the Clébard could not be claimed
+   * by its own owner and an event could not be attached to it.
+   *
+   * Deliberately unauthenticated and read-only. It returns exactly what
+   * `/search` already returns for the same text to anyone who asks; requiring
+   * a token here would protect nothing and would stop the event-creation form
+   * from offering a place before the visitor signs in.
+   */
+  app.get('/venues/search', async (request) => {
+    const { query } = venueSearchQuerySchema.parse(request.query);
+    return venueListResponseSchema.parse({
+      data: await repository.searchVenues({ text: query }, VENUE_SEARCH_LIMIT)
+    });
+  });
+
   return app;
 }
 
@@ -488,9 +755,28 @@ function normalizeDiscoveryFilters(filters: {
   };
 }
 
+/**
+ * How far ahead a named search looks when the visitor gave no date. Long
+ * enough that a show announced for next month is findable, short enough that
+ * "lion king" does not return a year of tour dates.
+ */
+const NAMED_SEARCH_HORIZON_DAYS = 120;
+
+/**
+ * How many places a bare kind-of-place query returns. Higher than the
+ * incidental venue list attached to a named search: here the places *are*
+ * the answer.
+ */
+const VENUE_LED_RESULT_LIMIT = 40;
+
+function addDays(from: Date, days: number): Date {
+  return new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
 function toMapBoundsQuery(
   bounds: { west: number; south: number; east: number; north: number },
-  filters: DiscoveryFilters
+  filters: DiscoveryFilters,
+  near?: { longitude: number; latitude: number; radiusMeters: number }
 ): MapBoundsQuery {
   return {
     ...bounds,
@@ -498,7 +784,14 @@ function toMapBoundsQuery(
     categories: filters.categories,
     price: filters.price,
     ...(filters.customStartDate ? { dateStart: filters.customStartDate } : {}),
-    ...(filters.customEndDate ? { dateEnd: filters.customEndDate } : {})
+    ...(filters.customEndDate ? { dateEnd: filters.customEndDate } : {}),
+    ...(near
+      ? {
+          nearLongitude: near.longitude,
+          nearLatitude: near.latitude,
+          nearRadiusMeters: near.radiusMeters
+        }
+      : {})
   };
 }
 
@@ -508,7 +801,8 @@ async function findExplainedAlternative(
   manualFilters: DiscoveryFilters,
   effectiveFilters: DiscoveryFilters,
   interpreted: ReturnType<typeof interpretDeterministicSearch>,
-  now: Date
+  now: Date,
+  near?: { longitude: number; latitude: number; radiusMeters: number }
 ): Promise<
   | {
       events: Awaited<ReturnType<EventRepository['findInBounds']>>;
@@ -549,7 +843,7 @@ async function findExplainedAlternative(
   }
   for (const plan of plans) {
     const events = await repository.findInBounds(
-      toMapBoundsQuery(bounds, plan.filters),
+      toMapBoundsQuery(bounds, plan.filters, near),
       createFilteredDiscoveryWindow(now, plan.filters),
       { excludedCategories: plan.excludedCategories }
     );

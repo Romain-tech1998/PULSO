@@ -3,6 +3,7 @@ import type { EventCategory, TrustLabel } from '@pulso/domain';
 
 import type { RawIngestedEvent } from '../types.js';
 import { computeDedupeKey, normalizeForKey } from './dedupe-key.js';
+import { completenessScore, isUsableUrl } from './venue-identity.js';
 import { deriveDeterministicEventId } from './event-id.js';
 
 /**
@@ -253,9 +254,16 @@ export function mapAndDeduplicateRawEvents(
       // The new source outranks the current primary: demote the current
       // primary's source into additionalSources and promote the new one.
       existingSources.push(existing.event.source);
-      byKey.set(key, { event: mapped.event, authority: rank });
+      byKey.set(key, {
+        event: absorbMissingFacts(mapped.event, existing.event),
+        authority: rank
+      });
     } else {
       existingSources.push(mapped.event.source);
+      byKey.set(key, {
+        event: absorbMissingFacts(existing.event, mapped.event),
+        authority: existing.authority
+      });
     }
     additionalSourcesByKey.set(key, existingSources);
   }
@@ -271,3 +279,66 @@ export function mapAndDeduplicateRawEvents(
 
   return { events: result, skipped };
 }
+
+/**
+ * Fills the winner's gaps from the copy being merged into it.
+ *
+ * Source authority decides which record is *primary* - whose title, time and
+ * source line Pulso stands behind. It is the wrong question for the rest of
+ * the fields, and treating it as the only question threw away real data: the
+ * official listing for a show routinely carries no poster and no ticket link,
+ * while the ticketing platform's copy of the same show carries both. Keeping
+ * the authoritative record and discarding the other left a visitor looking at
+ * an event they could not buy a ticket for, from a directory that had the
+ * link the whole time.
+ *
+ * Only absent fields are filled. A disagreement between two sources about a
+ * fact they both state is not resolved here - the primary's version stands,
+ * because that is what source authority is for.
+ *
+ * The one exception is the ticketing link: a structurally broken URL is
+ * treated as absent, so a source that published "à venir" in that field
+ * cannot block a working link from the other copy. Whether the link still
+ * resolves is not checked - that would mean an HTTP request per candidate
+ * during merging, and a page that is momentarily down is not the same as a
+ * page that was never there.
+ */
+function absorbMissingFacts(
+  primary: PublicEvent,
+  other: PublicEvent
+): PublicEvent {
+  const merged: PublicEvent = { ...primary };
+
+  if (!isUsableUrl(merged.imageUrl) && isUsableUrl(other.imageUrl)) {
+    merged.imageUrl = other.imageUrl;
+  }
+  if (!merged.description?.trim() && other.description?.trim()) {
+    merged.description = other.description;
+  }
+  if (!merged.endsAt && other.endsAt) merged.endsAt = other.endsAt;
+  if (!merged.organizer && other.organizer) merged.organizer = other.organizer;
+  if (merged.price.kind === 'unknown' && other.price.kind !== 'unknown') {
+    merged.price = other.price;
+  }
+  // The ticketing link is the field a visitor actually leaves Pulso to act
+  // on, and the one most often missing from the authoritative copy. The
+  // public contract deliberately does not carry the URL - only whether a
+  // destination exists and resolves - so "usable" here means present and
+  // `available`. A destination the mapper already marked unavailable is
+  // treated as absent rather than allowed to block a working one.
+  const mergedDestinationUsable =
+    merged.externalDestination?.status === 'available';
+  const otherDestinationUsable =
+    other.externalDestination?.status === 'available';
+  if (!mergedDestinationUsable && otherDestinationUsable) {
+    merged.externalDestination = other.externalDestination;
+  }
+  return merged;
+}
+
+/**
+ * Which of two records tells a visitor more. Exported for the venue-side
+ * merges, which face the same question without a source-authority ranking to
+ * fall back on.
+ */
+export { completenessScore };

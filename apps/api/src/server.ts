@@ -16,6 +16,7 @@ import {
   PostgresReportsRepository,
   PostgresTrendsRepository
 } from '@pulso/database';
+import { lookupVenueByName } from '@pulso/ingestion';
 import { buildApp } from './app.js';
 import { resolveApiConfig } from './config.js';
 
@@ -44,6 +45,10 @@ const google =
 
 const app = buildApp(new PostgresEventRepository(pool), {
   logger: true,
+  // Wired here rather than inside app.ts so the network call has a single,
+  // visible owner: this is the only place Pulso reaches a third-party service
+  // during a visitor request.
+  lookupVenues: (text) => lookupVenueByName(text),
   ...(google
     ? {
         authRepository: new PostgresAuthRepository(pool),

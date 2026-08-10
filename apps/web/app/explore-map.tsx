@@ -42,6 +42,7 @@ import {
   createOrganizerRequestSchema,
   geocodeResponseSchema,
   myOrganizerStatusResponseSchema,
+  adminVenuePhotosResponseSchema,
   organizerRequestsResponseSchema,
   myEventsResponseSchema,
   mutualEventIdsResponseSchema,
@@ -90,6 +91,7 @@ import {
   type PublicUser,
   type PublicVenue,
   type ProfileStatsResponse,
+  type AdminVenuePhoto,
   type ReportTargetType,
   type TrendsResponse,
   type User
@@ -110,6 +112,7 @@ import {
   type VenueCategory
 } from '@pulso/domain';
 import {
+  formatMontrealDateTime,
   getCategoryLabel,
   getDateFilterLabel,
   getPriceLabel,
@@ -118,6 +121,11 @@ import {
   translate,
   type SupportedLocale
 } from '@pulso/domain/localization';
+import {
+  describeOpeningSchedule,
+  parseOpeningHours,
+  resolveOpeningState
+} from '@pulso/domain/opening-hours';
 import maplibregl from 'maplibre-gl';
 import {
   Fragment,
@@ -145,6 +153,17 @@ const MONTREAL_CENTER: [number, number] = [-73.5673, 45.5017];
 // VENUE_CATEGORIES's comment), so color-coding by type would overstate a
 // confidence the data doesn't have.
 const VENUE_PIN_COLOR = '#8b7ff0';
+
+/**
+ * How old an opening-hours record may be and still support an "open now"
+ * claim (DEC-0019).
+ *
+ * Ninety days. The hours themselves stay useful far longer - they are the
+ * best answer Pulso has either way - but stating that a bar is open *right
+ * now* from a record that predates a possible closure is the kind of error a
+ * visitor standing outside a dark door does not forgive.
+ */
+const OPENING_STATE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 const INITIAL_BOUNDS = {
   west: -73.75,
   south: 45.4,
@@ -941,6 +960,17 @@ export function ExploreMap({
   const [mobileCommunityOpen, setMobileCommunityOpen] = useState(false);
   const [queryInput, setQueryInput] = useState('');
   const [searchResult, setSearchResult] = useState<IntelligentSearchResponse>();
+  /**
+   * Whether the results panel is on screen.
+   *
+   * Owned here rather than inside the panel, because the panel used to derive
+   * it from "has a result and has not been dismissed" - and `loadEvents`
+   * re-issues the search on every map move while a search is active, so each
+   * pan produced a new result object, cleared the dismissal and popped the
+   * panel back open over whatever the visitor had just opened. Only an
+   * explicit submit opens it now; acting on a result closes it.
+   */
+  const [searchPanelOpen, setSearchPanelOpen] = useState(false);
   const [searchProcessing, setSearchProcessing] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [locale, setLocale] = useState(initialLocale);
@@ -1453,6 +1483,7 @@ export function ExploreMap({
     };
     setSearchResult(undefined);
     setSearchProcessing(true);
+    setSearchPanelOpen(true);
     void loadEvents(currentBounds.current, manualFilters);
   }
 
@@ -1462,9 +1493,139 @@ export function ExploreMap({
     setQueryInput('');
     setSearchResult(undefined);
     setSearchError(false);
+    setSearchPanelOpen(false);
     filtersRef.current = restored;
     setFilters(restored);
     void loadEvents(currentBounds.current, restored);
+  }
+
+  /**
+   * "Voir sur la carte" on a search result. A named search deliberately looks
+   * beyond the visible map (see the API's /search route), so a result is
+   * routinely off-screen - without this the visitor reads a title and has no
+   * way to reach it.
+   */
+  /**
+   * Every result action has to bring the map on screen first.
+   *
+   * A signed-in visitor searches from any section - Découvrir, Forums,
+   * Groupes - and the map only exists inside 'evenement'. Setting `selected`
+   * or `viewMode` from Découvrir changed state nobody could see, so the
+   * buttons looked dead: the click fired and the page did not move.
+   */
+  /**
+   * Reveals the map the result actually lives on, and returns that map.
+   *
+   * Which one that is depends on both the kind of result and whether anyone
+   * is signed in, because the two experiences are laid out differently: the
+   * anonymous one keeps a map per destination (Événements, Lieux, Explorer),
+   * while a signed-in account has a single map, under Explorer - there,
+   * `section: 'evenement'` is a list page with no map on it at all.
+   *
+   * Hard-coding 'evenement' here got both cases wrong. A venue was shown on
+   * the events map, where the place the visitor had just asked for is not a
+   * pin; and for a signed-in visitor "Montrer sur la carte" landed on the
+   * events list, having revealed no map whatsoever.
+   */
+  function revealMapFor(kind: 'event' | 'venue') {
+    // Acting on a result is done with every layer that was covering the map.
+    // Leaving any of them open drops the record behind it, which is what made
+    // "Ouvrir la fiche" look like it had done nothing until the search panel
+    // *and* the point list were both closed by hand.
+    setSearchPanelOpen(false);
+    setPickerList(undefined);
+    setVenuePickerList(undefined);
+    setFiltersOpen(false);
+    setAboutOpen(false);
+
+    if (user) {
+      setSection('explorer');
+      // Explorer carries both kinds of pin, but only shows the venues when
+      // asked - a venue result has to turn them on or it arrives at a map
+      // that cannot draw it.
+      if (kind === 'venue') setExplorerPinKind('all');
+      return connectedMap;
+    }
+    if (kind === 'venue') {
+      setSection('lieu');
+      setLieuTab('map');
+      return lieuMap;
+    }
+    setSection('evenement');
+    setViewMode('map');
+    return map;
+  }
+
+  /**
+   * Centres the newly revealed map on a point.
+   *
+   * Deferred a frame because the target map may have been display:none until
+   * the state change above: MapLibre reads a zero-sized container as a
+   * zero-sized viewport, and an easeTo issued in that state lands nowhere
+   * useful.
+   */
+  function centreOn(
+    instance: RefObject<maplibregl.Map | null>,
+    point: { longitude: number; latitude: number }
+  ) {
+    requestAnimationFrame(() => {
+      instance.current?.resize();
+      instance.current?.easeTo({
+        center: [point.longitude, point.latitude],
+        zoom: 15
+      });
+    });
+  }
+
+  function showOnMap(
+    point: { longitude: number; latitude: number },
+    kind: 'event' | 'venue' = 'event'
+  ) {
+    const instance = revealMapFor(kind);
+    setVenueDetailsGroup(undefined);
+    centreOn(instance, point);
+  }
+
+  /** "Ouvrir la fiche" on an event result. */
+  function openEventRecord(event: PublicEvent) {
+    const instance = revealMapFor('event');
+    setVenueDetailsGroup(undefined);
+    setSelected(event);
+    centreOn(instance, event.venue.point);
+  }
+
+  /**
+   * "Ouvrir la fiche" on a venue result. Any event already returned for that
+   * venue is attached, so the record opens with its real programming rather
+   * than the "no listing" summary a bare venue would show.
+   */
+  function openVenueRecord(venue: PublicVenue) {
+    const venueEvents = (searchResult?.data ?? [])
+      .map(({ event }) => event)
+      .filter((event) => event.venue.id === venue.id);
+    setSelected(undefined);
+    const instance = revealMapFor('venue');
+    setVenueDetailsGroup({
+      id: venue.id,
+      name: venue.name,
+      address: venue.address,
+      point: venue.point,
+      events: venueEvents,
+      categories: [...new Set(venueEvents.map(({ category }) => category))],
+      ...(venue.category ? { venueCategory: venue.category } : {}),
+      ...(venue.secondaryCategories
+        ? { venueSecondaryCategories: venue.secondaryCategories }
+        : {}),
+      ...(venue.imageUrl ? { imageUrl: venue.imageUrl } : {}),
+      ...(venue.imageAttribution
+        ? { imageAttribution: venue.imageAttribution }
+        : {}),
+      ...(venue.openingHours ? { openingHours: venue.openingHours } : {}),
+      ...(venue.openingHoursObservedAt
+        ? { openingHoursObservedAt: venue.openingHoursObservedAt }
+        : {})
+    });
+    centreOn(instance, venue.point);
   }
 
   function clearAll() {
@@ -1473,6 +1634,7 @@ export function ExploreMap({
     setQueryInput('');
     setSearchResult(undefined);
     setSearchError(false);
+    setSearchPanelOpen(false);
     filtersRef.current = defaults;
     setFilters(defaults);
     setSelected(undefined);
@@ -2062,7 +2224,16 @@ export function ExploreMap({
       ...(venue.secondaryCategories !== undefined
         ? { venueSecondaryCategories: venue.secondaryCategories }
         : {}),
-      ...(venue.imageUrl !== undefined ? { imageUrl: venue.imageUrl } : {})
+      ...(venue.imageUrl !== undefined ? { imageUrl: venue.imageUrl } : {}),
+      ...(venue.imageAttribution !== undefined
+        ? { imageAttribution: venue.imageAttribution }
+        : {}),
+      ...(venue.openingHours !== undefined
+        ? { openingHours: venue.openingHours }
+        : {}),
+      ...(venue.openingHoursObservedAt !== undefined
+        ? { openingHoursObservedAt: venue.openingHoursObservedAt }
+        : {})
     }));
     const byId = new Map<string, VenueGroup>();
     for (const group of [...recurringVenueGroups, ...programmedVenueGroups]) {
@@ -2154,7 +2325,13 @@ export function ExploreMap({
           type: 'Point',
           coordinates: [group.point.longitude, group.point.latitude]
         },
-        properties: { id: group.id }
+        // 'other' rather than nothing: a venue whose kind was never set
+        // still needs *a* pin image, and a missing icon-image renders an
+        // invisible marker rather than a default one.
+        properties: {
+          id: group.id,
+          category: group.venueCategory ?? 'other'
+        }
       }))
     });
   }, []);
@@ -2174,9 +2351,14 @@ export function ExploreMap({
     });
 
     instance.on('load', () => {
-      instance.addImage('pin-venue', buildPinImageData(VENUE_PIN_COLOR), {
-        pixelRatio: PIN_SCALE
-      });
+      // One pin per kind of place, same pattern the event layer already
+      // uses. A single colour for every venue made a museum and a nightclub
+      // indistinguishable on a map whose whole job is telling them apart.
+      for (const [category, color] of Object.entries(VENUE_CATEGORY_COLORS)) {
+        instance.addImage(`pin-venue-${category}`, buildPinImageData(color), {
+          pixelRatio: PIN_SCALE
+        });
+      }
       instance.addImage('venue-cluster-badge', buildClusterBadgeImageData(), {
         pixelRatio: PIN_SCALE
       });
@@ -2234,7 +2416,7 @@ export function ExploreMap({
         source: 'venues-source',
         filter: ['!', ['has', 'point_count']],
         layout: {
-          'icon-image': 'pin-venue',
+          'icon-image': ['concat', 'pin-venue-', ['get', 'category']],
           'icon-size': [
             'interpolate',
             ['linear'],
@@ -2490,7 +2672,13 @@ export function ExploreMap({
             type: 'Point',
             coordinates: [group.point.longitude, group.point.latitude]
           },
-          properties: { id: group.id }
+          // 'other' rather than nothing: a venue whose kind was never set
+          // still needs *a* pin image, and a missing icon-image renders an
+          // invisible marker rather than a default one.
+          properties: {
+            id: group.id,
+            category: group.venueCategory ?? 'other'
+          }
         }))
       });
     }
@@ -2527,6 +2715,13 @@ export function ExploreMap({
           pixelRatio: PIN_SCALE
         }
       );
+      for (const [category, color] of Object.entries(VENUE_CATEGORY_COLORS)) {
+        instance.addImage(
+          `explorer-pin-venue-${category}`,
+          buildPinImageData(color),
+          { pixelRatio: PIN_SCALE }
+        );
+      }
       instance.addImage(
         'explorer-pin-venue',
         buildPinImageData(VENUE_PIN_COLOR),
@@ -2644,7 +2839,7 @@ export function ExploreMap({
         filter: ['!', ['has', 'point_count']],
         layout: {
           visibility: venueVisible,
-          'icon-image': 'explorer-pin-venue',
+          'icon-image': ['concat', 'explorer-pin-venue-', ['get', 'category']],
           'icon-size': [
             'interpolate',
             ['linear'],
@@ -2860,7 +3055,13 @@ export function ExploreMap({
             type: 'Point',
             coordinates: [group.point.longitude, group.point.latitude]
           },
-          properties: { id: group.id }
+          // 'other' rather than nothing: a venue whose kind was never set
+          // still needs *a* pin image, and a missing icon-image renders an
+          // invisible marker rather than a default one.
+          properties: {
+            id: group.id,
+            category: group.venueCategory ?? 'other'
+          }
         }))
       });
     }
@@ -2899,6 +3100,13 @@ export function ExploreMap({
           buildClusterBadgeImageData(),
           { pixelRatio: PIN_SCALE }
         );
+        for (const [category, color] of Object.entries(VENUE_CATEGORY_COLORS)) {
+          instance.addImage(
+            `connected-pin-venue-${category}`,
+            buildPinImageData(color),
+            { pixelRatio: PIN_SCALE }
+          );
+        }
         instance.addImage(
           'connected-pin-venue',
           buildPinImageData(VENUE_PIN_COLOR),
@@ -3070,7 +3278,11 @@ export function ExploreMap({
           filter: ['!', ['has', 'point_count']],
           layout: {
             visibility: venueVisible(),
-            'icon-image': 'connected-pin-venue',
+            'icon-image': [
+              'concat',
+              'connected-pin-venue-',
+              ['get', 'category']
+            ],
             'icon-size': [
               'interpolate',
               ['linear'],
@@ -3489,7 +3701,11 @@ export function ExploreMap({
               onSubmit={submitSearch}
               onClear={clearSearch}
               onClearConstraint={clearDerivedConstraint}
-              onPreview={setSelected}
+              onPreview={openEventRecord}
+              onShowOnMap={showOnMap}
+              onOpenVenue={openVenueRecord}
+              open={searchPanelOpen}
+              onClose={() => setSearchPanelOpen(false)}
               locale={locale}
               user={user}
               unreadMessagesCount={unreadMessagesCount}
@@ -3603,7 +3819,11 @@ export function ExploreMap({
                 onSubmit={submitSearch}
                 onClear={clearSearch}
                 onClearConstraint={clearDerivedConstraint}
-                onPreview={setSelected}
+                onPreview={openEventRecord}
+                onShowOnMap={showOnMap}
+                onOpenVenue={openVenueRecord}
+                open={searchPanelOpen}
+                onClose={() => setSearchPanelOpen(false)}
                 locale={locale}
               />
             </div>
@@ -6555,6 +6775,12 @@ interface VenueGroup {
   venueSecondaryCategories?: VenueCategory[];
   priceTier?: VenuePriceTier;
   imageUrl?: string;
+  // The credit the photo's licence requires. Carried alongside the URL, not
+  // derived from it: a Commons image is only legally usable *with* its
+  // credit, so the two have to arrive and be rendered together.
+  imageAttribution?: string;
+  openingHours?: string;
+  openingHoursObservedAt?: string;
 }
 
 function getVenueSummary(group: VenueGroup, locale: SupportedLocale): string {
@@ -7220,7 +7446,30 @@ function VenueDetailContent({
   onClose?: () => void;
 }) {
   const isFavorite = favoriteVenues.includes(group.id);
-  const eventBuckets = partitionVenueEvents(group.events, new Date());
+  // DEC-0019: the venue's own programming and what other people organize
+  // there are two different claims, and merging them lets a member's party
+  // read as the bar's own night. Ingested and verified-organizer events are
+  // the venue speaking; `community` is somebody hosting *at* the venue.
+  const venueProgramming = group.events.filter(
+    (event) => event.origin !== 'community'
+  );
+  const hostedEvents = group.events.filter(
+    (event) => event.origin === 'community'
+  );
+  const eventBuckets = partitionVenueEvents(venueProgramming, new Date());
+  const schedule = group.openingHours
+    ? parseOpeningHours(group.openingHours)
+    : undefined;
+  // A record old enough to have outlived a closure cannot support a claim
+  // about right now. The hours are still shown - they are the best Pulso has
+  // - but the open/closed pill is withheld rather than guessed.
+  const hoursFresh = group.openingHoursObservedAt
+    ? Date.now() - new Date(group.openingHoursObservedAt).getTime() <
+      OPENING_STATE_MAX_AGE_MS
+    : false;
+  const openingState = hoursFresh
+    ? resolveOpeningState(schedule, new Date())
+    : 'unknown';
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${group.point.latitude},${group.point.longitude}`;
 
   return (
@@ -7230,6 +7479,12 @@ function VenueDetailContent({
           imageUrl={group.imageUrl}
           category={group.categories[0] ?? 'other'}
         />
+        {/* Shown only when the licence actually requires a credit, which is
+            why it is read from the record rather than assumed: a venue's own
+            preview photo of itself carries none. */}
+        {group.imageUrl && group.imageAttribution && (
+          <p className="venue-detail-photo-credit">{group.imageAttribution}</p>
+        )}
         {onClose && (
           <button
             type="button"
@@ -7322,6 +7577,38 @@ function VenueDetailContent({
             ↗
           </span>
         </a>
+        {schedule && (
+          <div className="venue-detail-info-row venue-detail-hours">
+            <span className="venue-detail-info-icon" aria-hidden="true">
+              ◷
+            </span>
+            <span>
+              <small>
+                Horaires
+                {openingState !== 'unknown' && (
+                  <span
+                    className={`venue-open-pill venue-open-${openingState}`}
+                  >
+                    {openingState === 'open' ? 'Ouvert' : 'Fermé'}
+                  </span>
+                )}
+              </small>
+              <ul className="venue-hours-list">
+                {describeOpeningSchedule(schedule, locale).map((row) => (
+                  <li key={row.day}>
+                    <span>{row.day}</span>
+                    <span>{row.hours ?? 'Fermé'}</span>
+                  </li>
+                ))}
+              </ul>
+              <span className="venue-detail-info-hint">
+                {group.imageAttribution || group.openingHours
+                  ? 'Horaires publiés par la source du lieu, pas par Pulso.'
+                  : ''}
+              </span>
+            </span>
+          </div>
+        )}
         {group.priceTier && (
           <div className="venue-detail-info-row">
             <span className="venue-detail-info-icon" aria-hidden="true">
@@ -7391,6 +7678,42 @@ function VenueDetailContent({
             ))
           )}
         </div>
+
+        {/* DEC-0019. Kept below the venue's own programming and visibly
+            distinct, because the two are different claims: above is what the
+            venue itself has on, here is what other people are organizing in
+            it. Folding them into one list would let a member's party read as
+            the bar's own night, which is precisely the confusion a verified
+            organizer link exists to prevent. Rendered only when there is
+            something in it - an empty "nobody has organized anything here"
+            block on 975 venues would be noise. */}
+        {hostedEvents.length > 0 && (
+          <div className="venue-detail-programming-block venue-detail-programming-hosted">
+            <div className="venue-detail-programming-heading">
+              <div>
+                <span className="venue-detail-programming-kicker">
+                  Par la communauté
+                </span>
+                <h3>Événements organisés ici</h3>
+              </div>
+              <span className="venue-detail-programming-count">
+                {hostedEvents.length}
+              </span>
+            </div>
+            <p className="venue-detail-programming-note">
+              Organisés par des membres dans ce lieu. Ce n&apos;est pas la
+              programmation du lieu lui-même.
+            </p>
+            {hostedEvents.map((event) => (
+              <VenueDetailEventRow
+                key={event.id}
+                event={event}
+                locale={locale}
+                onSelect={() => onOpenEventForum(event.id)}
+              />
+            ))}
+          </div>
+        )}
 
         <VenueRatingWidget venueId={group.id} authToken={authToken} />
       </div>
@@ -8200,6 +8523,10 @@ function TopBar({
   onClear,
   onClearConstraint,
   onPreview,
+  onShowOnMap,
+  onOpenVenue,
+  open,
+  onClose,
   locale,
   user,
   unreadMessagesCount,
@@ -8221,6 +8548,13 @@ function TopBar({
   onClear: () => void;
   onClearConstraint: (key: SearchConstraintKey) => void;
   onPreview: (event: PublicEvent) => void;
+  onShowOnMap: (
+    point: { longitude: number; latitude: number },
+    kind?: 'event' | 'venue'
+  ) => void;
+  onOpenVenue: (venue: PublicVenue) => void;
+  open: boolean;
+  onClose: () => void;
   locale: SupportedLocale;
   user: User;
   unreadMessagesCount: number;
@@ -8249,6 +8583,10 @@ function TopBar({
           onClear={onClear}
           onClearConstraint={onClearConstraint}
           onPreview={onPreview}
+          onShowOnMap={onShowOnMap}
+          onOpenVenue={onOpenVenue}
+          open={open}
+          onClose={onClose}
           locale={locale}
         />
       </div>
@@ -8818,6 +9156,114 @@ function EventsPage({
  * field is an external link, handled by the same redirect an ingested
  * Ticketmaster event uses.
  */
+/**
+ * Picks a venue Pulso already knows, by name.
+ *
+ * Shared by the two surfaces that need to name a place - claiming one as its
+ * organizer, and hosting an event in one - because both used to be built on
+ * the events already loaded for the fourteen-day window. That worked while
+ * the directory only held venues an event had put there; with 1412 venues,
+ * most of which have no programming at all, it meant the Clébard could not be
+ * claimed by its own owner and no event could be attached to it.
+ */
+function VenueSearchPicker({
+  selected,
+  onSelect,
+  placeholder,
+  label
+}: {
+  selected: PublicVenue | undefined;
+  onSelect: (venue: PublicVenue | undefined) => void;
+  placeholder: string;
+  label: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<PublicVenue[]>([]);
+  const [state, setState] = useState<'idle' | 'searching' | 'empty'>('idle');
+
+  useEffect(() => {
+    const text = query.trim();
+    if (text.length < 3) {
+      setResults([]);
+      setState('idle');
+      return;
+    }
+    // Debounced: the picker searches as the visitor types, and a request per
+    // keystroke would be a request per keystroke.
+    const timer = setTimeout(() => {
+      setState('searching');
+      fetch(`${API_BASE_URL}/venues/search?query=${encodeURIComponent(text)}`)
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => {
+          const data = venueListResponseSchema.parse(json).data;
+          setResults(data);
+          setState(data.length === 0 ? 'empty' : 'idle');
+        })
+        .catch(() => {
+          setResults([]);
+          setState('empty');
+        });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  if (selected) {
+    return (
+      <div className="create-event-field">
+        <span>{label}</span>
+        <div className="venue-picker-selected">
+          <span>
+            <strong>{selected.name}</strong>
+            <small>{selected.address}</small>
+          </span>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              onSelect(undefined);
+              setQuery('');
+            }}
+          >
+            Changer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="create-event-field">
+      <span>{label}</span>
+      <input
+        type="search"
+        value={query}
+        placeholder={placeholder}
+        onChange={(changeEvent) => setQuery(changeEvent.target.value)}
+      />
+      {state === 'searching' && (
+        <small className="create-event-hint">Recherche…</small>
+      )}
+      {state === 'empty' && (
+        <small className="create-event-hint">
+          Aucun lieu de ce nom dans Pulso.
+        </small>
+      )}
+      {results.length > 0 && (
+        <ul className="venue-picker-results">
+          {results.map((venue) => (
+            <li key={venue.id}>
+              <button type="button" onClick={() => onSelect(venue)}>
+                <strong>{venue.name}</strong>
+                <small>{venue.address}</small>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function EventEditor({
   authToken,
   locale,
@@ -8842,6 +9288,13 @@ function EventEditor({
     existing?.addressHidden ? '' : (existing?.venue.address ?? '')
   );
   const [venueName, setVenueName] = useState(existing?.venue.name ?? '');
+  // Attaching to a place Pulso already knows is the default, and creating a
+  // new one the exception. The form used to do the opposite - it always sent
+  // `kind: 'new'` - so every created event minted a fresh venue row, which
+  // both scattered an organizer's nights across duplicate places and was a
+  // steady source of the duplicates db:merge-duplicate-venues exists to undo.
+  const [selectedVenue, setSelectedVenue] = useState<PublicVenue>();
+  const [newVenueOpen, setNewVenueOpen] = useState(false);
   const [addressHidden, setAddressHidden] = useState(
     existing?.addressHidden ?? false
   );
@@ -8871,7 +9324,7 @@ function EventEditor({
   const isEdit = Boolean(existing);
   // Editing keeps the event at its existing venue, so no lookup is needed;
   // creating one needs a resolved point before it can be pinned.
-  const addressReady = isEdit || Boolean(resolved);
+  const addressReady = isEdit || Boolean(selectedVenue) || Boolean(resolved);
 
   const canSubmit =
     Boolean(authToken) &&
@@ -8948,15 +9401,17 @@ function EventEditor({
           },
           body: JSON.stringify({
             ...payload,
-            venue: {
-              kind: 'new',
-              name: venueName.trim() || address.trim(),
-              address: address.trim(),
-              point: {
-                longitude: resolved!.longitude,
-                latitude: resolved!.latitude
-              }
-            }
+            venue: selectedVenue
+              ? { kind: 'existing', venueId: selectedVenue.id }
+              : {
+                  kind: 'new',
+                  name: venueName.trim() || address.trim(),
+                  address: address.trim(),
+                  point: {
+                    longitude: resolved!.longitude,
+                    latitude: resolved!.latitude
+                  }
+                }
           })
         });
 
@@ -9099,6 +9554,35 @@ function EventEditor({
             </small>
           </label>
         ) : (
+          <>
+            <VenueSearchPicker
+              selected={selectedVenue}
+              onSelect={(venue) => {
+                setSelectedVenue(venue);
+                if (venue) setNewVenueOpen(false);
+              }}
+              label="Lieu"
+              placeholder="Clébard, Quai des brumes, Foufounes…"
+            />
+            {selectedVenue ? (
+              <small className="create-event-hint">
+                L&apos;événement sera rattaché à ce lieu et apparaîtra sur sa
+                fiche. S&apos;il n&apos;est pas le tien, il y figurera comme
+                événement organisé par un membre, pas comme la programmation du
+                lieu.
+              </small>
+            ) : newVenueOpen ? null : (
+              <button
+                type="button"
+                className="btn-secondary create-event-new-venue"
+                onClick={() => setNewVenueOpen(true)}
+              >
+                Ce lieu n&apos;est pas dans Pulso — saisir une adresse
+              </button>
+            )}
+          </>
+        )}
+        {!isEdit && !selectedVenue && newVenueOpen && (
           <>
             <label className="create-event-field">
               <span>Nom du lieu (optionnel)</span>
@@ -9261,9 +9745,14 @@ function EventEditor({
  */
 /**
  * DEC-0018: where an account asks to become the verified organizer of a
- * venue, and where it sees the venues it already manages. The venue list
- * comes from the events already loaded for the fourteen-day window rather
- * than a venue search endpoint Pulso does not have.
+ * venue, and where it sees the venues it already manages.
+ *
+ * The venue is searched, not chosen from a dropdown. The dropdown was built
+ * from the events already loaded for the fourteen-day window, which meant a
+ * venue could only be claimed once somebody had programmed something there -
+ * so the Clébard, with no events, could not be claimed by its own owner.
+ * With 1412 venues and most of them unprogrammed, that excluded almost the
+ * entire directory.
  */
 function OrganizerStatusBlock({
   authToken
@@ -9275,8 +9764,7 @@ function OrganizerStatusBlock({
     verifiedVenues: Array<{ venueId: string; venueName: string }>;
     pendingRequests: OrganizerRequest[];
   }>();
-  const [venues, setVenues] = useState<VenueGroup[]>([]);
-  const [venueId, setVenueId] = useState('');
+  const [selectedVenue, setSelectedVenue] = useState<PublicVenue>();
   const [justification, setJustification] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -9298,28 +9786,10 @@ function OrganizerStatusBlock({
     reload();
   }, [reload]);
 
-  useEffect(() => {
-    const venueWindow = getVenueDiscoveryDateRange(new Date());
-    fetch(
-      `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, {
-        date: 'custom',
-        categories: [],
-        price: 'all',
-        customStartDate: venueWindow.start,
-        customEndDate: venueWindow.end
-      })}`
-    )
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) =>
-        setVenues(groupEventsByVenue(eventListResponseSchema.parse(json).data))
-      )
-      .catch(() => {});
-  }, []);
-
   const submit = () => {
     if (!authToken) return;
     const parsed = createOrganizerRequestSchema.safeParse({
-      venueId,
+      venueId: selectedVenue?.id ?? '',
       justification: justification.trim()
     });
     if (!parsed.success) {
@@ -9344,7 +9814,7 @@ function OrganizerStatusBlock({
         }
         if (!response.ok) throw new Error('failed');
         setJustification('');
-        setVenueId('');
+        setSelectedVenue(undefined);
         setOpen(false);
         reload();
       })
@@ -9400,20 +9870,12 @@ function OrganizerStatusBlock({
 
       {open && (
         <div className="organizer-status-form">
-          <label className="create-event-field">
-            <span>Lieu</span>
-            <select
-              value={venueId}
-              onChange={(changeEvent) => setVenueId(changeEvent.target.value)}
-            >
-              <option value="">Choisis un lieu…</option>
-              {venues.map((venue) => (
-                <option key={venue.id} value={venue.id}>
-                  {venue.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <VenueSearchPicker
+            selected={selectedVenue}
+            onSelect={setSelectedVenue}
+            label="Lieu"
+            placeholder="Cherche ton lieu par son nom…"
+          />
           <label className="create-event-field">
             <span>Ton lien avec ce lieu</span>
             <textarea
@@ -9442,6 +9904,191 @@ function OrganizerStatusBlock({
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+/**
+ * DEC-0019. The venue photos Pulso currently shows, and the one control that
+ * matters for them: take it down.
+ *
+ * Most of these are borrowed - the preview image a business publishes about
+ * itself, hotlinked rather than copied. Borrowing only stays defensible if
+ * "please stop" can be honoured immediately by whoever reads the request,
+ * which is why this sits in the console next to the organizer queue rather
+ * than in a shell command someone else has to be found to run.
+ *
+ * Removal is permanent by design: it writes a suppression the importer reads,
+ * so the next import cannot quietly restore what was taken down.
+ */
+function AdminVenuePhotosBlock({
+  authToken
+}: {
+  authToken: string | undefined;
+}) {
+  const [photos, setPhotos] = useState<AdminVenuePhoto[]>([]);
+  const [query, setQuery] = useState('');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState<string>();
+
+  const reload = useCallback(
+    (search: string) => {
+      if (!authToken) return;
+      const url = new URL(`${API_BASE_URL}/admin/venue-photos`);
+      if (search.trim()) url.searchParams.set('query', search.trim());
+      fetch(url.toString(), {
+        headers: { authorization: `Bearer ${authToken}` }
+      })
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => {
+          setPhotos(adminVenuePhotosResponseSchema.parse(json).data);
+          setState('success');
+        })
+        .catch(() => setState('error'));
+    },
+    [authToken]
+  );
+
+  useEffect(() => {
+    reload('');
+  }, [reload]);
+
+  const act = (venueId: string, suppress: boolean, reason?: string) => {
+    if (!authToken) return;
+    setBusy(venueId);
+    setError(undefined);
+    const url = `${API_BASE_URL}/admin/venue-photos/${venueId}/suppress`;
+    fetch(url, {
+      method: suppress ? 'POST' : 'DELETE',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      ...(suppress ? { body: JSON.stringify({ reason }) } : {})
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        reload(query);
+      })
+      .catch(() =>
+        setError(
+          suppress
+            ? "La photo n'a pas pu être retirée."
+            : "La photo n'a pas pu être réactivée."
+        )
+      )
+      .finally(() => setBusy(undefined));
+  };
+
+  const borrowed = photos.filter(
+    (photo) => photo.imageSource === 'website_og'
+  ).length;
+
+  return (
+    <section className="admin-photos">
+      <div className="admin-photos-header">
+        <h2>Photos des lieux</h2>
+        <p>
+          {borrowed} photo{borrowed > 1 ? 's' : ''} empruntée
+          {borrowed > 1 ? 's' : ''} au site officiel du lieu. Retirer est
+          définitif : l&apos;import ne la reprendra pas.
+        </p>
+        <form
+          className="admin-photos-search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            reload(query);
+          }}
+        >
+          <input
+            type="search"
+            value={query}
+            placeholder="Chercher un lieu…"
+            aria-label="Chercher un lieu par nom"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <button type="submit" className="btn-secondary">
+            Chercher
+          </button>
+        </form>
+      </div>
+
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">
+          Impossible de charger les photos pour le moment.
+        </p>
+      )}
+      {error && <p className="create-event-error">{error}</p>}
+
+      {state === 'success' && photos.length === 0 && (
+        <p className="list-view-empty">Aucune photo de lieu enregistrée.</p>
+      )}
+
+      <div className="admin-photos-list">
+        {photos.map((photo) => (
+          <div className="admin-photo-row" key={photo.venueId}>
+            {photo.imageUrl ? (
+              <img src={photo.imageUrl} alt="" className="admin-photo-thumb" />
+            ) : (
+              <span className="admin-photo-thumb admin-photo-thumb-empty" />
+            )}
+            <div className="admin-photo-main">
+              <strong>{photo.venueName}</strong>
+              <span className="admin-photo-source">
+                {photo.imageSource === 'website_og'
+                  ? 'Site officiel du lieu (empruntée)'
+                  : photo.imageSource === 'wikimedia_commons'
+                    ? 'Wikimedia Commons (licence libre)'
+                    : photo.imageSource === 'osm_image_tag'
+                      ? 'Tag image OpenStreetMap'
+                      : photo.suppressed
+                        ? 'Retirée'
+                        : 'Source inconnue'}
+              </span>
+              {photo.imageAttribution && (
+                <span className="admin-photo-credit">
+                  {photo.imageAttribution}
+                </span>
+              )}
+              {photo.pageUrl && (
+                <a
+                  className="admin-photo-link"
+                  href={photo.pageUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  Voir la source
+                </a>
+              )}
+            </div>
+            <div className="admin-request-actions">
+              {photo.suppressed ? (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={busy === photo.venueId}
+                  onClick={() => act(photo.venueId, false)}
+                >
+                  Réautoriser
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={busy === photo.venueId}
+                  onClick={() => act(photo.venueId, true, 'Retiré via console')}
+                >
+                  Retirer
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -9565,6 +10212,8 @@ function AdministrationPage({ authToken }: { authToken: string | undefined }) {
           </div>
         ))}
       </div>
+
+      <AdminVenuePhotosBlock authToken={authToken} />
     </div>
   );
 }
@@ -16216,6 +16865,10 @@ function SearchPanel({
   onClear,
   onClearConstraint,
   onPreview,
+  onShowOnMap,
+  onOpenVenue,
+  open,
+  onClose,
   locale
 }: {
   query: string;
@@ -16227,23 +16880,31 @@ function SearchPanel({
   onClear: () => void;
   onClearConstraint: (key: SearchConstraintKey) => void;
   onPreview: (event: PublicEvent) => void;
+  onShowOnMap: (
+    point: { longitude: number; latitude: number },
+    kind?: 'event' | 'venue'
+  ) => void;
+  onOpenVenue: (venue: PublicVenue) => void;
+  open: boolean;
+  onClose: () => void;
   locale: SupportedLocale;
 }) {
   // The results panel overlays the map, so clicking the map to dismiss it is
   // the obvious gesture - it used to require finding "Effacer la recherche",
   // which also throws the query away rather than just closing the panel.
   const panelRef = useRef<HTMLElement>(null);
-  const [dismissed, setDismissed] = useState(false);
-  useEffect(() => setDismissed(false), [result, error]);
+  // Same delayed-unmount hook the right-hand panel uses, so the dropdown
+  // fades out instead of vanishing on the frame the visitor clicks.
+  const dropdownMount = useTransitionedMount(
+    open && (processing || error || result !== undefined)
+  );
   useEffect(() => {
-    if ((!result && !error) || dismissed) return;
+    if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!panelRef.current?.contains(event.target as Node)) {
-        setDismissed(true);
-      }
+      if (!panelRef.current?.contains(event.target as Node)) onClose();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setDismissed(true);
+      if (event.key === 'Escape') onClose();
     };
     document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
@@ -16251,7 +16912,7 @@ function SearchPanel({
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [result, error, dismissed]);
+  }, [open, onClose]);
 
   return (
     <aside
@@ -16297,8 +16958,12 @@ function SearchPanel({
         </div>
       </form>
 
-      {(processing || ((error || result) && !dismissed)) && (
-        <div className="search-dropdown">
+      {dropdownMount.mounted && (
+        <div
+          className={`search-dropdown search-dropdown-transition ${
+            dropdownMount.visible ? 'search-dropdown-visible' : ''
+          }`}
+        >
           <div className="search-dropdown-content">
             {processing && (
               <p role="status">{translate(locale, 'search.processing')}</p>
@@ -16368,29 +17033,156 @@ function SearchPanel({
                 )}
               </div>
             )}
+            {result && result.venues.length > 0 && (
+              <div
+                className="search-results search-venue-results"
+                aria-label={translate(locale, 'search.venueResultsAria')}
+              >
+                <h3>{translate(locale, 'search.venueResults')}</h3>
+                {result.venues.map((venue) => (
+                  <div
+                    className="search-result-row search-result-row-venue"
+                    key={venue.id}
+                  >
+                    <span className="search-result-marker" aria-hidden="true">
+                      <svg viewBox="0 0 16 16" width="14" height="14">
+                        <path
+                          d="M8 1.5c-2.5 0-4.5 2-4.5 4.5 0 3.2 4.5 8.5 4.5 8.5s4.5-5.3 4.5-8.5c0-2.5-2-4.5-4.5-4.5Zm0 6.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </span>
+                    <span className="search-result-title">
+                      <span className="search-result-name">
+                        {venue.name}
+                        {venue.suggested && (
+                          <span
+                            className="search-result-badge"
+                            title={translate(
+                              locale,
+                              'search.suggestedVenueTitle'
+                            )}
+                          >
+                            {translate(locale, 'search.suggestedVenue')}
+                          </span>
+                        )}
+                      </span>
+                      <span className="search-result-meta">
+                        {venue.address}
+                      </span>
+                    </span>
+                    <span className="search-result-actions">
+                      <button
+                        type="button"
+                        aria-label={translate(locale, 'search.openRecordAria', {
+                          title: venue.name
+                        })}
+                        onClick={() => onOpenVenue(venue)}
+                      >
+                        {translate(locale, 'search.openRecord')}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={translate(locale, 'search.showOnMapAria', {
+                          title: venue.name
+                        })}
+                        onClick={() => onShowOnMap(venue.point, 'venue')}
+                      >
+                        {translate(locale, 'search.showOnMap')}
+                      </button>
+                    </span>
+                  </div>
+                ))}
+                {/* ODbL requires attribution to accompany the data. Rendered
+                    from the record's own field rather than hard-coded, so a
+                    future source brings its own notice. */}
+                {result.venues.some((venue) => venue.attribution) && (
+                  <p className="search-attribution">
+                    {[
+                      ...new Set(
+                        result.venues
+                          .map((venue) => venue.attribution)
+                          .filter((value): value is string => Boolean(value))
+                      )
+                    ].join(' · ')}
+                  </p>
+                )}
+              </div>
+            )}
             {result && result.data.length > 0 && (
               <div
                 className="search-results"
                 aria-label={translate(locale, 'search.resultsAria')}
               >
-                <h3>{translate(locale, 'search.results')}</h3>
+                <h3>
+                  {/* "Results on this map" is only true of a filter search. A
+                      named one deliberately looks past the viewport, so
+                      labelling it that way would misdescribe what ran. */}
+                  {result.searchText
+                    ? translate(locale, 'search.searchedFor', {
+                        text: result.searchText
+                      })
+                    : translate(locale, 'search.results')}
+                </h3>
                 {result.data.map(({ event, matchType }, index) => (
-                  <button
-                    type="button"
-                    key={event.id}
-                    aria-label={translate(locale, 'search.previewResultAria', {
-                      index: index + 1,
-                      matchType: translate(locale, `search.match.${matchType}`)
-                    })}
-                    onClick={() => {
-                      onPreview(event);
-                    }}
-                  >
-                    {translate(locale, 'search.previewResult', {
-                      title: event.title,
-                      matchType: translate(locale, `search.match.${matchType}`)
-                    })}
-                  </button>
+                  <div className="search-result-row" key={event.id}>
+                    {/* Category colour is the same one the map pin uses, so a
+                        result and its marker read as the same thing. */}
+                    <span
+                      className="search-result-swatch"
+                      style={{ background: CATEGORY_COLORS[event.category] }}
+                      aria-hidden="true"
+                    />
+                    <button
+                      type="button"
+                      className="search-result-title"
+                      aria-label={translate(
+                        locale,
+                        'search.previewResultAria',
+                        {
+                          index: index + 1,
+                          matchType: translate(
+                            locale,
+                            `search.match.${matchType}`
+                          )
+                        }
+                      )}
+                      onClick={() => onPreview(event)}
+                    >
+                      {/* Just the title. "Aperçu de X (exact)" read as a
+                          button label back when the whole row was one; next
+                          to an explicit "Ouvrir la fiche" it is noise.
+                          The date and venue are not decoration: a named
+                          search returns every performance of a run, and
+                          twelve rows reading "Disney's The Lion King" are
+                          impossible to tell apart without them. */}
+                      <span className="search-result-name">{event.title}</span>
+                      <span className="search-result-meta">
+                        {formatMontrealDateTime(event.startsAt, locale)} ·{' '}
+                        {event.venue.name}
+                      </span>
+                    </button>
+                    <span className="search-result-actions">
+                      <button
+                        type="button"
+                        aria-label={translate(locale, 'search.openRecordAria', {
+                          title: event.title
+                        })}
+                        onClick={() => onPreview(event)}
+                      >
+                        {translate(locale, 'search.openRecord')}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={translate(locale, 'search.showOnMapAria', {
+                          title: event.title
+                        })}
+                        onClick={() => onShowOnMap(event.venue.point)}
+                      >
+                        {translate(locale, 'search.showOnMap')}
+                      </button>
+                    </span>
+                  </div>
                 ))}
               </div>
             )}

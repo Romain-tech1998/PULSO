@@ -8,6 +8,8 @@
     "build": "tsc -p tsconfig.build.json",
     "db:migrate": "tsx src/migrate.ts",
     "db:seed": "tsx src/seed.ts",
+    "db:import-osm-venues": "tsx src/import-osm-venues.ts",
+    "db:venue-photos": "tsx src/venue-photos.ts",
     "db:seed-curated-venues": "tsx src/seed-curated-venues.ts",
     "db:categorize-known-venues": "tsx src/categorize-known-venues.ts",
     "db:ingest": "tsx src/ingest.ts",

@@ -1,5 +1,5 @@
 import type { PublicUser } from '@pulso/contracts';
-import type { EventCategory } from '@pulso/domain';
+import type { EventCategory, GroupModuleConfig } from '@pulso/domain';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
@@ -37,7 +37,8 @@ export class NotGroupModeratorError extends Error {
   }
 }
 
-export type GroupVisibility = 'open' | 'restricted';
+export type GroupVisibility = 'open' | 'restricted' | 'private_invite';
+export type GroupType = 'community' | 'event' | 'private_crew';
 export type GroupMembershipStatus = 'member' | 'pending';
 export type AttendanceResponse = 'yes' | 'maybe' | 'no';
 
@@ -60,7 +61,9 @@ export interface Group {
   // per event (Phase 4.8's "Rencontrer avant l'événement") - undefined for
   // every group created the normal way (DEC-0013, no event tie-in).
   eventId: string | undefined;
+  type: GroupType;
   visibility: GroupVisibility;
+  modulesConfig: GroupModuleConfig[];
   // The creator (Phase 4.10, DEC-0013 v1.2) - not a new account concept,
   // just groups.created_by exposed as a real, narrow moderator flag.
   isModerator: boolean;
@@ -142,10 +145,16 @@ export interface GroupsRepository {
     creatorId: string,
     name: string,
     description: string | undefined,
-    visibility: GroupVisibility
+    type: GroupType,
+    visibility: GroupVisibility,
+    modulesConfig: GroupModuleConfig[]
   ): Promise<Group>;
   listMyGroups(userId: string): Promise<Group[]>;
   getGroup(groupId: string, viewerId: string): Promise<Group | undefined>;
+  updateGroupModules(
+    groupId: string,
+    modulesConfig: GroupModuleConfig[]
+  ): Promise<void>;
   // Returns the resulting membership status - 'member' if the group is
   // open (joined immediately, same as before) or 'pending' if restricted
   // (a join request was recorded, awaiting the moderator).
@@ -235,7 +244,9 @@ interface GroupRow {
   created_by: string;
   created_at: string;
   event_id: string | null;
+  type: GroupType;
   visibility: GroupVisibility;
+  modules_config: GroupModuleConfig[];
   member_count: string;
   my_status: GroupMembershipStatus | null;
   is_moderator: boolean;
@@ -257,7 +268,9 @@ function toGroup(row: GroupRow): Group {
     createdBy: row.created_by,
     createdAt: new Date(row.created_at).toISOString(),
     eventId: row.event_id ?? undefined,
+    type: row.type,
     visibility: row.visibility,
+    modulesConfig: row.modules_config,
     memberCount: Number(row.member_count),
     isMember: row.my_status === 'member',
     myStatus: row.my_status ?? undefined,
@@ -288,7 +301,7 @@ function toGroup(row: GroupRow): Group {
 }
 
 const GROUP_SELECT_FIELDS = `
-  g.id, g.name, g.description, g.created_by, g.created_at, g.event_id, g.visibility,
+  g.id, g.name, g.description, g.created_by, g.created_at, g.event_id, g.type, g.visibility, g.modules_config,
   (SELECT COUNT(*) FROM group_memberships gm2 WHERE gm2.group_id = g.id AND gm2.status = 'member') AS member_count,
   (SELECT gm3.status FROM group_memberships gm3 WHERE gm3.group_id = g.id AND gm3.user_id = $VIEWER) AS my_status,
   (g.created_by = $VIEWER) AS is_moderator,
@@ -341,7 +354,9 @@ export class PostgresGroupsRepository implements GroupsRepository {
     creatorId: string,
     name: string,
     description: string | undefined,
-    visibility: GroupVisibility
+    type: GroupType,
+    visibility: GroupVisibility,
+    modulesConfig: GroupModuleConfig[]
   ): Promise<Group> {
     const client = await this.pool.connect();
     try {
@@ -354,15 +369,29 @@ export class PostgresGroupsRepository implements GroupsRepository {
         created_by: string;
         created_at: string;
         event_id: string | null;
+        type: GroupType;
         visibility: GroupVisibility;
+        modules_config: GroupModuleConfig[];
       }>(
-        `INSERT INTO groups (id, name, description, created_by, visibility)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, name, description, created_by, created_at, event_id, visibility`,
-        [id, name, description ?? null, creatorId, visibility]
+        `INSERT INTO groups (id, name, description, created_by, type, visibility, modules_config)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, name, description, created_by, created_at, event_id, type, visibility, modules_config`,
+        [
+          id,
+          name,
+          description ?? null,
+          creatorId,
+          type,
+          visibility,
+          JSON.stringify(modulesConfig)
+        ]
       );
       await client.query(
         `INSERT INTO group_memberships (group_id, user_id, status) VALUES ($1, $2, 'member')`,
+        [id, creatorId]
+      );
+      await client.query(
+        `INSERT INTO group_roles (group_id, user_id, role) VALUES ($1, $2, 'owner')`,
         [id, creatorId]
       );
       await client.query('COMMIT');
@@ -417,6 +446,16 @@ export class PostgresGroupsRepository implements GroupsRepository {
     return result.rows[0] ? toGroup(result.rows[0]) : undefined;
   }
 
+  async updateGroupModules(
+    groupId: string,
+    modulesConfig: GroupModuleConfig[]
+  ): Promise<void> {
+    await this.pool.query(
+      `UPDATE groups SET modules_config = $1 WHERE id = $2`,
+      [JSON.stringify(modulesConfig), groupId]
+    );
+  }
+
   async findOrCreateEventGroup(
     eventId: string,
     eventTitle: string,
@@ -430,8 +469,8 @@ export class PostgresGroupsRepository implements GroupsRepository {
       // created the group for this event (concurrent first click) - either
       // way, the SELECT below then finds the single row that actually won.
       await client.query(
-        `INSERT INTO groups (id, name, description, created_by, event_id, visibility)
-         VALUES ($1, $2, $3, $4, $5, 'open')
+        `INSERT INTO groups (id, name, description, created_by, event_id, type, visibility, modules_config)
+         VALUES ($1, $2, $3, $4, $5, 'event', 'open', '[]'::jsonb)
          ON CONFLICT (event_id) WHERE event_id IS NOT NULL DO NOTHING`,
         [randomUUID(), `Rencontre – ${eventTitle}`, null, userId, eventId]
       );
@@ -442,6 +481,11 @@ export class PostgresGroupsRepository implements GroupsRepository {
       groupId = existing.rows[0]!.id;
       await client.query(
         `INSERT INTO group_memberships (group_id, user_id, status) VALUES ($1, $2, 'member')
+         ON CONFLICT (group_id, user_id) DO NOTHING`,
+        [groupId, userId]
+      );
+      await client.query(
+        `INSERT INTO group_roles (group_id, user_id, role) VALUES ($1, $2, 'owner')
          ON CONFLICT (group_id, user_id) DO NOTHING`,
         [groupId, userId]
       );

@@ -1,4 +1,5 @@
 import type { PublicUser, User } from '@pulso/contracts';
+import { defaultModulesForGroupType } from '@pulso/domain';
 import type {
   AttendanceRepository,
   AuthRepository,
@@ -54,6 +55,16 @@ export function fakeEventRepository(
     findById: async () => undefined,
     findExternalDestination: async () => undefined,
     findVenuesWithoutUpcomingEvents: async () => [],
+    searchEvents: async () => [],
+    searchVenues: async () => [],
+    // False by default so no test silently exercises the live-lookup path:
+    // a test that wants it opts in, which keeps the network-shaped branch
+    // visible in the tests that actually cover it.
+    shouldLookUpVenue: async () => false,
+    saveLookedUpVenues: async () => [],
+    listVenuePhotos: async () => [],
+    suppressVenuePhoto: async () => false,
+    restoreVenuePhoto: async () => false,
     findByIds: async () => [],
     createEvent: async () => {
       throw new Error('createEvent is not stubbed in this test.');
@@ -306,6 +317,8 @@ export function fakeGroup(overrides: Partial<Group> = {}): Group {
     memberCount: 1,
     isMember: true,
     eventId: undefined,
+    type: 'community',
+    modulesConfig: defaultModulesForGroupType('community'),
     visibility: 'open',
     isModerator: true,
     myStatus: 'member',
@@ -334,8 +347,26 @@ export function fakeGroupsRepository(
   overrides: Partial<GroupsRepository> = {}
 ): GroupsRepository {
   return {
-    createGroup: async (creatorId, name, description, visibility) =>
-      fakeGroup({ createdBy: creatorId, name, description, visibility }),
+    // DEC-0015 added `type` before `visibility` and `modulesConfig` after it.
+    // The old stub still took four positional arguments, so it silently bound
+    // the new `type` to `visibility` - which is what broke the groups suite.
+    createGroup: async (
+      creatorId,
+      name,
+      description,
+      type,
+      visibility,
+      modulesConfig
+    ) =>
+      fakeGroup({
+        createdBy: creatorId,
+        name,
+        description,
+        type,
+        visibility,
+        modulesConfig
+      }),
+    updateGroupModules: async () => undefined,
     listMyGroups: async () => [],
     getGroup: async () => fakeGroup(),
     joinGroup: async () => 'member',

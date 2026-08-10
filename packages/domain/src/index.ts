@@ -97,6 +97,84 @@ export type TrustLabel = (typeof TRUST_LABELS)[number];
 export type DateFilterValue = (typeof DATE_FILTER_VALUES)[number];
 export type PriceFilterValue = (typeof PRICE_FILTER_VALUES)[number];
 
+/**
+ * The ordered module registry of a group workspace (DEC-0015, Accepted).
+ *
+ * A closed set, like EVENT_CATEGORIES: staff enable, disable and reorder
+ * these, they do not invent new ones. Typed here rather than left as the
+ * `any[]` the first implementation carried - `any` let a misspelled module
+ * name reach the database, where `modules_config` is jsonb and would accept
+ * it silently.
+ */
+export const GROUP_MODULES = [
+  'next_event',
+  'event_proposals',
+  'programme',
+  'attendance',
+  'meetup_point',
+  'checklist',
+  'members',
+  'discussion',
+  'join_requests',
+  'announcements',
+  'ride_coordination',
+  'expense_split',
+  'check_ins',
+  'party_meetups',
+  'photo_gallery',
+  'vibe_inspiration'
+] as const;
+export type GroupModule = (typeof GROUP_MODULES)[number];
+
+export const GROUP_TYPES = ['community', 'event', 'private_crew'] as const;
+export type GroupTypeValue = (typeof GROUP_TYPES)[number];
+
+export interface GroupModuleConfig {
+  module: GroupModule;
+  enabled: boolean;
+  /** Ordinal position in the group home. Contiguous from 0. */
+  position: number;
+}
+
+/**
+ * The starting layout for each group type, exactly as DEC-0015 specifies.
+ *
+ * Disabling a module hides it and never destroys its data, so every group
+ * carries the full registry - the ones outside its template simply start
+ * disabled, rather than being absent and having to be invented later.
+ */
+const GROUP_TYPE_TEMPLATES: Record<GroupTypeValue, readonly GroupModule[]> = {
+  community: [
+    'event_proposals',
+    'next_event',
+    'announcements',
+    'members',
+    'discussion'
+  ],
+  event: ['attendance', 'programme', 'meetup_point', 'checklist', 'discussion'],
+  private_crew: ['event_proposals', 'attendance', 'checklist', 'discussion']
+};
+
+export function defaultModulesForGroupType(
+  type: GroupTypeValue
+): GroupModuleConfig[] {
+  const template = GROUP_TYPE_TEMPLATES[type];
+  return [
+    ...template.map((module, position) => ({
+      module,
+      enabled: true,
+      position
+    })),
+    ...GROUP_MODULES.filter((module) => !template.includes(module)).map(
+      (module, index) => ({
+        module,
+        enabled: false,
+        position: template.length + index
+      })
+    )
+  ];
+}
+
 export const CATEGORY_COLORS: Record<EventCategory, string> = {
   music: '#EA3E81',
   nightlife: '#7336C1',
@@ -430,3 +508,8 @@ export function isEligibleForActiveDiscovery(
     startsAt <= window.endsAt
   );
 }
+
+// Opening hours are reached as `@pulso/domain/opening-hours`, the same way
+// localization is. Re-exporting them from here instead would give this entry
+// its first relative import, which the web bundler resolves literally and
+// cannot follow to a .ts file.

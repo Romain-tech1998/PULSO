@@ -445,6 +445,180 @@ h6 {
   color: var(--text-primary);
 }
 
+/* One result: a category cue, its title and date, then the two actions it
+   offers. A named search reaches beyond the visible map, so "Voir sur la
+   carte" is often the only way to actually get to a result. */
+.search-result-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.6rem;
+  padding-left: 0.5rem;
+  transition:
+    background 0.15s ease-out,
+    box-shadow 0.15s ease-out;
+}
+.search-result-row:hover,
+.search-result-row:focus-within {
+  background: var(--surface-raised);
+  box-shadow: inset 2px 0 0 0 var(--brand-pink);
+}
+/* Same colour as the event's map pin, so a row and its marker read as one
+   thing. Paired with the date/venue line below - never the only cue. */
+.search-result-swatch {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+/* Venues are a different kind of answer from events: no date, no price. The
+   pin glyph and the tinted disc say that before the label does. */
+.search-result-marker {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(115, 54, 193, 0.22);
+  color: var(--brand-pink);
+}
+.search-result-row-venue .search-result-name {
+  font-size: 0.92rem;
+}
+.search-result-row > .search-result-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  text-align: left;
+}
+.search-result-name,
+.search-result-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-result-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+/* An imported place Pulso has not reviewed. Deliberately quiet - it is a
+   caveat on the row, not a feature of it. */
+.search-result-badge {
+  margin-left: 0.45rem;
+  padding: 0.08rem 0.4rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 999px;
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+.search-attribution {
+  margin: 0.35rem 0 0;
+  padding: 0 0.75rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+/* A named search returns every date of a run; without these every row of a
+   twelve-night engagement reads identically. */
+.search-result-meta {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+span.search-result-title {
+  /* The venue rows use a span, not a button: the whole row is not itself
+     clickable there, only the two actions are. */
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.search-result-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  padding-right: 0.4rem;
+}
+/* Two actions, deliberately unequal: opening the record is what most people
+   want, so it carries the brand fill and reads as the primary. "Voir sur la
+   carte" stays an outline - one primary action per row. */
+.search-results .search-result-actions button {
+  padding: 0.36rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s ease-out,
+    border-color 0.15s ease-out,
+    color 0.15s ease-out;
+}
+.search-results .search-result-actions button:first-child {
+  background: linear-gradient(
+    92deg,
+    var(--brand-purple) 0%,
+    var(--brand-pink) 100%
+  );
+  color: #fff;
+}
+.search-results .search-result-actions button:first-child:hover {
+  filter: brightness(1.12);
+}
+.search-results .search-result-actions button:last-child {
+  border-color: var(--brand-border);
+  color: var(--text-secondary);
+  background: transparent;
+}
+.search-results .search-result-actions button:last-child:hover {
+  border-color: var(--brand-pink);
+  color: var(--text-primary);
+}
+.search-results .search-result-actions button:focus-visible,
+.search-result-row > .search-result-title:focus-visible {
+  outline: 2px solid var(--brand-pink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-result-row,
+  .search-results .search-result-actions button {
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Two pill buttons plus a title do not fit a phone width; stack them so
+     neither the title nor the actions get truncated to uselessness. */
+  .search-result-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.15rem 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  .search-result-row > .search-result-title {
+    flex-basis: calc(100% - 2.5rem);
+  }
+  .search-result-actions {
+    flex-basis: 100%;
+    padding: 0 0.75rem;
+  }
+  /* 44px minimum touch target - the desktop pill is 28px tall. */
+  .search-results .search-result-actions button {
+    min-height: 44px;
+    flex: 1;
+  }
+}
+
 .account-login-btn {
   padding: 0.5rem 1rem;
   border-radius: 999px;
@@ -4400,6 +4574,27 @@ h6 {
   background: rgba(9, 7, 13, 0.7);
   backdrop-filter: blur(12px);
 }
+/* The photo credit its licence requires. Top-right, above the gradient but
+   deliberately quiet: it has to be legible and present, not compete with the
+   venue name. Wikimedia's CC terms are satisfied by a visible credit, not by
+   a prominent one. */
+.venue-detail-photo-credit {
+  position: absolute;
+  z-index: 2;
+  top: 0.9rem;
+  right: 1.1rem;
+  max-width: 60%;
+  margin: 0;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(8, 7, 12, 0.55);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.68rem;
+  line-height: 1.3;
+  text-align: right;
+  backdrop-filter: blur(4px);
+}
+
 .venue-detail-hero-overlay {
   position: absolute;
   z-index: 2;
@@ -7873,14 +8068,47 @@ a.venue-detail-info-row:hover {
    smoothly in both directions (an @keyframes animation restarts from its
    `from` state every time, which is exactly what made closing feel abrupt -
    the panel had an entrance but no reverse). */
+/* Eased with a gentle overshoot-free curve rather than plain ease-out, and
+   given a little more room to travel: the panels read as arriving instead of
+   snapping into place. Exit is deliberately shorter than entry - a closing
+   panel that lingers feels unresponsive. */
 .panel-transition {
   transition:
-    transform 0.18s ease-out,
-    opacity 0.18s ease-out;
-  transform: translateX(16px);
+    transform 0.16s cubic-bezier(0.4, 0, 1, 1),
+    opacity 0.12s ease-in;
+  transform: translateX(24px);
   opacity: 0;
 }
+/* The search dropdown drops from the search field it belongs to, so it
+   travels on Y and scales very slightly from its top edge. */
+.search-dropdown-transition {
+  transform-origin: top center;
+  transition:
+    transform 0.14s cubic-bezier(0.4, 0, 1, 1),
+    opacity 0.11s ease-in;
+  transform: translateY(-8px) scale(0.985);
+  opacity: 0;
+  pointer-events: none;
+}
+.search-dropdown-transition.search-dropdown-visible {
+  transition:
+    transform 0.26s cubic-bezier(0.16, 0.84, 0.44, 1),
+    opacity 0.2s ease-out;
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-dropdown-transition,
+  .search-dropdown-transition.search-dropdown-visible {
+    transition: opacity 0.15s ease-out;
+    transform: none;
+  }
+}
 .panel-transition.panel-visible {
+  transition:
+    transform 0.28s cubic-bezier(0.16, 0.84, 0.44, 1),
+    opacity 0.22s ease-out;
   transform: translateX(0);
   opacity: 1;
 }
@@ -13484,4 +13712,185 @@ a.venue-detail-info-row:hover {
 }
 .maplibregl-ctrl-attrib-button:hover {
   opacity: 1;
+}
+
+/* DEC-0019 administration: the venue-photo queue. Deliberately plain - it is
+   an operator tool, and the only thing that has to be obvious is which photos
+   are borrowed and where the button to remove one is. */
+.admin-photos {
+  margin-top: 2.4rem;
+  padding-top: 1.8rem;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+.admin-photos-header h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+}
+.admin-photos-header p {
+  margin: 0 0 0.9rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.62));
+  font-size: 0.86rem;
+}
+.admin-photos-search {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.1rem;
+}
+.admin-photos-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 0.6rem;
+  background: var(--surface-raised, rgba(255, 255, 255, 0.04));
+  color: inherit;
+  font: inherit;
+}
+.admin-photos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.admin-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 0.75rem;
+  background: var(--surface-raised, rgba(255, 255, 255, 0.03));
+}
+.admin-photo-thumb {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 48px;
+  border-radius: 0.45rem;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+.admin-photo-thumb-empty {
+  display: block;
+}
+.admin-photo-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+.admin-photo-source,
+.admin-photo-credit {
+  color: var(--text-muted, rgba(255, 255, 255, 0.6));
+  font-size: 0.78rem;
+}
+.admin-photo-link {
+  align-self: flex-start;
+  color: inherit;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+@media (max-width: 640px) {
+  .admin-photo-row {
+    flex-wrap: wrap;
+  }
+}
+
+/* DEC-0019: the venue picker shared by event creation and the organizer
+   claim, plus opening hours and the community-programming block. */
+.venue-picker-results {
+  max-height: 230px;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: 0.6rem;
+  list-style: none;
+}
+.venue-picker-results li + li {
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.07));
+}
+.venue-picker-results button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.55rem 0.75rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.venue-picker-results button:hover,
+.venue-picker-results button:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+}
+.venue-picker-results small,
+.venue-picker-selected small {
+  display: block;
+  color: var(--text-muted, rgba(255, 255, 255, 0.6));
+  font-size: 0.78rem;
+}
+.venue-picker-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 0.6rem;
+  background: var(--surface-raised, rgba(255, 255, 255, 0.04));
+}
+.create-event-new-venue {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+}
+
+.venue-hours-list {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.venue-hours-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.2rem;
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+.venue-hours-list li span:last-child {
+  color: var(--text-muted, rgba(255, 255, 255, 0.66));
+  font-variant-numeric: tabular-nums;
+}
+/* Stated only when the record is recent enough to support it - see
+   OPENING_STATE_MAX_AGE_MS. */
+.venue-open-pill {
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.venue-open-open {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+}
+.venue-open-closed {
+  background: rgba(248, 113, 113, 0.16);
+  color: #f87171;
+}
+
+/* Visibly not the venue's own programming. */
+.venue-detail-programming-hosted {
+  border-left: 2px solid rgba(139, 127, 240, 0.55);
+  padding-left: 0.9rem;
+}
+.venue-detail-programming-note {
+  margin: 0 0 0.6rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.6));
+  font-size: 0.8rem;
 }

@@ -1,4 +1,5 @@
 import type {
+  AdminVenuePhoto,
   DirectDistanceQuery,
   MapBoundsQuery,
   PublicEvent,
@@ -7,7 +8,13 @@ import type {
 } from '@pulso/contracts';
 import { AFTER_WINDOW_END_HOUR, AFTER_WINDOW_START_HOUR } from '@pulso/domain';
 import type { DiscoveryWindow } from '@pulso/domain';
-import type { EventCategory, VenueCategory } from '@pulso/domain';
+import type {
+  EventCategory,
+  PriceFilterValue,
+  VenueCategory
+} from '@pulso/domain';
+import { matchVenues, OSM_ATTRIBUTION } from '@pulso/ingestion';
+import type { LiveVenueCandidate } from '@pulso/ingestion';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
@@ -21,6 +28,21 @@ export interface ExternalDestinationRecord {
 // DEC-0017. `includeCreated` defaults to false everywhere so the anonymous
 // surfaces stay the sourced directory by construction - a caller has to opt
 // in to account-created content, rather than a forgotten flag leaking it.
+export interface TextSearchQuery {
+  /** Raw fragment the visitor typed, e.g. "centre bell". Folded in SQL. */
+  text?: string;
+  /**
+   * A kind of place rather than a named one - "bar", "club", "théâtre".
+   * Combined with `text` by OR when both are present: someone typing
+   * "bar jazz" means either, and an AND would return almost nothing.
+   */
+  venueCategories?: VenueCategory[];
+  categories: EventCategory[];
+  price: PriceFilterValue;
+  /** Guards against a one-letter query returning the whole directory. */
+  limit?: number;
+}
+
 export interface EventQueryOptions {
   excludedCategories?: EventCategory[];
   includeCreated?: boolean;
@@ -65,6 +87,34 @@ export interface EventRepository {
     id: string
   ): Promise<ExternalDestinationRecord | undefined>;
   findVenuesWithoutUpcomingEvents(bounds: VenuesQuery): Promise<PublicVenue[]>;
+  // Free-text search, deliberately NOT bounded by the visible map: someone
+  // typing "Centre Bell" means the Centre Bell, not "the Centre Bell if it
+  // happens to be on screen". Bounded browsing stays findInBounds's job.
+  searchEvents(
+    query: TextSearchQuery,
+    window: DiscoveryWindow,
+    options?: EventQueryOptions
+  ): Promise<PublicEvent[]>;
+  searchVenues(
+    query: { text?: string; categories?: VenueCategory[] },
+    limit?: number
+  ): Promise<PublicVenue[]>;
+  // The live-lookup pair behind a search that found nothing. Split in two so
+  // the caller can decide *not* to go out to the network - the check is a
+  // local index hit, the save is what happens after a real answer comes back.
+  shouldLookUpVenue(text: string): Promise<boolean>;
+  saveLookedUpVenues(
+    text: string,
+    candidates: LiveVenueCandidate[]
+  ): Promise<PublicVenue[]>;
+  // DEC-0019 administration. Borrowed photos have to be removable by the
+  // person answering the request, not only by whoever can reach a shell.
+  listVenuePhotos(query?: string): Promise<AdminVenuePhoto[]>;
+  suppressVenuePhoto(
+    venueId: string,
+    options: { thisOneOnly?: boolean; reason?: string }
+  ): Promise<boolean>;
+  restoreVenuePhoto(venueId: string): Promise<boolean>;
   // Returns the created event as the caller will see it, so the client does
   // not have to guess what the server derived (origin, creator name).
   createEvent(userId: string, input: CreateEventInput): Promise<PublicEvent>;
@@ -636,6 +686,417 @@ export class PostgresEventRepository implements EventRepository {
   // curated venues and reviewed known venues receive one explicitly. The
   // client merges these landmarks with venues having events in its 14-day
   // programming window, so a known place remains navigable between events.
+  /**
+   * Matches a typed fragment against what a visitor would actually name: the
+   * event's own title, who is putting it on, and where it happens.
+   *
+   * No map envelope here, unlike findInBounds. A named search is an
+   * intention, not a browse - hiding the Centre Bell because the map happens
+   * to be over Verdun would read as "Pulso does not have it".
+   *
+   * Title matches sort first: someone typing "lion king" means the show, and
+   * a venue whose name merely contains the same words is a weaker answer.
+   */
+  async searchEvents(
+    query: TextSearchQuery,
+    window: DiscoveryWindow,
+    options: EventQueryOptions = {}
+  ): Promise<PublicEvent[]> {
+    const result = await this.pool.query<EventRow>(
+      `${publicEventSelect}
+       FROM events e
+       JOIN venues v ON v.id = e.venue_id
+       LEFT JOIN users creator ON creator.id = e.created_by_user_id
+       WHERE e.starts_at >= $1
+         AND e.starts_at <= $2
+         AND e.status IN ('scheduled', 'postponed')
+         AND ($3::event_category[] IS NULL OR e.category = ANY($3))
+         AND ($4::text = 'all' OR e.price_kind = $4)
+         AND ($5::boolean OR e.origin = 'directory')
+         -- Either half may be absent. When both are present they are OR'd:
+         -- "bar jazz" means either signal, and an AND would return nothing.
+         AND (
+           (
+             $6::text IS NOT NULL
+             AND (
+               pulso_fold(e.title) LIKE '%' || pulso_fold($6) || '%'
+               OR pulso_fold(e.organizer_name) LIKE '%' || pulso_fold($6) || '%'
+               OR pulso_fold(v.name) LIKE '%' || pulso_fold($6) || '%'
+             )
+           )
+           OR (
+             $7::text[] IS NOT NULL
+             AND (
+               v.category = ANY($7)
+               OR v.secondary_categories && $7
+             )
+           )
+         )
+       ORDER BY
+         -- A title match is the strongest signal, then the venue being the
+         -- kind of place asked for, then simply what happens soonest.
+         ($6::text IS NOT NULL
+          AND pulso_fold(e.title) LIKE '%' || pulso_fold($6) || '%') DESC,
+         ($7::text[] IS NOT NULL AND v.category = ANY($7)) DESC,
+         e.starts_at,
+         e.id
+       LIMIT $8`,
+      [
+        window.startsAt,
+        window.endsAt,
+        query.categories.length > 0 ? query.categories : null,
+        query.price,
+        options.includeCreated === true,
+        query.text ?? null,
+        query.venueCategories && query.venueCategories.length > 0
+          ? query.venueCategories
+          : null,
+        query.limit ?? 60
+      ]
+    );
+    return result.rows.map(toPublicEvent);
+  }
+
+  /**
+   * Venues matched by name or address. Unlike
+   * findVenuesWithoutUpcomingEvents, this does not require a hand-set
+   * category: a visitor searching "Newspeak" expects the place whether or
+   * not anybody has classified it yet.
+   */
+  async searchVenues(
+    query: { text?: string; categories?: VenueCategory[] },
+    limit = 12
+  ): Promise<PublicVenue[]> {
+    const categories =
+      query.categories && query.categories.length > 0 ? query.categories : null;
+    const text = query.text ?? null;
+    if (text === null && categories === null) return [];
+
+    const result = await this.pool.query<{
+      id: string;
+      name: string;
+      address: string;
+      category: VenueCategory | null;
+      secondary_categories: VenueCategory[];
+      image_url: string | null;
+      image_attribution: string | null;
+      opening_hours: string | null;
+      opening_hours_observed_at: Date | null;
+      longitude: number;
+      latitude: number;
+      review_state: string;
+      source: string;
+    }>(
+      // Ordered so a venue that is *both* named and of the right kind wins,
+      // then exact names, then prefixes. Venues with upcoming programming
+      // come before dormant ones: "bar" should surface places something is
+      // actually happening at.
+      `SELECT v.id, v.name, v.address, v.category, v.secondary_categories, v.image_url,
+              v.image_attribution, v.opening_hours, v.opening_hours_observed_at,
+              v.review_state, v.source,
+              ST_X(v.location) AS longitude, ST_Y(v.location) AS latitude,
+              EXISTS (
+                SELECT 1 FROM events e
+                WHERE e.venue_id = v.id
+                  AND e.starts_at >= now()
+                  AND e.status IN ('scheduled', 'postponed')
+              ) AS has_upcoming
+       FROM venues v
+       WHERE (
+           $1::text IS NOT NULL
+           AND (
+             pulso_fold(v.name) LIKE '%' || pulso_fold($1) || '%'
+             OR pulso_fold(v.address) LIKE '%' || pulso_fold($1) || '%'
+           )
+         )
+         OR (
+           $2::text[] IS NOT NULL
+           AND (v.category = ANY($2) OR v.secondary_categories && $2)
+         )
+       ORDER BY
+         (v.review_state = 'published') DESC,
+         has_upcoming DESC,
+         ($1::text IS NOT NULL AND pulso_fold(v.name) = pulso_fold($1)) DESC,
+         ($1::text IS NOT NULL
+          AND pulso_fold(v.name) LIKE pulso_fold($1) || '%') DESC,
+         length(v.name),
+         v.name
+       LIMIT $3`,
+      [text, categories, limit]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      address: row.address,
+      point: {
+        longitude: Number(row.longitude),
+        latitude: Number(row.latitude)
+      },
+      ...(row.category !== null ? { category: row.category } : {}),
+      ...(row.secondary_categories.length > 0
+        ? { secondaryCategories: row.secondary_categories }
+        : {}),
+      ...(row.image_url !== null ? { imageUrl: row.image_url } : {}),
+      ...(row.image_attribution !== null
+        ? { imageAttribution: row.image_attribution }
+        : {}),
+      ...(row.opening_hours !== null
+        ? { openingHours: row.opening_hours }
+        : {}),
+      ...(row.opening_hours_observed_at !== null
+        ? {
+            openingHoursObservedAt: row.opening_hours_observed_at.toISOString()
+          }
+        : {}),
+      ...(row.review_state !== 'published' ? { suggested: true } : {}),
+      ...(row.source === 'openstreetmap'
+        ? { attribution: OSM_ATTRIBUTION }
+        : {})
+    }));
+  }
+
+  /**
+   * Whether this query is worth asking a volunteer-run geocoder about.
+   *
+   * False once Pulso has already looked and found nothing. Without this, a
+   * typo that will never match anything - or a bot replaying the same query -
+   * becomes an unbounded stream of requests to Nominatim, which is exactly
+   * the behaviour its usage policy exists to prevent. A miss is not retried;
+   * if OSM later gains the place, the batch import is what picks it up.
+   */
+  async shouldLookUpVenue(text: string): Promise<boolean> {
+    const trimmed = text.trim();
+    if (trimmed.length < 3) return false;
+    const result = await this.pool.query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM venue_lookup_attempts
+         WHERE folded_query = pulso_fold($1)
+       ) AS exists`,
+      [trimmed]
+    );
+    return !result.rows[0]?.exists;
+  }
+
+  /**
+   * Persists what the live lookup found, and returns it as search results.
+   *
+   * The attempt is recorded whether or not anything was found, because "we
+   * looked and Montréal has no such place" is the more valuable of the two
+   * answers to remember.
+   *
+   * A candidate whose name Pulso already knows is dropped rather than
+   * inserted: the local search missed it on spelling, and writing a second
+   * row would turn a search miss into a permanent duplicate pin.
+   */
+  async saveLookedUpVenues(
+    text: string,
+    candidates: LiveVenueCandidate[]
+  ): Promise<PublicVenue[]> {
+    const saved: PublicVenue[] = [];
+
+    for (const candidate of candidates) {
+      // Ask the database for everything plausibly the same place - anything
+      // within 500 m, plus anything whose name overlaps wherever it sits -
+      // then decide in TypeScript with the same three-signal test the batch
+      // import uses. SQL cannot express "similar name AND nearby OR matching
+      // address", and the earlier attempts to approximate it in a WHERE
+      // clause both failed on real data: equality let "Cheval Blanc" through
+      // next to "Le Cheval Blanc", and substring matching would merge
+      // "Le Balcon" into "Balcon Vert".
+      const nearby = await this.pool.query<{
+        name: string;
+        address: string;
+        longitude: number;
+        latitude: number;
+      }>(
+        `SELECT name, address,
+                ST_X(location) AS longitude, ST_Y(location) AS latitude
+         FROM venues
+         WHERE external_ref IS DISTINCT FROM $4
+           AND (
+             ST_DWithin(
+               location::geography,
+               ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+               500
+             )
+             OR pulso_fold(name) LIKE '%' || pulso_fold($3) || '%'
+             OR pulso_fold($3) LIKE '%' || pulso_fold(name) || '%'
+           )
+         LIMIT 50`,
+        [
+          candidate.point.longitude,
+          candidate.point.latitude,
+          candidate.name,
+          candidate.osmRef
+        ]
+      );
+      const alreadyKnown = nearby.rows.some(
+        (row) =>
+          matchVenues(
+            {
+              name: row.name,
+              address: row.address,
+              point: {
+                longitude: Number(row.longitude),
+                latitude: Number(row.latitude)
+              }
+            },
+            candidate
+          ).same
+      );
+      if (alreadyKnown) continue;
+
+      // Only a place Pulso can classify earns a map pin (DEC-0014). The rest
+      // are still returned to the visitor who asked, as labelled suggestions.
+      const reviewState = candidate.category ? 'published' : 'candidate';
+      const result = await this.pool.query<{
+        id: string;
+        review_state: string;
+      }>(
+        `INSERT INTO venues
+           (id, name, address, location, category, secondary_categories,
+            source, review_state, external_ref)
+         VALUES (gen_random_uuid(), $1, $2,
+                 ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, ARRAY[]::text[],
+                 'openstreetmap', $6, $7)
+         ON CONFLICT (source, external_ref) WHERE external_ref IS NOT NULL
+         DO UPDATE SET name = EXCLUDED.name,
+                       address = EXCLUDED.address,
+                       location = EXCLUDED.location,
+                       category = COALESCE(EXCLUDED.category, venues.category)
+         RETURNING id, review_state`,
+        [
+          candidate.name,
+          candidate.address,
+          candidate.point.longitude,
+          candidate.point.latitude,
+          candidate.category ?? null,
+          reviewState,
+          candidate.osmRef
+        ]
+      );
+
+      const row = result.rows[0];
+      if (!row) continue;
+      saved.push({
+        id: row.id,
+        name: candidate.name,
+        address: candidate.address,
+        point: candidate.point,
+        ...(candidate.category ? { category: candidate.category } : {}),
+        ...(row.review_state !== 'published' ? { suggested: true } : {}),
+        attribution: OSM_ATTRIBUTION
+      });
+    }
+
+    await this.pool.query(
+      `INSERT INTO venue_lookup_attempts (folded_query, found_count)
+       VALUES (pulso_fold($1), $2)
+       ON CONFLICT (folded_query)
+       DO UPDATE SET attempted_at = now(), found_count = EXCLUDED.found_count`,
+      [text.trim(), saved.length]
+    );
+
+    return saved;
+  }
+
+  /**
+   * Venues that carry a photo, plus those whose photo has been taken down.
+   *
+   * Ordered borrowed-first. A Commons image is freely licensed and settled;
+   * the ones an administrator ever needs to act on are the website images,
+   * so those are what the console shows without anybody having to search.
+   */
+  async listVenuePhotos(query?: string): Promise<AdminVenuePhoto[]> {
+    const result = await this.pool.query<{
+      id: string;
+      name: string;
+      image_url: string | null;
+      image_source: string | null;
+      image_attribution: string | null;
+      image_page_url: string | null;
+      suppressed: boolean;
+    }>(
+      `SELECT v.id, v.name, v.image_url, v.image_source, v.image_attribution,
+              v.image_page_url,
+              EXISTS (
+                SELECT 1 FROM venue_photo_suppressions s WHERE s.venue_id = v.id
+              ) AS suppressed
+       FROM venues v
+       WHERE (v.image_url IS NOT NULL
+              OR EXISTS (
+                SELECT 1 FROM venue_photo_suppressions s
+                WHERE s.venue_id = v.id
+              ))
+         AND ($1::text IS NULL
+              OR pulso_fold(v.name) LIKE '%' || pulso_fold($1) || '%')
+       ORDER BY (v.image_source = 'website_og') DESC,
+                (v.image_source = 'osm_image_tag') DESC,
+                v.name
+       LIMIT 200`,
+      [query ?? null]
+    );
+    return result.rows.map((row) => ({
+      venueId: row.id,
+      venueName: row.name,
+      ...(row.image_url !== null ? { imageUrl: row.image_url } : {}),
+      ...(row.image_source !== null ? { imageSource: row.image_source } : {}),
+      ...(row.image_attribution !== null
+        ? { imageAttribution: row.image_attribution }
+        : {}),
+      ...(row.image_page_url !== null ? { pageUrl: row.image_page_url } : {}),
+      suppressed: row.suppressed
+    }));
+  }
+
+  /**
+   * Takes a photo down, and keeps it down.
+   *
+   * The suppression row is the point. Clearing `image_url` alone would be
+   * undone by the next import, which would re-fetch the very image somebody
+   * asked Pulso to stop showing - so the removal has to be a fact the
+   * importer reads, not just an absence it fills back in.
+   */
+  async suppressVenuePhoto(
+    venueId: string,
+    options: { thisOneOnly?: boolean; reason?: string }
+  ): Promise<boolean> {
+    const venue = await this.pool.query<{ image_url: string | null }>(
+      'SELECT image_url FROM venues WHERE id = $1',
+      [venueId]
+    );
+    const row = venue.rows[0];
+    if (!row) return false;
+
+    // A narrow suppression needs a URL to name. With no photo currently set
+    // there is nothing to narrow to, so the request becomes the broad one -
+    // which is the safe direction to resolve the ambiguity in.
+    const imageUrl = options.thisOneOnly ? row.image_url : null;
+    await this.pool.query(
+      `INSERT INTO venue_photo_suppressions (venue_id, image_url, reason)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (venue_id, coalesce(image_url, ''))
+       DO UPDATE SET reason = EXCLUDED.reason, suppressed_at = now()`,
+      [venueId, imageUrl, options.reason ?? null]
+    );
+    await this.pool.query(
+      `UPDATE venues
+       SET image_url = NULL, image_source = NULL,
+           image_attribution = NULL, image_page_url = NULL
+       WHERE id = $1`,
+      [venueId]
+    );
+    return true;
+  }
+
+  async restoreVenuePhoto(venueId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      'DELETE FROM venue_photo_suppressions WHERE venue_id = $1',
+      [venueId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async findVenuesWithoutUpcomingEvents(
     bounds: VenuesQuery
   ): Promise<PublicVenue[]> {
@@ -646,6 +1107,10 @@ export class PostgresEventRepository implements EventRepository {
       category: VenueCategory | null;
       secondary_categories: VenueCategory[];
       image_url: string | null;
+      image_attribution: string | null;
+      opening_hours: string | null;
+      opening_hours_observed_at: Date | null;
+      source: string;
       longitude: number;
       latitude: number;
     }>(
@@ -653,6 +1118,8 @@ export class PostgresEventRepository implements EventRepository {
       // 4.17) - selected purely to drive ORDER BY, never mapped into the
       // returned PublicVenue below, since no rating is shown publicly yet.
       `SELECT v.id, v.name, v.address, v.category, v.secondary_categories, v.image_url,
+              v.image_attribution, v.opening_hours, v.opening_hours_observed_at,
+              v.source,
               ST_X(v.location) AS longitude, ST_Y(v.location) AS latitude
        FROM venues v
        LEFT JOIN (
@@ -662,6 +1129,9 @@ export class PostgresEventRepository implements EventRepository {
        ) r ON r.venue_id = v.id
        WHERE v.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
          AND v.category IS NOT NULL
+         -- A map pin asserts Pulso stands behind the record; unreviewed
+         -- imports are offered in search instead (DEC-0006).
+         AND v.review_state = 'published'
        ORDER BY r.average DESC NULLS LAST, v.name`,
       [bounds.west, bounds.south, bounds.east, bounds.north]
     );
@@ -677,7 +1147,24 @@ export class PostgresEventRepository implements EventRepository {
       ...(row.secondary_categories.length > 0
         ? { secondaryCategories: row.secondary_categories }
         : {}),
-      ...(row.image_url !== null ? { imageUrl: row.image_url } : {})
+      ...(row.image_url !== null ? { imageUrl: row.image_url } : {}),
+      ...(row.image_attribution !== null
+        ? { imageAttribution: row.image_attribution }
+        : {}),
+      ...(row.opening_hours !== null
+        ? { openingHours: row.opening_hours }
+        : {}),
+      ...(row.opening_hours_observed_at !== null
+        ? {
+            openingHoursObservedAt: row.opening_hours_observed_at.toISOString()
+          }
+        : {}),
+      // ODbL attribution has to travel with the data wherever it is shown,
+      // and a map pin is a place it is shown. Previously only search carried
+      // it, because only search could surface an OSM venue.
+      ...(row.source === 'openstreetmap'
+        ? { attribution: OSM_ATTRIBUTION }
+        : {})
     }));
   }
 }

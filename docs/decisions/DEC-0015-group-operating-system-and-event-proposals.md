@@ -1,8 +1,8 @@
 # DEC-0015 — Group Operating System and Event Proposals
 
 **Identifier:** DEC-0015  
-**Version:** 0.1  
-**Status:** Proposed  
+**Version:** 1.0  
+**Status:** Accepted  
 **Dependencies:** PDR-0001, PDR-0002, DEC-0010, DEC-0011, DEC-0012, DEC-0013, PRD-0001, RFC-0001
 
 ## Problem
@@ -11,7 +11,7 @@ Groups are intended to become the main connected-product surface in Pulso. A gro
 
 DEC-0013 v1.2 currently authorizes permanent and event-linked groups, open or restricted membership, a creator-moderator limited to join-request approval, and four operational modules: meetup point, schedule, attendance and checklist. It does not authorize configurable modules, multiple staff roles, private/invite-only groups, event proposals, paid targeting, group editing or extended moderation.
 
-This proposal defines those future capabilities for product review. It does not make them Accepted and no production implementation may rely on them until a later accepted version supersedes the relevant DEC-0013 boundaries.
+This decision officially authorizes these future capabilities and makes them part of the active product implementation, superseding the relevant DEC-0013 boundaries.
 
 ## Product model proposed
 
@@ -54,7 +54,13 @@ The group home becomes an ordered module registry. Discussion remains a core sur
 - members;
 - group discussion;
 - join-request queue;
-- announcements reserved for staff.
+- announcements reserved for staff;
+- ride coordination (carpool/transit for distant venues);
+- expense split (lightweight bill tracker for group tickets/pre-drinks);
+- static check-ins (temporary "where are you" manual location sharing);
+- pre/after party meetup points;
+- shared photo gallery (post-event memories);
+- vibe and dress code inspiration.
 
 Each group type receives a sensible template. A community group starts with proposed events, next event, announcements, members and discussion. An event group starts with attendance, programme, meetup point, checklist and discussion. A private crew starts with proposals, attendance, checklist and discussion.
 
@@ -138,7 +144,9 @@ Opt-in sponsored proposal inbox, explicit labels, relevance controls, frequency 
 - Whether one or several events may be “active” simultaneously.
 - Commercial eligibility thresholds and the revenue model for group owners, if any.
 - Retention and deletion rules for private groups, audit logs and declined proposals.
+- Whether to restrict certain advanced modules (e.g. expense split) to private crews rather than large community groups.
+- Moderation, privacy, and storage limits for UGC in the shared photo gallery.
 
 ## Current implementation boundary
 
-Until this proposal is accepted, Pulso continues to enforce DEC-0013 v1.2: open or public-restricted groups, creator-only approval of join requests, no role assignment, no private discovery exclusion, no module configuration, no group editing/deletion, no extended content moderation and no sponsored/event-proposal workflow.
+This proposal is now **Accepted**. The development of the modular group workspace, roles, event proposals, and the additional modules (carpool, expenses, etc.) is authorized for the current implementation phase.

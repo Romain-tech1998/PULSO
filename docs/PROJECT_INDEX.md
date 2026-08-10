@@ -75,6 +75,7 @@ Les échanges du projet servent à préparer ou réviser les documents, mais les
 | DEC-0011 | Social Graph Phase 2: Friends and Participation Visibility | 1.0 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, DEC-0007, DEC-0010, UX-0001, PRD-0001, RFC-0001 | Aucune pour ce périmètre ; follow, forum, MP et notifications restent hors de portée et nécessitent leurs propres décisions |
 | DEC-0012 | Forum and Messaging Phase 3: Per-Event Forum, Direct Messages, and Reporting | 1.1 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, DEC-0007, DEC-0010, DEC-0011, UX-0001, PRD-0001, RFC-0001 | Aucune modération active, aucune limitation de débit ; à ajouter si un abus est constaté |
 | DEC-0013 | Groups | 1.1 | Accepted | PDR-0001, PDR-0002, MVP-0001, DEC-0001, DEC-0007, DEC-0010, DEC-0011, DEC-0012, UX-0001, PRD-0001, RFC-0001 | Annuaire public de groupes autorisé en principe (v1.1) mais pas encore construit ; rendez-vous/programme/sondage/checklist restent hors de portée |
+| DEC-0019 | Venue Directory from OpenStreetMap | 1.0 | Accepted | DEC-0006, DEC-0014, DEC-0018, PRD-0001, RFC-0001 | Publication automatique autorisée pour les lieux OSM sous condition (nom, adresse, coordonnées, catégorie, 30 km) ; la règle DEC-0006 reste entière pour les événements. Photos empruntées aux sites officiels, retirables définitivement depuis la console |
 
 ## Artefacts de recherche
 

@@ -8,6 +8,7 @@ import {
   FRESHNESS_STATES,
   LOCATION_CONFIDENCE_STATES,
   PRICE_FILTER_VALUES,
+  GROUP_MODULES,
   TRUST_LABELS,
   VENUE_CATEGORIES
 } from '@pulso/domain';
@@ -191,7 +192,33 @@ export const publicVenueSchema = z.object({
   // hand-set" rule as `category`.
   secondaryCategories: z.array(z.enum(VENUE_CATEGORIES)).optional(),
   // A real photo of the venue, when a source actually provides one.
-  imageUrl: z.url().optional()
+  imageUrl: z.url().optional(),
+  // The credit the photo's licence requires, e.g. "Photo : Jean Gagnon
+  // (CC BY-SA 4.0)". Separate from `attribution` below, which credits the
+  // *data*: a venue can carry an OpenStreetMap record and a Wikimedia
+  // Commons photograph by different authors under different licences, and
+  // collapsing the two would misattribute both. Absent when the source
+  // imposes no credit - a venue's own preview image of itself does not need
+  // to be captioned with the venue's name.
+  imageAttribution: z.string().min(1).optional(),
+  // An imported place Pulso has not reviewed yet (DEC-0006). Search offers
+  // these as labelled suggestions; the map never shows them, because a pin
+  // is a claim that Pulso stands behind the record.
+  suggested: z.boolean().optional(),
+  // Required by the source licence when present. OpenStreetMap data is ODbL:
+  // attribution has to travel with the data, so it lives on the record
+  // rather than being hard-coded into one component.
+  attribution: z.string().min(1).optional(),
+  // The source's own opening-hours rule, unparsed. Sent verbatim so the
+  // client parses it with the same @pulso/domain code the server would use,
+  // and so "open now" is computed against the viewer's real clock rather
+  // than baked into a response that goes stale minutes later.
+  openingHours: z.string().min(1).optional(),
+  // When that rule was last read from the source. Present whenever
+  // openingHours is: Pulso states "open now" from this data, and a claim
+  // about the present made from a record of unknown age is not one the
+  // interface should be able to make by accident.
+  openingHoursObservedAt: z.iso.datetime().optional()
 });
 
 export const venueListResponseSchema = z.object({
@@ -701,7 +728,12 @@ export const createReportRequestSchema = z.object({
 // per event ("Rencontrer avant l'événement") - undefined for every group
 // created the normal way. `meetupVenue` (Phase 4.10) is derived from that
 // same linked event's real venue, never entered by hand.
-export const groupVisibilitySchema = z.enum(['open', 'restricted']);
+export const groupVisibilitySchema = z.enum([
+  'open',
+  'restricted',
+  'private_invite'
+]);
+export const groupTypeSchema = z.enum(['community', 'event', 'private_crew']);
 export const groupMembershipStatusSchema = z.enum(['member', 'pending']);
 export const attendanceResponseSchema = z.enum(['yes', 'maybe', 'no']);
 
@@ -721,7 +753,9 @@ export const groupSchema = z.object({
   memberCount: z.number().int().min(0),
   isMember: z.boolean(),
   eventId: z.uuid().optional(),
+  type: groupTypeSchema,
   visibility: groupVisibilitySchema,
+  modulesConfig: z.array(z.any()),
   isModerator: z.boolean(),
   myStatus: groupMembershipStatusSchema.optional(),
   pendingRequestCount: z.number().int().min(0).optional(),
@@ -733,10 +767,30 @@ export const groupSchema = z.object({
   pinned: z.boolean()
 });
 
+// DEC-0015's module registry, typed rather than `z.array(z.any())`: `any`
+// let a misspelled module name through the contract and into `modules_config`
+// jsonb, where nothing would ever reject it.
+export const groupModuleConfigSchema = z
+  .object({
+    module: z.enum(GROUP_MODULES),
+    enabled: z.boolean(),
+    position: z.number().int().min(0)
+  })
+  .strict();
+
 export const createGroupRequestSchema = z.object({
   name: z.string().min(1).max(80),
   description: z.string().min(1).max(500).optional(),
-  visibility: groupVisibilitySchema.optional()
+  // Defaulted, not required. DEC-0013 groups predate the type concept and
+  // every existing client still creates one without naming a type - making
+  // it mandatory rejected them all with a 400.
+  type: groupTypeSchema.default('community'),
+  visibility: groupVisibilitySchema.optional(),
+  modulesConfig: z.array(groupModuleConfigSchema).optional()
+});
+
+export const updateGroupModulesRequestSchema = z.object({
+  modulesConfig: z.array(groupModuleConfigSchema)
 });
 
 export const setGroupPinnedRequestSchema = z.object({
@@ -1048,6 +1102,36 @@ export const resolveOrganizerRequestSchema = z.object({
   approve: z.boolean()
 });
 
+// DEC-0019. The administration view of an imported venue photo: what is
+// shown, where it came from, and whether it has already been taken down.
+//
+// `imageUrl` and `pageUrl` are both present because they answer different
+// questions - the first is what a visitor sees, the second is the page an
+// administrator opens to check a licence or answer a takedown request.
+export const adminVenuePhotoSchema = z.object({
+  venueId: z.uuid(),
+  venueName: z.string().min(1),
+  imageUrl: z.url().optional(),
+  imageSource: z.string().min(1).optional(),
+  imageAttribution: z.string().min(1).optional(),
+  pageUrl: z.url().optional(),
+  // True once a suppression is in force, so the console can show that a
+  // venue is deliberately photo-less rather than merely unlucky.
+  suppressed: z.boolean()
+});
+
+export const adminVenuePhotosResponseSchema = z.object({
+  data: z.array(adminVenuePhotoSchema)
+});
+
+export const suppressVenuePhotoRequestSchema = z.object({
+  // Absent means "no photo for this venue, ever", which is what a business
+  // asking Pulso to stop using its pictures means. True narrows it to the
+  // image currently shown, for the case where a better one should replace it.
+  thisOneOnly: z.boolean().optional(),
+  reason: z.string().max(500).optional()
+});
+
 // What the signed-in account may currently do as an organizer: the venues
 // it is verified for, plus any request still awaiting a decision.
 export const myOrganizerStatusResponseSchema = z.object({
@@ -1150,6 +1234,13 @@ export type VenueFavoriteCountsResponse = z.infer<
   typeof venueFavoriteCountsResponseSchema
 >;
 export type SetVenueRatingRequest = z.infer<typeof setVenueRatingRequestSchema>;
+export type AdminVenuePhoto = z.infer<typeof adminVenuePhotoSchema>;
+export type AdminVenuePhotosResponse = z.infer<
+  typeof adminVenuePhotosResponseSchema
+>;
+export type SuppressVenuePhotoRequest = z.infer<
+  typeof suppressVenuePhotoRequestSchema
+>;
 export type MyVenueRating = z.infer<typeof myVenueRatingSchema>;
 export type MyVenueRatingResponse = z.infer<typeof myVenueRatingResponseSchema>;
 export type VenueRatingSummariesResponse = z.infer<
@@ -1331,6 +1422,13 @@ export const intelligentSearchRequestSchema = z
     query: z.string().trim().min(1).max(240),
     locale: z.enum(SUPPORTED_LOCALES),
     bounds: mapBoundsSchema,
+    near: z
+      .object({
+        longitude: z.number().min(-180).max(180),
+        latitude: z.number().min(-90).max(90),
+        radiusMeters: z.number().positive().max(50_000)
+      })
+      .optional(),
     manualFilters: searchFiltersSchema,
     disabledDerivedKeys: z
       .array(searchConstraintKeySchema)
@@ -1361,7 +1459,7 @@ export const intelligentSearchResponseSchema = z
   .object({
     interpretation: z
       .object({
-        engine: z.literal('deterministic'),
+        engine: z.enum(['deterministic', 'intelligent']),
         language: z.enum(SUPPORTED_LOCALES),
         constraints: z.array(searchExplanationSchema),
         rankingSignals: z.array(searchExplanationSchema),
@@ -1374,6 +1472,13 @@ export const intelligentSearchResponseSchema = z
       'no_reliable_result',
       'clarification'
     ]),
+    suggestedLocation: z
+      .object({
+        longitude: z.number().min(-180).max(180),
+        latitude: z.number().min(-90).max(90)
+      })
+      .optional(),
+    suggestedNearMe: z.boolean().optional(),
     message: searchMessageSchema,
     clarification: searchMessageSchema.optional(),
     data: z.array(
@@ -1385,7 +1490,17 @@ export const intelligentSearchResponseSchema = z
           differences: z.array(searchMessageSchema)
         })
         .strict()
-    )
+    ),
+    // Venues matched by name or address when the query named a place rather
+    // than describing an evening ("Centre Bell", "Newspeak"). A venue is not
+    // an event and never appears in `data`: it has no date, no price and no
+    // trust label, so folding the two into one list would mean inventing
+    // those fields. The client opens a venue's own record instead.
+    venues: z.array(publicVenueSchema).default([]),
+    // The free-text fragment the interpreter matched on, when there was one.
+    // Present so the interface can say what it searched for rather than
+    // leaving the visitor to guess why these results came back.
+    searchText: z.string().min(1).optional()
   })
   .strict();
 

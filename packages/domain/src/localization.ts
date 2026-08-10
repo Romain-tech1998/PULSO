@@ -43,9 +43,22 @@ export const SEARCH_MESSAGE_CODES = [
   'search.reason.lowerPriceUnknown',
   'search.reason.trust',
   'search.reason.eligible',
+  'search.reason.venueKind',
+  'search.reason.venueKindSecondary',
+  'search.reason.nameMatch',
   'search.difference.price',
   'search.difference.category',
-  'search.difference.excludedCategory'
+  'search.difference.excludedCategory',
+  // A named search that matched nothing, answered from the rest of the query
+  // instead of dead-ending. Carries the name so the visitor can see which
+  // part of what they asked for went unanswered.
+  'search.difference.searchText',
+  // A named search Pulso's own directory could not answer, so it asked
+  // OpenStreetMap and kept what came back. Said plainly rather than folded
+  // into the ordinary result count: these places arrived a second ago and
+  // have no programming attached, and presenting them as a normal hit would
+  // overstate what Pulso knows about them.
+  'search.message.foundLive'
 ] as const;
 
 export type SearchMessageCode = (typeof SEARCH_MESSAGE_CODES)[number];
@@ -177,6 +190,16 @@ const en = {
   'search.clear': 'Clear',
   'search.previewResultAria': 'Preview search result {index}: {matchType}',
   'search.previewResult': 'Preview {title} ({matchType})',
+  'search.openRecord': 'Open record',
+  'search.openRecordAria': 'Open the record for {title}',
+  'search.showOnMap': 'Show on map',
+  'search.showOnMapAria': 'Show {title} on the map',
+  'search.venueResults': 'Venues',
+  'search.suggestedVenue': 'Suggestion',
+  'search.suggestedVenueTitle':
+    'Imported from OpenStreetMap and not yet reviewed by Pulso.',
+  'search.venueResultsAria': 'Venues matching the search',
+  'search.searchedFor': 'Searched for “{text}”',
   'search.match.exact': 'exact',
   'search.match.alternative': 'alternative',
   'search.previewClosed':
@@ -239,6 +262,10 @@ const en = {
     'No reliable exact match or one-step explained alternative is available in this map area.',
   'search.message.montrealOnly':
     'Pulso only supports Montreal for now. Other cities will be added later!',
+  'search.message.foundLive.one':
+    'Not in Pulso yet. 1 matching place was found in OpenStreetMap and added to the directory.',
+  'search.message.foundLive.many':
+    'Not in Pulso yet. {count} matching places were found in OpenStreetMap and added to the directory.',
   'search.reason.category': 'Category matches: {category}',
   'search.reason.price': 'Price matches: {price}',
   'search.reason.date': 'Date matches: {date}',
@@ -256,6 +283,11 @@ const en = {
     'Event category differs from the requested category filter.',
   'search.difference.excludedCategory':
     'Event category was explicitly excluded in the request.',
+  'search.reason.venueKind': 'Held at a {venue}.',
+  'search.reason.venueKindSecondary': 'Venue is also a {venue}.',
+  'search.reason.nameMatch': 'Name matches “{text}”.',
+  'search.difference.searchText':
+    'Nothing is named “{text}”. These match the rest of your search.',
   'favorites.showAll': 'Favorites',
   'favorites.showFavoritesOnly': 'My favorites',
   'favorites.add': 'Add to favorites',
@@ -398,6 +430,16 @@ const fr = {
   'search.previewResultAria':
     'Aperçu du résultat de recherche {index} : {matchType}',
   'search.previewResult': 'Aperçu de {title} ({matchType})',
+  'search.openRecord': 'Ouvrir la fiche',
+  'search.openRecordAria': 'Ouvrir la fiche de {title}',
+  'search.showOnMap': 'Voir sur la carte',
+  'search.showOnMapAria': 'Voir {title} sur la carte',
+  'search.venueResults': 'Lieux',
+  'search.suggestedVenue': 'Suggestion',
+  'search.suggestedVenueTitle':
+    'Importé depuis OpenStreetMap, pas encore vérifié par Pulso.',
+  'search.venueResultsAria': 'Lieux correspondant à la recherche',
+  'search.searchedFor': 'Recherche de « {text} »',
   'search.match.exact': 'exact',
   'search.match.alternative': 'alternative',
   'search.previewClosed':
@@ -457,6 +499,10 @@ const fr = {
     'Une réponse explicite est requise avant que Pulso puisse appliquer cette contrainte.',
   'search.message.exactCount.one': '1 correspondance exacte trouvée.',
   'search.message.exactCount.many': '{count} correspondances exactes trouvées.',
+  'search.message.foundLive.one':
+    'Pas encore dans Pulso. 1 lieu correspondant a été trouvé dans OpenStreetMap et ajouté à l’annuaire.',
+  'search.message.foundLive.many':
+    'Pas encore dans Pulso. {count} lieux correspondants ont été trouvés dans OpenStreetMap et ajoutés à l’annuaire.',
   'search.message.alternative':
     'Aucun événement ne satisfait toutes les contraintes strictes. Ces alternatives diffèrent uniquement de la manière indiquée.',
   'search.message.noReliableResult':
@@ -482,6 +528,11 @@ const fr = {
     'La catégorie de l’événement diffère du filtre de catégorie demandé.',
   'search.difference.excludedCategory':
     'La catégorie de l’événement a été explicitement exclue dans la demande.',
+  'search.reason.venueKind': 'A lieu dans un {venue}.',
+  'search.reason.venueKindSecondary': 'Le lieu est aussi un {venue}.',
+  'search.reason.nameMatch': 'Le nom correspond à « {text} ».',
+  'search.difference.searchText':
+    'Rien ne porte le nom « {text} ». Voici ce qui correspond au reste de votre recherche.',
   'favorites.showAll': 'Favoris',
   'favorites.showFavoritesOnly': 'Mes favoris',
   'favorites.add': 'Ajouter aux favoris',
@@ -601,13 +652,14 @@ export function localizeSearchMessage(
   if (date) params.date = getDateFilterLabel(locale, date);
   if (price) params.price = getPriceLabel(locale, price);
   if (trust) params.trust = getTrustLabel(locale, trust);
-  if (message.code === 'search.message.exactCount') {
+  if (
+    message.code === 'search.message.exactCount' ||
+    message.code === 'search.message.foundLive'
+  ) {
     const count = Number(params.count ?? 0);
     return translate(
       locale,
-      count === 1
-        ? 'search.message.exactCount.one'
-        : 'search.message.exactCount.many',
+      `${message.code}.${count === 1 ? 'one' : 'many'}` as MessageKey,
       params
     );
   }

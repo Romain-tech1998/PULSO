@@ -59,6 +59,9 @@ importers:
       '@pulso/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@pulso/ingestion':
+        specifier: workspace:*
+        version: link:../../packages/ingestion
       '@pulso/search':
         specifier: workspace:*
         version: link:../../packages/search

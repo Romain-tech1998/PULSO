@@ -52,7 +52,13 @@ NEXT_PUBLIC_APP_URL=https://your-domain.com  # where sign-in returns the visitor
 EVENT_PHOTOS_UPLOAD_DIR=/data
 GOOGLE_CLIENT_ID=…
 GOOGLE_CLIENT_SECRET=…
+OPENROUTER_API_KEY=…                         # optional, see below
 ```
+
+`OPENROUTER_API_KEY` powers intelligent search. Leave it out and `/search`
+falls back to the deterministic engine on every call — queries still work,
+they are just interpreted more literally. Set it and every intelligent search
+becomes a billed model call, so it is a running cost, not a free capability.
 
 Point a subdomain (`api.your-domain.com`) at the service and let the host
 issue the certificate. `API_PUBLIC_URL` must be `https://` — Google rejects a

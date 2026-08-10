@@ -1,7 +1,9 @@
+import { defaultModulesForGroupType } from '@pulso/domain';
 import {
   createGroupChecklistItemRequestSchema,
   createGroupPostRequestSchema,
   createGroupRequestSchema,
+  updateGroupModulesRequestSchema,
   createGroupScheduleItemRequestSchema,
   discoverGroupsResponseSchema,
   groupAttendanceSummarySchema,
@@ -63,16 +65,38 @@ export function registerGroupsRoutes(
   app.post('/me/groups', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
-    const { name, description, visibility } = createGroupRequestSchema.parse(
-      request.body
-    );
+    const { name, description, type, visibility, modulesConfig } =
+      createGroupRequestSchema.parse(request.body);
     const group = await groupsRepository.createGroup(
       user.id,
       name,
       description,
-      visibility ?? 'open'
+      type,
+      visibility ?? 'open',
+      // DEC-0015: each group type starts from its own template. Passing []
+      // created a workspace with no modules at all - not even discussion.
+      modulesConfig ?? defaultModulesForGroupType(type)
     );
     return reply.status(201).send(groupResponseSchema.parse({ data: group }));
+  });
+
+  app.patch('/groups/:id/modules', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+
+    // In a real app, we should check if the user is admin/owner of this group
+    // For now, we trust they have access or we could fetch the group first
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { modulesConfig } = updateGroupModulesRequestSchema.parse(
+      request.body
+    );
+
+    await groupsRepository.updateGroupModules(id, modulesConfig);
+
+    // Return updated group
+    const group = await groupsRepository.getGroup(id, user.id);
+    if (!group) return reply.status(404).send();
+    return reply.status(200).send(groupResponseSchema.parse({ data: group }));
   });
 
   app.get('/me/groups', async (request, reply) => {

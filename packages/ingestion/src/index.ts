@@ -113,6 +113,19 @@ export {
 } from './lib/geocode-fallback.js';
 
 export { computeDedupeKey, normalizeForKey } from './mapping/dedupe-key.js';
+export {
+  matchVenues,
+  nameSimilarity,
+  addressSimilarity,
+  parseAddress,
+  tokenSimilarity,
+  completenessScore,
+  isUsableUrl,
+  foldText,
+  distanceKm,
+  type VenueIdentity,
+  type VenueMatch
+} from './mapping/venue-identity.js';
 export { deriveDeterministicEventId } from './mapping/event-id.js';
 export {
   mapRawEventToPublicEvent,
@@ -121,3 +134,22 @@ export {
   type MergedPublicEvent,
   type MappingResult
 } from './mapping/to-public-event.js';
+export * from './sources/openstreetmap-venues.js';
+export {
+  lookupVenueByName,
+  mapNominatimPlace,
+  composeNominatimAddress,
+  type LiveVenueCandidate
+} from './lookup-venue.js';
+export {
+  resolveVenuePhotos,
+  resolveWikidataImages,
+  resolveCommonsPhotos,
+  resolveWebsitePhoto,
+  extractOpenGraphImage,
+  composeCommonsAttribution,
+  plainTextCredit,
+  OSM_IMAGE_TAG_ATTRIBUTION,
+  type ResolvedVenuePhoto,
+  type VenuePhotoSource
+} from './lib/venue-photos.js';

@@ -1355,14 +1355,22 @@ function EventDetails({
         label={translate(locale, 'details.source')}
         value={event.source.name}
       />
-      <Detail
-        label={translate(locale, 'details.trust')}
-        value={`${presentation.trust} · ${presentation.location}`}
-      />
-      <Detail
-        label={translate(locale, 'details.verification')}
-        value={presentation.freshness}
-      />
+      {/* Absent on account-created events (DEC-0017): they carry no DATA-0001
+          trust label. Rendering them unconditionally printed the literal
+          "undefined · undefined" under Trust, and TypeScript only caught the
+          second one because the first hid inside a template literal. */}
+      {presentation.trust && presentation.location ? (
+        <Detail
+          label={translate(locale, 'details.trust')}
+          value={`${presentation.trust} · ${presentation.location}`}
+        />
+      ) : null}
+      {presentation.freshness ? (
+        <Detail
+          label={translate(locale, 'details.verification')}
+          value={presentation.freshness}
+        />
+      ) : null}
       {presentation.externalAction ? (
         <Pressable
           style={styles.primaryAction}

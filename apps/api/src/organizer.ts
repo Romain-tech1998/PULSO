@@ -1,11 +1,14 @@
 import {
+  adminVenuePhotosResponseSchema,
   createOrganizerRequestSchema,
   myOrganizerStatusResponseSchema,
   organizerRequestsResponseSchema,
-  resolveOrganizerRequestSchema
+  resolveOrganizerRequestSchema,
+  suppressVenuePhotoRequestSchema
 } from '@pulso/contracts';
 import type {
   AuthRepository,
+  EventRepository,
   NotificationsRepository,
   OrganizerRepository
 } from '@pulso/database';
@@ -16,6 +19,8 @@ import { z } from 'zod';
 import { resolveBearerUser, sendUnauthenticated } from './auth.js';
 
 const requestParamsSchema = z.object({ id: z.uuid() });
+const venueParamsSchema = z.object({ venueId: z.uuid() });
+const photoQuerySchema = z.object({ query: z.string().min(1).optional() });
 
 /**
  * DEC-0018. Requesting organizer status, and the administration queue that
@@ -30,7 +35,11 @@ export function registerOrganizerRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
   organizerRepository: OrganizerRepository,
-  notificationsRepository: NotificationsRepository
+  notificationsRepository: NotificationsRepository,
+  // DEC-0019's venue-photo queue lives in the same console and behind the
+  // same `is_admin` gate, so it is registered here rather than growing a
+  // second admin module with its own copy of the authorization check.
+  eventRepository?: EventRepository
 ) {
   app.get('/me/organizer', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -105,6 +114,68 @@ export function registerOrganizerRoutes(
     );
     return reply.status(204).send();
   });
+
+  if (!eventRepository) return;
+
+  /**
+   * DEC-0019. The venue photos Pulso currently shows, borrowed ones first.
+   *
+   * This queue exists because most venue photos are not Pulso's: they are the
+   * preview image a business publishes about itself, hotlinked. Answering
+   * "please stop using our picture" has to be something the administrator
+   * handling the request can do here, in the minute they read it - not a
+   * shell command someone else has to be found to run.
+   */
+  app.get('/admin/venue-photos', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    if (!(await organizerRepository.isAdmin(user.id))) {
+      return sendForbidden(reply);
+    }
+    const { query } = photoQuerySchema.parse(request.query);
+    return adminVenuePhotosResponseSchema.parse({
+      data: await eventRepository.listVenuePhotos(query)
+    });
+  });
+
+  app.post('/admin/venue-photos/:venueId/suppress', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    if (!(await organizerRepository.isAdmin(user.id))) {
+      return sendForbidden(reply);
+    }
+    const { venueId } = venueParamsSchema.parse(request.params);
+    const body = suppressVenuePhotoRequestSchema.parse(request.body ?? {});
+    const suppressed = await eventRepository.suppressVenuePhoto(venueId, {
+      ...(body.thisOneOnly !== undefined
+        ? { thisOneOnly: body.thisOneOnly }
+        : {}),
+      ...(body.reason !== undefined ? { reason: body.reason } : {})
+    });
+    if (!suppressed) {
+      return reply.status(404).send({
+        error: { code: 'VENUE_NOT_FOUND', message: 'The venue was not found.' }
+      });
+    }
+    return reply.status(204).send();
+  });
+
+  app.delete(
+    '/admin/venue-photos/:venueId/suppress',
+    async (request, reply) => {
+      const user = await resolveBearerUser(request, authRepository);
+      if (!user) return sendUnauthenticated(reply);
+      if (!(await organizerRepository.isAdmin(user.id))) {
+        return sendForbidden(reply);
+      }
+      const { venueId } = venueParamsSchema.parse(request.params);
+      await eventRepository.restoreVenuePhoto(venueId);
+      // 204 whether or not a suppression existed: "this venue is not suppressed"
+      // is the state the caller asked for, and reporting 404 for an already-lifted
+      // one would make a retry look like a failure.
+      return reply.status(204).send();
+    }
+  );
 }
 
 // 403 rather than 404: the caller is authenticated, and the route's
