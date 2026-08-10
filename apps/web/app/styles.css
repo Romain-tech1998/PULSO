@@ -5495,6 +5495,30 @@ a.venue-detail-info-row:hover {
   max-width: calc(100% - 3rem);
 }
 
+/* On a phone the same bar wrapped onto two rows and covered the top third of
+   the map - the thing it is meant to filter. One row that scrolls sideways
+   keeps every chip reachable and gives the map back. */
+@media (max-width: 700px) {
+  .map-shell.connected-map-shell .map-filter-bar,
+  .map-shell.explorer-map-shell .map-filter-bar {
+    top: 0.75rem;
+    left: 0.75rem;
+    right: 0.75rem;
+    max-width: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .map-shell.connected-map-shell .map-filter-bar::-webkit-scrollbar,
+  .map-shell.explorer-map-shell .map-filter-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .map-shell.connected-map-shell .map-filter-chip-wrapper,
+  .map-shell.explorer-map-shell .map-filter-chip-wrapper {
+    flex: 0 0 auto;
+  }
+}
+
 /* Connected Carte visual system: compact glass docks over the map, aligned
    with the darker editorial treatment used by Découvrir and Événements. */
 .map-container-wrapper:has(> .connected-map-shell) {
@@ -11472,11 +11496,15 @@ a.venue-detail-info-row:hover {
   }
 
   .map-container-wrapper {
-    /* Same reason as the 1024px block: without this the height is ignored. */
+    /* Same reason as the 1024px block: without this the height is ignored.
+       A share of the viewport rather than "everything the header and nav
+       leave", because that subtraction assumed a 60px header and the real
+       one is 121px here - it wraps onto a second row for the search field.
+       The map ran 34px *under* the fixed bottom nav as a result, taking the
+       pin-kind toggle with it. A fraction cannot drift when the header
+       changes height, which it does with locale and with the search state. */
     flex: none;
-    height: calc(
-      100dvh - 60px - 4.5rem - env(safe-area-inset-bottom, 0px) - 1.5rem
-    );
+    height: 62dvh;
   }
 
   /* Redundant with the unified Filtres drawer above once it's the only
@@ -11506,6 +11534,15 @@ a.venue-detail-info-row:hover {
   }
   .connected-topbar {
     padding-left: 0.85rem;
+  }
+  /* Messages, notifications and the profile belong together at the right
+     edge. The header wraps at this width and the search field takes the
+     whole second row, which left this group stranded against the left
+     margin with the avatar adrift at the other end. */
+  .connected-topbar .nav-actions {
+    width: auto;
+    margin-left: auto;
+    justify-content: flex-end;
   }
   .connected-content-column {
     padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));

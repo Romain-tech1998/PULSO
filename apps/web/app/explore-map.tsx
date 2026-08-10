@@ -3559,18 +3559,6 @@ export function ExploreMap({
         <nav className="mobile-bottom-nav" aria-label="Navigation principale">
           <button
             type="button"
-            className={!aboutOpen && section === 'decouvrir' ? 'active' : ''}
-            onClick={() => {
-              setAboutOpen(false);
-              setForumPanelMode(false);
-              setSection('decouvrir');
-            }}
-          >
-            <span aria-hidden="true">✨</span>
-            Découvrir
-          </button>
-          <button
-            type="button"
             className={!aboutOpen && section === 'explorer' ? 'active' : ''}
             onClick={() => {
               setAboutOpen(false);
@@ -3595,18 +3583,32 @@ export function ExploreMap({
           </button>
           <button
             type="button"
+            className={!aboutOpen && section === 'messages' ? 'active' : ''}
+            onClick={() => {
+              setAboutOpen(false);
+              setForumPanelMode(false);
+              setSection('messages');
+            }}
+          >
+            <span aria-hidden="true">✉️</span>
+            Messages
+            {/* The badge follows what it counts. It used to sit on
+                "Communauté", which bundled messages with forums, groups and
+                friends - so an unread message lit up a tab that was mostly
+                about something else. */}
+            {unreadMessagesCount > 0 && (
+              <span className="mobile-bottom-nav-badge" aria-hidden="true" />
+            )}
+          </button>
+          <button
+            type="button"
             className={
-              ['forums', 'groupes', 'messages', 'amis'].includes(section)
-                ? 'active'
-                : ''
+              ['forums', 'groupes', 'amis'].includes(section) ? 'active' : ''
             }
             onClick={() => setMobileCommunityOpen(true)}
           >
             <span aria-hidden="true">👥</span>
             Communauté
-            {unreadMessagesCount > 0 && (
-              <span className="mobile-bottom-nav-badge" aria-hidden="true" />
-            )}
           </button>
           <button
             type="button"
@@ -3650,16 +3652,14 @@ export function ExploreMap({
                 </svg>
               </button>
             </div>
+            {/* Messages moved out to its own bottom-nav slot and is not
+                repeated here: two entry points to one inbox, one of them
+                behind a sheet, is a way of making the shortcut look
+                unreliable rather than a second convenience. */}
             {(
               [
                 { section: 'forums', label: 'Forums', icon: '💬' },
                 { section: 'groupes', label: 'Groupes', icon: '👥' },
-                {
-                  section: 'messages',
-                  label: 'Messages',
-                  icon: '✉️',
-                  badge: unreadMessagesCount
-                },
                 { section: 'amis', label: 'Amis', icon: '🧑‍🤝‍🧑' }
               ] as const
             ).map((item) => (
@@ -3676,11 +3676,6 @@ export function ExploreMap({
               >
                 <span aria-hidden="true">{item.icon}</span>
                 {item.label}
-                {'badge' in item && item.badge > 0 && (
-                  <span className="primary-sidebar-nav-badge">
-                    {item.badge}
-                  </span>
-                )}
               </button>
             ))}
           </div>
