@@ -795,6 +795,7 @@ export class PostgresEventRepository implements EventRepository {
       latitude: number;
       review_state: string;
       source: string;
+      external_ref: string | null;
     }>(
       // Ordered so a venue that is *both* named and of the right kind wins,
       // then exact names, then prefixes. Venues with upcoming programming
@@ -802,7 +803,7 @@ export class PostgresEventRepository implements EventRepository {
       // actually happening at.
       `SELECT v.id, v.name, v.address, v.category, v.secondary_categories, v.image_url,
               v.image_attribution, v.opening_hours, v.opening_hours_observed_at,
-              v.review_state, v.source,
+              v.review_state, v.source, v.external_ref,
               ST_X(v.location) AS longitude, ST_Y(v.location) AS latitude,
               EXISTS (
                 SELECT 1 FROM events e
@@ -869,7 +870,11 @@ export class PostgresEventRepository implements EventRepository {
           }
         : {}),
       ...(row.review_state !== 'published' ? { suggested: true } : {}),
-      ...(row.source === 'openstreetmap'
+      // Also for a Pulso-curated row that was *enriched* from OSM: its hours
+      // or photo are ODbL data, and the licence obligation travels with them
+      // whatever the row's own source says. external_ref is set only by the
+      // OSM importer, so it identifies exactly those rows.
+      ...(row.source === 'openstreetmap' || row.external_ref !== null
         ? { attribution: OSM_ATTRIBUTION }
         : {})
     }));
@@ -1131,6 +1136,7 @@ export class PostgresEventRepository implements EventRepository {
       opening_hours: string | null;
       opening_hours_observed_at: Date | null;
       source: string;
+      external_ref: string | null;
       longitude: number;
       latitude: number;
     }>(
@@ -1139,7 +1145,7 @@ export class PostgresEventRepository implements EventRepository {
       // returned PublicVenue below, since no rating is shown publicly yet.
       `SELECT v.id, v.name, v.address, v.category, v.secondary_categories, v.image_url,
               v.image_attribution, v.opening_hours, v.opening_hours_observed_at,
-              v.source,
+              v.source, v.external_ref,
               ST_X(v.location) AS longitude, ST_Y(v.location) AS latitude
        FROM venues v
        LEFT JOIN (
@@ -1182,7 +1188,11 @@ export class PostgresEventRepository implements EventRepository {
       // ODbL attribution has to travel with the data wherever it is shown,
       // and a map pin is a place it is shown. Previously only search carried
       // it, because only search could surface an OSM venue.
-      ...(row.source === 'openstreetmap'
+      // Also for a Pulso-curated row that was *enriched* from OSM: its hours
+      // or photo are ODbL data, and the licence obligation travels with them
+      // whatever the row's own source says. external_ref is set only by the
+      // OSM importer, so it identifies exactly those rows.
+      ...(row.source === 'openstreetmap' || row.external_ref !== null
         ? { attribution: OSM_ATTRIBUTION }
         : {})
     }));

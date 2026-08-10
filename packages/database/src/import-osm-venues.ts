@@ -81,29 +81,59 @@ try {
   // rather than seeing its own previous output as "already known" and
   // skipping every venue it added last time.
   const existing = await pool.query<{
+    id: string;
     name: string;
     address: string;
     longitude: number;
     latitude: number;
+    has_hours: boolean;
+    has_photo: boolean;
   }>(
-    `SELECT name, address,
-            ST_X(location) AS longitude, ST_Y(location) AS latitude
+    `SELECT id, name, address,
+            ST_X(location) AS longitude, ST_Y(location) AS latitude,
+            opening_hours IS NOT NULL AS has_hours,
+            image_url IS NOT NULL AS has_photo
      FROM venues
      WHERE source <> 'openstreetmap'`
   );
   const known = existing.rows.map((row) => ({
+    id: row.id,
     name: row.name,
     address: row.address,
     point: {
       longitude: Number(row.longitude),
       latitude: Number(row.latitude)
-    }
+    },
+    hasHours: row.has_hours,
+    hasPhoto: row.has_photo
   }));
-  const fresh = candidates.filter(
-    (candidate) => !known.some((venue) => matchVenues(venue, candidate).same)
+
+  // A candidate Pulso already knows is not nothing: OSM may publish hours and
+  // a photo for a venue whose record has neither. Skipping it outright - what
+  // this did before - discarded exactly that, and did so for the *best-known*
+  // venues, which are the ones already in the directory and the ones visitors
+  // search for most.
+  const fresh: OsmVenueCandidate[] = [];
+  const matched: Array<{
+    candidate: OsmVenueCandidate;
+    venue: (typeof known)[number];
+  }> = [];
+  for (const candidate of candidates) {
+    const venue = known.find((entry) => matchVenues(entry, candidate).same);
+    if (venue) matched.push({ candidate, venue });
+    else fresh.push(candidate);
+  }
+  const enrichable = matched.filter(
+    ({ candidate, venue }) =>
+      (candidate.openingHours && !venue.hasHours) ||
+      (!venue.hasPhoto &&
+        (candidate.photoHints.image ||
+          candidate.photoHints.wikidata ||
+          candidate.photoHints.wikimediaCommons ||
+          candidate.photoHints.website))
   );
   console.log(
-    `${candidates.length - fresh.length} already known to Pulso, ${fresh.length} to import.`
+    `${matched.length} already known to Pulso (${enrichable.length} with something to add), ${fresh.length} to import.`
   );
 
   // Recover the missing addresses from the coordinate OSM already gives us.
@@ -139,7 +169,17 @@ try {
 
   const photos = new Map<string, ResolvedVenuePhoto>();
   if (withPhotos) {
-    const hintedCount = fresh.filter(
+    // Known venues that have no photo are resolved alongside the new ones:
+    // one batch, one set of Wikidata/Commons round trips. Known venues that
+    // already have a photo are left alone - a curated image outranks anything
+    // scraped, and re-fetching it would spend a request to change nothing.
+    const needingPhotos = [
+      ...fresh,
+      ...enrichable
+        .filter(({ venue }) => !venue.hasPhoto)
+        .map(({ candidate }) => candidate)
+    ];
+    const hintedCount = needingPhotos.filter(
       (candidate) =>
         candidate.photoHints.image ||
         candidate.photoHints.wikidata ||
@@ -148,7 +188,7 @@ try {
     ).length;
     console.log(`Resolving photos for ${hintedCount} places with a lead...`);
     const resolved = await resolveVenuePhotos(
-      fresh.map((candidate) => ({
+      needingPhotos.map((candidate) => ({
         key: candidate.osmRef,
         hints: candidate.photoHints
       })),
@@ -233,6 +273,24 @@ try {
         }`
       );
     }
+    // Counted after photo resolution rather than from the candidate list: a
+    // venue whose only lead was a website that returned no image gains
+    // nothing, and counting it would overstate what the run will do.
+    const additions = enrichable
+      .map(({ candidate, venue }) => ({
+        name: venue.name,
+        gains: [
+          candidate.openingHours && !venue.hasHours ? 'hours' : undefined,
+          !venue.hasPhoto && photoFor(candidate) ? 'photo' : undefined
+        ].filter((gain): gain is string => gain !== undefined)
+      }))
+      .filter((entry) => entry.gains.length > 0);
+    if (additions.length > 0) {
+      console.log(`\nWould enrich ${additions.length} venue(s) Pulso knows:`);
+      for (const entry of additions.slice(0, 12)) {
+        console.log(`  ${entry.name} += ${entry.gains.join(', ')}`);
+      }
+    }
   } else {
     let written = 0;
     for (const candidate of fresh) {
@@ -291,7 +349,65 @@ try {
       );
       written += result.rowCount ?? 0;
     }
+
+    // Filling gaps in a record Pulso already curates, never overwriting it.
+    // Name, address, coordinates and category stay whatever a human or the
+    // event pipeline decided; only the fields that were empty are set.
+    //
+    // Hours are the one exception, and a narrow one: a schedule refreshes
+    // only when `opening_hours_observed_at` says Pulso set it from OSM in the
+    // first place. Hand-entered hours carry no observation timestamp, so they
+    // are never touched - while a stale imported schedule still gets
+    // corrected, which matters because an "open now" claim is made from it.
+    let enriched = 0;
+    for (const { candidate, venue } of enrichable) {
+      const photo = venue.hasPhoto ? undefined : photoFor(candidate);
+      if (!photo && (!candidate.openingHours || venue.hasHours)) continue;
+      const result = await pool.query(
+        `UPDATE venues SET
+           opening_hours = CASE
+             WHEN $2::text IS NULL THEN opening_hours
+             WHEN opening_hours IS NULL OR opening_hours_observed_at IS NOT NULL
+               THEN $2
+             ELSE opening_hours
+           END,
+           opening_hours_observed_at = CASE
+             WHEN $2::text IS NULL THEN opening_hours_observed_at
+             WHEN opening_hours IS NULL OR opening_hours_observed_at IS NOT NULL
+               THEN now()
+             ELSE opening_hours_observed_at
+           END,
+           image_source = CASE WHEN image_url IS NULL THEN $4 ELSE image_source END,
+           image_attribution = CASE WHEN image_url IS NULL THEN $5 ELSE image_attribution END,
+           image_page_url = CASE WHEN image_url IS NULL THEN $6 ELSE image_page_url END,
+           -- Every expression in one SET reads the pre-update row, so the
+           -- three CASEs above test the *old* image_url however this
+           -- assignment is ordered. A curated photo keeps its provenance.
+           image_url = COALESCE(image_url, $3),
+           -- Links the row to the OSM element it was enriched from. Without
+           -- it a photo suppression could not be honoured on the next run,
+           -- because the importer looks suppressions up by external_ref.
+           external_ref = COALESCE(external_ref, $7)
+         WHERE id = $1`,
+        [
+          venue.id,
+          candidate.openingHours ?? null,
+          photo?.imageUrl ?? null,
+          photo?.source ?? null,
+          photo?.attribution ?? null,
+          photo?.pageUrl ?? null,
+          candidate.osmRef
+        ]
+      );
+      enriched += result.rowCount ?? 0;
+    }
+
     console.log(`\n${written} venues written. ${OSM_ATTRIBUTION}.`);
+    if (enriched > 0) {
+      console.log(
+        `${enriched} venue(s) Pulso already knew gained hours or a photo.`
+      );
+    }
     console.log(
       `${publishable.length} are on the map; ${heldBack} are search-only suggestions until an address is known.`
     );
