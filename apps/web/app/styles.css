@@ -11035,8 +11035,23 @@ a.venue-detail-info-row:hover {
     grid-column: 1 / -1;
   }
 
+  /* `flex: none` is what makes the height below apply at all. The wrapper
+     is `flex: 1`, i.e. `flex-basis: 0%`, and once .dashboard-main turns into
+     a column above, flex-basis governs the main axis and silently replaces
+     `height`. The parent is `height: auto` here, so there is no free space to
+     grow into either: the map collapsed to its two border pixels at every
+     width below 1024px, phones included, and this rule and the one in the
+     768px block had never had any effect. */
   .map-container-wrapper {
+    flex: none;
     height: 50vh;
+    /* Above the stacked sidebar. Below 768px the sidebar becomes a bottom
+       drawer and leaves the flow entirely, but in this band it stacks inline
+       and put a full screen of view-toggle, filters and the app-download card
+       ahead of the map - so the map was off-screen on a tablet even once it
+       had a height again. The map is what this destination is for; the
+       filters that refine it belong after it. */
+    order: -1;
   }
 
   .app-container-connected {
@@ -11457,6 +11472,8 @@ a.venue-detail-info-row:hover {
   }
 
   .map-container-wrapper {
+    /* Same reason as the 1024px block: without this the height is ignored. */
+    flex: none;
     height: calc(
       100dvh - 60px - 4.5rem - env(safe-area-inset-bottom, 0px) - 1.5rem
     );
