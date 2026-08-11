@@ -5561,8 +5561,37 @@ a.venue-detail-info-row:hover {
   .map-shell.explorer-map-shell .map-filter-dropdown {
     top: calc(100% + 0.5rem);
     bottom: auto;
-    max-height: 60dvh;
+    /* Anchored to the bar rather than centred on its chip: the chips sit at
+       the left edge, so a panel centred on one of them hung off the map. */
+    left: 0;
+    right: 0;
+    transform: none;
+    min-width: 0;
+    /* Two columns. Ten venue types in a single stack ran the height of the
+       map, which is a strange way to show a filter - it hid the thing being
+       filtered while you chose. */
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.15rem 0.4rem;
+    padding: 0.5rem;
+    max-height: 45dvh;
     overflow-y: auto;
+  }
+  .map-shell.connected-map-shell .map-filter-dropdown label,
+  .map-shell.explorer-map-shell .map-filter-dropdown label {
+    gap: 0.35rem;
+    padding: 0.3rem 0.35rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+  }
+
+  /* The panel is nested inside the bar, so its own z-index only ever ranks
+     it against its siblings - the bar's stacking context is what the zoom
+     controls (z-index 10, later in the DOM) were painting over. Raising the
+     bar is what lifts the panel with it. */
+  .map-shell.connected-map-shell .map-filter-bar,
+  .map-shell.explorer-map-shell .map-filter-bar {
+    z-index: 12;
   }
 }
 
