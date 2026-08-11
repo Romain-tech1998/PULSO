@@ -5495,9 +5495,14 @@ a.venue-detail-info-row:hover {
   max-width: calc(100% - 3rem);
 }
 
-/* On a phone the same bar wrapped onto two rows and covered the top third of
-   the map - the thing it is meant to filter. One row that scrolls sideways
-   keeps every chip reachable and gives the map back. */
+/* Phone only. The bar sat over the top third of the map, stacked above a row
+   of date shortcuts and a legend - three layers of chrome on the thing they
+   are meant to describe.
+   
+   Scrolling the bar sideways was tried first and broke it: each chip's
+   dropdown is a child of the bar, so `overflow-x` clipped the panel and the
+   filters opened into nothing. The bar keeps wrapping; what goes instead is
+   everything around it. */
 @media (max-width: 700px) {
   .map-shell.connected-map-shell .map-filter-bar,
   .map-shell.explorer-map-shell .map-filter-bar {
@@ -5505,17 +5510,40 @@ a.venue-detail-info-row:hover {
     left: 0.75rem;
     right: 0.75rem;
     max-width: none;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
+    gap: 0.2rem;
+    padding: 0.25rem;
   }
-  .map-shell.connected-map-shell .map-filter-bar::-webkit-scrollbar,
-  .map-shell.explorer-map-shell .map-filter-bar::-webkit-scrollbar {
+  .map-shell.connected-map-shell .map-filter-chip,
+  .map-shell.explorer-map-shell .map-filter-chip {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.72rem;
+  }
+
+  /* The same date choice the first chip already offers, spelled out a second
+     time directly underneath it. */
+  .explorer-date-shortcuts {
     display: none;
   }
-  .map-shell.connected-map-shell .map-filter-chip-wrapper,
-  .map-shell.explorer-map-shell .map-filter-chip-wrapper {
-    flex: 0 0 auto;
+
+  /* Two colours of pin explained in a box that covered the map it was
+     explaining. The pin-kind toggle below already names both kinds and lets
+     you switch between them. */
+  .explorer-map-legend {
+    display: none;
+  }
+
+  /* The dropdown opens upward (`bottom: 100%`), which works where the bar
+     sits at the bottom of the map. These two shells pin it to the top
+     instead, so the panel opened off the top edge - and .map-container-wrapper
+     is `overflow: hidden`, so it was clipped away entirely. The chip
+     responded to every tap and appeared to do nothing. Opening downward puts
+     the panel back inside the map. */
+  .map-shell.connected-map-shell .map-filter-dropdown,
+  .map-shell.explorer-map-shell .map-filter-dropdown {
+    top: calc(100% + 0.5rem);
+    bottom: auto;
+    max-height: 60dvh;
+    overflow-y: auto;
   }
 }
 
@@ -11497,14 +11525,19 @@ a.venue-detail-info-row:hover {
 
   .map-container-wrapper {
     /* Same reason as the 1024px block: without this the height is ignored.
-       A share of the viewport rather than "everything the header and nav
-       leave", because that subtraction assumed a 60px header and the real
-       one is 121px here - it wraps onto a second row for the search field.
-       The map ran 34px *under* the fixed bottom nav as a result, taking the
-       pin-kind toggle with it. A fraction cannot drift when the header
-       changes height, which it does with locale and with the search state. */
+       All the room the header and the bottom nav leave, and no less - the
+       map is the page here.
+       
+       --pulso-header-height is measured from the real header rather than
+       assumed. A hardcoded 60px was the original bug: the header wraps onto
+       a second row for the search field and is closer to 121px, so the map
+       ran under the fixed nav and took the pin-kind toggle with it. A fixed
+       fraction avoided that but left a third of the screen empty. */
     flex: none;
-    height: 62dvh;
+    height: calc(
+      100dvh - var(--pulso-header-height, 121px) - 4.5rem -
+        env(safe-area-inset-bottom, 0px) - 1.5rem
+    );
   }
 
   /* Redundant with the unified Filtres drawer above once it's the only

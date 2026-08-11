@@ -1269,6 +1269,33 @@ export function ExploreMap({
     document.documentElement.lang = resolved;
   }, [initialLocale]);
 
+  /**
+   * Publishes the header's real height as `--pulso-header-height`.
+   *
+   * The phone map fills what the header and the bottom nav leave, and that
+   * subtraction used to hardcode 60px. The header is closer to 121px there -
+   * it wraps onto a second row for the search field - so the map ran under
+   * the fixed nav and dragged the pin-kind toggle with it. The number is not
+   * stable enough to hardcode either: it moves with the locale, with the
+   * search panel, and with whatever the browser does to the safe area.
+   *
+   * Measured rather than assumed, and re-measured whenever it changes.
+   */
+  useEffect(() => {
+    const header = document.querySelector('.top-navbar');
+    if (!header) return;
+    const publish = () => {
+      document.documentElement.style.setProperty(
+        '--pulso-header-height',
+        `${Math.round(header.getBoundingClientRect().height)}px`
+      );
+    };
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [user]);
+
   // Deep linking initial
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
