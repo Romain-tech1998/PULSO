@@ -14188,3 +14188,85 @@ a.venue-detail-info-row:hover {
   color: #ff8ab8;
   font-size: 0.72rem;
 }
+
+/* Group discussion threads. A staff-only thread ("Annonces") is marked
+   with ◈ rather than #, and reads the same for everyone - only its
+   composer is withheld. */
+.group-channel-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--brand-border);
+}
+.group-channel-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.group-channel-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #aaa1b6;
+  font-size: 0.72rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.group-channel-tab:hover {
+  color: var(--text-primary);
+}
+.group-channel-tab.active {
+  border-color: rgba(255, 75, 148, 0.32);
+  background: rgba(255, 75, 148, 0.12);
+  color: #ff8ab8;
+}
+.group-channel-tab.staff span {
+  color: #6ec8ff;
+}
+.group-channel-tab small {
+  padding: 0.05rem 0.3rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.6rem;
+}
+.group-channel-add {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.group-channel-add input[type='text'],
+.group-channel-add input:not([type]) {
+  width: 8.5rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font: inherit;
+  font-size: 0.72rem;
+}
+.group-channel-add label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+.group-channel-readonly {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(110, 200, 255, 0.22);
+  border-radius: 0.7rem;
+  background: rgba(70, 180, 255, 0.08);
+  color: #9fd8ff;
+  font-size: 0.72rem;
+}

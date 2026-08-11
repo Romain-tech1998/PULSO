@@ -1,5 +1,6 @@
 import { defaultModulesForGroupType } from '@pulso/domain';
 import {
+  createGroupChannelRequestSchema,
   createGroupChecklistItemRequestSchema,
   requestGroupVerificationSchema,
   createGroupPostRequestSchema,
@@ -7,6 +8,8 @@ import {
   updateGroupModulesRequestSchema,
   createGroupScheduleItemRequestSchema,
   discoverGroupsResponseSchema,
+  groupChannelResponseSchema,
+  groupChannelsResponseSchema,
   groupAttendanceSummarySchema,
   groupChecklistItemsResponseSchema,
   groupJoinRequestsResponseSchema,
@@ -32,6 +35,7 @@ import type {
 import {
   EventNotFoundError,
   GroupNotFoundError,
+  NotChannelWriterError,
   NotGroupMemberError,
   NotGroupModeratorError
 } from '@pulso/database';
@@ -63,6 +67,11 @@ function replyGroupError(reply: FastifyReply, error: unknown) {
       error: { code: 'NOT_GROUP_MODERATOR', message: error.message }
     });
   }
+  if (error instanceof NotChannelWriterError) {
+    return reply.status(403).send({
+      error: { code: 'NOT_CHANNEL_WRITER', message: error.message }
+    });
+  }
   throw error;
 }
 
@@ -70,8 +79,10 @@ const groupParamsSchema = z.object({ id: z.uuid() });
 const postParamsSchema = z.object({ postId: z.uuid() });
 const eventParamsSchema = z.object({ eventId: z.uuid() });
 const joinRequestParamsSchema = z.object({ id: z.uuid(), userId: z.uuid() });
+const channelParamsSchema = z.object({ id: z.uuid(), channelId: z.uuid() });
 const scheduleItemParamsSchema = z.object({ id: z.uuid(), itemId: z.uuid() });
 const checklistItemParamsSchema = z.object({ id: z.uuid(), itemId: z.uuid() });
+const postsQuerySchema = z.object({ channelId: z.uuid().optional() });
 const discoverQuerySchema = z.object({
   scope: z.enum(['permanent', 'event'])
 });
@@ -267,12 +278,65 @@ export function registerGroupsRoutes(
     return reply.status(204).send();
   });
 
-  app.get('/groups/:id/posts', async (request, reply) => {
+  /**
+   * Discussion threads (channels). Any member reads them; only the
+   * moderator creates or removes one, and a staff-only channel ("Annonces")
+   * is one only the moderator may write in - which is how DEC-0015's
+   * announcements module exists without a second content model.
+   */
+  app.get('/groups/:id/channels', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { id } = groupParamsSchema.parse(request.params);
     try {
-      const posts = await groupsRepository.getPosts(id, user.id);
+      const channels = await groupsRepository.listChannels(id, user.id);
+      return groupChannelsResponseSchema.parse({ data: channels });
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+  });
+
+  app.post('/groups/:id/channels', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id } = groupParamsSchema.parse(request.params);
+    const { name, staffOnly } = createGroupChannelRequestSchema.parse(
+      request.body
+    );
+    try {
+      const channel = await groupsRepository.createChannel(
+        id,
+        user.id,
+        name,
+        staffOnly ?? false
+      );
+      return reply
+        .status(201)
+        .send(groupChannelResponseSchema.parse({ data: channel }));
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+  });
+
+  app.delete('/groups/:id/channels/:channelId', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id, channelId } = channelParamsSchema.parse(request.params);
+    try {
+      await groupsRepository.deleteChannel(id, channelId, user.id);
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+    return reply.status(204).send();
+  });
+
+  app.get('/groups/:id/posts', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id } = groupParamsSchema.parse(request.params);
+    const { channelId } = postsQuerySchema.parse(request.query);
+    try {
+      const posts = await groupsRepository.getPosts(id, user.id, channelId);
       return groupPostsResponseSchema.parse({ data: posts });
     } catch (error) {
       return replyGroupError(reply, error);
@@ -283,13 +347,16 @@ export function registerGroupsRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { id } = groupParamsSchema.parse(request.params);
-    const { body, parentId } = createGroupPostRequestSchema.parse(request.body);
+    const { body, parentId, channelId } = createGroupPostRequestSchema.parse(
+      request.body
+    );
     try {
       const post = await groupsRepository.createPost(
         id,
         user.id,
         body,
-        parentId
+        parentId,
+        channelId
       );
       return reply
         .status(201)

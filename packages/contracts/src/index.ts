@@ -976,9 +976,38 @@ export const groupChecklistItemsResponseSchema = z.object({
 
 // Same content model as the event forum (DEC-0012 v1.1): one level of
 // nested replies, one like per user per post, author-only delete.
+/**
+ * A group's discussion threads. `staffOnly` is how DEC-0015's
+ * "announcements reserved for staff" module exists without a second
+ * content model: everyone reads such a channel, only the moderator writes
+ * in it.
+ */
+export const groupChannelSchema = z.object({
+  id: z.uuid(),
+  groupId: z.uuid(),
+  name: z.string().min(1).max(40),
+  position: z.number().int().min(0),
+  staffOnly: z.boolean(),
+  postCount: z.number().int().min(0)
+});
+
+export const groupChannelsResponseSchema = z.object({
+  data: z.array(groupChannelSchema)
+});
+
+export const groupChannelResponseSchema = z.object({
+  data: groupChannelSchema
+});
+
+export const createGroupChannelRequestSchema = z.object({
+  name: z.string().min(1).max(40),
+  staffOnly: z.boolean().optional()
+});
+
 export const groupPostSchema = z.object({
   id: z.uuid(),
   groupId: z.uuid(),
+  channelId: z.uuid(),
   author: publicUserSchema,
   body: z.string().min(1),
   createdAt: z.iso.datetime(),
@@ -989,6 +1018,10 @@ export const groupPostSchema = z.object({
 });
 
 export const createGroupPostRequestSchema = z.object({
+  // Which thread the message belongs to. Optional so the pre-channel
+  // clients that only knew one feed keep working - the server resolves
+  // those to the group's first channel rather than rejecting them.
+  channelId: z.uuid().optional(),
   body: z.string().min(1).max(2000),
   parentId: z.uuid().optional()
 });
@@ -1404,6 +1437,13 @@ export type CreateGroupPostRequest = z.infer<
 >;
 export type GroupPostsResponse = z.infer<typeof groupPostsResponseSchema>;
 export type GroupPostResponse = z.infer<typeof groupPostResponseSchema>;
+export type GroupChannel = z.infer<typeof groupChannelSchema>;
+export type GroupChannelsResponse = z.infer<
+  typeof groupChannelsResponseSchema
+>;
+export type CreateGroupChannelRequest = z.infer<
+  typeof createGroupChannelRequestSchema
+>;
 export type GroupVisibility = z.infer<typeof groupVisibilitySchema>;
 export type GroupVerificationStatus = z.infer<
   typeof groupVerificationStatusSchema

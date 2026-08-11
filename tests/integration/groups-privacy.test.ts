@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   createPool,
   GroupNotFoundError,
+  NotChannelWriterError,
   NotGroupMemberError,
   NotGroupModeratorError,
   PostgresGroupsRepository
@@ -71,6 +72,17 @@ describeWithDatabase('group privacy and membership guards', () => {
 
   afterAll(async () => {
     for (const groupId of createdGroupIds) {
+      await pool.query(
+        `DELETE FROM group_post_likes WHERE post_id IN
+           (SELECT id FROM group_posts WHERE group_id = $1)`,
+        [groupId]
+      );
+      await pool.query(`DELETE FROM group_posts WHERE group_id = $1`, [
+        groupId
+      ]);
+      await pool.query(`DELETE FROM group_channels WHERE group_id = $1`, [
+        groupId
+      ]);
       await pool.query(
         `DELETE FROM group_checklist_checks WHERE item_id IN
            (SELECT id FROM group_checklist_items WHERE group_id = $1)`,
@@ -199,6 +211,116 @@ describeWithDatabase('group privacy and membership guards', () => {
     expect(await repository.joinGroup(restricted.id, outsiderId)).toBe(
       'pending'
     );
+  });
+
+  it('gives a new community group its general and announcements threads', async () => {
+    const group = await createGroup('open');
+    const channels = await repository.listChannels(group.id, creatorId);
+
+    expect(channels.map((channel) => channel.name)).toEqual([
+      'Général',
+      'Annonces'
+    ]);
+    // Announcements is readable by all, writable by the moderator alone.
+    expect(channels.map((channel) => channel.staffOnly)).toEqual([false, true]);
+  });
+
+  it('lets only the moderator write in an announcements thread', async () => {
+    const group = await createGroup('open');
+    await repository.joinGroup(group.id, outsiderId);
+    const [general, announcements] = await repository.listChannels(
+      group.id,
+      creatorId
+    );
+
+    // A plain member writes in the general thread just fine.
+    await expect(
+      repository.createPost(
+        group.id,
+        outsiderId,
+        'On se retrouve où ?',
+        undefined,
+        general!.id
+      )
+    ).resolves.toBeDefined();
+
+    await expect(
+      repository.createPost(
+        group.id,
+        outsiderId,
+        'Annonce non autorisée',
+        undefined,
+        announcements!.id
+      )
+    ).rejects.toBeInstanceOf(NotChannelWriterError);
+
+    await expect(
+      repository.createPost(
+        group.id,
+        creatorId,
+        'Prochaine sortie samedi.',
+        undefined,
+        announcements!.id
+      )
+    ).resolves.toBeDefined();
+  });
+
+  it('keeps each thread to its own posts, and replies with their parent', async () => {
+    const group = await createGroup('open');
+    const [general, announcements] = await repository.listChannels(
+      group.id,
+      creatorId
+    );
+    const parent = await repository.createPost(
+      group.id,
+      creatorId,
+      'Sujet du fil général',
+      undefined,
+      general!.id
+    );
+    await repository.createPost(
+      group.id,
+      creatorId,
+      'Annonce officielle',
+      undefined,
+      announcements!.id
+    );
+    // A reply names no channel and must land with its parent, not in the
+    // group's first thread by default.
+    const reply = await repository.createPost(
+      group.id,
+      creatorId,
+      'Réponse',
+      parent.id,
+      announcements!.id
+    );
+    expect(reply.channelId).toBe(general!.id);
+
+    const generalPosts = await repository.getPosts(
+      group.id,
+      creatorId,
+      general!.id
+    );
+    expect(generalPosts).toHaveLength(2);
+    const announcementPosts = await repository.getPosts(
+      group.id,
+      creatorId,
+      announcements!.id
+    );
+    expect(announcementPosts).toHaveLength(1);
+    // Asking for no channel still returns the whole group, unchanged from
+    // the pre-channel behaviour.
+    expect(await repository.getPosts(group.id, creatorId)).toHaveLength(3);
+  });
+
+  it('refuses to delete a group last remaining thread', async () => {
+    const group = await createGroup('open');
+    const channels = await repository.listChannels(group.id, creatorId);
+    for (const channel of channels) {
+      await repository.deleteChannel(group.id, channel.id, creatorId);
+    }
+    const left = await repository.listChannels(group.id, creatorId);
+    expect(left).toHaveLength(1);
   });
 
   it('lets only the creator reshape the module layout', async () => {

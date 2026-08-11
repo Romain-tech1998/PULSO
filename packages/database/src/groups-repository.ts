@@ -98,6 +98,22 @@ export interface Group {
   verificationStatus: GroupVerificationStatus;
 }
 
+export interface GroupChannel {
+  id: string;
+  groupId: string;
+  name: string;
+  position: number;
+  /** Only the group's moderator may post here; everyone reads it. */
+  staffOnly: boolean;
+  postCount: number;
+}
+
+export class NotChannelWriterError extends Error {
+  constructor() {
+    super('Only this group\'s moderator can post in this channel.');
+  }
+}
+
 export interface GroupVerificationRequest {
   group: Group;
   requester: PublicUser;
@@ -108,6 +124,7 @@ export interface GroupVerificationRequest {
 export interface GroupPost {
   id: string;
   groupId: string;
+  channelId: string;
   author: PublicUser;
   body: string;
   createdAt: string;
@@ -212,12 +229,31 @@ export interface GroupsRepository {
     eventTitle: string,
     userId: string
   ): Promise<Group>;
-  getPosts(groupId: string, viewerId: string): Promise<GroupPost[]>;
+  listChannels(groupId: string, viewerId: string): Promise<GroupChannel[]>;
+  /** Moderator-only: threads are part of how a group is organised. */
+  createChannel(
+    groupId: string,
+    userId: string,
+    name: string,
+    staffOnly: boolean
+  ): Promise<GroupChannel>;
+  /** Moderator-only. A group always keeps at least one channel. */
+  deleteChannel(
+    groupId: string,
+    channelId: string,
+    userId: string
+  ): Promise<void>;
+  getPosts(
+    groupId: string,
+    viewerId: string,
+    channelId?: string
+  ): Promise<GroupPost[]>;
   createPost(
     groupId: string,
     authorId: string,
     body: string,
-    parentId: string | undefined
+    parentId: string | undefined,
+    channelId?: string
   ): Promise<GroupPost>;
   deletePost(postId: string, authorId: string): Promise<void>;
   likePost(postId: string, userId: string): Promise<void>;
@@ -369,6 +405,7 @@ const GROUP_SELECT_FIELDS = `
 interface PostRow {
   id: string;
   group_id: string;
+  channel_id: string;
   body: string;
   created_at: string;
   parent_id: string | null;
@@ -384,6 +421,7 @@ function toGroupPost(row: PostRow): GroupPost {
   return {
     id: row.id,
     groupId: row.group_id,
+    channelId: row.channel_id,
     body: row.body,
     createdAt: new Date(row.created_at).toISOString(),
     parentId: row.parent_id ?? undefined,
@@ -445,6 +483,18 @@ export class PostgresGroupsRepository implements GroupsRepository {
         `INSERT INTO group_roles (group_id, user_id, role) VALUES ($1, $2, 'owner')`,
         [id, creatorId]
       );
+      await client.query(
+        `INSERT INTO group_channels (id, group_id, name, position, staff_only, created_by)
+         VALUES ($1, $2, 'Général', 0, false, $3)`,
+        [randomUUID(), id, creatorId]
+      );
+      if (type === 'community') {
+        await client.query(
+          `INSERT INTO group_channels (id, group_id, name, position, staff_only, created_by)
+           VALUES ($1, $2, 'Annonces', 1, true, $3)`,
+          [randomUUID(), id, creatorId]
+        );
+      }
       await client.query('COMMIT');
       const row = inserted.rows[0]!;
       return toGroup({
@@ -550,6 +600,16 @@ export class PostgresGroupsRepository implements GroupsRepository {
         `INSERT INTO group_roles (group_id, user_id, role) VALUES ($1, $2, 'owner')
          ON CONFLICT (group_id, user_id) DO NOTHING`,
         [groupId, userId]
+      );
+      // Find-or-create runs on every click, so the channel is guarded on
+      // absence rather than on a conflict target it has no key for.
+      await client.query(
+        `INSERT INTO group_channels (id, group_id, name, position, staff_only, created_by)
+         SELECT $1, $2, 'Général', 0, false, $3
+         WHERE NOT EXISTS (
+           SELECT 1 FROM group_channels WHERE group_id = $2
+         )`,
+        [randomUUID(), groupId, userId]
       );
       await client.query('COMMIT');
     } catch (error) {
@@ -789,10 +849,14 @@ export class PostgresGroupsRepository implements GroupsRepository {
     if (group.created_by !== userId) throw new NotGroupModeratorError();
   }
 
-  async getPosts(groupId: string, viewerId: string): Promise<GroupPost[]> {
+  async getPosts(
+    groupId: string,
+    viewerId: string,
+    channelId?: string
+  ): Promise<GroupPost[]> {
     await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<PostRow>(
-      `SELECT p.id, p.group_id, p.body, p.created_at, p.parent_id,
+      `SELECT p.id, p.group_id, p.channel_id, p.body, p.created_at, p.parent_id,
               u.id AS author_id, u.display_name, u.avatar_url,
               COALESCE(likes.like_count, 0) AS like_count,
               COALESCE(replies.reply_count, 0) AS reply_count,
@@ -803,8 +867,9 @@ export class PostgresGroupsRepository implements GroupsRepository {
        LEFT JOIN (SELECT parent_id, COUNT(*) AS reply_count FROM group_posts WHERE parent_id IS NOT NULL GROUP BY parent_id) replies ON replies.parent_id = p.id
        LEFT JOIN group_post_likes my_like ON my_like.post_id = p.id AND my_like.user_id = $2
        WHERE p.group_id = $1
+         AND ($3::uuid IS NULL OR p.channel_id = $3)
        ORDER BY p.created_at ASC`,
-      [groupId, viewerId]
+      [groupId, viewerId, channelId ?? null]
     );
     return result.rows.map(toGroupPost);
   }
@@ -813,20 +878,34 @@ export class PostgresGroupsRepository implements GroupsRepository {
     groupId: string,
     authorId: string,
     body: string,
-    parentId: string | undefined
+    parentId: string | undefined,
+    channelId?: string
   ): Promise<GroupPost> {
     await this.requireMembership(groupId, authorId);
+    // A reply always lands in its parent's channel: letting the caller name
+    // a different one would split a conversation across two threads.
+    const target = parentId
+      ? await this.channelOfPost(parentId)
+      : await this.resolveChannel(groupId, channelId);
+    if (!target) throw new GroupNotFoundError();
+    if (target.staffOnly) {
+      const moderator = await this.pool.query(
+        `SELECT 1 FROM groups WHERE id = $1 AND created_by = $2`,
+        [groupId, authorId]
+      );
+      if (moderator.rows.length === 0) throw new NotChannelWriterError();
+    }
     const id = randomUUID();
     try {
       const result = await this.pool.query<PostRow>(
         `WITH inserted AS (
-           INSERT INTO group_posts (id, group_id, author_id, body, parent_id)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, group_id, body, created_at, author_id, parent_id
+           INSERT INTO group_posts (id, group_id, author_id, body, parent_id, channel_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, group_id, channel_id, body, created_at, author_id, parent_id
          )
          SELECT inserted.*, u.display_name, u.avatar_url, 0 AS like_count, 0 AS reply_count, false AS liked_by_me
          FROM inserted JOIN users u ON u.id = inserted.author_id`,
-        [id, groupId, authorId, body, parentId ?? null]
+        [id, groupId, authorId, body, parentId ?? null, target.id]
       );
       return toGroupPost(result.rows[0]!);
     } catch (error) {
@@ -1134,5 +1213,114 @@ export class PostgresGroupsRepository implements GroupsRepository {
     const row = result.rows[0];
     if (!row) return undefined;
     return { groupId, requesterId: row.created_by };
+  }
+
+  private async resolveChannel(
+    groupId: string,
+    channelId: string | undefined
+  ): Promise<{ id: string; staffOnly: boolean } | undefined> {
+    const result = await this.pool.query<{ id: string; staff_only: boolean }>(
+      channelId
+        ? `SELECT id, staff_only FROM group_channels WHERE id = $1 AND group_id = $2`
+        : `SELECT id, staff_only FROM group_channels WHERE group_id = $2
+           ORDER BY position ASC LIMIT 1`,
+      channelId ? [channelId, groupId] : [null, groupId]
+    );
+    const row = result.rows[0];
+    return row ? { id: row.id, staffOnly: row.staff_only } : undefined;
+  }
+
+  private async channelOfPost(
+    postId: string
+  ): Promise<{ id: string; staffOnly: boolean } | undefined> {
+    const result = await this.pool.query<{ id: string; staff_only: boolean }>(
+      `SELECT c.id, c.staff_only FROM group_posts p
+       JOIN group_channels c ON c.id = p.channel_id
+       WHERE p.id = $1`,
+      [postId]
+    );
+    const row = result.rows[0];
+    return row ? { id: row.id, staffOnly: row.staff_only } : undefined;
+  }
+
+  async listChannels(
+    groupId: string,
+    viewerId: string
+  ): Promise<GroupChannel[]> {
+    await this.requireMembership(groupId, viewerId);
+    const result = await this.pool.query<{
+      id: string;
+      group_id: string;
+      name: string;
+      position: number;
+      staff_only: boolean;
+      post_count: string;
+    }>(
+      `SELECT c.id, c.group_id, c.name, c.position, c.staff_only,
+              COALESCE(counts.post_count, 0) AS post_count
+       FROM group_channels c
+       LEFT JOIN (
+         SELECT channel_id, COUNT(*) AS post_count
+         FROM group_posts GROUP BY channel_id
+       ) counts ON counts.channel_id = c.id
+       WHERE c.group_id = $1
+       ORDER BY c.position ASC, c.created_at ASC`,
+      [groupId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      groupId: row.group_id,
+      name: row.name,
+      position: row.position,
+      staffOnly: row.staff_only,
+      postCount: Number(row.post_count)
+    }));
+  }
+
+  async createChannel(
+    groupId: string,
+    userId: string,
+    name: string,
+    staffOnly: boolean
+  ): Promise<GroupChannel> {
+    await this.requireModerator(groupId, userId);
+    const id = randomUUID();
+    const result = await this.pool.query<{ position: number }>(
+      `INSERT INTO group_channels (id, group_id, name, position, staff_only, created_by)
+       VALUES (
+         $1, $2, $3,
+         (SELECT COALESCE(MAX(position) + 1, 0) FROM group_channels WHERE group_id = $2),
+         $4, $5
+       )
+       RETURNING position`,
+      [id, groupId, name, staffOnly, userId]
+    );
+    return {
+      id,
+      groupId,
+      name,
+      position: result.rows[0]!.position,
+      staffOnly,
+      postCount: 0
+    };
+  }
+
+  async deleteChannel(
+    groupId: string,
+    channelId: string,
+    userId: string
+  ): Promise<void> {
+    await this.requireModerator(groupId, userId);
+    // A group always keeps a thread to talk in. Deleting the last one would
+    // leave the discussion module with nowhere to write.
+    const remaining = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM group_channels WHERE group_id = $1`,
+      [groupId]
+    );
+    if (Number(remaining.rows[0]!.count) <= 1) return;
+    await this.pool.query(
+      `DELETE FROM group_channels WHERE id = $1 AND group_id = $2`,
+      [channelId, groupId]
+    );
   }
 }

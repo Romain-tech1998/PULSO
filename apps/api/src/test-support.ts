@@ -337,6 +337,7 @@ export function fakeGroupPost(overrides: Partial<GroupPost> = {}): GroupPost {
   return {
     id: '00000000-0000-4000-8000-000000000018',
     groupId: '00000000-0000-4000-8000-000000000017',
+    channelId: '00000000-0000-4000-8000-000000000031',
     author: friend,
     body: "Quelqu'un a un plan pour ce soir ?",
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -381,6 +382,16 @@ export function fakeGroupsRepository(
     getJoinRequests: async () => [],
     respondToJoinRequest: async () => undefined,
     discoverGroups: async () => [],
+    listChannels: async () => [],
+    createChannel: async (groupId, _userId, name, staffOnly) => ({
+      id: '00000000-0000-4000-8000-000000000031',
+      groupId,
+      name,
+      position: 0,
+      staffOnly,
+      postCount: 0
+    }),
+    deleteChannel: async () => undefined,
     getPosts: async () => [],
     createPost: async (groupId, authorId, body, parentId) =>
       fakeGroupPost({

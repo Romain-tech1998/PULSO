@@ -2,6 +2,7 @@
 
 import {
   discoverGroupsResponseSchema,
+  groupChannelsResponseSchema,
   friendsResponseSchema,
   groupAttendanceSummarySchema,
   groupChecklistItemsResponseSchema,
@@ -14,6 +15,7 @@ import {
 } from '@pulso/contracts';
 import type {
   AttendanceResponse,
+  GroupChannel,
   DiscoverGroupEntry,
   Group,
   GroupAttendanceSummary,
@@ -942,6 +944,11 @@ export function GroupDetailContent({
   );
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [members, setMembers] = useState<PublicUser[]>([]);
+  const [channels, setChannels] = useState<GroupChannel[]>([]);
+  const [activeChannelId, setActiveChannelId] = useState<string>();
+  const [newChannelName, setNewChannelName] = useState('');
+  const [newChannelStaffOnly, setNewChannelStaffOnly] = useState(false);
+  const [addingChannel, setAddingChannel] = useState(false);
   const [joining, setJoining] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [tab, setTab] = useState<GroupDetailTab>('organize');
@@ -951,18 +958,86 @@ export function GroupDetailContent({
   }, [group.id]);
 
   const refreshPosts = useCallback(() => {
-    if (!authToken || !group.isMember) return;
+    if (!authToken || !group.isMember || !activeChannelId) return;
     setPostsState('loading');
-    fetch(`${API_BASE_URL}/groups/${group.id}/posts`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
+    fetch(
+      `${API_BASE_URL}/groups/${group.id}/posts?channelId=${activeChannelId}`,
+      { headers: { authorization: `Bearer ${authToken}` } }
+    )
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
         setPosts(groupPostsResponseSchema.parse(json).data);
         setPostsState('success');
       })
       .catch(() => setPostsState('error'));
+  }, [authToken, group.id, group.isMember, activeChannelId]);
+
+  // The thread list, and the thread currently being read. Selecting the
+  // first one by default keeps the pre-channel behaviour for a group that
+  // only ever had one conversation.
+  const refreshChannels = useCallback(() => {
+    if (!authToken || !group.isMember) return;
+    fetch(`${API_BASE_URL}/groups/${group.id}/channels`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        const data = groupChannelsResponseSchema.parse(json).data;
+        setChannels(data);
+        setActiveChannelId((current) =>
+          current && data.some((channel) => channel.id === current)
+            ? current
+            : data[0]?.id
+        );
+      })
+      .catch(() => {});
   }, [authToken, group.id, group.isMember]);
+
+  useEffect(() => {
+    refreshChannels();
+  }, [refreshChannels]);
+
+  const activeChannel = channels.find(
+    (channel) => channel.id === activeChannelId
+  );
+  // A staff-only thread is readable by everyone and writable by the
+  // moderator alone - the server enforces the same rule.
+  const canWriteHere = !activeChannel?.staffOnly || group.isModerator;
+
+  const addChannel = () => {
+    if (!authToken || !newChannelName.trim() || addingChannel) return;
+    setAddingChannel(true);
+    fetch(`${API_BASE_URL}/groups/${group.id}/channels`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        name: newChannelName.trim(),
+        staffOnly: newChannelStaffOnly
+      })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => {
+        setNewChannelName('');
+        setNewChannelStaffOnly(false);
+        refreshChannels();
+      })
+      .catch(() => {})
+      .finally(() => setAddingChannel(false));
+  };
+
+  const removeChannel = (channelId: string) => {
+    if (!authToken) return;
+    void fetch(`${API_BASE_URL}/groups/${group.id}/channels/${channelId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).then(() => {
+      if (channelId === activeChannelId) setActiveChannelId(undefined);
+      refreshChannels();
+    });
+  };
 
   useEffect(() => {
     refreshPosts();
@@ -1047,7 +1122,11 @@ export function GroupDetailContent({
         'content-type': 'application/json',
         authorization: `Bearer ${authToken}`
       },
-      body: JSON.stringify({ body, ...(parentId ? { parentId } : {}) })
+      body: JSON.stringify({
+        body,
+        ...(parentId ? { parentId } : {}),
+        ...(activeChannelId ? { channelId: activeChannelId } : {})
+      })
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then(() => {
@@ -1326,12 +1405,89 @@ export function GroupDetailContent({
                   {posts.length} message{posts.length !== 1 ? 's' : ''}
                 </p>
               </div>
+              <div className="group-channel-bar">
+                <div className="group-channel-list" role="tablist">
+                  {channels.map((channel) => (
+                    <button
+                      key={channel.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={channel.id === activeChannelId}
+                      className={`group-channel-tab ${
+                        channel.id === activeChannelId ? 'active' : ''
+                      } ${channel.staffOnly ? 'staff' : ''}`}
+                      onClick={() => setActiveChannelId(channel.id)}
+                    >
+                      <span aria-hidden="true">
+                        {channel.staffOnly ? '◈' : '#'}
+                      </span>
+                      {channel.name}
+                      {channel.postCount > 0 && (
+                        <small>{channel.postCount}</small>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                {group.isModerator && (
+                  <form
+                    className="group-channel-add"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      addChannel();
+                    }}
+                  >
+                    <input
+                      value={newChannelName}
+                      onChange={(event) =>
+                        setNewChannelName(event.target.value)
+                      }
+                      placeholder="Nouveau fil"
+                      maxLength={40}
+                      aria-label="Nom du nouveau fil"
+                    />
+                    <label title="Seul l'administrateur peut y écrire">
+                      <input
+                        type="checkbox"
+                        checked={newChannelStaffOnly}
+                        onChange={(event) =>
+                          setNewChannelStaffOnly(event.target.checked)
+                        }
+                      />
+                      Annonces
+                    </label>
+                    <button
+                      type="submit"
+                      className="text-btn"
+                      disabled={addingChannel || !newChannelName.trim()}
+                    >
+                      Ajouter
+                    </button>
+                    {activeChannel && channels.length > 1 && (
+                      <button
+                        type="button"
+                        className="text-btn"
+                        onClick={() => removeChannel(activeChannel.id)}
+                        title={`Supprimer le fil ${activeChannel.name}`}
+                      >
+                        Supprimer
+                      </button>
+                    )}
+                  </form>
+                )}
+              </div>
+              {!canWriteHere && (
+                <p className="group-channel-readonly">
+                  Ce fil est réservé aux annonces de l’administrateur. Tu peux
+                  le lire et y réagir.
+                </p>
+              )}
               <form
                 className="forum-composer group-main-composer"
                 onSubmit={(event) => {
                   event.preventDefault();
                   submitPost();
                 }}
+                hidden={!canWriteHere}
               >
                 <textarea
                   value={draft}
