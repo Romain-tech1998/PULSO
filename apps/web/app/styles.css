@@ -5515,8 +5515,27 @@ a.venue-detail-info-row:hover {
   }
   .map-shell.connected-map-shell .map-filter-chip,
   .map-shell.explorer-map-shell .map-filter-chip {
-    padding: 0.4rem 0.6rem;
-    font-size: 0.72rem;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+  /* Its own label is the longest thing in the bar and the least informative
+     - the three chips beside it already say what they filter. An icon keeps
+     the row to one line without hiding the way into the full overlay. */
+  .map-shell.connected-map-shell .map-filter-more,
+  .map-shell.explorer-map-shell .map-filter-more {
+    font-size: 0;
+    padding: 0.4rem;
+  }
+  .map-shell.connected-map-shell .map-filter-more::before,
+  .map-shell.explorer-map-shell .map-filter-more::before {
+    content: '⚙';
+    font-size: 0.85rem;
+    line-height: 1;
+  }
+  .map-shell.connected-map-shell .map-filter-more svg,
+  .map-shell.explorer-map-shell .map-filter-more svg {
+    display: none;
   }
 
   /* The same date choice the first chip already offers, spelled out a second

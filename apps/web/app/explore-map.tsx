@@ -2643,10 +2643,13 @@ export function ExploreMap({
   }, [section]);
 
   const explorerPinKindRef = useRef(explorerPinKind);
+  // Filtered, not raw: the Explorer and connected maps offer a venue-type
+  // filter and were drawing every venue regardless of it, so choosing "bar"
+  // changed the chip and nothing on the map.
   const explorerVenueGroupsRef = useRef<VenueGroup[]>([]);
   useEffect(() => {
-    explorerVenueGroupsRef.current = venueGroups;
-  }, [venueGroups]);
+    explorerVenueGroupsRef.current = filteredVenueGroups;
+  }, [filteredVenueGroups]);
 
   const pushExplorerDataToMap = useCallback((instance: maplibregl.Map) => {
     const eventSource = instance.getSource('explorer-events-source') as
@@ -3024,7 +3027,7 @@ export function ExploreMap({
 
   useEffect(() => {
     if (explorerMap.current) pushExplorerDataToMap(explorerMap.current);
-  }, [events, venueGroups, pushExplorerDataToMap]);
+  }, [events, filteredVenueGroups, pushExplorerDataToMap]);
 
   // Phase 4.13 "Carte" page - same bounds-driven events/venueGroups data as
   // every other map instance in this file, its own source/layer names so it
@@ -3453,7 +3456,7 @@ export function ExploreMap({
 
   useEffect(() => {
     if (connectedMap.current) pushConnectedDataToMap(connectedMap.current);
-  }, [events, venueGroups, pushConnectedDataToMap]);
+  }, [events, filteredVenueGroups, pushConnectedDataToMap]);
 
   // Toggling event/venue pins re-applies layer visibility on the already-
   // built map (layers are created once in the 'load' handler above).
@@ -4664,6 +4667,9 @@ export function ExploreMap({
                     onChange={applyFilters}
                     onOpenMore={() => setFiltersOpen((prev) => !prev)}
                     locale={locale}
+                    pinKind={explorerPinKind}
+                    venueCategories={venueCategoryFilter}
+                    onVenueCategoriesChange={setVenueCategoryFilter}
                   />
 
                   <div className="map-zoom-controls">
@@ -5116,6 +5122,9 @@ export function ExploreMap({
                     onChange={applyFilters}
                     onOpenMore={() => setFiltersOpen((prev) => !prev)}
                     locale={locale}
+                    pinKind={explorerPinKind}
+                    venueCategories={venueCategoryFilter}
+                    onVenueCategoriesChange={setVenueCategoryFilter}
                   />
 
                   <div
@@ -17279,17 +17288,35 @@ function applySearchFilterEdits(
  * chips, plus a "Plus de filtres" chip opening the full FilterOverlay -
  * replaces the previous always-expanded ActiveFilters chip row per user
  * feedback that a second, redundant pill "ne sert a rien" on the map.
+ *
+ * The bar follows what the map is showing. Pinning venues and offering to
+ * filter them by date, by price and by *event* category asked the visitor
+ * three questions a venue cannot answer: a bar has no date and no ticket
+ * price, and "musique / humour / festival" describes an evening rather than
+ * a place. In that mode the bar is a single chip that asks the only question
+ * with an answer - what kind of place - and the vocabulary switches to
+ * VENUE_CATEGORIES.
+ *
+ * That is also what keeps it on one row at phone width, where four chips
+ * wrapped onto two and covered the map.
  */
 function MapFilterBar({
   filters,
   onChange,
   onOpenMore,
-  locale
+  locale,
+  pinKind,
+  venueCategories,
+  onVenueCategoriesChange
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
   onOpenMore: () => void;
   locale: SupportedLocale;
+  /** What the map is pinning. Absent on surfaces that only ever show events. */
+  pinKind?: 'all' | 'event' | 'venue' | 'after';
+  venueCategories?: VenueCategory[];
+  onVenueCategoriesChange?: (categories: VenueCategory[]) => void;
 }) {
   const [openChip, setOpenChip] = useState<'date' | 'price' | 'category'>();
   const barRef = useRef<HTMLDivElement>(null);
@@ -17323,6 +17350,73 @@ function MapFilterBar({
       : filters.categories
           .map((category) => SHORT_CATEGORY_LABELS[locale][category])
           .join(', ');
+
+  // Venue mode asks one question, in the venue vocabulary.
+  if (pinKind === 'venue' && onVenueCategoriesChange) {
+    const selected = venueCategories ?? [];
+    const label =
+      selected.length === 0
+        ? 'Type de lieu'
+        : selected
+            .map((category) => VENUE_CATEGORY_LABELS[locale][category])
+            .join(', ');
+    return (
+      <div className="map-filter-bar" ref={barRef}>
+        <div className="map-filter-chip-wrapper">
+          <button
+            type="button"
+            className={`map-filter-chip ${openChip === 'category' ? 'open' : ''} ${selected.length > 0 ? 'active' : ''}`}
+            onClick={() => toggleChip('category')}
+            aria-expanded={openChip === 'category'}
+            aria-haspopup="true"
+          >
+            {label}
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {openChip === 'category' && (
+            <div className="map-filter-dropdown">
+              {VENUE_CATEGORY_FILTER_OPTIONS.map((option) => (
+                <label key={option.value}>
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(option.value)}
+                    onChange={() =>
+                      onVenueCategoriesChange(
+                        selected.includes(option.value)
+                          ? selected.filter(
+                              (category) => category !== option.value
+                            )
+                          : [...selected, option.value]
+                      )
+                    }
+                  />
+                  {VENUE_CATEGORY_LABELS[locale][option.value]}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        {selected.length > 0 && (
+          <button
+            type="button"
+            className="map-filter-chip"
+            onClick={() => onVenueCategoriesChange([])}
+          >
+            Effacer
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="map-filter-bar" ref={barRef}>
