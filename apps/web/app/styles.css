@@ -14314,3 +14314,102 @@ a.venue-detail-info-row:hover {
   margin: 0 auto;
   padding: 1rem 1.25rem 2rem;
 }
+
+/* The group type sits above the join question and constrains it: a private
+   crew is invite-only by definition. It reuses .groups-visibility-choice's
+   card styling wholesale - the markup is identical - and only needs its own
+   column count and the note explaining the constraint. */
+.groups-type-choice {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.groups-type-note {
+  grid-column: 1 / -1;
+  margin: 0.15rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+.groups-visibility-choice:disabled label {
+  opacity: 0.45;
+}
+
+/* The moderator's module switchboard, in the Gestion tab. */
+.group-modules-card-head strong {
+  display: block;
+  font-size: 0.82rem;
+}
+.group-modules-card-head p {
+  margin: 0.15rem 0 0.85rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+.group-modules-config {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.group-modules-config li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.72rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+.group-modules-config li.enabled {
+  border-color: rgba(130, 79, 234, 0.4);
+  background: rgba(104, 59, 211, 0.1);
+}
+.group-modules-config-order {
+  display: grid;
+  gap: 0.15rem;
+}
+.group-modules-config-order button {
+  width: 22px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.group-modules-config-order button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.group-modules-config-text strong {
+  display: block;
+  font-size: 0.78rem;
+}
+.group-modules-config-text small {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+.group-modules-config-text em {
+  display: block;
+  margin-top: 0.2rem;
+  color: #ffb27a;
+  font-size: 0.66rem;
+  font-style: normal;
+}
+.group-modules-config-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.group-modules-config-switch input {
+  accent-color: var(--brand-purple);
+}

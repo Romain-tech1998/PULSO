@@ -796,6 +796,17 @@ export const groupMeetupVenueSchema = z.object({
   latitude: z.number()
 });
 
+// DEC-0015's module registry, typed rather than `z.array(z.any())`: `any`
+// let a misspelled module name through the contract and into `modules_config`
+// jsonb, where nothing would ever reject it.
+export const groupModuleConfigSchema = z
+  .object({
+    module: z.enum(GROUP_MODULES),
+    enabled: z.boolean(),
+    position: z.number().int().min(0)
+  })
+  .strict();
+
 export const groupSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
@@ -807,7 +818,10 @@ export const groupSchema = z.object({
   eventId: z.uuid().optional(),
   type: groupTypeSchema,
   visibility: groupVisibilitySchema,
-  modulesConfig: z.array(z.any()),
+  // Normalized by the repository before it ever reaches here: unknown
+  // module names dropped, missing ones appended disabled, positions
+  // renumbered. So this can be the real type rather than `any[]`.
+  modulesConfig: z.array(groupModuleConfigSchema),
   isModerator: z.boolean(),
   myStatus: groupMembershipStatusSchema.optional(),
   pendingRequestCount: z.number().int().min(0).optional(),
@@ -823,17 +837,6 @@ export const groupSchema = z.object({
   imageUrl: z.url().optional(),
   verificationStatus: groupVerificationStatusSchema
 });
-
-// DEC-0015's module registry, typed rather than `z.array(z.any())`: `any`
-// let a misspelled module name through the contract and into `modules_config`
-// jsonb, where nothing would ever reject it.
-export const groupModuleConfigSchema = z
-  .object({
-    module: z.enum(GROUP_MODULES),
-    enabled: z.boolean(),
-    position: z.number().int().min(0)
-  })
-  .strict();
 
 export const createGroupRequestSchema = z.object({
   name: z.string().min(1).max(80),

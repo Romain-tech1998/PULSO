@@ -26,6 +26,8 @@ import type {
   GroupVisibility,
   PublicUser
 } from '@pulso/contracts';
+import { GROUP_MODULE_LABELS } from '@pulso/domain';
+import type { GroupModuleConfig, GroupTypeValue } from '@pulso/domain';
 import maplibregl from 'maplibre-gl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -68,6 +70,7 @@ export function GroupsPage({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<GroupVisibility>('open');
+  const [type, setType] = useState<GroupTypeValue>('community');
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [listVersion, setListVersion] = useState(0);
@@ -83,6 +86,7 @@ export function GroupsPage({
       },
       body: JSON.stringify({
         name: name.trim(),
+        type,
         visibility,
         ...(description.trim() ? { description: description.trim() } : {})
       })
@@ -92,6 +96,7 @@ export function GroupsPage({
         setName('');
         setDescription('');
         setVisibility('open');
+        setType('community');
         setCreateOpen(false);
         setListVersion((version) => version + 1);
         setSelectedGroup(groupResponseSchema.parse(json).data);
@@ -188,7 +193,65 @@ export function GroupsPage({
               />
               <small>{description.length}/500</small>
             </label>
-            <fieldset className="groups-visibility-choice">
+            <fieldset className="groups-visibility-choice groups-type-choice">
+              <legend>Quel genre de groupe ?</legend>
+              {(
+                [
+                  {
+                    value: 'community',
+                    icon: '◇',
+                    title: 'Communauté',
+                    hint: 'Permanente, autour d’un thème. Ex. Techno Montréal.'
+                  },
+                  {
+                    value: 'event',
+                    icon: '◈',
+                    title: 'Sortie',
+                    hint: 'Une soirée précise, à organiser de bout en bout.'
+                  },
+                  {
+                    value: 'private_crew',
+                    icon: '◆',
+                    title: 'Crew privé',
+                    hint: 'Un petit cercle. Invisible dans Découvrir.'
+                  }
+                ] as const
+              ).map((option) => (
+                <label
+                  key={option.value}
+                  className={type === option.value ? 'active' : ''}
+                >
+                  <input
+                    type="radio"
+                    name="group-type"
+                    checked={type === option.value}
+                    onChange={() => {
+                      setType(option.value);
+                      // A private crew is invite-only by definition, so the
+                      // two choices are not independent: picking it sets the
+                      // visibility it implies rather than letting the form
+                      // offer a combination the server would not honour.
+                      if (option.value === 'private_crew') {
+                        setVisibility('private_invite');
+                      } else if (visibility === 'private_invite') {
+                        setVisibility('open');
+                      }
+                    }}
+                  />
+                  <span className="groups-visibility-icon" aria-hidden="true">
+                    {option.icon}
+                  </span>
+                  <span>
+                    <strong>{option.title}</strong>
+                    <small>{option.hint}</small>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            <fieldset
+              className="groups-visibility-choice"
+              disabled={type === 'private_crew'}
+            >
               <legend>Comment peut-on rejoindre ?</legend>
               <label className={visibility === 'open' ? 'active' : ''}>
                 <input
@@ -222,6 +285,11 @@ export function GroupsPage({
                   </small>
                 </span>
               </label>
+              {type === 'private_crew' && (
+                <p className="groups-type-note">
+                  Un crew privé se rejoint uniquement sur invitation.
+                </p>
+              )}
             </fieldset>
             <button
               type="submit"
@@ -519,10 +587,6 @@ export function GroupsBlock({
   const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>(
     'loading'
   );
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [visibility, setVisibility] = useState<GroupVisibility>('open');
-  const [creating, setCreating] = useState(false);
   const [openGroup, setOpenGroup] = useState<Group>();
 
   const refresh = useCallback(() => {
@@ -543,34 +607,13 @@ export function GroupsBlock({
     refresh();
   }, [refresh]);
 
-  const createGroup = () => {
-    if (!authToken || !name.trim() || creating) return;
-    setCreating(true);
-    fetch(`${API_BASE_URL}/me/groups`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        name: name.trim(),
-        visibility,
-        ...(description.trim() ? { description: description.trim() } : {})
-      })
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then(() => {
-        setName('');
-        setDescription('');
-        setVisibility('open');
-        refresh();
-      })
-      .catch(() => {})
-      .finally(() => setCreating(false));
-  };
-
   return (
     <div className="compte-block">
+      {/*
+        Creation lives on the Groupes page, the only form that asks for the
+        group's type. This block used to carry a second, simpler copy that
+        always produced a 'community' group whatever the creator meant.
+      */}
       <h3>Mes groupes</h3>
       {loadState === 'loading' && (
         <p className="list-view-empty">Chargement…</p>
@@ -582,54 +625,6 @@ export function GroupsBlock({
       )}
       {loadState === 'success' && (
         <div className="friends-block">
-          <form
-            className="friends-add-form groups-create-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              createGroup();
-            }}
-          >
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Nom du groupe"
-              maxLength={80}
-            />
-            <input
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="Description (optionnel)"
-              maxLength={500}
-            />
-            <div className="groups-visibility-choice">
-              <label>
-                <input
-                  type="radio"
-                  name="group-visibility"
-                  checked={visibility === 'open'}
-                  onChange={() => setVisibility('open')}
-                />
-                Accès libre — tout le monde peut rejoindre
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="group-visibility"
-                  checked={visibility === 'restricted'}
-                  onChange={() => setVisibility('restricted')}
-                />
-                Accès limité — sur demande, approuvée par toi
-              </label>
-            </div>
-            <button
-              type="submit"
-              className="btn-secondary"
-              disabled={creating || !name.trim()}
-            >
-              Créer
-            </button>
-          </form>
-
           <div className="friends-list">
             {groups.length === 0 && (
               <p className="list-view-empty">Aucun groupe pour le moment.</p>
@@ -938,6 +933,131 @@ function GroupIdentityCard({
   );
 }
 
+
+/**
+ * The moderator's control over what the workspace actually shows.
+ *
+ * Disabling a module hides it and never destroys its data (DEC-0015), so
+ * the copy says exactly that - turning "Qui vient ?" off does not discard
+ * anyone's vote. Order here is the order of the cards in "Organiser".
+ */
+function GroupModulesCard({
+  group,
+  authToken,
+  onGroupUpdated
+}: {
+  group: Group;
+  authToken: string | undefined;
+  onGroupUpdated: (group: Group) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const save = (modulesConfig: GroupModuleConfig[]) => {
+    if (!authToken || busy) return;
+    setBusy(true);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/groups/${group.id}/modules`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ modulesConfig })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => onGroupUpdated(groupResponseSchema.parse(json).data))
+      .catch(() => setError("La configuration n'a pas pu être enregistrée."))
+      .finally(() => setBusy(false));
+  };
+
+  const renumber = (entries: GroupModuleConfig[]) =>
+    entries.map((entry, position) => ({ ...entry, position }));
+
+  const toggle = (module: string) =>
+    save(
+      renumber(
+        group.modulesConfig.map((entry) =>
+          entry.module === module
+            ? { ...entry, enabled: !entry.enabled }
+            : entry
+        )
+      )
+    );
+
+  const move = (index: number, delta: number) => {
+    const next = [...group.modulesConfig];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    save(renumber(next));
+  };
+
+  return (
+    <div className="group-detail-card group-modules-card">
+      <div className="group-modules-card-head">
+        <strong>Modules du groupe</strong>
+        <p>
+          Ce que l’onglet Organiser affiche, et dans quel ordre. Désactiver un
+          module le masque sans effacer ce qu’il contient.
+        </p>
+      </div>
+      <ul className="group-modules-config">
+        {group.modulesConfig.map((entry, index) => {
+          const label = GROUP_MODULE_LABELS[entry.module];
+          const unavailable =
+            entry.module === 'meetup_point' && !group.meetupVenue;
+          return (
+            <li
+              key={entry.module}
+              className={entry.enabled ? 'enabled' : undefined}
+            >
+              <span className="group-modules-config-order">
+                <button
+                  type="button"
+                  onClick={() => move(index, -1)}
+                  disabled={busy || index === 0}
+                  aria-label={`Monter ${label.name}`}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  onClick={() => move(index, 1)}
+                  disabled={busy || index === group.modulesConfig.length - 1}
+                  aria-label={`Descendre ${label.name}`}
+                >
+                  ↓
+                </button>
+              </span>
+              <span className="group-modules-config-text">
+                <strong>{label.name}</strong>
+                <small>{label.description}</small>
+                {unavailable && entry.enabled && (
+                  <em>
+                    Ce groupe n’est lié à aucun événement, donc rien à
+                    afficher pour l’instant.
+                  </em>
+                )}
+              </span>
+              <label className="group-modules-config-switch">
+                <input
+                  type="checkbox"
+                  checked={entry.enabled}
+                  disabled={busy}
+                  onChange={() => toggle(entry.module)}
+                />
+                <span>{entry.enabled ? 'Activé' : 'Masqué'}</span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      {error && <p className="group-identity-error">{error}</p>}
+    </div>
+  );
+}
+
 export function GroupDetailContent({
   group,
   authToken,
@@ -1198,6 +1318,7 @@ export function GroupDetailContent({
     });
   };
 
+  const enabledModules = group.modulesConfig.filter((entry) => entry.enabled);
   const topLevelPosts = posts.filter((post) => !post.parentId);
   const repliesFor = (postId: string) =>
     posts.filter((post) => post.parentId === postId);
@@ -1404,13 +1525,56 @@ export function GroupDetailContent({
                 <p>Chaque action ici est partagée avec tous les membres.</p>
               </div>
               <div className="group-modules-grid">
-                {group.meetupVenue && (
-                  <GroupMeetupCard venue={group.meetupVenue} />
-                )}
-                <GroupScheduleCard groupId={group.id} authToken={authToken} />
-                <GroupAttendanceCard groupId={group.id} authToken={authToken} />
-                <GroupChecklistCard groupId={group.id} authToken={authToken} />
+                {enabledModules.map((entry) => {
+                  switch (entry.module) {
+                    case 'meetup_point':
+                      // Derived from the linked event's venue, so a
+                      // permanent group has nothing to draw even when the
+                      // module is on.
+                      return group.meetupVenue ? (
+                        <GroupMeetupCard
+                          key={entry.module}
+                          venue={group.meetupVenue}
+                        />
+                      ) : null;
+                    case 'programme':
+                      return (
+                        <GroupScheduleCard
+                          key={entry.module}
+                          groupId={group.id}
+                          authToken={authToken}
+                        />
+                      );
+                    case 'attendance':
+                      return (
+                        <GroupAttendanceCard
+                          key={entry.module}
+                          groupId={group.id}
+                          authToken={authToken}
+                        />
+                      );
+                    case 'checklist':
+                      return (
+                        <GroupChecklistCard
+                          key={entry.module}
+                          groupId={group.id}
+                          authToken={authToken}
+                        />
+                      );
+                  }
+                })}
               </div>
+              {enabledModules.length === 0 && (
+                <div className="group-empty-feed">
+                  <span aria-hidden="true">▦</span>
+                  <strong>Aucun module activé.</strong>
+                  <p>
+                    {group.isModerator
+                      ? 'Choisis ce que ce groupe affiche depuis l’onglet Gestion.'
+                      : 'L’administrateur du groupe n’a activé aucun module.'}
+                  </p>
+                </div>
+              )}
             </section>
           )}
 
@@ -1664,6 +1828,11 @@ export function GroupDetailContent({
                   </div>
                 </div>
               )}
+              <GroupModulesCard
+                group={group}
+                authToken={authToken}
+                onGroupUpdated={onGroupUpdated}
+              />
               <GroupIdentityCard
                 group={group}
                 authToken={authToken}

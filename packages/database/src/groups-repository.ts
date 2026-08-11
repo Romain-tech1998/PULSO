@@ -1,5 +1,8 @@
 import type { PublicUser } from '@pulso/contracts';
-import { defaultModulesForGroupType } from '@pulso/domain';
+import {
+  defaultModulesForGroupType,
+  normalizeGroupModules
+} from '@pulso/domain';
 import type { EventCategory, GroupModuleConfig } from '@pulso/domain';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
@@ -355,7 +358,10 @@ function toGroup(row: GroupRow): Group {
     eventId: row.event_id ?? undefined,
     type: row.type,
     visibility: row.visibility,
-    modulesConfig: row.modules_config,
+    // modules_config is jsonb and predates the current registry, so a
+    // stored row can name a module that no longer exists. Normalizing here
+    // means no caller ever has to cope with that.
+    modulesConfig: normalizeGroupModules(row.modules_config),
     memberCount: Number(row.member_count),
     isMember: row.my_status === 'member',
     myStatus: row.my_status ?? undefined,

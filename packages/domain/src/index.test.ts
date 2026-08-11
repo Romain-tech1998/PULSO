@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createFilteredDiscoveryWindow,
+  defaultModulesForGroupType,
+  GROUP_MODULES,
+  normalizeGroupModules,
   createMontrealDiscoveryWindow,
   EVENT_CATEGORIES,
   isEligibleForActiveDiscovery,
@@ -125,5 +128,70 @@ describe('rolling Montréal discovery window', () => {
         window
       )
     ).toBe(false);
+  });
+});
+
+describe('group module registry', () => {
+  it('starts each group type on its own template, with the rest disabled', () => {
+    const community = defaultModulesForGroupType('community');
+    const event = defaultModulesForGroupType('event');
+
+    // Every group carries the whole registry: modules outside the template
+    // start disabled rather than being absent and invented later.
+    expect(community).toHaveLength(GROUP_MODULES.length);
+    expect(
+      community.filter((entry) => entry.enabled).map((entry) => entry.module)
+    ).toEqual(['programme', 'attendance']);
+    expect(
+      event.filter((entry) => entry.enabled).map((entry) => entry.module)
+    ).toEqual(['attendance', 'programme', 'meetup_point', 'checklist']);
+    expect(community.map((entry) => entry.position)).toEqual([0, 1, 2, 3]);
+  });
+
+  it('drops module names the registry no longer has', () => {
+    // modules_config is jsonb and predates the current registry, so rows
+    // still name the twelve modules DEC-0015 proposed but nobody built.
+    const stored = [
+      { module: 'ride_coordination', enabled: true, position: 0 },
+      { module: 'programme', enabled: true, position: 1 },
+      { module: 'expense_split', enabled: true, position: 2 }
+    ];
+
+    const normalized = normalizeGroupModules(stored);
+    expect(normalized.map((entry) => entry.module)).not.toContain(
+      'ride_coordination'
+    );
+    expect(normalized).toHaveLength(GROUP_MODULES.length);
+    expect(normalized[0]).toEqual({
+      module: 'programme',
+      enabled: true,
+      position: 0
+    });
+    // What survived keeps its order; everything else lands disabled after.
+    expect(
+      normalized.slice(1).every((entry) => entry.enabled === false)
+    ).toBe(true);
+  });
+
+  it('renumbers positions contiguously and ignores duplicates', () => {
+    const normalized = normalizeGroupModules([
+      { module: 'checklist', enabled: true, position: 40 },
+      { module: 'checklist', enabled: false, position: 41 },
+      { module: 'attendance', enabled: true, position: 7 }
+    ]);
+
+    expect(normalized.map((entry) => entry.position)).toEqual([0, 1, 2, 3]);
+    expect(normalized[0]!.module).toBe('attendance');
+    expect(normalized[1]!.module).toBe('checklist');
+    // The first entry wins for a duplicated module.
+    expect(normalized[1]!.enabled).toBe(true);
+  });
+
+  it('falls back to the full disabled registry for anything unusable', () => {
+    for (const raw of [undefined, null, 'nope', 42, [], [null], [{}]]) {
+      const normalized = normalizeGroupModules(raw);
+      expect(normalized).toHaveLength(GROUP_MODULES.length);
+      expect(normalized.every((entry) => entry.enabled === false)).toBe(true);
+    }
   });
 });
