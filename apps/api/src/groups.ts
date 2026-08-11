@@ -398,7 +398,8 @@ export function registerGroupsRoutes(
       const outing = await groupsRepository.startOuting(id, user.id, {
         title: body.title,
         ...(body.eventId ? { eventId: body.eventId } : {}),
-        ...(body.startsAt ? { startsAt: body.startsAt } : {})
+        ...(body.startsAt ? { startsAt: body.startsAt } : {}),
+        ...(body.place ? { place: body.place } : {})
       });
       return reply
         .status(201)

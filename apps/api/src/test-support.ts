@@ -338,6 +338,8 @@ export function fakeGroupPost(overrides: Partial<GroupPost> = {}): GroupPost {
     id: '00000000-0000-4000-8000-000000000018',
     groupId: '00000000-0000-4000-8000-000000000017',
     channelId: '00000000-0000-4000-8000-000000000031',
+    kind: 'message',
+    outingId: undefined,
     author: friend,
     body: "Quelqu'un a un plan pour ce soir ?",
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -395,6 +397,7 @@ export function fakeGroupsRepository(
       eventId: input.eventId,
       title: input.title,
       startsAt: input.startsAt,
+      place: input.place,
       createdAt: '2026-01-01T00:00:00.000Z',
       archivedAt: undefined
     }),

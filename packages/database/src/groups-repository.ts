@@ -44,6 +44,7 @@ export class NotGroupModeratorError extends Error {
 export type GroupVisibility = 'open' | 'restricted' | 'private_invite';
 export type GroupType = 'community' | 'event' | 'private_crew';
 export type GroupMembershipStatus = 'member' | 'pending';
+export type GroupPostKind = 'message' | 'outing';
 export type AttendanceResponse = 'yes' | 'maybe' | 'no';
 export type GroupVerificationStatus =
   | 'none'
@@ -130,6 +131,7 @@ export interface GroupOuting {
   eventId: string | undefined;
   title: string;
   startsAt: string | undefined;
+  place: string | undefined;
   createdAt: string;
   archivedAt: string | undefined;
 }
@@ -176,6 +178,9 @@ export interface GroupPost {
   id: string;
   groupId: string;
   channelId: string;
+  /** A message someone wrote, or an outing they proposed (migration 0042). */
+  kind: GroupPostKind;
+  outingId: string | undefined;
   author: PublicUser;
   body: string;
   createdAt: string;
@@ -285,13 +290,18 @@ export interface GroupsRepository {
   /** Current first, then archived ones - a group's history stays readable. */
   listOutings(groupId: string, viewerId: string): Promise<GroupOuting[]>;
   /**
-   * Moderator-only. Archives the current outing and starts a new one, so
-   * the modules reset while nothing that was already planned is destroyed.
+   * Publishes an outing into the group feed. Any member may do this, and
+   * several outings coexist: two proposals are not a conflict.
    */
   startOuting(
     groupId: string,
     userId: string,
-    input: { title: string; eventId?: string; startsAt?: string }
+    input: {
+      title: string;
+      eventId?: string;
+      startsAt?: string;
+      place?: string;
+    }
   ): Promise<GroupOuting>;
   listChannels(groupId: string, viewerId: string): Promise<GroupChannel[]>;
   /** Moderator-only: threads are part of how a group is organised. */
@@ -501,6 +511,8 @@ interface PostRow {
   id: string;
   group_id: string;
   channel_id: string;
+  kind: GroupPostKind;
+  outing_id: string | null;
   body: string;
   created_at: string;
   parent_id: string | null;
@@ -517,6 +529,8 @@ function toGroupPost(row: PostRow): GroupPost {
     id: row.id,
     groupId: row.group_id,
     channelId: row.channel_id,
+    kind: row.kind,
+    outingId: row.outing_id ?? undefined,
     body: row.body,
     createdAt: new Date(row.created_at).toISOString(),
     parentId: row.parent_id ?? undefined,
@@ -582,6 +596,7 @@ interface OutingRow {
   event_id: string | null;
   title: string;
   starts_at: string | null;
+  place: string | null;
   created_at: string;
   archived_at: string | null;
 }
@@ -595,6 +610,7 @@ function toOuting(row: OutingRow): GroupOuting {
     startsAt: row.starts_at
       ? new Date(row.starts_at).toISOString()
       : undefined,
+    place: row.place ?? undefined,
     createdAt: new Date(row.created_at).toISOString(),
     archivedAt: row.archived_at
       ? new Date(row.archived_at).toISOString()
@@ -1047,7 +1063,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
   ): Promise<GroupPost[]> {
     await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<PostRow>(
-      `SELECT p.id, p.group_id, p.channel_id, p.body, p.created_at, p.parent_id,
+      `SELECT p.id, p.group_id, p.channel_id, p.kind, p.outing_id, p.body, p.created_at, p.parent_id,
               u.id AS author_id, u.display_name, u.avatar_url,
               COALESCE(likes.like_count, 0) AS like_count,
               COALESCE(replies.reply_count, 0) AS reply_count,
@@ -1092,7 +1108,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
         `WITH inserted AS (
            INSERT INTO group_posts (id, group_id, author_id, body, parent_id, channel_id)
            VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING id, group_id, channel_id, body, created_at, author_id, parent_id
+           RETURNING id, group_id, channel_id, kind, outing_id, body, created_at, author_id, parent_id
          )
          SELECT inserted.*, u.display_name, u.avatar_url, 0 AS like_count, 0 AS reply_count, false AS liked_by_me
          FROM inserted JOIN users u ON u.id = inserted.author_id`,
@@ -1147,8 +1163,12 @@ export class PostgresGroupsRepository implements GroupsRepository {
       `SELECT id, group_id, label, scheduled_at, created_by, created_at
        FROM group_schedule_items
        WHERE outing_id = (
+         -- Newest live outing. Several coexist since migration 0042, so
+         -- an unordered subquery here returned more than one row.
          SELECT id FROM group_outings
          WHERE group_id = $1 AND archived_at IS NULL
+         ORDER BY created_at DESC
+         LIMIT 1
        )
        ORDER BY scheduled_at ASC`,
       [groupId]
@@ -1203,8 +1223,12 @@ export class PostgresGroupsRepository implements GroupsRepository {
     }>(
       `SELECT response, COUNT(*) AS count FROM group_attendance_responses
        WHERE outing_id = (
+         -- Newest live outing. Several coexist since migration 0042, so
+         -- an unordered subquery here returned more than one row.
          SELECT id FROM group_outings
          WHERE group_id = $1 AND archived_at IS NULL
+         ORDER BY created_at DESC
+         LIMIT 1
        )
        GROUP BY response`,
       [groupId]
@@ -1212,8 +1236,12 @@ export class PostgresGroupsRepository implements GroupsRepository {
     const mine = await this.pool.query<{ response: AttendanceResponse }>(
       `SELECT response FROM group_attendance_responses
        WHERE user_id = $2 AND outing_id = (
+         -- Newest live outing. Several coexist since migration 0042, so
+         -- an unordered subquery here returned more than one row.
          SELECT id FROM group_outings
          WHERE group_id = $1 AND archived_at IS NULL
+         ORDER BY created_at DESC
+         LIMIT 1
        )`,
       [groupId, viewerId]
     );
@@ -1261,8 +1289,12 @@ export class PostgresGroupsRepository implements GroupsRepository {
        LEFT JOIN (SELECT item_id, COUNT(*) AS checked_count FROM group_checklist_checks GROUP BY item_id) checks ON checks.item_id = ci.id
        LEFT JOIN group_checklist_checks my_check ON my_check.item_id = ci.id AND my_check.user_id = $2
        WHERE ci.outing_id = (
+         -- Newest live outing. Several coexist since migration 0042, so
+         -- an unordered subquery here returned more than one row.
          SELECT id FROM group_outings
          WHERE group_id = $1 AND archived_at IS NULL
+         ORDER BY created_at DESC
+         LIMIT 1
        )
        ORDER BY ci.created_at ASC`,
       [groupId, viewerId]
@@ -1662,14 +1694,23 @@ export class PostgresGroupsRepository implements GroupsRepository {
   }
 
   /**
-   * The current outing's id, or a GroupNotFoundError. Every group has one
-   * (created with the group, and backfilled by migration 0041), so a group
-   * without one is a broken row rather than a state to render.
+   * The outing the un-scoped module routes still act on: the most recently
+   * published live one.
+   *
+   * Migration 0042 let several outings coexist, which made "the current
+   * outing" ambiguous - two rows could satisfy `archived_at IS NULL` and
+   * `rows[0]` would then be whatever the planner returned. Ordering makes it
+   * deterministic. These routes move to an explicit outing id when the feed
+   * interface lands and each outing card owns its own programme, attendance
+   * and checklist; until then they act on the newest, which is the one a
+   * member is looking at.
    */
   private async requireCurrentOuting(groupId: string): Promise<string> {
     const result = await this.pool.query<{ id: string }>(
       `SELECT id FROM group_outings
-       WHERE group_id = $1 AND archived_at IS NULL`,
+       WHERE group_id = $1 AND archived_at IS NULL
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [groupId]
     );
     const outing = result.rows[0];
@@ -1679,9 +1720,11 @@ export class PostgresGroupsRepository implements GroupsRepository {
 
   async getCurrentOuting(groupId: string): Promise<GroupOuting | undefined> {
     const result = await this.pool.query<OutingRow>(
-      `SELECT id, group_id, event_id, title, starts_at, created_at, archived_at
+      `SELECT id, group_id, event_id, title, starts_at, place, created_at, archived_at
        FROM group_outings
-       WHERE group_id = $1 AND archived_at IS NULL`,
+       WHERE group_id = $1 AND archived_at IS NULL
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [groupId]
     );
     return result.rows[0] ? toOuting(result.rows[0]) : undefined;
@@ -1693,7 +1736,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
   ): Promise<GroupOuting[]> {
     await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<OutingRow>(
-      `SELECT id, group_id, event_id, title, starts_at, created_at, archived_at
+      `SELECT id, group_id, event_id, title, starts_at, place, created_at, archived_at
        FROM group_outings
        WHERE group_id = $1
        ORDER BY archived_at NULLS FIRST, created_at DESC`,
@@ -1705,31 +1748,54 @@ export class PostgresGroupsRepository implements GroupsRepository {
   async startOuting(
     groupId: string,
     userId: string,
-    input: { title: string; eventId?: string; startsAt?: string }
+    input: {
+      title: string;
+      eventId?: string;
+      startsAt?: string;
+      place?: string;
+    }
   ): Promise<GroupOuting> {
-    await this.requireModerator(groupId, userId);
+    // Any member publishes an outing - that is what makes the feed
+    // participatory. It no longer archives anything: several proposals
+    // coexist, and a past one simply falls down the stream.
+    await this.requireMembership(groupId, userId);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      // Archiving first is what keeps group_outings_one_current satisfiable:
-      // the partial unique index allows exactly one live outing per group.
-      await client.query(
-        `UPDATE group_outings SET archived_at = now()
-         WHERE group_id = $1 AND archived_at IS NULL`,
-        [groupId]
-      );
       const inserted = await client.query<OutingRow>(
         `INSERT INTO group_outings
-           (id, group_id, event_id, title, starts_at, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, group_id, event_id, title, starts_at, created_at, archived_at`,
+           (id, group_id, event_id, title, starts_at, created_by, place)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, group_id, event_id, title, starts_at, place, created_at, archived_at`,
         [
           randomUUID(),
           groupId,
           input.eventId ?? null,
           input.title,
           input.startsAt ?? null,
-          userId
+          userId,
+          input.place ?? null
+        ]
+      );
+      // An outing is a post: it appears in the feed like anything else, and
+      // inherits its replies, likes and reporting rather than needing its
+      // own copy of each.
+      await client.query(
+        `INSERT INTO group_posts
+           (id, group_id, author_id, body, channel_id, kind, outing_id)
+         VALUES (
+           $1, $2, $3, $4,
+           (SELECT c.id FROM group_channels c
+            WHERE c.group_id = $2
+            ORDER BY c.position ASC, c.created_at ASC LIMIT 1),
+           'outing', $5
+         )`,
+        [
+          randomUUID(),
+          groupId,
+          userId,
+          input.title,
+          inserted.rows[0]!.id
         ]
       );
       await client.query('COMMIT');

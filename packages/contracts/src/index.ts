@@ -1060,6 +1060,7 @@ export const groupOutingSchema = z.object({
   eventId: z.uuid().optional(),
   title: z.string().min(1).max(120),
   startsAt: z.iso.datetime().optional(),
+  place: z.string().min(1).optional(),
   createdAt: z.iso.datetime(),
   archivedAt: z.iso.datetime().optional()
 });
@@ -1078,7 +1079,10 @@ export const groupOutingResponseSchema = z.object({
 export const startGroupOutingRequestSchema = z.object({
   title: z.string().min(1).max(120),
   eventId: z.uuid().optional(),
-  startsAt: z.iso.datetime().optional()
+  startsAt: z.iso.datetime().optional(),
+  // Where it is, in the group own words - "chez Marie" and every other
+  // place Pulso has never heard of, without inventing a fake venue.
+  place: z.string().min(1).max(120).optional()
 });
 
 export const groupChannelSchema = z.object({
@@ -1107,6 +1111,9 @@ export const groupPostSchema = z.object({
   id: z.uuid(),
   groupId: z.uuid(),
   channelId: z.uuid(),
+  // A message someone wrote, or an outing they proposed into the feed.
+  kind: z.enum(['message', 'outing']),
+  outingId: z.uuid().optional(),
   author: publicUserSchema,
   body: z.string().min(1),
   createdAt: z.iso.datetime(),

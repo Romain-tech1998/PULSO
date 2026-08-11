@@ -326,7 +326,7 @@ describeWithDatabase('group privacy and membership guards', () => {
     expect(left).toHaveLength(1);
   });
 
-  it('starts a new outing with empty modules, keeping the previous one', async () => {
+  it('publishes an outing with empty modules, keeping the previous one', async () => {
     const group = await createGroup('open');
     await repository.addScheduleItem(
       group.id,
@@ -358,12 +358,27 @@ describeWithDatabase('group privacy and membership guards', () => {
     expect(attendance.yes).toBe(0);
     expect(attendance.myResponse).toBeUndefined();
 
-    // And week one is archived, not destroyed.
+    // And week one is still there: outings coexist, the older one simply
+    // falls down the feed rather than being closed.
     const outings = await repository.listOutings(group.id, creatorId);
     expect(outings).toHaveLength(2);
-    expect(outings[0]!.id).toBe(next.id);
-    expect(outings[0]!.archivedAt).toBeUndefined();
-    expect(outings[1]!.archivedAt).toBeDefined();
+    expect(outings.map((outing) => outing.id)).toContain(next.id);
+    expect(outings.every((outing) => !outing.archivedAt)).toBe(true);
+  });
+
+  it('publishes each outing into the feed as a post', async () => {
+    const group = await createGroup('open');
+    await repository.startOuting(group.id, creatorId, {
+      title: 'Ce soir au Bal du Lezard',
+      place: 'Le Bal du Lezard'
+    });
+
+    // An outing is a post, so it inherits replies, likes and reporting
+    // instead of needing its own copy of each.
+    const feed = await repository.getPosts(group.id, creatorId);
+    const outingPosts = feed.filter((post) => post.kind === 'outing');
+    expect(outingPosts).toHaveLength(1);
+    expect(outingPosts[0]!.body).toBe('Ce soir au Bal du Lezard');
   });
 
   it('lets the same member answer each outing separately', async () => {
@@ -378,19 +393,29 @@ describeWithDatabase('group privacy and membership guards', () => {
     expect(summary.no).toBe(0);
   });
 
-  it('lets only the moderator start an outing, and keeps exactly one current', async () => {
+  it('lets any member publish an outing, and lets several coexist', async () => {
     const group = await createGroup('open');
     await repository.joinGroup(group.id, outsiderId);
 
+    // Participatory: a plain member proposes a night out without needing
+    // the moderator, and without cancelling anyone else's.
+    await repository.startOuting(group.id, outsiderId, {
+      title: 'Samedi au Stereo'
+    });
+    await repository.startOuting(group.id, creatorId, {
+      title: 'Ce soir au Bal du Lezard'
+    });
+
+    const outings = await repository.listOutings(group.id, creatorId);
+    expect(outings).toHaveLength(3);
+    expect(outings.every((outing) => !outing.archivedAt)).toBe(true);
+  });
+
+  it('refuses to publish an outing in a group the author has not joined', async () => {
+    const group = await createGroup('restricted');
     await expect(
       repository.startOuting(group.id, outsiderId, { title: 'Pas permis' })
-    ).rejects.toBeInstanceOf(NotGroupModeratorError);
-
-    await repository.startOuting(group.id, creatorId, { title: 'Deux' });
-    await repository.startOuting(group.id, creatorId, { title: 'Trois' });
-    const outings = await repository.listOutings(group.id, creatorId);
-    expect(outings.filter((outing) => !outing.archivedAt)).toHaveLength(1);
-    expect(outings).toHaveLength(3);
+    ).rejects.toBeInstanceOf(NotGroupMemberError);
   });
 
   it('lets only the creator reshape the module layout', async () => {
