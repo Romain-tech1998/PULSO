@@ -276,6 +276,10 @@ export function fakeNotificationsRepository(
     countUnread: async () => 0,
     markAllRead: async () => undefined,
     markRead: async () => undefined,
+    notifyGroupVerificationReceived: async () => undefined,
+    notifyGroupVerificationResolved: async () => undefined,
+    notifyGroupJoinRequestReceived: async () => undefined,
+    notifyGroupJoinRequestAccepted: async () => undefined,
     notifyFriendRequestReceived: async () => undefined,
     notifyFriendRequestAccepted: async () => undefined,
     notifyMessageReceived: async () => undefined,
@@ -324,6 +328,7 @@ export function fakeGroup(overrides: Partial<Group> = {}): Group {
     myStatus: 'member',
     pendingRequestCount: undefined,
     pinned: false,
+    verificationStatus: 'none',
     ...overrides
   };
 }
@@ -407,6 +412,11 @@ export function fakeGroupsRepository(
     addChecklistItem: async () => undefined,
     toggleChecklistCheck: async () => undefined,
     deleteChecklistItem: async () => undefined,
+    setGroupPhoto: async () => undefined,
+    clearGroupPhoto: async () => undefined,
+    requestVerification: async () => undefined,
+    listPendingVerifications: async () => [],
+    resolveVerification: async () => undefined,
     ...overrides
   };
 }

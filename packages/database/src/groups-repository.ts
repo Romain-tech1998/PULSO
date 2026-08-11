@@ -41,6 +41,11 @@ export type GroupVisibility = 'open' | 'restricted' | 'private_invite';
 export type GroupType = 'community' | 'event' | 'private_crew';
 export type GroupMembershipStatus = 'member' | 'pending';
 export type AttendanceResponse = 'yes' | 'maybe' | 'no';
+export type GroupVerificationStatus =
+  | 'none'
+  | 'pending'
+  | 'verified'
+  | 'declined';
 
 export interface GroupMeetupVenue {
   name: string;
@@ -86,6 +91,18 @@ export interface Group {
   // joined, since pinning is a per-membership preference, not a group
   // property.
   pinned: boolean;
+  // The group's own uploaded photo. Absent until a moderator sets one.
+  imageUrl?: string;
+  // Requested by the moderator, granted by a Pulso administrator - the same
+  // request/approve shape DEC-0018 uses for organizer accounts.
+  verificationStatus: GroupVerificationStatus;
+}
+
+export interface GroupVerificationRequest {
+  group: Group;
+  requester: PublicUser;
+  requestedAt: string;
+  justification: string;
 }
 
 export interface GroupPost {
@@ -151,9 +168,11 @@ export interface GroupsRepository {
   ): Promise<Group>;
   listMyGroups(userId: string): Promise<Group[]>;
   getGroup(groupId: string, viewerId: string): Promise<Group | undefined>;
+  /** Moderator-only: reshaping the workspace is a group-lifecycle action. */
   updateGroupModules(
     groupId: string,
-    modulesConfig: GroupModuleConfig[]
+    modulesConfig: GroupModuleConfig[],
+    userId: string
   ): Promise<void>;
   // Returns the resulting membership status - 'member' if the group is
   // open (joined immediately, same as before) or 'pending' if restricted
@@ -169,7 +188,7 @@ export interface GroupsRepository {
   ): Promise<void>;
   // Real accepted members (Phase 4.10's avatar stack) - never a fabricated
   // count, always the actual people who joined.
-  getMembers(groupId: string): Promise<PublicUser[]>;
+  getMembers(groupId: string, viewerId: string): Promise<PublicUser[]>;
   getJoinRequests(groupId: string, moderatorId: string): Promise<PublicUser[]>;
   respondToJoinRequest(
     groupId: string,
@@ -203,7 +222,10 @@ export interface GroupsRepository {
   deletePost(postId: string, authorId: string): Promise<void>;
   likePost(postId: string, userId: string): Promise<void>;
   unlikePost(postId: string, userId: string): Promise<void>;
-  getScheduleItems(groupId: string): Promise<GroupScheduleItem[]>;
+  getScheduleItems(
+    groupId: string,
+    viewerId: string
+  ): Promise<GroupScheduleItem[]>;
   addScheduleItem(
     groupId: string,
     authorId: string,
@@ -235,6 +257,30 @@ export interface GroupsRepository {
     checked: boolean
   ): Promise<void>;
   deleteChecklistItem(itemId: string, authorId: string): Promise<void>;
+  /**
+   * Moderator-only. Returns the on-disk path of the photo being replaced,
+   * so the caller can delete the file it just orphaned.
+   */
+  setGroupPhoto(
+    groupId: string,
+    userId: string,
+    imageUrl: string,
+    imagePath: string
+  ): Promise<string | undefined>;
+  clearGroupPhoto(groupId: string, userId: string): Promise<string | undefined>;
+  /** Moderator-only: asks a Pulso administrator to verify this group. */
+  requestVerification(
+    groupId: string,
+    userId: string,
+    justification: string
+  ): Promise<void>;
+  /** Administration queue (DEC-0018's is_admin gate, checked by the route). */
+  listPendingVerifications(): Promise<GroupVerificationRequest[]>;
+  resolveVerification(
+    adminUserId: string,
+    groupId: string,
+    approve: boolean
+  ): Promise<{ groupId: string; requesterId: string } | undefined>;
 }
 
 interface GroupRow {
@@ -258,6 +304,8 @@ interface GroupRow {
   event_title: string | null;
   event_starts_at: string | null;
   pinned: boolean;
+  image_url: string | null;
+  verification_status: GroupVerificationStatus;
 }
 
 function toGroup(row: GroupRow): Group {
@@ -292,6 +340,8 @@ function toGroup(row: GroupRow): Group {
           }
         }
       : {}),
+    ...(row.image_url !== null ? { imageUrl: row.image_url } : {}),
+    verificationStatus: row.verification_status,
     ...(row.event_title !== null ? { eventTitle: row.event_title } : {}),
     ...(row.event_starts_at !== null
       ? { eventStartsAt: new Date(row.event_starts_at).toISOString() }
@@ -302,6 +352,7 @@ function toGroup(row: GroupRow): Group {
 
 const GROUP_SELECT_FIELDS = `
   g.id, g.name, g.description, g.created_by, g.created_at, g.event_id, g.type, g.visibility, g.modules_config,
+  g.image_url, g.verification_status,
   (SELECT COUNT(*) FROM group_memberships gm2 WHERE gm2.group_id = g.id AND gm2.status = 'member') AS member_count,
   (SELECT gm3.status FROM group_memberships gm3 WHERE gm3.group_id = g.id AND gm3.user_id = $VIEWER) AS my_status,
   (g.created_by = $VIEWER) AS is_moderator,
@@ -406,6 +457,8 @@ export class PostgresGroupsRepository implements GroupsRepository {
         venue_address: null,
         venue_longitude: null,
         venue_latitude: null,
+        image_url: null,
+        verification_status: 'none' as const,
         event_title: null,
         event_starts_at: null,
         pinned: false
@@ -440,7 +493,14 @@ export class PostgresGroupsRepository implements GroupsRepository {
        FROM groups g
        LEFT JOIN events e ON e.id = g.event_id
        LEFT JOIN venues v ON v.id = e.venue_id
-       WHERE g.id = $1`,
+       WHERE g.id = $1
+         AND (
+           g.visibility <> 'private_invite'
+           OR EXISTS (
+             SELECT 1 FROM group_memberships gm
+             WHERE gm.group_id = g.id AND gm.user_id = $2
+           )
+         )`,
       [groupId, viewerId]
     );
     return result.rows[0] ? toGroup(result.rows[0]) : undefined;
@@ -448,8 +508,10 @@ export class PostgresGroupsRepository implements GroupsRepository {
 
   async updateGroupModules(
     groupId: string,
-    modulesConfig: GroupModuleConfig[]
+    modulesConfig: GroupModuleConfig[],
+    userId: string
   ): Promise<void> {
+    await this.requireModerator(groupId, userId);
     await this.pool.query(
       `UPDATE groups SET modules_config = $1 WHERE id = $2`,
       [JSON.stringify(modulesConfig), groupId]
@@ -511,6 +573,17 @@ export class PostgresGroupsRepository implements GroupsRepository {
     );
     const group = groupResult.rows[0];
     if (!group) throw new GroupNotFoundError();
+    if (group.visibility === 'private_invite') {
+      // Invitation-only: no self-service path in. Reported as "not found"
+      // rather than "forbidden" so the route never confirms a private crew
+      // exists to someone who was never invited.
+      const invited = await this.pool.query(
+        `SELECT 1 FROM group_memberships WHERE group_id = $1 AND user_id = $2`,
+        [groupId, userId]
+      );
+      if (invited.rows.length === 0) throw new GroupNotFoundError();
+      return 'member';
+    }
     const status: GroupMembershipStatus =
       group.visibility === 'restricted' ? 'pending' : 'member';
     await this.pool.query(
@@ -540,7 +613,11 @@ export class PostgresGroupsRepository implements GroupsRepository {
     );
   }
 
-  async getMembers(groupId: string): Promise<PublicUser[]> {
+  async getMembers(
+    groupId: string,
+    viewerId: string
+  ): Promise<PublicUser[]> {
+    await this.requireVisibility(groupId, viewerId);
     const result = await this.pool.query<{
       id: string;
       display_name: string;
@@ -616,6 +693,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
          LEFT JOIN events e ON e.id = g.event_id
          LEFT JOIN venues v ON v.id = e.venue_id
          WHERE g.event_id IS NULL
+           AND g.visibility <> 'private_invite'
            AND NOT EXISTS (
              SELECT 1 FROM group_memberships gm
              WHERE gm.group_id = g.id AND gm.user_id = $1 AND gm.status = 'member'
@@ -643,6 +721,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
        JOIN events e ON e.id = g.event_id
        LEFT JOIN venues v ON v.id = e.venue_id
        WHERE g.event_id IS NOT NULL
+         AND g.visibility <> 'private_invite'
        ORDER BY e.starts_at ASC
        LIMIT 50`,
       [viewerId]
@@ -656,6 +735,27 @@ export class PostgresGroupsRepository implements GroupsRepository {
         category: row.ev_category
       }
     }));
+  }
+
+  /**
+   * A `private_invite` group (DEC-0015's "private crew") must be invisible
+   * to anyone not already in it: never in discovery, and not readable by id
+   * either - otherwise knowing the id alone defeats the privacy. `open` and
+   * `restricted` groups stay readable, which is what DEC-0013 v1.2 intends
+   * ("restriction only gates participation, not visibility").
+   */
+  private async requireVisibility(
+    groupId: string,
+    userId: string
+  ): Promise<void> {
+    const result = await this.pool.query<{ visibility: GroupVisibility }>(
+      `SELECT visibility FROM groups WHERE id = $1`,
+      [groupId]
+    );
+    const group = result.rows[0];
+    if (!group) throw new GroupNotFoundError();
+    if (group.visibility !== 'private_invite') return;
+    await this.requireMembership(groupId, userId);
   }
 
   private async requireMembership(
@@ -761,7 +861,11 @@ export class PostgresGroupsRepository implements GroupsRepository {
     );
   }
 
-  async getScheduleItems(groupId: string): Promise<GroupScheduleItem[]> {
+  async getScheduleItems(
+    groupId: string,
+    viewerId: string
+  ): Promise<GroupScheduleItem[]> {
+    await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<{
       id: string;
       group_id: string;
@@ -809,6 +913,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
     groupId: string,
     viewerId: string
   ): Promise<GroupAttendanceSummary> {
+    await this.requireMembership(groupId, viewerId);
     const counts = await this.pool.query<{
       response: AttendanceResponse;
       count: string;
@@ -843,6 +948,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
     groupId: string,
     viewerId: string
   ): Promise<GroupChecklistItem[]> {
+    await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<{
       id: string;
       group_id: string;
@@ -893,6 +999,15 @@ export class PostgresGroupsRepository implements GroupsRepository {
     userId: string,
     checked: boolean
   ): Promise<void> {
+    // checkedCount/totalMembers is a claim about the group's own members,
+    // so a non-member checking an item off made it state something untrue.
+    const owner = await this.pool.query<{ group_id: string }>(
+      `SELECT group_id FROM group_checklist_items WHERE id = $1`,
+      [itemId]
+    );
+    const item = owner.rows[0];
+    if (!item) throw new GroupNotFoundError();
+    await this.requireMembership(item.group_id, userId);
     if (checked) {
       await this.pool.query(
         `INSERT INTO group_checklist_checks (item_id, user_id) VALUES ($1, $2) ON CONFLICT (item_id, user_id) DO NOTHING`,
@@ -911,5 +1026,113 @@ export class PostgresGroupsRepository implements GroupsRepository {
       `DELETE FROM group_checklist_items WHERE id = $1 AND created_by = $2`,
       [itemId, authorId]
     );
+  }
+
+  async setGroupPhoto(
+    groupId: string,
+    userId: string,
+    imageUrl: string,
+    imagePath: string
+  ): Promise<string | undefined> {
+    await this.requireModerator(groupId, userId);
+    const previous = await this.pool.query<{ image_path: string | null }>(
+      `SELECT image_path FROM groups WHERE id = $1`,
+      [groupId]
+    );
+    await this.pool.query(
+      `UPDATE groups SET image_url = $2, image_path = $3 WHERE id = $1`,
+      [groupId, imageUrl, imagePath]
+    );
+    return previous.rows[0]?.image_path ?? undefined;
+  }
+
+  async clearGroupPhoto(
+    groupId: string,
+    userId: string
+  ): Promise<string | undefined> {
+    await this.requireModerator(groupId, userId);
+    const previous = await this.pool.query<{ image_path: string | null }>(
+      `SELECT image_path FROM groups WHERE id = $1`,
+      [groupId]
+    );
+    await this.pool.query(
+      `UPDATE groups SET image_url = NULL, image_path = NULL WHERE id = $1`,
+      [groupId]
+    );
+    return previous.rows[0]?.image_path ?? undefined;
+  }
+
+  async requestVerification(
+    groupId: string,
+    userId: string,
+    justification: string
+  ): Promise<void> {
+    await this.requireModerator(groupId, userId);
+    // Re-requesting an already-pending group is a no-op rather than an
+    // error: the moderator's intent ("please look at this") is already
+    // recorded, and a 409 here would only be noise.
+    await this.pool.query(
+      `UPDATE groups
+       SET verification_status = 'pending',
+           verification_requested_at = now(),
+           verification_justification = $2
+       WHERE id = $1 AND verification_status <> 'verified'`,
+      [groupId, justification]
+    );
+  }
+
+  async listPendingVerifications(): Promise<GroupVerificationRequest[]> {
+    const result = await this.pool.query<
+      GroupRow & {
+        requested_at: string;
+        justification: string;
+        requester_id: string;
+        requester_display_name: string;
+        requester_avatar_url: string | null;
+      }
+    >(
+      `SELECT ${GROUP_SELECT_FIELDS.replaceAll('$VIEWER', 'g.created_by')},
+              g.verification_requested_at AS requested_at,
+              g.verification_justification AS justification,
+              u.id AS requester_id, u.display_name AS requester_display_name,
+              u.avatar_url AS requester_avatar_url
+       FROM groups g
+       JOIN users u ON u.id = g.created_by
+       LEFT JOIN events e ON e.id = g.event_id
+       LEFT JOIN venues v ON v.id = e.venue_id
+       WHERE g.verification_status = 'pending'
+       ORDER BY g.verification_requested_at ASC`
+    );
+    return result.rows.map((row) => ({
+      group: toGroup(row),
+      requester: {
+        id: row.requester_id,
+        displayName: row.requester_display_name,
+        ...(row.requester_avatar_url !== null
+          ? { avatarUrl: row.requester_avatar_url }
+          : {})
+      },
+      requestedAt: new Date(row.requested_at).toISOString(),
+      justification: row.justification
+    }));
+  }
+
+  async resolveVerification(
+    adminUserId: string,
+    groupId: string,
+    approve: boolean
+  ): Promise<{ groupId: string; requesterId: string } | undefined> {
+    const result = await this.pool.query<{ created_by: string }>(
+      `UPDATE groups
+       SET verification_status = $3,
+           verified_at = CASE WHEN $3 = 'verified' THEN now() ELSE NULL END,
+           verified_by = CASE WHEN $3 = 'verified' THEN $2::uuid ELSE NULL END
+       WHERE id = $1 AND verification_status = 'pending'
+       RETURNING created_by`,
+      [groupId, adminUserId, approve ? 'verified' : 'declined']
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return { groupId, requesterId: row.created_by };
   }
 }

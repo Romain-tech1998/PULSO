@@ -192,7 +192,11 @@ export function buildApp(
       app,
       options.authRepository,
       options.groupsRepository,
-      repository
+      repository,
+      options.notificationsRepository,
+      options.organizerRepository,
+      options.uploadDir,
+      options.publicUploadUrl
     );
     registerProfileRoutes(
       app,
@@ -221,7 +225,11 @@ export function buildApp(
       options.authRepository,
       options.organizerRepository,
       options.notificationsRepository,
-      repository
+      repository,
+      // The group-verification queue is the same console behind the same
+      // is_admin gate, so it lives here rather than in a second admin
+      // module with its own copy of the authorization check.
+      options.groupsRepository
     );
     registerCreatedEventsRoutes(
       app,

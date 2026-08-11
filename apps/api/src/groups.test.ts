@@ -12,6 +12,8 @@ import {
   fakeGroup,
   fakeGroupPost,
   fakeGroupsRepository,
+  fakeOrganizerRepository,
+  fakeNotificationsRepository,
   friend,
   testUser,
   fakeEventRepository
@@ -718,5 +720,163 @@ describe('groups API', () => {
       checked: true
     });
     await app.close();
+  });
+
+  it('refuses a verification request from someone who is not the moderator', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          requestVerification: async () => {
+            throw new NotGroupModeratorError();
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/groups/${fakeGroup().id}/verification-request`,
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { justification: 'Communauté techno de 1200 personnes.' }
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe('NOT_GROUP_MODERATOR');
+    await app.close();
+  });
+
+  it('records a verification request and notifies every administrator', async () => {
+    let recorded: { groupId: string; justification: string } | undefined;
+    const notified: string[][] = [];
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          requestVerification: async (groupId, _userId, justification) => {
+            recorded = { groupId, justification };
+          },
+          getGroup: async () => fakeGroup({ verificationStatus: 'pending' })
+        }),
+        organizerRepository: fakeOrganizerRepository({
+          listAdminUserIds: async () => ['admin-1', 'admin-2']
+        }),
+        notificationsRepository: fakeNotificationsRepository({
+          notifyGroupVerificationReceived: async (adminUserIds) => {
+            notified.push(adminUserIds);
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/groups/${fakeGroup().id}/verification-request`,
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { justification: 'Communauté techno de 1200 personnes.' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(recorded?.justification).toBe('Communauté techno de 1200 personnes.');
+    expect(notified).toEqual([['admin-1', 'admin-2']]);
+    expect(response.json().data.verificationStatus).toBe('pending');
+    await app.close();
+  });
+
+  it('refuses to remove a group photo for someone who is not the moderator', async () => {
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          clearGroupPhoto: async () => {
+            throw new NotGroupModeratorError();
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/groups/${fakeGroup().id}/photo`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it('tells the moderator when someone asks to join their restricted group', async () => {
+    const notified: { moderator: string; actor: string; groupId: string }[] = [];
+    const group = fakeGroup({ visibility: 'restricted', createdBy: 'mod-1' });
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          joinGroup: async () => 'pending',
+          getGroup: async () => group
+        }),
+        notificationsRepository: fakeNotificationsRepository({
+          notifyGroupJoinRequestReceived: async (moderator, actor, groupId) => {
+            notified.push({ moderator, actor, groupId });
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/groups/${group.id}/members`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().status).toBe('pending');
+    expect(notified).toEqual([
+      { moderator: 'mod-1', actor: testUser.id, groupId: group.id }
+    ]);
+    await app.close();
+  });
+
+  it('says nothing to the moderator when the group is open', async () => {
+    const notified: string[] = [];
+    const app = buildApp(
+      event,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({ joinGroup: async () => 'member' }),
+        notificationsRepository: fakeNotificationsRepository({
+          notifyGroupJoinRequestReceived: async (moderator) => {
+            notified.push(moderator);
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/groups/${fakeGroup().id}/members`,
+      headers: { authorization: 'Bearer valid-token' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(notified).toEqual([]);
+    await app.close();
+  });
+
+  it('tells an accepted member they are in, and a declined one nothing', async () => {
+    const accepted: { userId: string; groupId: string }[] = [];
+    const build = (action: 'accept' | 'decline') => {
+      const app = buildApp(
+        event,
+        accountRepositories({
+          groupsRepository: fakeGroupsRepository(),
+          notificationsRepository: fakeNotificationsRepository({
+            notifyGroupJoinRequestAccepted: async (userId, groupId) => {
+              accepted.push({ userId, groupId });
+            }
+          })
+        })
+      );
+      return app.inject({
+        method: 'PUT',
+        url: `/groups/${fakeGroup().id}/join-requests/${testUser.id}`,
+        headers: { authorization: 'Bearer valid-token' },
+        payload: { action }
+      });
+    };
+    expect((await build('accept')).statusCode).toBe(204);
+    expect((await build('decline')).statusCode).toBe(204);
+    expect(accepted).toEqual([
+      { userId: testUser.id, groupId: fakeGroup().id }
+    ]);
   });
 });

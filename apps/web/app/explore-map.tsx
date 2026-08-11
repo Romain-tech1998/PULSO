@@ -28,13 +28,8 @@ import {
   friendsMapResponseSchema,
   friendsResponseSchema,
   friendSuggestionsResponseSchema,
-  groupAttendanceSummarySchema,
-  groupChecklistItemsResponseSchema,
-  groupJoinRequestsResponseSchema,
-  groupMembersResponseSchema,
-  groupPostsResponseSchema,
   groupResponseSchema,
-  groupScheduleItemsResponseSchema,
+  groupVerificationRequestsResponseSchema,
   groupsResponseSchema,
   intelligentSearchResponseSchema,
   meResponseSchema,
@@ -61,7 +56,6 @@ import {
   myVenueRatingResponseSchema,
   type ActiveForum,
   type ActivityEntry,
-  type AttendanceResponse,
   type DiscoverForumEntry,
   type DiscoverGroupEntry,
   type MyVenueRating,
@@ -76,12 +70,7 @@ import {
   type FriendsMapEntry,
   type FriendSuggestion,
   type Group,
-  type GroupAttendanceSummary,
-  type GroupChecklistItem,
-  type GroupMeetupVenue,
-  type GroupPost,
-  type GroupScheduleItem,
-  type GroupVisibility,
+  type GroupVerificationRequest,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
   type Message,
@@ -92,7 +81,6 @@ import {
   type PublicVenue,
   type ProfileStatsResponse,
   type AdminVenuePhoto,
-  type ReportTargetType,
   type TrendsResponse,
   type User
 } from '@pulso/contracts';
@@ -140,7 +128,21 @@ import {
 } from 'react';
 
 import { eventDetailsFields, eventPreviewFields } from './event-view-model';
+import {
+  GroupDetailContent,
+  GroupModal,
+  GroupsBlock,
+  GroupsPage,
+  MessagesGroupsTab
+} from './groups';
 import { persistBrowserLocale, resolveBrowserLocale } from './locale-client';
+import {
+  API_BASE_URL,
+  formatRelativeTime,
+  HeartIcon,
+  MAP_STYLE_URL,
+  reportContent
+} from './shared';
 import { deriveVenuePriceTier, type VenuePriceTier } from './venue-price-tier';
 import {
   getVenueDiscoveryDateRange,
@@ -170,19 +172,6 @@ const INITIAL_BOUNDS = {
   east: -73.4,
   north: 45.7
 };
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
-// Pulso's own vector style, served from public/ - the project's art
-// direction (deep violet #100e19, muted roads) rather than a generic grey
-// basemap. It used to sit behind NEXT_PUBLIC_MAP_STYLE_URL, so whenever
-// that variable was missing - Next reads .env from apps/web, not from the
-// monorepo root - every map silently fell back to a flat CartoDB raster
-// that looked nothing like the rest of the product.
-const MAP_STYLE_PULSO = '/map-styles/pulso-dark.json';
-
-const MAP_STYLE_URL: string | maplibregl.StyleSpecification =
-  process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? MAP_STYLE_PULSO;
-
 const PIN_WIDTH = 38;
 const PIN_HEIGHT = 44;
 // Pins are rasterized once at load time, not re-drawn per zoom level -
@@ -753,40 +742,6 @@ function useActiveForums(authToken: string | undefined) {
   }, [refresh]);
 
   return { forums, state };
-}
-
-// Minimal safety net (DEC-0012): captures the report only, no moderation
-// queue or automated action exists yet - the acknowledgment says exactly
-// that rather than implying a review will happen.
-function reportContent(
-  authToken: string | undefined,
-  targetType: ReportTargetType,
-  targetId: string
-) {
-  if (!authToken) return;
-  // Cancelling the prompt aborts the report entirely; confirming with an
-  // empty reason still sends it (the target/reporter/timestamp alone are
-  // useful even with no reason given).
-  const input = window.prompt(
-    'Pourquoi signalez-vous ce contenu ? (optionnel)'
-  );
-  if (input === null) return;
-  fetch(`${API_BASE_URL}/reports`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${authToken}`
-    },
-    body: JSON.stringify({
-      targetType,
-      targetId,
-      ...(input.trim() ? { reason: input.trim() } : {})
-    })
-  })
-    .then((response) => {
-      if (response.ok) alert('Signalement envoyé.');
-    })
-    .catch(() => {});
 }
 
 const AUTH_TOKEN_KEY = 'pulso-auth-token';
@@ -5771,24 +5726,6 @@ const CATEGORY_ICON_PATHS: Record<EventCategory, ReactNode> = {
   )
 };
 
-function HeartIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill={filled ? 'currentColor' : 'none'}
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-    </svg>
-  );
-}
-
 function InfoIcon() {
   return (
     <svg
@@ -6185,6 +6122,58 @@ function describeNotification(entry: PulsoNotification): {
             {'Ta demande pour '}
             <strong>{entry.venueName}</strong>
             {" n'a pas été retenue"}
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt)
+      };
+    case 'group_verification_received':
+      return {
+        icon: 'administration',
+        text: (
+          <>
+            <strong>{entry.actorDisplayName}</strong>
+            {' demande la vérification de '}
+            <strong>{entry.groupName}</strong>
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt)
+      };
+    case 'group_verification_resolved':
+      return {
+        icon: 'groupes',
+        text: entry.approved ? (
+          <>
+            <strong>{entry.groupName}</strong>
+            {' est maintenant un groupe vérifié'}
+          </>
+        ) : (
+          <>
+            {'La vérification de '}
+            <strong>{entry.groupName}</strong>
+            {" n'a pas été retenue"}
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt)
+      };
+    case 'group_join_request_received':
+      return {
+        icon: 'groupes',
+        text: (
+          <>
+            <strong>{entry.actorDisplayName}</strong>
+            {' demande à rejoindre '}
+            <strong>{entry.groupName}</strong>
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt)
+      };
+    case 'group_join_request_accepted':
+      return {
+        icon: 'groupes',
+        text: (
+          <>
+            {'Tu as rejoint '}
+            <strong>{entry.groupName}</strong>
           </>
         ),
         detail: formatRelativeTime(entry.createdAt)
@@ -10244,10 +10233,149 @@ function AdministrationPage({ authToken }: { authToken: string | undefined }) {
         ))}
       </div>
 
+      <AdminGroupVerificationsBlock authToken={authToken} />
       <AdminVenuePhotosBlock authToken={authToken} />
     </div>
   );
 }
+/**
+ * The group-verification queue, in the same console and behind the same
+ * is_admin gate as the organizer requests above. A verified badge is what
+ * makes a community legible to people who have never heard of it, so it is
+ * granted here rather than being something a group can award itself.
+ *
+ * Reuses the .admin-request markup of the organizer queue verbatim - it is
+ * the same shape of decision, and a second visual language for it would
+ * only make the console harder to read.
+ */
+function AdminGroupVerificationsBlock({
+  authToken
+}: {
+  authToken: string | undefined;
+}) {
+  const [requests, setRequests] = useState<GroupVerificationRequest[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState<string>();
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/admin/group-verifications`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setRequests(
+          groupVerificationRequestsResponseSchema.parse(json).data
+        );
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const resolve = (groupId: string, approve: boolean) => {
+    if (!authToken) return;
+    setBusy(groupId);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/admin/group-verifications/${groupId}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ approve })
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        reload();
+      })
+      .catch(() => setError("La décision n'a pas pu être enregistrée."))
+      .finally(() => setBusy(undefined));
+  };
+
+  return (
+    <section className="organisateur-section">
+      <div className="events-hero-text">
+        <p className="events-hero-kicker">Vérification de groupes</p>
+        <p className="events-hero-eyebrow">
+          Approuver pose le badge vérifié partout où le groupe apparaît.
+          Refuser ne change rien et laisse le groupe libre de redemander.
+        </p>
+      </div>
+
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">
+          Impossible de charger les demandes de vérification.
+        </p>
+      )}
+      {error && <p className="create-event-error">{error}</p>}
+
+      {state === 'success' && requests.length === 0 && (
+        <div className="empty-state-card organisateur-empty">
+          <span className="empty-state-icon" aria-hidden="true">
+            <SidebarNavIcon kind="groupes" />
+          </span>
+          <p>Aucune demande de vérification</p>
+          <p>
+            Tu seras notifié dès qu&apos;un groupe demande à être vérifié.
+          </p>
+        </div>
+      )}
+
+      <div className="organisateur-list">
+        {requests.map((entry) => (
+          <div className="admin-request" key={entry.group.id}>
+            <div className="admin-request-main">
+              <strong>{entry.group.name}</strong>
+              <span className="admin-request-venue">
+                {entry.group.memberCount} membre
+                {entry.group.memberCount > 1 ? 's' : ''} ·{' '}
+                {entry.group.visibility === 'restricted'
+                  ? 'Sur demande'
+                  : 'Accès libre'}
+              </span>
+              <span className="admin-request-who">
+                Demandé par {entry.requester.displayName}
+              </span>
+              <p className="admin-request-justification">
+                {entry.justification}
+              </p>
+              <span className="admin-request-when">
+                {formatRelativeTime(entry.requestedAt)}
+              </span>
+            </div>
+            <div className="admin-request-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy === entry.group.id}
+                onClick={() => resolve(entry.group.id, false)}
+              >
+                Refuser
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={busy === entry.group.id}
+                onClick={() => resolve(entry.group.id, true)}
+              >
+                Vérifier
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 
 function OrganisateurPage({
   authToken,
@@ -11816,221 +11944,6 @@ function ActiveForumsPage({
   );
 }
 
-// Full-page home for "Groupes" (Sidebar nav item), redesigned (Phase 4.10
-// follow-up) as a real split view instead of a list that pops a modal:
-// the same list+sub-tabs already built for Messages' Groupes tab on the
-// left, GroupDetailContent as a genuine inline panel on the right - no
-// GroupModal here. GroupsBlock (still a modal) stays as-is for the
-// narrower contexts that still use it (sidebar mini-list, Profil tab).
-function GroupsPage({
-  authToken,
-  userId,
-  onOpenEventForum
-}: {
-  authToken: string | undefined;
-  userId: string;
-  onOpenEventForum: (eventId: string) => void;
-}) {
-  const [selectedGroup, setSelectedGroup] = useState<Group>();
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [visibility, setVisibility] = useState<GroupVisibility>('open');
-  const [creating, setCreating] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [listVersion, setListVersion] = useState(0);
-
-  const createGroup = () => {
-    if (!authToken || !name.trim() || creating) return;
-    setCreating(true);
-    fetch(`${API_BASE_URL}/me/groups`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        name: name.trim(),
-        visibility,
-        ...(description.trim() ? { description: description.trim() } : {})
-      })
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setName('');
-        setDescription('');
-        setVisibility('open');
-        setCreateOpen(false);
-        setListVersion((version) => version + 1);
-        setSelectedGroup(groupResponseSchema.parse(json).data);
-      })
-      .catch(() => {})
-      .finally(() => setCreating(false));
-  };
-
-  return (
-    <div className="messages-page groups-page">
-      <div className="messages-list-column groups-directory-column">
-        <header className="groups-page-header">
-          <div>
-            <span className="groups-page-eyebrow">Communautés Pulso</span>
-            <h1>Groupes</h1>
-            <p>Des espaces conçus pour passer de l’idée à la sortie.</p>
-          </div>
-          <button
-            type="button"
-            className={`groups-create-trigger ${createOpen ? 'active' : ''}`}
-            onClick={() => setCreateOpen((open) => !open)}
-            aria-expanded={createOpen}
-          >
-            <span aria-hidden="true">+</span>
-            Créer
-          </button>
-        </header>
-        {createOpen && (
-          <form
-            className="groups-create-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              createGroup();
-            }}
-          >
-            <div className="groups-create-form-heading">
-              <div>
-                <span className="groups-page-eyebrow">Nouveau groupe</span>
-                <strong>Crée ton espace d’organisation</strong>
-              </div>
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() => setCreateOpen(false)}
-              >
-                Fermer
-              </button>
-            </div>
-            <label className="groups-create-field">
-              <span>Nom du groupe</span>
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Ex. Français à Montréal"
-                maxLength={80}
-                autoFocus
-              />
-            </label>
-            <label className="groups-create-field">
-              <span>Mission du groupe</span>
-              <textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="À qui s’adresse le groupe et comment souhaitez-vous organiser les sorties ?"
-                maxLength={500}
-                rows={3}
-              />
-              <small>{description.length}/500</small>
-            </label>
-            <fieldset className="groups-visibility-choice">
-              <legend>Comment peut-on rejoindre ?</legend>
-              <label className={visibility === 'open' ? 'active' : ''}>
-                <input
-                  type="radio"
-                  name="group-visibility"
-                  checked={visibility === 'open'}
-                  onChange={() => setVisibility('open')}
-                />
-                <span className="groups-visibility-icon" aria-hidden="true">
-                  ◎
-                </span>
-                <span>
-                  <strong>Accès libre</strong>
-                  <small>Visible et accessible immédiatement.</small>
-                </span>
-              </label>
-              <label className={visibility === 'restricted' ? 'active' : ''}>
-                <input
-                  type="radio"
-                  name="group-visibility"
-                  checked={visibility === 'restricted'}
-                  onChange={() => setVisibility('restricted')}
-                />
-                <span className="groups-visibility-icon" aria-hidden="true">
-                  ◇
-                </span>
-                <span>
-                  <strong>Sur demande</strong>
-                  <small>
-                    Visible, mais chaque entrée doit être approuvée.
-                  </small>
-                </span>
-              </label>
-            </fieldset>
-            <button
-              type="submit"
-              className="groups-create-submit"
-              disabled={creating || !name.trim()}
-            >
-              {creating ? 'Création…' : 'Créer le groupe'}
-            </button>
-          </form>
-        )}
-        <MessagesGroupsTab
-          key={listVersion}
-          authToken={authToken}
-          selectedGroupId={selectedGroup?.id}
-          onSelectGroup={setSelectedGroup}
-        />
-      </div>
-
-      <div className="messages-conversation-column groups-workspace-column">
-        {selectedGroup ? (
-          <GroupDetailContent
-            group={selectedGroup}
-            authToken={authToken}
-            userId={userId}
-            onGroupUpdated={setSelectedGroup}
-            onLeave={() => setSelectedGroup(undefined)}
-            onOpenEventForum={onOpenEventForum}
-          />
-        ) : (
-          <div className="groups-workspace-empty">
-            <div className="groups-workspace-empty-copy">
-              <span className="groups-page-eyebrow">Ton espace collectif</span>
-              <h2>Organiser une sortie ne devrait jamais être compliqué.</h2>
-              <p>
-                Ouvre un groupe pour retrouver au même endroit les décisions, le
-                programme, les présences, les tâches et la discussion.
-              </p>
-              <button
-                type="button"
-                className="groups-create-submit"
-                onClick={() => setCreateOpen(true)}
-              >
-                Créer mon premier groupe
-              </button>
-            </div>
-            <div
-              className="groups-workspace-modules"
-              aria-label="Modules disponibles"
-            >
-              <span>
-                <b>01</b> Programme partagé
-              </span>
-              <span>
-                <b>02</b> Présences réelles
-              </span>
-              <span>
-                <b>03</b> Checklist collective
-              </span>
-              <span>
-                <b>04</b> Discussion du groupe
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // Full-page conversations list (Phase 4.5) - one row per accepted friend
 // (GET /me/conversations), opening the same ConversationModal built for
 // the per-friend "Message" button in FriendsBlock, unmodified.
@@ -12507,218 +12420,6 @@ function MessagesRequestsTab({
           </div>
         </section>
       )}
-    </div>
-  );
-}
-
-// "Groupes" tab - same real data as GroupsBlock (GET /me/groups), just a
-// second, convenient entry point into the same GroupModal rather than a
-// separate group-messaging concept.
-type GroupsSubTab = 'mine' | 'event' | 'discover';
-
-// Groupes tab inside Messages (Phase 4.10) - three sub-tabs matching the
-// mockup: "Mes groupes" (already-joined), "Groupes de l'événement" (every
-// event-linked group, joined or not) and "Découvrir" (the permanent-group
-// directory DEC-0013 v1.1 pre-authorized). Selecting a row opens the real
-// group inline in the right column via onSelectGroup, same pattern as
-// picking a conversation.
-function MessagesGroupsTab({
-  authToken,
-  selectedGroupId,
-  onSelectGroup
-}: {
-  authToken: string | undefined;
-  selectedGroupId: string | undefined;
-  onSelectGroup: (group: Group) => void;
-}) {
-  const [subTab, setSubTab] = useState<GroupsSubTab>('mine');
-  const [myGroups, setMyGroups] = useState<Group[]>([]);
-  const [eventGroups, setEventGroups] = useState<DiscoverGroupEntry[]>([]);
-  const [discoverGroups, setDiscoverGroups] = useState<DiscoverGroupEntry[]>(
-    []
-  );
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [query, setQuery] = useState('');
-
-  useEffect(() => {
-    if (!authToken) return;
-    setState('loading');
-    const request =
-      subTab === 'mine'
-        ? fetch(`${API_BASE_URL}/me/groups`, {
-            headers: { authorization: `Bearer ${authToken}` }
-          })
-            .then((response) =>
-              response.ok ? response.json() : Promise.reject()
-            )
-            .then((json) => setMyGroups(groupsResponseSchema.parse(json).data))
-        : fetch(
-            `${API_BASE_URL}/groups/discover?scope=${subTab === 'event' ? 'event' : 'permanent'}`,
-            { headers: { authorization: `Bearer ${authToken}` } }
-          )
-            .then((response) =>
-              response.ok ? response.json() : Promise.reject()
-            )
-            .then((json) => {
-              const data = discoverGroupsResponseSchema.parse(json).data;
-              if (subTab === 'event') setEventGroups(data);
-              else setDiscoverGroups(data);
-            });
-    request.then(() => setState('success')).catch(() => setState('error'));
-  }, [authToken, subTab]);
-
-  const openGroup = useCallback(
-    (groupId: string) => {
-      if (!authToken) return;
-      fetch(`${API_BASE_URL}/groups/${groupId}`, {
-        headers: { authorization: `Bearer ${authToken}` }
-      })
-        .then((response) => (response.ok ? response.json() : Promise.reject()))
-        .then((json) => onSelectGroup(groupResponseSchema.parse(json).data))
-        .catch(() => undefined);
-    },
-    [authToken, onSelectGroup]
-  );
-
-  const rows: DiscoverGroupEntry[] =
-    subTab === 'mine'
-      ? myGroups.map((group) => ({ group }))
-      : subTab === 'event'
-        ? eventGroups
-        : discoverGroups;
-  const visibleRows = query.trim()
-    ? rows.filter(({ group, event }) => {
-        const haystack = `${group.name} ${group.description ?? ''} ${event?.title ?? ''}`;
-        return haystack.toLowerCase().includes(query.trim().toLowerCase());
-      })
-    : rows;
-
-  return (
-    <div className="messages-tab-panel groups-directory-panel">
-      <div className="details-tabs groups-sub-tabs">
-        <button
-          type="button"
-          className={subTab === 'mine' ? 'active' : ''}
-          onClick={() => setSubTab('mine')}
-        >
-          Mes groupes
-        </button>
-        <button
-          type="button"
-          className={subTab === 'event' ? 'active' : ''}
-          onClick={() => setSubTab('event')}
-        >
-          Événements
-        </button>
-        <button
-          type="button"
-          className={subTab === 'discover' ? 'active' : ''}
-          onClick={() => setSubTab('discover')}
-        >
-          Découvrir
-        </button>
-      </div>
-
-      <div className="groups-directory-context">
-        <div>
-          <strong>
-            {subTab === 'mine'
-              ? 'Tes espaces'
-              : subTab === 'event'
-                ? 'Autour des événements'
-                : 'Communautés à découvrir'}
-          </strong>
-          <span>
-            {subTab === 'mine'
-              ? 'Tous les groupes que tu as rejoints.'
-              : subTab === 'event'
-                ? 'Des groupes créés pour préparer une sortie précise.'
-                : 'Des communautés montréalaises ouvertes ou sur demande.'}
-          </span>
-        </div>
-        <span className="groups-directory-count">{rows.length}</span>
-      </div>
-      <label className="groups-directory-search">
-        <span aria-hidden="true">⌕</span>
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Rechercher un groupe"
-          aria-label="Rechercher un groupe"
-        />
-      </label>
-
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'error' && (
-        <p className="list-view-empty">
-          Impossible de charger les groupes pour le moment.
-        </p>
-      )}
-      {state === 'success' && rows.length === 0 && (
-        <p className="list-view-empty">
-          {subTab === 'mine'
-            ? 'Aucun groupe pour le moment. Découvre-en un dans l\'onglet Découvrir, ou rejoins-en un depuis "Rencontrer avant l\'événement" sur un forum.'
-            : subTab === 'event'
-              ? "Aucun groupe d'événement pour le moment."
-              : 'Aucun groupe permanent pour le moment.'}
-        </p>
-      )}
-      {state === 'success' && rows.length > 0 && visibleRows.length === 0 && (
-        <p className="list-view-empty">
-          Aucun groupe ne correspond à ta recherche.
-        </p>
-      )}
-      <div className="friends-list groups-directory-list">
-        {visibleRows.map(({ group, event }) => (
-          <button
-            type="button"
-            key={group.id}
-            className={`conversation-list-row ${selectedGroupId === group.id ? 'selected' : ''}`}
-            onClick={() => openGroup(group.id)}
-          >
-            <span className="friends-row-avatar friends-row-avatar-lg group-directory-avatar">
-              {group.name.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="conversation-list-info">
-              <span className="conversation-list-row-top">
-                <strong>{group.name}</strong>
-                <span className="group-directory-access">
-                  {group.visibility === 'restricted' ? 'Sur demande' : 'Libre'}
-                </span>
-              </span>
-              {group.description && (
-                <span className="group-directory-description">
-                  {group.description}
-                </span>
-              )}
-              <span className="group-directory-meta">
-                <span>
-                  {group.memberCount} membre{group.memberCount > 1 ? 's' : ''}
-                </span>
-                <span>{event ? 'Groupe événement' : 'Communauté'}</span>
-              </span>
-              {event && (
-                <span className="group-directory-event">
-                  {event.title} ·{' '}
-                  {new Date(event.startsAt).toLocaleDateString('fr-CA', {
-                    day: 'numeric',
-                    month: 'short'
-                  })}
-                </span>
-              )}
-            </span>
-            {group.isModerator &&
-              group.pendingRequestCount !== undefined &&
-              group.pendingRequestCount > 0 && (
-                <span className="conversation-list-badge">
-                  {group.pendingRequestCount}
-                </span>
-              )}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
@@ -13611,18 +13312,6 @@ function renderUserAvatarContent(user: User): ReactNode {
     return <img src={user.avatarUrl} alt="" />;
   }
   return user.displayName.slice(0, 1).toUpperCase();
-}
-
-function formatRelativeTime(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return "à l'instant";
-  if (minutes < 60) return `il y a ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `il y a ${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `il y a ${days}j`;
-  return new Date(iso).toLocaleDateString('fr-CA');
 }
 
 // Messaging's own timestamp convention (clock time / "Hier" / weekday),
@@ -15344,1545 +15033,6 @@ function ConversationModal({
         <ConversationThread friend={friend} authToken={authToken} />
       </div>
     </div>
-  );
-}
-
-// Own block for the same reason as FriendsBlock above: its own
-// fetch/mutate cycle, only renders once signed in. Group membership here
-// is always self-service (DEC-0013) - no invite/approval step to model.
-function GroupsBlock({
-  authToken,
-  userId
-}: {
-  authToken: string | undefined;
-  userId: string;
-}) {
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [visibility, setVisibility] = useState<GroupVisibility>('open');
-  const [creating, setCreating] = useState(false);
-  const [openGroup, setOpenGroup] = useState<Group>();
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setLoadState('loading');
-    fetch(`${API_BASE_URL}/me/groups`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setGroups(groupsResponseSchema.parse(json).data);
-        setLoadState('success');
-      })
-      .catch(() => setLoadState('error'));
-  }, [authToken]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const createGroup = () => {
-    if (!authToken || !name.trim() || creating) return;
-    setCreating(true);
-    fetch(`${API_BASE_URL}/me/groups`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        name: name.trim(),
-        visibility,
-        ...(description.trim() ? { description: description.trim() } : {})
-      })
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then(() => {
-        setName('');
-        setDescription('');
-        setVisibility('open');
-        refresh();
-      })
-      .catch(() => {})
-      .finally(() => setCreating(false));
-  };
-
-  return (
-    <div className="compte-block">
-      <h3>Mes groupes</h3>
-      {loadState === 'loading' && (
-        <p className="list-view-empty">Chargement…</p>
-      )}
-      {loadState === 'error' && (
-        <p className="list-view-empty">
-          Impossible de charger vos groupes pour le moment.
-        </p>
-      )}
-      {loadState === 'success' && (
-        <div className="friends-block">
-          <form
-            className="friends-add-form groups-create-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              createGroup();
-            }}
-          >
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Nom du groupe"
-              maxLength={80}
-            />
-            <input
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="Description (optionnel)"
-              maxLength={500}
-            />
-            <div className="groups-visibility-choice">
-              <label>
-                <input
-                  type="radio"
-                  name="group-visibility"
-                  checked={visibility === 'open'}
-                  onChange={() => setVisibility('open')}
-                />
-                Accès libre — tout le monde peut rejoindre
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="group-visibility"
-                  checked={visibility === 'restricted'}
-                  onChange={() => setVisibility('restricted')}
-                />
-                Accès limité — sur demande, approuvée par toi
-              </label>
-            </div>
-            <button
-              type="submit"
-              className="btn-secondary"
-              disabled={creating || !name.trim()}
-            >
-              Créer
-            </button>
-          </form>
-
-          <div className="friends-list">
-            {groups.length === 0 && (
-              <p className="list-view-empty">Aucun groupe pour le moment.</p>
-            )}
-            {groups.map((group) => (
-              <div className="friends-row" key={group.id}>
-                <span className="friends-row-name">
-                  {group.name}
-                  <span className="compte-trends-count">
-                    {group.memberCount}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  className="text-btn"
-                  onClick={() => setOpenGroup(group)}
-                >
-                  Ouvrir
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {openGroup && (
-        <GroupModal
-          group={openGroup}
-          authToken={authToken}
-          userId={userId}
-          onClose={() => setOpenGroup(undefined)}
-          onLeft={() => {
-            setOpenGroup(undefined);
-            refresh();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// Phase 4.10 ("Groupes avancés") - the rich detail content shared by the
-// modal chrome (GroupModal, unchanged call sites: sidebar mini-list,
-// GroupsBlock, ForumPanel's meetup flow) and the new inline pane inside
-// Messages' "Groupes" tabs. Everything here is real: member avatars/count,
-// a moderator's real pending-request queue, a meetup point derived from
-// the linked event's actual venue, and member-added schedule/attendance/
-// checklist modules - no online presence, no kick/removal, no content
-// moderation beyond the existing author-only delete (DEC-0013 v1.2).
-type GroupDetailTab = 'organize' | 'discussion' | 'members' | 'manage';
-
-function GroupDetailContent({
-  group,
-  authToken,
-  userId,
-  onGroupUpdated,
-  onLeave,
-  onOpenEventForum
-}: {
-  group: Group;
-  authToken: string | undefined;
-  userId: string;
-  onGroupUpdated: (group: Group) => void;
-  onLeave?: () => void;
-  onOpenEventForum?: (eventId: string) => void;
-}) {
-  const [posts, setPosts] = useState<GroupPost[]>([]);
-  const [postsState, setPostsState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [draft, setDraft] = useState('');
-  const [posting, setPosting] = useState(false);
-  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(
-    new Set()
-  );
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-  const [members, setMembers] = useState<PublicUser[]>([]);
-  const [joining, setJoining] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [tab, setTab] = useState<GroupDetailTab>('organize');
-
-  useEffect(() => {
-    setTab('organize');
-  }, [group.id]);
-
-  const refreshPosts = useCallback(() => {
-    if (!authToken || !group.isMember) return;
-    setPostsState('loading');
-    fetch(`${API_BASE_URL}/groups/${group.id}/posts`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setPosts(groupPostsResponseSchema.parse(json).data);
-        setPostsState('success');
-      })
-      .catch(() => setPostsState('error'));
-  }, [authToken, group.id, group.isMember]);
-
-  useEffect(() => {
-    refreshPosts();
-  }, [refreshPosts]);
-
-  useEffect(() => {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setMembers(groupMembersResponseSchema.parse(json).data))
-      .catch(() => {});
-  }, [authToken, group.id]);
-
-  const refreshGroup = useCallback(() => {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/groups/${group.id}`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => onGroupUpdated(groupResponseSchema.parse(json).data))
-      .catch(() => {});
-  }, [authToken, group.id, onGroupUpdated]);
-
-  const joinGroupAction = () => {
-    if (!authToken || joining) return;
-    setJoining(true);
-    fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then(() => refreshGroup())
-      .catch(() => {})
-      .finally(() => setJoining(false));
-  };
-
-  const leaveGroupAction = () => {
-    if (!authToken) return;
-    void fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
-      method: 'DELETE',
-      headers: { authorization: `Bearer ${authToken}` }
-    }).then(() => {
-      if (onLeave) onLeave();
-      else refreshGroup();
-    });
-  };
-
-  // Phase 4.14 - which groups show in the sidebar shortcut list is the
-  // member's own choice, not "every group I've joined". Optimistic: the
-  // route returns 204, there's nothing to reconcile against.
-  const [pinning, setPinning] = useState(false);
-  const togglePin = () => {
-    if (!authToken || pinning) return;
-    setPinning(true);
-    const nextPinned = !group.pinned;
-    fetch(`${API_BASE_URL}/groups/${group.id}/pin`, {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ pinned: nextPinned })
-    })
-      .then((response) =>
-        response.ok
-          ? onGroupUpdated({ ...group, pinned: nextPinned })
-          : Promise.reject()
-      )
-      .catch(() => {})
-      .finally(() => setPinning(false));
-  };
-
-  const submitPost = (parentId?: string) => {
-    const body = (parentId ? replyDrafts[parentId] : draft)?.trim();
-    if (!authToken || !body || posting) return;
-    setPosting(true);
-    fetch(`${API_BASE_URL}/groups/${group.id}/posts`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ body, ...(parentId ? { parentId } : {}) })
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then(() => {
-        if (parentId) {
-          setReplyDrafts((prev) => ({ ...prev, [parentId]: '' }));
-          setExpandedReplies((prev) => new Set(prev).add(parentId));
-        } else {
-          setDraft('');
-        }
-        refreshPosts();
-      })
-      .catch(() => {})
-      .finally(() => setPosting(false));
-  };
-
-  const removePost = (postId: string) => {
-    if (!authToken) return;
-    void fetch(`${API_BASE_URL}/groups/${group.id}/posts/${postId}`, {
-      method: 'DELETE',
-      headers: { authorization: `Bearer ${authToken}` }
-    }).then(() => refreshPosts());
-  };
-
-  const toggleLike = (post: GroupPost) => {
-    if (!authToken) return;
-    setPosts((prev) =>
-      prev.map((candidate) =>
-        candidate.id === post.id
-          ? {
-              ...candidate,
-              likedByMe: !candidate.likedByMe,
-              likeCount: candidate.likeCount + (candidate.likedByMe ? -1 : 1)
-            }
-          : candidate
-      )
-    );
-    fetch(`${API_BASE_URL}/groups/${group.id}/posts/${post.id}/like`, {
-      method: post.likedByMe ? 'DELETE' : 'POST',
-      headers: { authorization: `Bearer ${authToken}` }
-    }).catch(() => refreshPosts());
-  };
-
-  const toggleExpanded = (postId: string) => {
-    setExpandedReplies((prev) => {
-      const next = new Set(prev);
-      if (next.has(postId)) next.delete(postId);
-      else next.add(postId);
-      return next;
-    });
-  };
-
-  const topLevelPosts = posts.filter((post) => !post.parentId);
-  const repliesFor = (postId: string) =>
-    posts.filter((post) => post.parentId === postId);
-
-  return (
-    <div className="group-detail">
-      <div className="group-detail-header">
-        <div className="group-detail-cover" aria-hidden="true">
-          <span>{group.name.slice(0, 1).toUpperCase()}</span>
-          <i />
-          <i />
-          <i />
-        </div>
-        <div className="group-detail-header-top">
-          <div className="group-detail-header-info">
-            <span className="groups-page-eyebrow">
-              {group.eventId ? 'Groupe événement' : 'Communauté permanente'}
-            </span>
-            <strong>{group.name}</strong>
-            <div className="group-detail-status-row">
-              <span className="group-detail-visibility-badge">
-                {group.visibility === 'restricted'
-                  ? '◇ Sur demande'
-                  : '◎ Accès libre'}
-              </span>
-              {group.isModerator && (
-                <span className="group-detail-role-badge">Gestionnaire</span>
-              )}
-            </div>
-            {group.eventId && group.eventTitle && (
-              <span className="group-detail-event-badge">
-                Groupe lié à{' '}
-                <button
-                  type="button"
-                  className="group-detail-event-link"
-                  onClick={() =>
-                    group.eventId &&
-                    onOpenEventForum &&
-                    onOpenEventForum(group.eventId)
-                  }
-                  disabled={!onOpenEventForum}
-                >
-                  {group.eventTitle}
-                  {group.eventStartsAt &&
-                    ` — ${new Date(group.eventStartsAt).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}`}
-                  {group.meetupVenue && ` · ${group.meetupVenue.name}`}
-                </button>
-              </span>
-            )}
-          </div>
-          {group.isMember && (
-            <div className="group-detail-header-actions">
-              <button
-                type="button"
-                className={`text-btn ${group.pinned ? 'active' : ''}`}
-                onClick={togglePin}
-                disabled={pinning}
-                title={
-                  group.pinned
-                    ? 'Retirer des raccourcis'
-                    : 'Épingler dans les raccourcis'
-                }
-              >
-                {group.pinned ? '📌 Épinglé' : '📌 Épingler'}
-              </button>
-              <button
-                type="button"
-                className="text-btn"
-                onClick={leaveGroupAction}
-              >
-                Quitter
-              </button>
-            </div>
-          )}
-        </div>
-        {group.description && (
-          <p className="group-detail-description">{group.description}</p>
-        )}
-        <div className="group-detail-members-row">
-          {members.length > 0 && (
-            <div className="forum-members-avatars">
-              {members.slice(0, 8).map((member) => (
-                <span
-                  className="friends-row-avatar"
-                  key={member.id}
-                  title={member.displayName}
-                >
-                  {member.avatarUrl ? (
-                    <img src={member.avatarUrl} alt="" />
-                  ) : (
-                    member.displayName.slice(0, 1).toUpperCase()
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
-          <span className="forum-members-count">
-            {group.memberCount} membre{group.memberCount !== 1 ? 's' : ''}
-          </span>
-          {group.isMember && (
-            <button
-              type="button"
-              className="text-btn"
-              onClick={() => setInviteOpen(true)}
-            >
-              Inviter des amis
-            </button>
-          )}
-        </div>
-      </div>
-
-      {!group.isMember && group.myStatus !== 'pending' && (
-        <div className="group-detail-join-banner">
-          <p>
-            {group.visibility === 'restricted'
-              ? 'Ce groupe est à accès limité - ta demande sera envoyée au modérateur.'
-              : 'Rejoins ce groupe pour discuter, voter, et voir le programme.'}
-          </p>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={joinGroupAction}
-            disabled={joining}
-          >
-            {joining
-              ? 'Un instant…'
-              : group.visibility === 'restricted'
-                ? 'Demander à rejoindre'
-                : 'Rejoindre'}
-          </button>
-        </div>
-      )}
-      {group.myStatus === 'pending' && (
-        <div className="group-detail-join-banner">
-          <p>Demande envoyée, en attente d'approbation du modérateur.</p>
-        </div>
-      )}
-
-      {group.isMember && (
-        <>
-          <nav className="group-detail-tabs" aria-label="Espaces du groupe">
-            <button
-              type="button"
-              className={tab === 'organize' ? 'active' : ''}
-              onClick={() => setTab('organize')}
-            >
-              <span aria-hidden="true">▦</span>
-              Organiser
-            </button>
-            <button
-              type="button"
-              className={tab === 'discussion' ? 'active' : ''}
-              onClick={() => setTab('discussion')}
-            >
-              <span aria-hidden="true">◌</span>
-              Discussion
-              {posts.length > 0 && <small>{posts.length}</small>}
-            </button>
-            <button
-              type="button"
-              className={tab === 'members' ? 'active' : ''}
-              onClick={() => setTab('members')}
-            >
-              <span aria-hidden="true">◎</span>
-              Membres
-              <small>{group.memberCount}</small>
-            </button>
-            {group.isModerator && (
-              <button
-                type="button"
-                className={tab === 'manage' ? 'active' : ''}
-                onClick={() => setTab('manage')}
-              >
-                <span aria-hidden="true">◇</span>
-                Gestion
-                {(group.pendingRequestCount ?? 0) > 0 && (
-                  <small className="attention">
-                    {group.pendingRequestCount}
-                  </small>
-                )}
-              </button>
-            )}
-          </nav>
-
-          {tab === 'organize' && (
-            <section className="group-organize-view">
-              <div className="group-view-heading">
-                <div>
-                  <span className="groups-page-eyebrow">
-                    Tableau d’organisation
-                  </span>
-                  <h2>Préparez la prochaine sortie ensemble.</h2>
-                </div>
-                <p>Chaque action ici est partagée avec tous les membres.</p>
-              </div>
-              <div className="group-modules-grid">
-                {group.meetupVenue && (
-                  <GroupMeetupCard venue={group.meetupVenue} />
-                )}
-                <GroupScheduleCard groupId={group.id} authToken={authToken} />
-                <GroupAttendanceCard groupId={group.id} authToken={authToken} />
-                <GroupChecklistCard groupId={group.id} authToken={authToken} />
-              </div>
-            </section>
-          )}
-
-          {tab === 'discussion' && (
-            <section className="group-detail-discussion">
-              <div className="group-view-heading">
-                <div>
-                  <span className="groups-page-eyebrow">Fil du groupe</span>
-                  <h2>Décidez, échangez, avancez.</h2>
-                </div>
-                <p>
-                  {posts.length} message{posts.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <form
-                className="forum-composer group-main-composer"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  submitPost();
-                }}
-              >
-                <textarea
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Partage une idée, une question ou une décision…"
-                  maxLength={2000}
-                  rows={3}
-                />
-                <div className="group-main-composer-footer">
-                  <span>{draft.length}/2000</span>
-                  <button
-                    type="submit"
-                    className="btn-secondary"
-                    disabled={posting || !draft.trim()}
-                  >
-                    {posting ? 'Publication…' : 'Publier'}
-                  </button>
-                </div>
-              </form>
-              <div className="forum-posts group-posts-feed">
-                {postsState === 'loading' && (
-                  <p className="list-view-empty">Chargement…</p>
-                )}
-                {postsState === 'error' && (
-                  <p className="list-view-empty">
-                    Impossible de charger le fil pour le moment.
-                  </p>
-                )}
-                {postsState === 'success' && topLevelPosts.length === 0 && (
-                  <div className="group-empty-feed">
-                    <span aria-hidden="true">◌</span>
-                    <strong>Lance la première conversation.</strong>
-                    <p>
-                      Une question simple suffit souvent à organiser toute une
-                      sortie.
-                    </p>
-                  </div>
-                )}
-                {postsState === 'success' &&
-                  topLevelPosts.map((post) => (
-                    <GroupPostRow
-                      key={post.id}
-                      post={post}
-                      userId={userId}
-                      authToken={authToken}
-                      onLike={toggleLike}
-                      onDelete={removePost}
-                      replies={repliesFor(post.id)}
-                      expanded={expandedReplies.has(post.id)}
-                      onToggleExpanded={() => toggleExpanded(post.id)}
-                      replyDraft={replyDrafts[post.id] ?? ''}
-                      onReplyDraftChange={(value) =>
-                        setReplyDrafts((prev) => ({
-                          ...prev,
-                          [post.id]: value
-                        }))
-                      }
-                      onSubmitReply={() => submitPost(post.id)}
-                      posting={posting}
-                    />
-                  ))}
-              </div>
-            </section>
-          )}
-
-          {tab === 'members' && (
-            <section className="group-members-view">
-              <div className="group-view-heading">
-                <div>
-                  <span className="groups-page-eyebrow">La communauté</span>
-                  <h2>
-                    {group.memberCount} membre
-                    {group.memberCount !== 1 ? 's' : ''}
-                  </h2>
-                </div>
-                <button
-                  type="button"
-                  className="groups-create-submit"
-                  onClick={() => setInviteOpen(true)}
-                >
-                  Inviter des amis
-                </button>
-              </div>
-              <div className="group-members-grid">
-                {members.map((member) => (
-                  <div className="group-member-card" key={member.id}>
-                    <span className="friends-row-avatar friends-row-avatar-lg">
-                      {member.avatarUrl ? (
-                        <img src={member.avatarUrl} alt="" />
-                      ) : (
-                        member.displayName.slice(0, 1).toUpperCase()
-                      )}
-                    </span>
-                    <span>
-                      <strong>{member.displayName}</strong>
-                      <small>
-                        {member.id === group.createdBy
-                          ? 'Créateur du groupe'
-                          : 'Membre'}
-                      </small>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {tab === 'manage' && group.isModerator && (
-            <section className="group-management-view">
-              <div className="group-view-heading">
-                <div>
-                  <span className="groups-page-eyebrow">
-                    Espace gestionnaire
-                  </span>
-                  <h2>Gérer les accès au groupe.</h2>
-                </div>
-                <span className="group-management-role">
-                  Créateur · Gestionnaire
-                </span>
-              </div>
-              <div className="group-management-summary">
-                <div>
-                  <span>Accès</span>
-                  <strong>
-                    {group.visibility === 'restricted'
-                      ? 'Sur approbation'
-                      : 'Libre'}
-                  </strong>
-                </div>
-                <div>
-                  <span>Membres</span>
-                  <strong>{group.memberCount}</strong>
-                </div>
-                <div>
-                  <span>Demandes</span>
-                  <strong>{group.pendingRequestCount ?? 0}</strong>
-                </div>
-              </div>
-              {group.visibility === 'restricted' ? (
-                <GroupJoinRequestsCard
-                  groupId={group.id}
-                  authToken={authToken}
-                  onResolved={refreshGroup}
-                  showEmpty
-                />
-              ) : (
-                <div className="group-detail-card group-management-empty">
-                  <span aria-hidden="true">◎</span>
-                  <div>
-                    <strong>Ce groupe est en accès libre.</strong>
-                    <p>
-                      Les membres le rejoignent sans passer par une demande.
-                    </p>
-                  </div>
-                </div>
-              )}
-              <div className="group-management-scope">
-                <strong>Pouvoirs actuellement disponibles</strong>
-                <p>
-                  Le gestionnaire peut approuver ou refuser les demandes. Les
-                  rôles multiples, la configuration des modules et la mise en
-                  avant d’événements restent proposés pour la prochaine décision
-                  produit.
-                </p>
-              </div>
-            </section>
-          )}
-        </>
-      )}
-
-      {inviteOpen && (
-        <InviteToGroupModal
-          group={group}
-          authToken={authToken}
-          onClose={() => setInviteOpen(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-// A small, non-interactive MapLibre instance centered on the linked
-// event's real venue - same map tech/style already used everywhere else
-// in the app, not a third-party static-image API (no new dependency, no
-// cost). Absent entirely for permanent groups (no event to derive a
-// meetup point from).
-function GroupMeetupCard({ venue }: { venue: GroupMeetupVenue }) {
-  const container = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!container.current) return;
-    const instance = new maplibregl.Map({
-      container: container.current,
-      center: [venue.longitude, venue.latitude],
-      zoom: 15,
-      style: MAP_STYLE_URL,
-      interactive: false,
-      attributionControl: false
-    });
-    new maplibregl.Marker({ color: '#c026d3' })
-      .setLngLat([venue.longitude, venue.latitude])
-      .addTo(instance);
-    return () => instance.remove();
-  }, [venue.longitude, venue.latitude]);
-
-  return (
-    <div className="group-detail-card group-module-card group-meetup-card">
-      <div className="group-module-heading">
-        <span aria-hidden="true">⌖</span>
-        <div>
-          <h3>Point de rendez-vous</h3>
-          <p>Le lieu réel lié à l’événement.</p>
-        </div>
-      </div>
-      <div className="group-meetup-map" ref={container} />
-      <div className="group-meetup-address">
-        <strong>{venue.name}</strong>
-        <span>{venue.address}</span>
-      </div>
-    </div>
-  );
-}
-
-// "Programme" - real items added by members, sorted by time. No item is
-// ever guessed or auto-filled.
-function GroupScheduleCard({
-  groupId,
-  authToken
-}: {
-  groupId: string;
-  authToken: string | undefined;
-}) {
-  const [items, setItems] = useState<GroupScheduleItem[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [label, setLabel] = useState('');
-  const [time, setTime] = useState('');
-  const [adding, setAdding] = useState(false);
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/schedule`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setItems(groupScheduleItemsResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken, groupId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const addItem = () => {
-    if (!authToken || !label.trim() || !time || adding) return;
-    setAdding(true);
-    fetch(`${API_BASE_URL}/groups/${groupId}/schedule`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        label: label.trim(),
-        scheduledAt: new Date(time).toISOString()
-      })
-    })
-      .then((response) => (response.ok ? undefined : Promise.reject()))
-      .then(() => {
-        setLabel('');
-        setTime('');
-        refresh();
-      })
-      .catch(() => {})
-      .finally(() => setAdding(false));
-  };
-
-  return (
-    <div className="group-detail-card group-module-card group-schedule-card">
-      <div className="group-module-heading">
-        <span aria-hidden="true">◷</span>
-        <div>
-          <h3>Programme</h3>
-          <p>Construisez le déroulé de la sortie.</p>
-        </div>
-      </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'success' && items.length === 0 && (
-        <p className="list-view-empty">Aucun horaire pour l'instant.</p>
-      )}
-      {state === 'success' && items.length > 0 && (
-        <ul className="group-schedule-list">
-          {items.map((item) => (
-            <li key={item.id}>
-              <span className="group-schedule-time">
-                {new Date(item.scheduledAt).toLocaleTimeString('fr-CA', {
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
-              </span>
-              <span>{item.label}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <form
-        className="group-schedule-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addItem();
-        }}
-      >
-        <input
-          type="datetime-local"
-          value={time}
-          onChange={(event) => setTime(event.target.value)}
-        />
-        <input
-          value={label}
-          onChange={(event) => setLabel(event.target.value)}
-          placeholder="Ex: Rendez-vous au bar"
-          maxLength={120}
-        />
-        <button
-          type="submit"
-          className="text-btn"
-          disabled={adding || !label.trim() || !time}
-        >
-          + Ajouter
-        </button>
-      </form>
-    </div>
-  );
-}
-
-const ATTENDANCE_LABELS: Record<AttendanceResponse, string> = {
-  yes: 'Oui',
-  maybe: 'Peut-être',
-  no: 'Non'
-};
-
-// "Qui vient ?" - real votes from real members, percentages computed from
-// the real total of votes cast (never simulated, never assumed).
-function GroupAttendanceCard({
-  groupId,
-  authToken
-}: {
-  groupId: string;
-  authToken: string | undefined;
-}) {
-  const [summary, setSummary] = useState<GroupAttendanceSummary>();
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/attendance`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setSummary(groupAttendanceSummarySchema.parse(json));
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken, groupId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const vote = (response: AttendanceResponse) => {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/groups/${groupId}/attendance`, {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ response })
-    }).then(() => refresh());
-  };
-
-  const total = summary ? summary.yes + summary.maybe + summary.no : 0;
-
-  return (
-    <div className="group-detail-card group-module-card group-attendance-card">
-      <div className="group-module-heading">
-        <span aria-hidden="true">◎</span>
-        <div>
-          <h3>Qui vient ?</h3>
-          <p>Une réponse claire par membre.</p>
-        </div>
-      </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'success' && summary && (
-        <>
-          <div className="group-attendance-bars">
-            {(['yes', 'maybe', 'no'] as const).map((key) => {
-              const count = summary[key];
-              const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-              return (
-                <div className="group-attendance-row" key={key}>
-                  <span className="group-attendance-label">
-                    {ATTENDANCE_LABELS[key]}
-                  </span>
-                  <div className="group-attendance-bar-track">
-                    <div
-                      className={`group-attendance-bar-fill group-attendance-${key}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="group-attendance-count">
-                    {count} ({pct}%)
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="group-attendance-total">
-            {total} réponse{total !== 1 ? 's' : ''}
-          </p>
-          <div className="group-attendance-actions">
-            {(['yes', 'maybe', 'no'] as const).map((key) => (
-              <button
-                type="button"
-                key={key}
-                className={`text-btn ${summary.myResponse === key ? 'active' : ''}`}
-                onClick={() => vote(key)}
-              >
-                {ATTENDANCE_LABELS[key]}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// "Checklist" - checkedCount/totalMembers reflects real, individual
-// members checking an item off for themselves, never a fabricated
-// fraction.
-function GroupChecklistCard({
-  groupId,
-  authToken
-}: {
-  groupId: string;
-  authToken: string | undefined;
-}) {
-  const [items, setItems] = useState<GroupChecklistItem[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [label, setLabel] = useState('');
-  const [adding, setAdding] = useState(false);
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/checklist`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setItems(groupChecklistItemsResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken, groupId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const addItem = () => {
-    if (!authToken || !label.trim() || adding) return;
-    setAdding(true);
-    fetch(`${API_BASE_URL}/groups/${groupId}/checklist`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ label: label.trim() })
-    })
-      .then((response) => (response.ok ? undefined : Promise.reject()))
-      .then(() => {
-        setLabel('');
-        refresh();
-      })
-      .catch(() => {})
-      .finally(() => setAdding(false));
-  };
-
-  const toggle = (item: GroupChecklistItem) => {
-    if (!authToken) return;
-    const nextChecked = !item.checkedByMe;
-    setItems((prev) =>
-      prev.map((candidate) =>
-        candidate.id === item.id
-          ? {
-              ...candidate,
-              checkedByMe: nextChecked,
-              checkedCount: candidate.checkedCount + (nextChecked ? 1 : -1)
-            }
-          : candidate
-      )
-    );
-    fetch(`${API_BASE_URL}/groups/${groupId}/checklist/${item.id}`, {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ checked: nextChecked })
-    }).catch(() => refresh());
-  };
-
-  return (
-    <div className="group-detail-card group-module-card group-checklist-card">
-      <div className="group-module-heading">
-        <span aria-hidden="true">✓</span>
-        <div>
-          <h3>Checklist</h3>
-          <p>Les choses à prévoir avant de partir.</p>
-        </div>
-      </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'success' && items.length === 0 && (
-        <p className="list-view-empty">Aucun item pour l'instant.</p>
-      )}
-      {state === 'success' && items.length > 0 && (
-        <ul className="group-checklist-list">
-          {items.map((item) => (
-            <li key={item.id}>
-              <label className="group-checklist-item">
-                <input
-                  type="checkbox"
-                  checked={item.checkedByMe}
-                  onChange={() => toggle(item)}
-                />
-                <span>{item.label}</span>
-              </label>
-              <span className="group-checklist-fraction">
-                {item.checkedCount}/{item.totalMembers}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <form
-        className="group-checklist-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addItem();
-        }}
-      >
-        <input
-          value={label}
-          onChange={(event) => setLabel(event.target.value)}
-          placeholder="Ex: Tickets"
-          maxLength={120}
-        />
-        <button
-          type="submit"
-          className="text-btn"
-          disabled={adding || !label.trim()}
-        >
-          + Ajouter un item
-        </button>
-      </form>
-    </div>
-  );
-}
-
-// Moderator-only (Phase 4.10, DEC-0013 v1.2) - the only moderation power
-// a group's creator has: approving/declining join requests for a
-// restricted group. Nothing else.
-function GroupJoinRequestsCard({
-  groupId,
-  authToken,
-  onResolved,
-  showEmpty = false
-}: {
-  groupId: string;
-  authToken: string | undefined;
-  onResolved: () => void;
-  showEmpty?: boolean;
-}) {
-  const [requests, setRequests] = useState<PublicUser[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/join-requests`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setRequests(groupJoinRequestsResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken, groupId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const respond = (targetUserId: string, action: 'accept' | 'decline') => {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/groups/${groupId}/join-requests/${targetUserId}`, {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ action })
-    }).then(() => {
-      refresh();
-      onResolved();
-    });
-  };
-
-  if (state === 'success' && requests.length === 0 && !showEmpty) return null;
-
-  return (
-    <div className="group-detail-card group-join-requests-card">
-      <h3>Demandes en attente</h3>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'success' && requests.length === 0 && (
-        <div className="group-management-empty-inline">
-          <span aria-hidden="true">✓</span>
-          <p>Aucune demande à traiter pour le moment.</p>
-        </div>
-      )}
-      {requests.map((request) => (
-        <div className="amis-row" key={request.id}>
-          <span className="friends-row-avatar friends-row-avatar-lg">
-            {request.avatarUrl ? (
-              <img src={request.avatarUrl} alt="" />
-            ) : (
-              request.displayName.slice(0, 1).toUpperCase()
-            )}
-          </span>
-          <span className="amis-row-name">{request.displayName}</span>
-          <div className="amis-row-actions">
-            <button
-              type="button"
-              className="amis-btn-accept"
-              onClick={() => respond(request.id, 'accept')}
-            >
-              Accepter
-            </button>
-            <button
-              type="button"
-              className="amis-btn-ghost"
-              onClick={() => respond(request.id, 'decline')}
-            >
-              Refuser
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// "Inviter des amis" - never joins someone on their behalf (membership
-// stays a self-service action per DEC-0013); sends a direct message with
-// a link, same real mechanism as EventHero's "Envoyer à un ami".
-function InviteToGroupModal({
-  group,
-  authToken,
-  onClose
-}: {
-  group: Group;
-  authToken: string | undefined;
-  onClose: () => void;
-}) {
-  const [friendsList, setFriendsList] = useState<PublicUser[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [sentTo, setSentTo] = useState<Set<string>>(new Set());
-  const [sendingTo, setSendingTo] = useState<string>();
-
-  useEffect(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/me/friends`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setFriendsList(friendsResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken]);
-
-  const sendInvite = (friendId: string) => {
-    if (!authToken || sendingTo) return;
-    setSendingTo(friendId);
-    const url = `${window.location.origin}/groups/${group.id}`;
-    fetch(`${API_BASE_URL}/me/friends/${friendId}/messages`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        body: `Rejoins le groupe « ${group.name} » sur Pulso !\n${url}`
-      })
-    })
-      .then((response) => (response.ok ? undefined : Promise.reject()))
-      .then(() => setSentTo((prev) => new Set(prev).add(friendId)))
-      .catch(() => {})
-      .finally(() => setSendingTo(undefined));
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="share-friend-modal"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="conversation-modal-header">
-          <strong>Inviter des amis</strong>
-          <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
-        <div className="share-friend-list">
-          {state === 'loading' && (
-            <p className="list-view-empty">Chargement…</p>
-          )}
-          {state === 'error' && (
-            <p className="list-view-empty">
-              Impossible de charger vos amis pour le moment.
-            </p>
-          )}
-          {state === 'success' && friendsList.length === 0 && (
-            <p className="list-view-empty">
-              Ajoute des amis pour pouvoir les inviter.
-            </p>
-          )}
-          {state === 'success' &&
-            friendsList.map((friend) => (
-              <div className="friends-row" key={friend.id}>
-                <span className="friends-row-avatar">
-                  {friend.avatarUrl ? (
-                    <img src={friend.avatarUrl} alt="" />
-                  ) : (
-                    friend.displayName.slice(0, 1).toUpperCase()
-                  )}
-                </span>
-                <span className="friends-row-name">{friend.displayName}</span>
-                <button
-                  type="button"
-                  className="text-btn"
-                  onClick={() => sendInvite(friend.id)}
-                  disabled={sendingTo === friend.id || sentTo.has(friend.id)}
-                >
-                  {sentTo.has(friend.id)
-                    ? 'Envoyé ✓'
-                    : sendingTo === friend.id
-                      ? 'Envoi…'
-                      : 'Inviter'}
-                </button>
-              </div>
-            ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function GroupModal({
-  group,
-  authToken,
-  userId,
-  onClose,
-  onLeft
-}: {
-  group: Group;
-  authToken: string | undefined;
-  userId: string;
-  onClose: () => void;
-  onLeft: () => void;
-}) {
-  const [current, setCurrent] = useState(group);
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="group-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="group-modal-close-row">
-          <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
-        <GroupDetailContent
-          group={current}
-          authToken={authToken}
-          userId={userId}
-          onGroupUpdated={setCurrent}
-          onLeave={onLeft}
-        />
-      </div>
-    </div>
-  );
-}
-
-function GroupPostRow({
-  post,
-  userId,
-  authToken,
-  onLike,
-  onDelete,
-  replies,
-  expanded,
-  onToggleExpanded,
-  replyDraft,
-  onReplyDraftChange,
-  onSubmitReply,
-  posting
-}: {
-  post: GroupPost;
-  userId: string;
-  authToken: string | undefined;
-  onLike: (post: GroupPost) => void;
-  onDelete: (postId: string) => void;
-  replies: GroupPost[];
-  expanded: boolean;
-  onToggleExpanded: () => void;
-  replyDraft: string;
-  onReplyDraftChange: (value: string) => void;
-  onSubmitReply: () => void;
-  posting: boolean;
-}) {
-  // Groups are a small, personal space between people who already know
-  // each other (unlike the public, categorized Forum) - real chat bubbles
-  // with a clear "mine vs. theirs" color/side distinction read as personal
-  // in a way the Forum's public post-card feed deliberately doesn't.
-  const renderBubble = (item: GroupPost, isReply: boolean) => {
-    const mine = item.author.id === userId;
-    return (
-      <div
-        key={item.id}
-        className={`group-bubble-row ${mine ? 'mine' : 'theirs'}`}
-      >
-        {!mine && (
-          <span className="friends-row-avatar group-bubble-avatar">
-            {item.author.avatarUrl ? (
-              <img src={item.author.avatarUrl} alt="" />
-            ) : (
-              item.author.displayName.slice(0, 1).toUpperCase()
-            )}
-          </span>
-        )}
-        <div className="group-bubble-col">
-          <span className="group-bubble-author">
-            {mine ? 'Vous' : item.author.displayName}
-            <time dateTime={item.createdAt}>
-              {formatRelativeTime(item.createdAt)}
-            </time>
-          </span>
-          <div className="group-bubble">
-            <p>{item.body}</p>
-          </div>
-          <div className="group-bubble-actions">
-            <button
-              type="button"
-              className={`forum-like-btn ${item.likedByMe ? 'active' : ''}`}
-              onClick={() => onLike(item)}
-            >
-              <HeartIcon filled={item.likedByMe} />
-              <span>{item.likedByMe ? 'Aimé' : 'J’aime'}</span>
-              {item.likeCount > 0 && <b>{item.likeCount}</b>}
-            </button>
-            {!isReply && (
-              <button
-                type="button"
-                className="text-btn"
-                onClick={onToggleExpanded}
-              >
-                {item.replyCount === 0
-                  ? 'Répondre'
-                  : `${item.replyCount} réponse${item.replyCount !== 1 ? 's' : ''}`}
-              </button>
-            )}
-            {mine ? (
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() => onDelete(item.id)}
-              >
-                Supprimer
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() => reportContent(authToken, 'group_post', item.id)}
-              >
-                Signaler
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <>
-      {renderBubble(post, false)}
-      {expanded && (
-        <div className="group-bubble-replies">
-          {replies.map((reply) => renderBubble(reply, true))}
-          <form
-            className="forum-composer forum-reply-composer"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onSubmitReply();
-            }}
-          >
-            <textarea
-              value={replyDraft}
-              onChange={(event) => onReplyDraftChange(event.target.value)}
-              placeholder="Répondre…"
-              maxLength={2000}
-              rows={1}
-            />
-            <button
-              type="submit"
-              className="btn-secondary"
-              disabled={posting || !replyDraft.trim()}
-            >
-              Répondre
-            </button>
-          </form>
-        </div>
-      )}
-    </>
   );
 }
 

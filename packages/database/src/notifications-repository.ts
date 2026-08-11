@@ -13,7 +13,11 @@ export type StoredNotificationKind =
   | 'message_received'
   | 'forum_reply'
   | 'organizer_request_received'
-  | 'organizer_request_resolved';
+  | 'organizer_request_resolved'
+  | 'group_verification_received'
+  | 'group_verification_resolved'
+  | 'group_join_request_received'
+  | 'group_join_request_accepted';
 
 export interface NotificationsRepository {
   list(userId: string, limit: number): Promise<Notification[]>;
@@ -56,6 +60,29 @@ export interface NotificationsRepository {
     venueId: string,
     approved: boolean
   ): Promise<void>;
+  // Groups. Verification follows DEC-0018's shape exactly (all admins on
+  // request, the requester on the decision). The join-request pair closes
+  // a gap rather than adding noise: a restricted group's pending queue
+  // already existed but nothing announced it to the moderator.
+  notifyGroupVerificationReceived(
+    adminUserIds: string[],
+    actorUserId: string,
+    groupId: string
+  ): Promise<void>;
+  notifyGroupVerificationResolved(
+    recipientUserId: string,
+    groupId: string,
+    approved: boolean
+  ): Promise<void>;
+  notifyGroupJoinRequestReceived(
+    moderatorUserId: string,
+    actorUserId: string,
+    groupId: string
+  ): Promise<void>;
+  notifyGroupJoinRequestAccepted(
+    recipientUserId: string,
+    groupId: string
+  ): Promise<void>;
 }
 
 interface StoredRow {
@@ -71,6 +98,8 @@ interface StoredRow {
   event_starts_at: Date | null;
   venue_id: string | null;
   venue_name: string | null;
+  group_id: string | null;
+  group_name: string | null;
 }
 
 /**
@@ -92,11 +121,13 @@ export class PostgresNotificationsRepository implements NotificationsRepository 
                 n.actor_user_id, a.display_name AS actor_display_name,
                 a.avatar_url AS actor_avatar_url,
                 n.event_id, e.title AS event_title, e.starts_at AS event_starts_at,
-                n.venue_id, v.name AS venue_name
+                n.venue_id, v.name AS venue_name,
+                n.group_id, g.name AS group_name
          FROM notifications n
          LEFT JOIN users a ON a.id = n.actor_user_id
          LEFT JOIN events e ON e.id = n.event_id
          LEFT JOIN venues v ON v.id = n.venue_id
+         LEFT JOIN groups g ON g.id = n.group_id
          WHERE n.user_id = $1
          ORDER BY n.created_at DESC
          LIMIT $2`,
@@ -279,6 +310,64 @@ export class PostgresNotificationsRepository implements NotificationsRepository 
     );
   }
 
+  async notifyGroupVerificationReceived(
+    adminUserIds: string[],
+    actorUserId: string,
+    groupId: string
+  ): Promise<void> {
+    const recipients = adminUserIds.filter((id) => id !== actorUserId);
+    if (recipients.length === 0) return;
+    await this.pool.query(
+      `INSERT INTO notifications (id, user_id, kind, actor_user_id, group_id)
+       SELECT gen_random_uuid(), recipient, 'group_verification_received', $2, $3
+       FROM unnest($1::uuid[]) AS recipient`,
+      [recipients, actorUserId, groupId]
+    );
+  }
+
+  // Same encoding as notifyOrganizerRequestResolved: approval is
+  // actor_user_id pointing back at the recipient, refusal leaves it null.
+  async notifyGroupVerificationResolved(
+    recipientUserId: string,
+    groupId: string,
+    approved: boolean
+  ): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO notifications (id, user_id, kind, group_id, actor_user_id)
+       VALUES ($1, $2, 'group_verification_resolved', $3, $4)`,
+      [
+        randomUUID(),
+        recipientUserId,
+        groupId,
+        approved ? recipientUserId : null
+      ]
+    );
+  }
+
+  async notifyGroupJoinRequestReceived(
+    moderatorUserId: string,
+    actorUserId: string,
+    groupId: string
+  ): Promise<void> {
+    if (moderatorUserId === actorUserId) return;
+    await this.pool.query(
+      `INSERT INTO notifications (id, user_id, kind, actor_user_id, group_id)
+       VALUES ($1, $2, 'group_join_request_received', $3, $4)`,
+      [randomUUID(), moderatorUserId, actorUserId, groupId]
+    );
+  }
+
+  async notifyGroupJoinRequestAccepted(
+    recipientUserId: string,
+    groupId: string
+  ): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO notifications (id, user_id, kind, group_id)
+       VALUES ($1, $2, 'group_join_request_accepted', $3)`,
+      [randomUUID(), recipientUserId, groupId]
+    );
+  }
+
   private async insertActorNotification(
     kind: StoredNotificationKind,
     recipientUserId: string,
@@ -321,6 +410,31 @@ function toNotification(row: StoredRow): Notification | undefined {
   // DEC-0018: the requester's own decision notification has no actor to
   // announce - approval is encoded by actor_user_id pointing back at the
   // recipient - so it is resolved before the actor guard below.
+  if (row.kind === 'group_verification_resolved') {
+    if (!row.group_id || !row.group_name) return undefined;
+    return {
+      kind: 'group_verification_resolved',
+      id: row.id,
+      createdAt,
+      readAt,
+      groupId: row.group_id,
+      groupName: row.group_name,
+      approved: row.actor_user_id !== null
+    };
+  }
+
+  if (row.kind === 'group_join_request_accepted') {
+    if (!row.group_id || !row.group_name) return undefined;
+    return {
+      kind: 'group_join_request_accepted',
+      id: row.id,
+      createdAt,
+      readAt,
+      groupId: row.group_id,
+      groupName: row.group_name
+    };
+  }
+
   if (row.kind === 'organizer_request_resolved') {
     if (!row.venue_id || !row.venue_name) return undefined;
     return {
@@ -340,6 +454,22 @@ function toNotification(row: StoredRow): Notification | undefined {
     actorDisplayName: row.actor_display_name,
     ...(row.actor_avatar_url ? { actorAvatarUrl: row.actor_avatar_url } : {})
   };
+
+  if (
+    row.kind === 'group_verification_received' ||
+    row.kind === 'group_join_request_received'
+  ) {
+    if (!row.group_id || !row.group_name) return undefined;
+    return {
+      kind: row.kind,
+      id: row.id,
+      createdAt,
+      readAt,
+      ...actor,
+      groupId: row.group_id,
+      groupName: row.group_name
+    };
+  }
 
   if (row.kind === 'organizer_request_received') {
     if (!row.venue_id || !row.venue_name) return undefined;

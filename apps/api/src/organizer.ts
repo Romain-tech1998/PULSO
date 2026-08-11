@@ -1,14 +1,17 @@
 import {
   adminVenuePhotosResponseSchema,
   createOrganizerRequestSchema,
+  groupVerificationRequestsResponseSchema,
   myOrganizerStatusResponseSchema,
   organizerRequestsResponseSchema,
+  resolveGroupVerificationSchema,
   resolveOrganizerRequestSchema,
   suppressVenuePhotoRequestSchema
 } from '@pulso/contracts';
 import type {
   AuthRepository,
   EventRepository,
+  GroupsRepository,
   NotificationsRepository,
   OrganizerRepository
 } from '@pulso/database';
@@ -20,6 +23,7 @@ import { resolveBearerUser, sendUnauthenticated } from './auth.js';
 
 const requestParamsSchema = z.object({ id: z.uuid() });
 const venueParamsSchema = z.object({ venueId: z.uuid() });
+const groupParamsSchema = z.object({ id: z.uuid() });
 const photoQuerySchema = z.object({ query: z.string().min(1).optional() });
 
 /**
@@ -39,7 +43,8 @@ export function registerOrganizerRoutes(
   // DEC-0019's venue-photo queue lives in the same console and behind the
   // same `is_admin` gate, so it is registered here rather than growing a
   // second admin module with its own copy of the authorization check.
-  eventRepository?: EventRepository
+  eventRepository?: EventRepository,
+  groupsRepository?: GroupsRepository
 ) {
   app.get('/me/organizer', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -176,6 +181,56 @@ export function registerOrganizerRoutes(
       return reply.status(204).send();
     }
   );
+
+  if (!groupsRepository) return;
+
+  /**
+   * DEC-0013/DEC-0015 group verification. A verified badge is what makes a
+   * community legible to people who have never heard of it, so granting it
+   * is an administrator decision, not something a group can award itself.
+   * Same queue, same is_admin gate and same notify-on-decision shape as
+   * the organizer requests above.
+   */
+  app.get('/admin/group-verifications', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    if (!(await organizerRepository.isAdmin(user.id))) {
+      return sendForbidden(reply);
+    }
+    return groupVerificationRequestsResponseSchema.parse({
+      data: await groupsRepository.listPendingVerifications()
+    });
+  });
+
+  app.post('/admin/group-verifications/:id', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    if (!(await organizerRepository.isAdmin(user.id))) {
+      return sendForbidden(reply);
+    }
+    const { id } = groupParamsSchema.parse(request.params);
+    const { approve } = resolveGroupVerificationSchema.parse(request.body);
+    const resolved = await groupsRepository.resolveVerification(
+      user.id,
+      id,
+      approve
+    );
+    if (!resolved) {
+      return reply.status(404).send({
+        error: {
+          code: 'GROUP_VERIFICATION_NOT_FOUND',
+          message: 'No pending verification request for this group.'
+        }
+      });
+    }
+    await notificationsRepository.notifyGroupVerificationResolved(
+      resolved.requesterId,
+      resolved.groupId,
+      approve
+    );
+    return reply.status(204).send();
+  });
+
 }
 
 // 403 rather than 404: the caller is authenticated, and the route's

@@ -71,6 +71,8 @@ export {
   type GroupMeetupVenue,
   type GroupPost,
   type GroupScheduleItem,
+  type GroupVerificationRequest,
+  type GroupVerificationStatus,
   type GroupVisibility,
   type GroupsRepository
 } from './groups-repository.js';

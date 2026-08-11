@@ -448,6 +448,48 @@ export const notificationSchema = z.discriminatedUnion('kind', [
     venueName: z.string().min(1),
     approved: z.boolean()
   }),
+  // Groups. `group_join_request_received` closes a real gap rather than
+  // adding noise: a restricted group's pending queue already existed, but
+  // nothing ever told its moderator to go look at it.
+  z.object({
+    kind: z.literal('group_verification_received'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string().min(1),
+    actorAvatarUrl: z.string().optional(),
+    groupId: z.uuid(),
+    groupName: z.string().min(1)
+  }),
+  z.object({
+    kind: z.literal('group_verification_resolved'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    groupId: z.uuid(),
+    groupName: z.string().min(1),
+    approved: z.boolean()
+  }),
+  z.object({
+    kind: z.literal('group_join_request_received'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string().min(1),
+    actorAvatarUrl: z.string().optional(),
+    groupId: z.uuid(),
+    groupName: z.string().min(1)
+  }),
+  z.object({
+    kind: z.literal('group_join_request_accepted'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    groupId: z.uuid(),
+    groupName: z.string().min(1)
+  }),
   z.object({
     kind: z.literal('upcoming_event'),
     createdAt: z.iso.datetime(),
@@ -734,6 +776,16 @@ export const groupVisibilitySchema = z.enum([
   'private_invite'
 ]);
 export const groupTypeSchema = z.enum(['community', 'event', 'private_crew']);
+// Requested by the group's creator, granted by a Pulso administrator - the
+// same request/approve shape DEC-0018 established for organizer accounts.
+// 'none' and 'declined' stay distinct so a refused group can ask again
+// without the interface pretending it never asked.
+export const groupVerificationStatusSchema = z.enum([
+  'none',
+  'pending',
+  'verified',
+  'declined'
+]);
 export const groupMembershipStatusSchema = z.enum(['member', 'pending']);
 export const attendanceResponseSchema = z.enum(['yes', 'maybe', 'no']);
 
@@ -764,7 +816,12 @@ export const groupSchema = z.object({
   eventStartsAt: z.iso.datetime().optional(),
   // Phase 4.14: this viewer's own choice to show this group in their
   // sidebar shortcut list - always false for a group they haven't joined.
-  pinned: z.boolean()
+  pinned: z.boolean(),
+  // The group's own photo, uploaded by its moderator. Absent until one is
+  // set - the interface falls back to the group's initial rather than to a
+  // stock image standing in for a picture the group never chose.
+  imageUrl: z.url().optional(),
+  verificationStatus: groupVerificationStatusSchema
 });
 
 // DEC-0015's module registry, typed rather than `z.array(z.any())`: `any`
@@ -795,6 +852,30 @@ export const updateGroupModulesRequestSchema = z.object({
 
 export const setGroupPinnedRequestSchema = z.object({
   pinned: z.boolean()
+});
+
+// What the moderator tells the administrator about the group. Stored and
+// displayed; like DEC-0018's organizer justification, Pulso verifies
+// nothing on its own from it.
+export const requestGroupVerificationSchema = z.object({
+  justification: z.string().min(1).max(500)
+});
+
+export const resolveGroupVerificationSchema = z.object({
+  approve: z.boolean()
+});
+
+// The administration queue (same console and same is_admin gate as
+// DEC-0018's organizer requests).
+export const groupVerificationRequestSchema = z.object({
+  group: groupSchema,
+  requester: publicUserSchema,
+  requestedAt: z.iso.datetime(),
+  justification: z.string().min(1)
+});
+
+export const groupVerificationRequestsResponseSchema = z.object({
+  data: z.array(groupVerificationRequestSchema)
 });
 
 export const groupsResponseSchema = z.object({
@@ -1324,6 +1405,21 @@ export type CreateGroupPostRequest = z.infer<
 export type GroupPostsResponse = z.infer<typeof groupPostsResponseSchema>;
 export type GroupPostResponse = z.infer<typeof groupPostResponseSchema>;
 export type GroupVisibility = z.infer<typeof groupVisibilitySchema>;
+export type GroupVerificationStatus = z.infer<
+  typeof groupVerificationStatusSchema
+>;
+export type RequestGroupVerification = z.infer<
+  typeof requestGroupVerificationSchema
+>;
+export type ResolveGroupVerification = z.infer<
+  typeof resolveGroupVerificationSchema
+>;
+export type GroupVerificationRequest = z.infer<
+  typeof groupVerificationRequestSchema
+>;
+export type GroupVerificationRequestsResponse = z.infer<
+  typeof groupVerificationRequestsResponseSchema
+>;
 export type GroupMembershipStatus = z.infer<typeof groupMembershipStatusSchema>;
 export type AttendanceResponse = z.infer<typeof attendanceResponseSchema>;
 export type GroupMeetupVenue = z.infer<typeof groupMeetupVenueSchema>;

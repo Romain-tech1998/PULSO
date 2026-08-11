@@ -1,6 +1,7 @@
 import { defaultModulesForGroupType } from '@pulso/domain';
 import {
   createGroupChecklistItemRequestSchema,
+  requestGroupVerificationSchema,
   createGroupPostRequestSchema,
   createGroupRequestSchema,
   updateGroupModulesRequestSchema,
@@ -24,7 +25,9 @@ import {
 import type {
   AuthRepository,
   EventRepository,
-  GroupsRepository
+  GroupsRepository,
+  NotificationsRepository,
+  OrganizerRepository
 } from '@pulso/database';
 import {
   EventNotFoundError,
@@ -32,10 +35,36 @@ import {
   NotGroupMemberError,
   NotGroupModeratorError
 } from '@pulso/database';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
+import { randomUUID } from 'node:crypto';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { z } from 'zod';
 
 import { resolveBearerUser, sendUnauthenticated } from './auth.js';
+
+/**
+ * Every group route answers these three repository errors identically, so
+ * the mapping lives here once instead of being restated per handler.
+ */
+function replyGroupError(reply: FastifyReply, error: unknown) {
+  if (error instanceof GroupNotFoundError) {
+    return reply
+      .status(404)
+      .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
+  }
+  if (error instanceof NotGroupMemberError) {
+    return reply
+      .status(403)
+      .send({ error: { code: 'NOT_GROUP_MEMBER', message: error.message } });
+  }
+  if (error instanceof NotGroupModeratorError) {
+    return reply.status(403).send({
+      error: { code: 'NOT_GROUP_MODERATOR', message: error.message }
+    });
+  }
+  throw error;
+}
 
 const groupParamsSchema = z.object({ id: z.uuid() });
 const postParamsSchema = z.object({ postId: z.uuid() });
@@ -56,11 +85,25 @@ const discoverQuerySchema = z.object({
  * modules (schedule, attendance, checklist) requires accepted membership,
  * same account-only UGC posture as the event forum.
  */
+const ALLOWED_MIME_TO_EXTENSION: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif'
+};
+
 export function registerGroupsRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
   groupsRepository: GroupsRepository,
-  eventRepository: EventRepository
+  eventRepository: EventRepository,
+  notificationsRepository: NotificationsRepository,
+  // Who the Pulso administrators are is DEC-0018's concern and is answered
+  // in exactly one place, so verification requests ask that repository
+  // rather than growing a second copy of the same query here.
+  organizerRepository: OrganizerRepository,
+  uploadDir: string,
+  publicUploadUrl: string
 ) {
   app.post('/me/groups', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -84,16 +127,19 @@ export function registerGroupsRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
 
-    // In a real app, we should check if the user is admin/owner of this group
-    // For now, we trust they have access or we could fetch the group first
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = groupParamsSchema.parse(request.params);
     const { modulesConfig } = updateGroupModulesRequestSchema.parse(
       request.body
     );
-
-    await groupsRepository.updateGroupModules(id, modulesConfig);
-
-    // Return updated group
+    try {
+      // Who may reshape a group's workspace is exactly who may approve its
+      // join requests (DEC-0013 v1.2's one moderator power): its creator.
+      // This was previously unchecked, so any signed-in account could
+      // reconfigure any group.
+      await groupsRepository.updateGroupModules(id, modulesConfig, user.id);
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
     const group = await groupsRepository.getGroup(id, user.id);
     if (!group) return reply.status(404).send();
     return reply.status(200).send(groupResponseSchema.parse({ data: group }));
@@ -139,14 +185,21 @@ export function registerGroupsRoutes(
     const { id } = groupParamsSchema.parse(request.params);
     try {
       const status = await groupsRepository.joinGroup(id, user.id);
+      if (status === 'pending') {
+        // The pending queue has existed since Phase 4.10, but nothing ever
+        // told the moderator to look at it, so requests sat there unseen.
+        const group = await groupsRepository.getGroup(id, user.id);
+        if (group) {
+          await notificationsRepository.notifyGroupJoinRequestReceived(
+            group.createdBy,
+            user.id,
+            id
+          );
+        }
+      }
       return joinGroupResponseSchema.parse({ status });
     } catch (error) {
-      if (error instanceof GroupNotFoundError) {
-        return reply
-          .status(404)
-          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
-      }
-      throw error;
+      return replyGroupError(reply, error);
     }
   });
 
@@ -174,8 +227,12 @@ export function registerGroupsRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { id } = groupParamsSchema.parse(request.params);
-    const members = await groupsRepository.getMembers(id);
-    return groupMembersResponseSchema.parse({ data: members });
+    try {
+      const members = await groupsRepository.getMembers(id, user.id);
+      return groupMembersResponseSchema.parse({ data: members });
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
   });
 
   // Moderator-only (Phase 4.10, DEC-0013 v1.2) - who's waiting to join a
@@ -188,17 +245,7 @@ export function registerGroupsRoutes(
       const requests = await groupsRepository.getJoinRequests(id, user.id);
       return groupJoinRequestsResponseSchema.parse({ data: requests });
     } catch (error) {
-      if (error instanceof GroupNotFoundError) {
-        return reply
-          .status(404)
-          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
-      }
-      if (error instanceof NotGroupModeratorError) {
-        return reply.status(403).send({
-          error: { code: 'NOT_GROUP_MODERATOR', message: error.message }
-        });
-      }
-      throw error;
+      return replyGroupError(reply, error);
     }
   });
 
@@ -210,17 +257,12 @@ export function registerGroupsRoutes(
     try {
       await groupsRepository.respondToJoinRequest(id, user.id, userId, action);
     } catch (error) {
-      if (error instanceof GroupNotFoundError) {
-        return reply
-          .status(404)
-          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
-      }
-      if (error instanceof NotGroupModeratorError) {
-        return reply.status(403).send({
-          error: { code: 'NOT_GROUP_MODERATOR', message: error.message }
-        });
-      }
-      throw error;
+      return replyGroupError(reply, error);
+    }
+    // Only an acceptance is announced: a refusal stays silent, same as a
+    // declined friend request (DEC-0011).
+    if (action === 'accept') {
+      await notificationsRepository.notifyGroupJoinRequestAccepted(userId, id);
     }
     return reply.status(204).send();
   });
@@ -233,17 +275,7 @@ export function registerGroupsRoutes(
       const posts = await groupsRepository.getPosts(id, user.id);
       return groupPostsResponseSchema.parse({ data: posts });
     } catch (error) {
-      if (error instanceof GroupNotFoundError) {
-        return reply
-          .status(404)
-          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
-      }
-      if (error instanceof NotGroupMemberError) {
-        return reply.status(403).send({
-          error: { code: 'NOT_GROUP_MEMBER', message: error.message }
-        });
-      }
-      throw error;
+      return replyGroupError(reply, error);
     }
   });
 
@@ -263,17 +295,7 @@ export function registerGroupsRoutes(
         .status(201)
         .send(groupPostResponseSchema.parse({ data: post }));
     } catch (error) {
-      if (error instanceof GroupNotFoundError) {
-        return reply
-          .status(404)
-          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
-      }
-      if (error instanceof NotGroupMemberError) {
-        return reply.status(403).send({
-          error: { code: 'NOT_GROUP_MEMBER', message: error.message }
-        });
-      }
-      throw error;
+      return replyGroupError(reply, error);
     }
   });
 
@@ -292,12 +314,7 @@ export function registerGroupsRoutes(
     try {
       await groupsRepository.likePost(postId, user.id);
     } catch (error) {
-      if (error instanceof GroupNotFoundError) {
-        return reply
-          .status(404)
-          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
-      }
-      throw error;
+      return replyGroupError(reply, error);
     }
     return reply.status(204).send();
   });
@@ -316,8 +333,12 @@ export function registerGroupsRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { id } = groupParamsSchema.parse(request.params);
-    const items = await groupsRepository.getScheduleItems(id);
-    return groupScheduleItemsResponseSchema.parse({ data: items });
+    try {
+      const items = await groupsRepository.getScheduleItems(id, user.id);
+      return groupScheduleItemsResponseSchema.parse({ data: items });
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
   });
 
   app.post('/groups/:id/schedule', async (request, reply) => {
@@ -330,17 +351,7 @@ export function registerGroupsRoutes(
     try {
       await groupsRepository.addScheduleItem(id, user.id, label, scheduledAt);
     } catch (error) {
-      if (error instanceof GroupNotFoundError) {
-        return reply
-          .status(404)
-          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
-      }
-      if (error instanceof NotGroupMemberError) {
-        return reply.status(403).send({
-          error: { code: 'NOT_GROUP_MEMBER', message: error.message }
-        });
-      }
-      throw error;
+      return replyGroupError(reply, error);
     }
     return reply.status(204).send();
   });
@@ -358,8 +369,12 @@ export function registerGroupsRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { id } = groupParamsSchema.parse(request.params);
-    const summary = await groupsRepository.getAttendanceSummary(id, user.id);
-    return groupAttendanceSummarySchema.parse(summary);
+    try {
+      const summary = await groupsRepository.getAttendanceSummary(id, user.id);
+      return groupAttendanceSummarySchema.parse(summary);
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
   });
 
   app.put('/groups/:id/attendance', async (request, reply) => {
@@ -370,17 +385,7 @@ export function registerGroupsRoutes(
     try {
       await groupsRepository.setAttendanceResponse(id, user.id, response);
     } catch (error) {
-      if (error instanceof GroupNotFoundError) {
-        return reply
-          .status(404)
-          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
-      }
-      if (error instanceof NotGroupMemberError) {
-        return reply.status(403).send({
-          error: { code: 'NOT_GROUP_MEMBER', message: error.message }
-        });
-      }
-      throw error;
+      return replyGroupError(reply, error);
     }
     return reply.status(204).send();
   });
@@ -391,8 +396,12 @@ export function registerGroupsRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { id } = groupParamsSchema.parse(request.params);
-    const items = await groupsRepository.getChecklistItems(id, user.id);
-    return groupChecklistItemsResponseSchema.parse({ data: items });
+    try {
+      const items = await groupsRepository.getChecklistItems(id, user.id);
+      return groupChecklistItemsResponseSchema.parse({ data: items });
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
   });
 
   app.post('/groups/:id/checklist', async (request, reply) => {
@@ -403,17 +412,7 @@ export function registerGroupsRoutes(
     try {
       await groupsRepository.addChecklistItem(id, user.id, label);
     } catch (error) {
-      if (error instanceof GroupNotFoundError) {
-        return reply
-          .status(404)
-          .send({ error: { code: 'GROUP_NOT_FOUND', message: error.message } });
-      }
-      if (error instanceof NotGroupMemberError) {
-        return reply.status(403).send({
-          error: { code: 'NOT_GROUP_MEMBER', message: error.message }
-        });
-      }
-      throw error;
+      return replyGroupError(reply, error);
     }
     return reply.status(204).send();
   });
@@ -423,7 +422,11 @@ export function registerGroupsRoutes(
     if (!user) return sendUnauthenticated(reply);
     const { itemId } = checklistItemParamsSchema.parse(request.params);
     const { checked } = setGroupChecklistCheckRequestSchema.parse(request.body);
-    await groupsRepository.toggleChecklistCheck(itemId, user.id, checked);
+    try {
+      await groupsRepository.toggleChecklistCheck(itemId, user.id, checked);
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
     return reply.status(204).send();
   });
 
@@ -433,6 +436,114 @@ export function registerGroupsRoutes(
     const { itemId } = checklistItemParamsSchema.parse(request.params);
     await groupsRepository.deleteChecklistItem(itemId, user.id);
     return reply.status(204).send();
+  });
+
+  /**
+   * The group's photo. Same upload mechanism as event and venue photos
+   * (multipart to the API's own disk), moderator-only. Replacing a photo
+   * deletes the file it orphans rather than leaving it on disk forever.
+   */
+  app.post('/groups/:id/photo', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id } = groupParamsSchema.parse(request.params);
+
+    const file = await request.file();
+    if (!file) {
+      return reply.status(400).send({
+        error: { code: 'NO_FILE', message: 'No photo was uploaded.' }
+      });
+    }
+    const extension = ALLOWED_MIME_TO_EXTENSION[file.mimetype];
+    if (!extension) {
+      return reply.status(415).send({
+        error: {
+          code: 'UNSUPPORTED_FILE_TYPE',
+          message: 'Only JPEG, PNG, WebP or GIF photos are supported.'
+        }
+      });
+    }
+    let buffer: Buffer;
+    try {
+      buffer = await file.toBuffer();
+    } catch {
+      return reply.status(413).send({
+        error: {
+          code: 'FILE_TOO_LARGE',
+          message: 'The photo exceeds the maximum allowed size.'
+        }
+      });
+    }
+
+    const groupDir = join(uploadDir, 'group-photos', id);
+    await mkdir(groupDir, { recursive: true });
+    const filename = `${randomUUID()}.${extension}`;
+    await writeFile(join(groupDir, filename), buffer);
+    const filePath = `group-photos/${id}/${filename}`;
+
+    let previousPath: string | undefined;
+    try {
+      previousPath = await groupsRepository.setGroupPhoto(
+        id,
+        user.id,
+        `${publicUploadUrl}/${filePath}`,
+        filePath
+      );
+    } catch (error) {
+      // The uploaded file is only kept if the write was authorized.
+      await unlink(join(uploadDir, filePath)).catch(() => {});
+      return replyGroupError(reply, error);
+    }
+    if (previousPath) {
+      await unlink(join(uploadDir, previousPath)).catch(() => {});
+    }
+    const group = await groupsRepository.getGroup(id, user.id);
+    if (!group) return reply.status(404).send();
+    return reply.status(200).send(groupResponseSchema.parse({ data: group }));
+  });
+
+  app.delete('/groups/:id/photo', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id } = groupParamsSchema.parse(request.params);
+    let removedPath: string | undefined;
+    try {
+      removedPath = await groupsRepository.clearGroupPhoto(id, user.id);
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+    if (removedPath) {
+      await unlink(join(uploadDir, removedPath)).catch(() => {});
+    }
+    return reply.status(204).send();
+  });
+
+  /**
+   * Asks a Pulso administrator to verify this group. Same request/approve
+   * shape as DEC-0018's organizer requests, including notifying every
+   * administrator - a request nobody is told about is a request nobody
+   * answers.
+   */
+  app.post('/groups/:id/verification-request', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id } = groupParamsSchema.parse(request.params);
+    const { justification } = requestGroupVerificationSchema.parse(
+      request.body
+    );
+    try {
+      await groupsRepository.requestVerification(id, user.id, justification);
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+    await notificationsRepository.notifyGroupVerificationReceived(
+      await organizerRepository.listAdminUserIds(),
+      user.id,
+      id
+    );
+    const group = await groupsRepository.getGroup(id, user.id);
+    if (!group) return reply.status(404).send();
+    return reply.status(200).send(groupResponseSchema.parse({ data: group }));
   });
 
   // "Rencontrer avant l'événement" (Phase 4.8) - reuses Groups (DEC-0013)

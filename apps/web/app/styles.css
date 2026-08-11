@@ -14029,3 +14029,162 @@ a.venue-detail-info-row:hover {
   color: var(--text-muted, rgba(255, 255, 255, 0.6));
   font-size: 0.8rem;
 }
+
+/* ---------------------------------------------------------------------
+   Groups: identity (photo, verified badge) and the moderator's own
+   management card. Same surface/radius/accent language as the rest of the
+   group workspace above.
+   --------------------------------------------------------------------- */
+
+.group-avatar {
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 0.85rem;
+  background: linear-gradient(140deg, #2a1e3d, #1a1526);
+  color: #d9d2e6;
+  font-weight: 750;
+}
+.group-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.group-avatar-xl {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 84px;
+  font-size: 1.9rem;
+}
+
+/* A group photo replaces the generated cover art rather than sitting on
+   top of it, so the grid overlay stays but the gradients are hidden. */
+.group-detail-cover.has-photo {
+  background: #14101f;
+}
+.group-detail-cover img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.group-detail-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.group-verified-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid rgba(90, 200, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(70, 180, 255, 0.12);
+  color: #6ec8ff;
+  font-size: 0.56rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.group-verified-badge.compact {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.group-directory-admin {
+  padding: 0.18rem 0.38rem;
+  border: 1px solid rgba(255, 75, 148, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 75, 148, 0.1);
+  color: #ff8ab8;
+  font-size: 0.52rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.group-identity-card {
+  display: grid;
+  gap: 1.1rem;
+}
+.group-identity-photo {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.group-identity-photo-actions strong {
+  display: block;
+  font-size: 0.82rem;
+}
+.group-identity-photo-actions p {
+  margin: 0.15rem 0 0.55rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+.group-identity-photo-actions > div {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.group-identity-verification {
+  padding-top: 1rem;
+  border-top: 1px solid var(--brand-border);
+}
+.group-identity-verification-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+.group-identity-verification-head strong {
+  font-size: 0.82rem;
+}
+.group-identity-verification p {
+  margin: 0 0 0.6rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.group-verification-form label span {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+.group-verification-form textarea {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.7rem;
+  background: var(--surface-raised, rgba(255, 255, 255, 0.03));
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  resize: vertical;
+}
+.group-verification-form small {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+  text-align: right;
+}
+.group-verification-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  margin-top: 0.6rem;
+}
+
+.group-identity-error {
+  margin: 0.6rem 0 0;
+  color: #ff8ab8;
+  font-size: 0.72rem;
+}
