@@ -10282,6 +10282,9 @@ function AdminGroupPlacementsBlock({
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  type PickerState = 'idle' | 'loading' | 'done' | 'error';
+  const [groupState, setGroupState] = useState<PickerState>('idle');
+  const [eventState, setEventState] = useState<PickerState>('idle');
 
   const reload = useCallback(() => {
     if (!authToken) return;
@@ -10299,29 +10302,51 @@ function AdminGroupPlacementsBlock({
     reload();
   }, [reload]);
 
-  const searchGroups = () => {
-    if (!authToken) return;
-    fetch(
-      `${API_BASE_URL}/admin/groups?query=${encodeURIComponent(groupQuery)}`,
-      { headers: { authorization: `Bearer ${authToken}` } }
-    )
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) =>
-        setGroups(adminGroupSummariesResponseSchema.parse(json).data)
+  // Both pickers search as the administrator types. The first version put
+  // the query behind a "Chercher" button, which turned out to be the whole
+  // failure: the button sat in a flex row next to an input styled
+  // width:100%, so it was squeezed to nothing and the request never fired.
+  // A picker that searches on input has no button left to miss.
+  useEffect(() => {
+    if (!authToken || group) return;
+    const handle = setTimeout(() => {
+      setGroupState('loading');
+      fetch(
+        `${API_BASE_URL}/admin/groups?query=${encodeURIComponent(groupQuery.trim())}`,
+        { headers: { authorization: `Bearer ${authToken}` } }
       )
-      .catch(() => {});
-  };
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => {
+          setGroups(adminGroupSummariesResponseSchema.parse(json).data);
+          setGroupState('done');
+        })
+        .catch(() => setGroupState('error'));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [authToken, groupQuery, group]);
 
-  const searchEvents = () => {
-    if (!authToken || !eventQuery.trim()) return;
-    fetch(
-      `${API_BASE_URL}/admin/events/search?query=${encodeURIComponent(eventQuery.trim())}`,
-      { headers: { authorization: `Bearer ${authToken}` } }
-    )
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setEvents(eventListResponseSchema.parse(json).data))
-      .catch(() => {});
-  };
+  useEffect(() => {
+    if (!authToken || event) return;
+    if (!eventQuery.trim()) {
+      setEvents([]);
+      setEventState('idle');
+      return;
+    }
+    const handle = setTimeout(() => {
+      setEventState('loading');
+      fetch(
+        `${API_BASE_URL}/admin/events/search?query=${encodeURIComponent(eventQuery.trim())}`,
+        { headers: { authorization: `Bearer ${authToken}` } }
+      )
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => {
+          setEvents(eventListResponseSchema.parse(json).data);
+          setEventState('done');
+        })
+        .catch(() => setEventState('error'));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [authToken, eventQuery, event]);
 
   const place = () => {
     if (!authToken || !group || !event || !sponsorName.trim() || busy) return;
@@ -10371,17 +10396,23 @@ function AdminGroupPlacementsBlock({
         <div className="admin-placement-picker">
           <label>
             <span>1. Le groupe</span>
-            <div>
-              <input
-                value={groupQuery}
-                onChange={(changeEvent) => setGroupQuery(changeEvent.target.value)}
-                placeholder="Ex. Français à Montréal"
-              />
-              <button type="button" className="text-btn" onClick={searchGroups}>
-                Chercher
-              </button>
-            </div>
+            <input
+              value={groupQuery}
+              onChange={(changeEvent) => setGroupQuery(changeEvent.target.value)}
+              placeholder="Ex. Français à Montréal — laisse vide pour tout voir"
+            />
           </label>
+          {!group && groupState === 'loading' && (
+            <p className="admin-placement-hint">Recherche…</p>
+          )}
+          {!group && groupState === 'error' && (
+            <p className="create-event-error">
+              La recherche de groupes a échoué.
+            </p>
+          )}
+          {!group && groupState === 'done' && groups.length === 0 && (
+            <p className="admin-placement-hint">Aucun groupe ne correspond.</p>
+          )}
           {groups.length > 0 && !group && (
             <ul className="admin-placement-results">
               {groups.map((candidate) => (
@@ -10416,17 +10447,25 @@ function AdminGroupPlacementsBlock({
         <div className="admin-placement-picker">
           <label>
             <span>2. L&apos;événement</span>
-            <div>
-              <input
-                value={eventQuery}
-                onChange={(changeEvent) => setEventQuery(changeEvent.target.value)}
-                placeholder="Titre de l'événement"
-              />
-              <button type="button" className="text-btn" onClick={searchEvents}>
-                Chercher
-              </button>
-            </div>
+            <input
+              value={eventQuery}
+              onChange={(changeEvent) => setEventQuery(changeEvent.target.value)}
+              placeholder="Titre, organisateur ou lieu"
+            />
           </label>
+          {!event && eventState === 'loading' && (
+            <p className="admin-placement-hint">Recherche…</p>
+          )}
+          {!event && eventState === 'error' && (
+            <p className="create-event-error">
+              La recherche d&apos;événements a échoué.
+            </p>
+          )}
+          {!event && eventState === 'done' && events.length === 0 && (
+            <p className="admin-placement-hint">
+              Aucun événement à venir ne correspond.
+            </p>
+          )}
           {events.length > 0 && !event && (
             <ul className="admin-placement-results">
               {events.map((candidate) => (

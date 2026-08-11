@@ -14538,10 +14538,6 @@ a.venue-detail-info-row:hover {
   font-size: 0.74rem;
   font-weight: 650;
 }
-.admin-placement-picker label > div {
-  display: flex;
-  gap: 0.5rem;
-}
 .admin-placement-picker input,
 .admin-placement-field input {
   flex: 1 1 auto;
@@ -14596,4 +14592,13 @@ a.venue-detail-info-row:hover {
   border-radius: 0.55rem;
   background: rgba(104, 59, 211, 0.12);
   font-size: 0.76rem;
+}
+
+/* The pickers search as you type, so the inputs are plain full-width
+   fields: the earlier flex row put a "Chercher" button next to an input
+   styled width:100%, which squeezed the button out of reach. */
+.admin-placement-hint {
+  margin: 0.4rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
 }
