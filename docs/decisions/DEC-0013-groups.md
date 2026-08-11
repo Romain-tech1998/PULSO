@@ -1,7 +1,7 @@
 # DEC-0013 — Groups
 
 **Identifier:** DEC-0013
-**Version:** 1.2
+**Version:** 1.3
 **Status:** Accepted
 **Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DEC-0007, DEC-0010, DEC-0011, DEC-0012, UX-0001, PRD-0001, RFC-0001
 
@@ -17,6 +17,16 @@ Pulso authorizes groups: a named space with a creator, a member list, and its ow
 - **A moderator role**, reversing v1.0's Non-goal against group roles beyond plain membership. Scoped deliberately narrowly: a group's creator (`groups.created_by`, already existing — no new account concept) is its moderator, and the *only* moderator power authorized is accepting or declining join requests for a restricted group. Everything else from v1.0 is unchanged: no content moderation power over other members' posts, no kicking/removing a member, no ownership transfer, no group renaming or deletion.
 - **The Groups-advanced modules named in v1.1**: a real meetup point (derived from the linked event's actual venue for event-linked groups — never entered by hand, and simply absent for permanent groups with no event to derive one from), a member-added schedule/programme, a real attendance poll (`yes`/`maybe`/`no`, counted from real member votes, never simulated), and a checklist where each item's `checkedCount`/`totalMembers` reflects real, individual members checking it off for themselves.
 - The public directory itself now ships: `GET /groups/discover?scope=permanent|event` — permanent (non-event) groups not yet joined, or every event-linked group regardless of membership, each with real member counts. No group is hidden from discovery for being restricted; restriction only gates participation, not visibility.
+
+**v1.3 addendum (a group that can be recognised and talked in):** three additions that ship together, each closing a gap the earlier versions left in what a group *is* rather than what it can do.
+
+- **A group photo.** Until now a group had a name and a description but no face: every one rendered as the first letter of its name, which made a directory of them unreadable. A moderator can upload one photo per group, through the same multipart-to-local-disk mechanism already used for event and venue photos (DEC-0017) — no new storage dependency. It is used as the group's avatar in every list and as its cover in the workspace. Absent until one is set: the fallback stays the group's initial, never a stock image standing in for a picture the group never chose.
+
+- **Verification.** A group's moderator may request verification; a Pulso administrator grants or refuses it. This deliberately reuses DEC-0018's request/approve shape and its `users.is_admin` gate rather than inventing a second privileged role, and it notifies both ways through DEC-0016 — a request nobody is told about is a request nobody answers. A verified badge is what makes a community legible to someone who has never heard of it, so it is granted, never self-awarded. `none` and `declined` stay distinct states so a refused group can ask again without the interface pretending it never asked.
+
+- **Several discussion threads.** A group's feed was a single undifferentiated stream. It becomes a list of named channels, and every existing group and post was migrated into a `Général` channel so no message was lost or orphaned. A channel may be `staff_only`: everyone reads it, only the moderator writes in it. That *is* DEC-0015's "announcements reserved for staff" module, expressed as a channel rather than as a second content model — a community group therefore starts with `Général` and `Annonces`. Two rules are enforced rather than assumed: a reply always lands in its parent's channel (otherwise one conversation splits in two), and a group always keeps at least one channel (otherwise the discussion module has nowhere to write).
+
+Also in v1.3, and worth recording because it was a live defect rather than a design choice: reading a group's member list, programme, attendance and checklist required no membership at all, and ticking a checklist item required nothing whatsoever — so any signed-in account could read a restricted group it had never joined, and could move a `checkedCount/totalMembers` ratio that claims something about *that group's* members. A `private_invite` crew was additionally listed in discovery and joinable by anyone holding its id, the exact opposite of what DEC-0015 requires. All four reads now require accepted membership, ticking requires membership, and a private crew is invisible and unjoinable from outside. These guards live in SQL and are covered by database-backed tests, because the route-level suite runs against a fake repository that never executes it — which is why they survived unnoticed.
 
 Still explicitly excluded, same as v1.0/v1.1: fake online-presence indicators (no realtime infrastructure exists anywhere in Pulso), group renaming/deletion, and any moderation power beyond the one narrow approval action above.
 
@@ -40,5 +50,7 @@ DEC-0012 v1.0 explicitly listed group conversations as a non-goal, deferred to i
 Does not authorize group-specific notifications, group deletion/editing, kicking/removing a member, or any content-moderation power beyond the author-only post delete already established. Each remains a distinct future decision if needed. (Private/invite-only-style restricted groups and a narrow moderator role were non-goals through v1.1; v1.2 authorizes both — see the addendum. A public group directory was a non-goal in v1.0; v1.1 authorized it in principle and v1.2 ships it.)
 
 ## Supersession
+
+v1.3 adds a group photo, administrator-granted verification and multiple discussion channels; it supersedes v1.0's single-feed content model (a group's posts now belong to a named channel) and extends, rather than reverses, the account-gated UGC posture. It reuses DEC-0018's administration console and DEC-0016's notifications instead of creating either anew.
 
 DEC-0013 narrows PRD-0001 §4's exclusion of social features further, extending the UGC posture already established by DEC-0012 to a new, event-independent content space. It supersedes DEC-0012 v1.0's listing of "group conversations" as a non-goal; DEC-0012 itself is otherwise unchanged. v1.1 superseded its own v1.0 Boundary/Non-goal against a public group directory, in principle only. v1.2 ships that directory, and further supersedes v1.0's Boundary/Non-goal against restricted (non-open) groups and against any group role beyond plain membership — the latter authorized only as narrowly as described above (join-request approval, nothing else). None of this alters DEC-0007, DEC-0010, or DEC-0011's behavior, or any other Accepted MVP scope or boundary.
