@@ -1,4 +1,3 @@
-import { EVENT_CATEGORIES } from '@pulso/domain';
 import {
   adminVenuePhotosResponseSchema,
   adminGroupPlacementsResponseSchema,
@@ -202,7 +201,11 @@ export function registerOrganizerRoutes(
     if (!query) return eventListResponseSchema.parse({ data: [] });
     const now = new Date();
     const events = await eventRepository.searchEvents(
-      { text: query, categories: [...EVENT_CATEGORIES], price: 'all' },
+      // An empty category list means "do not filter by category" (the
+      // repository binds it as NULL). Listing every category instead was
+      // both redundant and fragile: it cast the whole enum on every call,
+      // so one value missing from the database took the route down.
+      { text: query, categories: [], price: 'all' },
       {
         startsAt: now,
         endsAt: new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000)

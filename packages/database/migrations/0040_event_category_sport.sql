@@ -1,0 +1,17 @@
+-- Add 'sport' to the event_category enum.
+--
+-- The category was added to the domain (EVENT_CATEGORIES), to the contract
+-- (z.enum(EVENT_CATEGORIES)) and to both message catalogues ("Sport" in FR
+-- and EN) by the commit that introduced it, but never to the database enum
+-- it is ultimately cast against. Nothing failed at build time because every
+-- layer above Postgres agreed with itself.
+--
+-- What it actually broke: the web app renders one filter chip per
+-- EVENT_CATEGORIES entry, so selecting "Sport" on the map sent
+-- categories=['sport'] to /events, passed Zod, and then died in the query
+-- with `invalid input value for enum event_category: "sport"`. Ingesting or
+-- creating an event in that category was equally impossible.
+--
+-- Placed before 'other' so the stored order matches the domain's, and
+-- guarded with IF NOT EXISTS so re-running is harmless.
+ALTER TYPE event_category ADD VALUE IF NOT EXISTS 'sport' BEFORE 'other';
