@@ -3,6 +3,7 @@
 import {
   discoverGroupsResponseSchema,
   groupChannelsResponseSchema,
+  groupOutingsResponseSchema,
   groupSponsoredPlacementsResponseSchema,
   friendsResponseSchema,
   groupAttendanceSummarySchema,
@@ -17,6 +18,7 @@ import {
 import type {
   AttendanceResponse,
   GroupChannel,
+  GroupOuting,
   GroupSponsoredPlacement,
   DiscoverGroupEntry,
   Group,
@@ -1074,13 +1076,17 @@ function GroupModulesCard({
 function GroupSponsoredBanner({
   placement,
   canDismiss,
+  canOrganise,
   onOpenEvent,
-  onDismiss
+  onDismiss,
+  onOrganise
 }: {
   placement: GroupSponsoredPlacement;
   canDismiss: boolean;
+  canOrganise: boolean;
   onOpenEvent: ((eventId: string) => void) | undefined;
   onDismiss: () => void;
+  onOrganise: () => void;
 }) {
   const { event } = placement;
   const startsAt = new Date(event.startsAt);
@@ -1125,16 +1131,123 @@ function GroupSponsoredBanner({
         {placement.message && (
           <p className="group-sponsored-message">{placement.message}</p>
         )}
-        <button
-          type="button"
-          className="group-sponsored-cta"
-          onClick={() => onOpenEvent && onOpenEvent(event.id)}
-          disabled={!onOpenEvent}
-        >
-          Voir l’événement
-        </button>
+        <div className="group-sponsored-actions">
+          <button
+            type="button"
+            className="group-sponsored-cta"
+            onClick={() => onOpenEvent && onOpenEvent(event.id)}
+            disabled={!onOpenEvent}
+          >
+            Voir l’événement
+          </button>
+          {canOrganise && (
+            // The bridge: a banner becomes the group's current outing, and
+            // the programme, attendance and checklist start describing it.
+            <button
+              type="button"
+              className="group-sponsored-secondary"
+              onClick={onOrganise}
+            >
+              Organiser cette sortie
+            </button>
+          )}
+        </div>
       </div>
     </article>
+  );
+}
+
+
+/**
+ * Which outing the modules below are describing, and the way to start the
+ * next one. Archiving is what keeps a permanent community usable: without
+ * it, week two opens on week one's programme and week one's votes.
+ */
+function GroupOutingBar({
+  outings,
+  isModerator,
+  busy,
+  title,
+  onTitleChange,
+  onStart
+}: {
+  outings: GroupOuting[];
+  isModerator: boolean;
+  busy: boolean;
+  title: string;
+  onTitleChange: (value: string) => void;
+  onStart: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = outings.find((outing) => !outing.archivedAt);
+  const past = outings.filter((outing) => outing.archivedAt);
+  if (!current) return null;
+
+  return (
+    <div className="group-outing-bar">
+      <div className="group-outing-current">
+        <span className="groups-page-eyebrow">Sortie en cours</span>
+        <strong>{current.title}</strong>
+        {current.startsAt && (
+          <small>
+            {new Date(current.startsAt).toLocaleDateString('fr-CA', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long'
+            })}
+          </small>
+        )}
+        {past.length > 0 && (
+          <small className="group-outing-past">
+            {past.length} sortie{past.length > 1 ? 's' : ''} précédente
+            {past.length > 1 ? 's' : ''} conservée
+            {past.length > 1 ? 's' : ''}
+          </small>
+        )}
+      </div>
+      {isModerator &&
+        (open ? (
+          <form
+            className="group-outing-form"
+            onSubmit={(submitEvent) => {
+              submitEvent.preventDefault();
+              onStart();
+              setOpen(false);
+            }}
+          >
+            <input
+              value={title}
+              onChange={(changeEvent) => onTitleChange(changeEvent.target.value)}
+              placeholder="Nom de la prochaine sortie"
+              maxLength={120}
+              autoFocus
+            />
+            <button
+              type="submit"
+              className="btn-secondary"
+              disabled={busy || !title.trim()}
+            >
+              {busy ? 'Création…' : 'Démarrer'}
+            </button>
+            <button
+              type="button"
+              className="text-btn"
+              onClick={() => setOpen(false)}
+            >
+              Annuler
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="text-btn"
+            onClick={() => setOpen(true)}
+            title="Archive la sortie en cours et repart d’une page blanche"
+          >
+            Nouvelle sortie
+          </button>
+        ))}
+    </div>
   );
 }
 
@@ -1166,6 +1279,9 @@ export function GroupDetailContent({
   const [members, setMembers] = useState<PublicUser[]>([]);
   const [channels, setChannels] = useState<GroupChannel[]>([]);
   const [placements, setPlacements] = useState<GroupSponsoredPlacement[]>([]);
+  const [outings, setOutings] = useState<GroupOuting[]>([]);
+  const [newOutingTitle, setNewOutingTitle] = useState('');
+  const [startingOuting, setStartingOuting] = useState(false);
   const [activeChannelId, setActiveChannelId] = useState<string>();
   const [newChannelName, setNewChannelName] = useState('');
   const [newChannelStaffOnly, setNewChannelStaffOnly] = useState(false);
@@ -1173,6 +1289,7 @@ export function GroupDetailContent({
   const [joining, setJoining] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [tab, setTab] = useState<GroupDetailTab>('organize');
+  const [modulesVersion, setModulesVersion] = useState(0);
 
   useEffect(() => {
     setTab('organize');
@@ -1233,6 +1350,57 @@ export function GroupDetailContent({
   useEffect(() => {
     refreshPlacements();
   }, [refreshPlacements]);
+
+  const refreshOutings = useCallback(() => {
+    if (!authToken || !group.isMember) return;
+    fetch(`${API_BASE_URL}/groups/${group.id}/outings`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setOutings(groupOutingsResponseSchema.parse(json).data))
+      .catch(() => {});
+  }, [authToken, group.id, group.isMember]);
+
+  useEffect(() => {
+    refreshOutings();
+  }, [refreshOutings]);
+
+  /**
+   * Starting an outing archives the current one, so the programme,
+   * attendance and checklist come back empty while the previous plan stays
+   * readable. `event` is set when the group acts on a placement - that is
+   * the bridge between a banner and something actually organised.
+   */
+  const startOuting = (input: {
+    title: string;
+    eventId?: string;
+    startsAt?: string;
+  }) => {
+    if (!authToken || startingOuting || !input.title.trim()) return;
+    setStartingOuting(true);
+    fetch(`${API_BASE_URL}/groups/${group.id}/outings`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        title: input.title.trim(),
+        ...(input.eventId ? { eventId: input.eventId } : {}),
+        ...(input.startsAt ? { startsAt: input.startsAt } : {})
+      })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => {
+        setNewOutingTitle('');
+        refreshOutings();
+        // The modules now describe a different outing, so what they show
+        // has to be re-read rather than left on screen.
+        setModulesVersion((version) => version + 1);
+      })
+      .catch(() => {})
+      .finally(() => setStartingOuting(false));
+  };
 
   const dismissPlacement = (placementId: string) => {
     if (!authToken) return;
@@ -1639,13 +1807,29 @@ export function GroupDetailContent({
                 </div>
                 <p>Chaque action ici est partagée avec tous les membres.</p>
               </div>
+              <GroupOutingBar
+                outings={outings}
+                isModerator={group.isModerator}
+                busy={startingOuting}
+                title={newOutingTitle}
+                onTitleChange={setNewOutingTitle}
+                onStart={() => startOuting({ title: newOutingTitle })}
+              />
               {placements.map((placement) => (
                 <GroupSponsoredBanner
                   key={placement.id}
                   placement={placement}
                   canDismiss={group.isModerator}
+                  canOrganise={group.isModerator}
                   onOpenEvent={onOpenEventForum}
                   onDismiss={() => dismissPlacement(placement.id)}
+                  onOrganise={() =>
+                    startOuting({
+                      title: placement.event.title,
+                      eventId: placement.event.id,
+                      startsAt: placement.event.startsAt
+                    })
+                  }
                 />
               ))}
               <div className="group-modules-grid">
@@ -1664,7 +1848,7 @@ export function GroupDetailContent({
                     case 'programme':
                       return (
                         <GroupScheduleCard
-                          key={entry.module}
+                          key={`${entry.module}-${modulesVersion}`}
                           groupId={group.id}
                           authToken={authToken}
                         />
@@ -1672,7 +1856,7 @@ export function GroupDetailContent({
                     case 'attendance':
                       return (
                         <GroupAttendanceCard
-                          key={entry.module}
+                          key={`${entry.module}-${modulesVersion}`}
                           groupId={group.id}
                           authToken={authToken}
                         />
@@ -1680,7 +1864,7 @@ export function GroupDetailContent({
                     case 'checklist':
                       return (
                         <GroupChecklistCard
-                          key={entry.module}
+                          key={`${entry.module}-${modulesVersion}`}
                           groupId={group.id}
                           authToken={authToken}
                         />

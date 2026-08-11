@@ -118,6 +118,22 @@ export class NotChannelWriterError extends Error {
   }
 }
 
+/**
+ * One outing a group is organising. The programme, the attendance poll and
+ * the checklist describe an outing, not a group, so they hang off this: a
+ * community that goes out weekly starts each week clean instead of finding
+ * last week's plan waiting for it.
+ */
+export interface GroupOuting {
+  id: string;
+  groupId: string;
+  eventId: string | undefined;
+  title: string;
+  startsAt: string | undefined;
+  createdAt: string;
+  archivedAt: string | undefined;
+}
+
 export interface GroupSponsoredPlacement {
   id: string;
   groupId: string;
@@ -264,6 +280,19 @@ export interface GroupsRepository {
     eventTitle: string,
     userId: string
   ): Promise<Group>;
+  /** The outing the modules currently describe. Every group has exactly one. */
+  getCurrentOuting(groupId: string): Promise<GroupOuting | undefined>;
+  /** Current first, then archived ones - a group's history stays readable. */
+  listOutings(groupId: string, viewerId: string): Promise<GroupOuting[]>;
+  /**
+   * Moderator-only. Archives the current outing and starts a new one, so
+   * the modules reset while nothing that was already planned is destroyed.
+   */
+  startOuting(
+    groupId: string,
+    userId: string,
+    input: { title: string; eventId?: string; startsAt?: string }
+  ): Promise<GroupOuting>;
   listChannels(groupId: string, viewerId: string): Promise<GroupChannel[]>;
   /** Moderator-only: threads are part of how a group is organised. */
   createChannel(
@@ -546,6 +575,33 @@ function toPlacement(row: PlacementRow): GroupSponsoredPlacement {
   };
 }
 
+
+interface OutingRow {
+  id: string;
+  group_id: string;
+  event_id: string | null;
+  title: string;
+  starts_at: string | null;
+  created_at: string;
+  archived_at: string | null;
+}
+
+function toOuting(row: OutingRow): GroupOuting {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    eventId: row.event_id ?? undefined,
+    title: row.title,
+    startsAt: row.starts_at
+      ? new Date(row.starts_at).toISOString()
+      : undefined,
+    createdAt: new Date(row.created_at).toISOString(),
+    archivedAt: row.archived_at
+      ? new Date(row.archived_at).toISOString()
+      : undefined
+  };
+}
+
 export class PostgresGroupsRepository implements GroupsRepository {
   constructor(private readonly pool: Pool) {}
 
@@ -596,6 +652,11 @@ export class PostgresGroupsRepository implements GroupsRepository {
       await client.query(
         `INSERT INTO group_channels (id, group_id, name, position, staff_only, created_by)
          VALUES ($1, $2, 'Général', 0, false, $3)`,
+        [randomUUID(), id, creatorId]
+      );
+      await client.query(
+        `INSERT INTO group_outings (id, group_id, title, created_by)
+         VALUES ($1, $2, 'Prochaine sortie', $3)`,
         [randomUUID(), id, creatorId]
       );
       if (type === 'community') {
@@ -720,6 +781,16 @@ export class PostgresGroupsRepository implements GroupsRepository {
         `INSERT INTO group_roles (group_id, user_id, role) VALUES ($1, $2, 'owner')
          ON CONFLICT (group_id, user_id) DO NOTHING`,
         [groupId, userId]
+      );
+      await client.query(
+        `INSERT INTO group_outings (id, group_id, event_id, title, starts_at, created_by)
+         SELECT $1, $2, e.id, e.title, e.starts_at, $3
+         FROM events e
+         WHERE e.id = $4
+           AND NOT EXISTS (
+             SELECT 1 FROM group_outings WHERE group_id = $2
+           )`,
+        [randomUUID(), groupId, userId, eventId]
       );
       // Find-or-create runs on every click, so the channel is guarded on
       // absence rather than on a conflict target it has no key for.
@@ -1074,7 +1145,12 @@ export class PostgresGroupsRepository implements GroupsRepository {
       created_at: string;
     }>(
       `SELECT id, group_id, label, scheduled_at, created_by, created_at
-       FROM group_schedule_items WHERE group_id = $1 ORDER BY scheduled_at ASC`,
+       FROM group_schedule_items
+       WHERE outing_id = (
+         SELECT id FROM group_outings
+         WHERE group_id = $1 AND archived_at IS NULL
+       )
+       ORDER BY scheduled_at ASC`,
       [groupId]
     );
     return result.rows.map((row) => ({
@@ -1095,9 +1171,17 @@ export class PostgresGroupsRepository implements GroupsRepository {
   ): Promise<void> {
     await this.requireMembership(groupId, authorId);
     await this.pool.query(
-      `INSERT INTO group_schedule_items (id, group_id, label, scheduled_at, created_by)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [randomUUID(), groupId, label, scheduledAt, authorId]
+      `INSERT INTO group_schedule_items
+         (id, group_id, label, scheduled_at, created_by, outing_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        randomUUID(),
+        groupId,
+        label,
+        scheduledAt,
+        authorId,
+        await this.requireCurrentOuting(groupId)
+      ]
     );
   }
 
@@ -1118,11 +1202,19 @@ export class PostgresGroupsRepository implements GroupsRepository {
       count: string;
     }>(
       `SELECT response, COUNT(*) AS count FROM group_attendance_responses
-       WHERE group_id = $1 GROUP BY response`,
+       WHERE outing_id = (
+         SELECT id FROM group_outings
+         WHERE group_id = $1 AND archived_at IS NULL
+       )
+       GROUP BY response`,
       [groupId]
     );
     const mine = await this.pool.query<{ response: AttendanceResponse }>(
-      `SELECT response FROM group_attendance_responses WHERE group_id = $1 AND user_id = $2`,
+      `SELECT response FROM group_attendance_responses
+       WHERE user_id = $2 AND outing_id = (
+         SELECT id FROM group_outings
+         WHERE group_id = $1 AND archived_at IS NULL
+       )`,
       [groupId, viewerId]
     );
     const summary = { yes: 0, maybe: 0, no: 0 };
@@ -1136,10 +1228,13 @@ export class PostgresGroupsRepository implements GroupsRepository {
     response: AttendanceResponse
   ): Promise<void> {
     await this.requireMembership(groupId, userId);
+    const outing = await this.requireCurrentOuting(groupId);
     await this.pool.query(
-      `INSERT INTO group_attendance_responses (group_id, user_id, response) VALUES ($1, $2, $3)
-       ON CONFLICT (group_id, user_id) DO UPDATE SET response = EXCLUDED.response, created_at = now()`,
-      [groupId, userId, response]
+      `INSERT INTO group_attendance_responses (group_id, user_id, response, outing_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (outing_id, user_id)
+       DO UPDATE SET response = EXCLUDED.response, created_at = now()`,
+      [groupId, userId, response, outing]
     );
   }
 
@@ -1165,7 +1260,10 @@ export class PostgresGroupsRepository implements GroupsRepository {
        FROM group_checklist_items ci
        LEFT JOIN (SELECT item_id, COUNT(*) AS checked_count FROM group_checklist_checks GROUP BY item_id) checks ON checks.item_id = ci.id
        LEFT JOIN group_checklist_checks my_check ON my_check.item_id = ci.id AND my_check.user_id = $2
-       WHERE ci.group_id = $1
+       WHERE ci.outing_id = (
+         SELECT id FROM group_outings
+         WHERE group_id = $1 AND archived_at IS NULL
+       )
        ORDER BY ci.created_at ASC`,
       [groupId, viewerId]
     );
@@ -1188,8 +1286,9 @@ export class PostgresGroupsRepository implements GroupsRepository {
   ): Promise<void> {
     await this.requireMembership(groupId, authorId);
     await this.pool.query(
-      `INSERT INTO group_checklist_items (id, group_id, label, created_by) VALUES ($1, $2, $3, $4)`,
-      [randomUUID(), groupId, label, authorId]
+      `INSERT INTO group_checklist_items (id, group_id, label, created_by, outing_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [randomUUID(), groupId, label, authorId, await this.requireCurrentOuting(groupId)]
     );
   }
 
@@ -1560,5 +1659,87 @@ export class PostgresGroupsRepository implements GroupsRepository {
       memberCount: Number(row.member_count),
       verified: row.verification_status === 'verified'
     }));
+  }
+
+  /**
+   * The current outing's id, or a GroupNotFoundError. Every group has one
+   * (created with the group, and backfilled by migration 0041), so a group
+   * without one is a broken row rather than a state to render.
+   */
+  private async requireCurrentOuting(groupId: string): Promise<string> {
+    const result = await this.pool.query<{ id: string }>(
+      `SELECT id FROM group_outings
+       WHERE group_id = $1 AND archived_at IS NULL`,
+      [groupId]
+    );
+    const outing = result.rows[0];
+    if (!outing) throw new GroupNotFoundError();
+    return outing.id;
+  }
+
+  async getCurrentOuting(groupId: string): Promise<GroupOuting | undefined> {
+    const result = await this.pool.query<OutingRow>(
+      `SELECT id, group_id, event_id, title, starts_at, created_at, archived_at
+       FROM group_outings
+       WHERE group_id = $1 AND archived_at IS NULL`,
+      [groupId]
+    );
+    return result.rows[0] ? toOuting(result.rows[0]) : undefined;
+  }
+
+  async listOutings(
+    groupId: string,
+    viewerId: string
+  ): Promise<GroupOuting[]> {
+    await this.requireMembership(groupId, viewerId);
+    const result = await this.pool.query<OutingRow>(
+      `SELECT id, group_id, event_id, title, starts_at, created_at, archived_at
+       FROM group_outings
+       WHERE group_id = $1
+       ORDER BY archived_at NULLS FIRST, created_at DESC`,
+      [groupId]
+    );
+    return result.rows.map(toOuting);
+  }
+
+  async startOuting(
+    groupId: string,
+    userId: string,
+    input: { title: string; eventId?: string; startsAt?: string }
+  ): Promise<GroupOuting> {
+    await this.requireModerator(groupId, userId);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Archiving first is what keeps group_outings_one_current satisfiable:
+      // the partial unique index allows exactly one live outing per group.
+      await client.query(
+        `UPDATE group_outings SET archived_at = now()
+         WHERE group_id = $1 AND archived_at IS NULL`,
+        [groupId]
+      );
+      const inserted = await client.query<OutingRow>(
+        `INSERT INTO group_outings
+           (id, group_id, event_id, title, starts_at, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, group_id, event_id, title, starts_at, created_at, archived_at`,
+        [
+          randomUUID(),
+          groupId,
+          input.eventId ?? null,
+          input.title,
+          input.startsAt ?? null,
+          userId
+        ]
+      );
+      await client.query('COMMIT');
+      return toOuting(inserted.rows[0]!);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (isForeignKeyViolation(error)) throw new GroupNotFoundError();
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

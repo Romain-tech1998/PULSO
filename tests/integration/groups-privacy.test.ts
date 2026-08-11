@@ -105,6 +105,9 @@ describeWithDatabase('group privacy and membership guards', () => {
       await pool.query(`DELETE FROM group_roles WHERE group_id = $1`, [
         groupId
       ]);
+      await pool.query(`DELETE FROM group_outings WHERE group_id = $1`, [
+        groupId
+      ]);
       await pool.query(`DELETE FROM groups WHERE id = $1`, [groupId]);
     }
     await pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [
@@ -321,6 +324,73 @@ describeWithDatabase('group privacy and membership guards', () => {
     }
     const left = await repository.listChannels(group.id, creatorId);
     expect(left).toHaveLength(1);
+  });
+
+  it('starts a new outing with empty modules, keeping the previous one', async () => {
+    const group = await createGroup('open');
+    await repository.addScheduleItem(
+      group.id,
+      creatorId,
+      'Apéro chez Marie',
+      new Date(Date.now() + 86_400_000).toISOString()
+    );
+    await repository.addChecklistItem(group.id, creatorId, 'Prendre du cash');
+    await repository.setAttendanceResponse(group.id, creatorId, 'yes');
+
+    expect(await repository.getScheduleItems(group.id, creatorId)).toHaveLength(
+      1
+    );
+    expect(
+      (await repository.getAttendanceSummary(group.id, creatorId)).yes
+    ).toBe(1);
+
+    const next = await repository.startOuting(group.id, creatorId, {
+      title: 'Sortie de la semaine suivante'
+    });
+
+    // The whole point: week two opens clean.
+    expect(await repository.getScheduleItems(group.id, creatorId)).toEqual([]);
+    expect(await repository.getChecklistItems(group.id, creatorId)).toEqual([]);
+    const attendance = await repository.getAttendanceSummary(
+      group.id,
+      creatorId
+    );
+    expect(attendance.yes).toBe(0);
+    expect(attendance.myResponse).toBeUndefined();
+
+    // And week one is archived, not destroyed.
+    const outings = await repository.listOutings(group.id, creatorId);
+    expect(outings).toHaveLength(2);
+    expect(outings[0]!.id).toBe(next.id);
+    expect(outings[0]!.archivedAt).toBeUndefined();
+    expect(outings[1]!.archivedAt).toBeDefined();
+  });
+
+  it('lets the same member answer each outing separately', async () => {
+    const group = await createGroup('open');
+    await repository.setAttendanceResponse(group.id, creatorId, 'no');
+    await repository.startOuting(group.id, creatorId, { title: 'La suivante' });
+
+    // Keyed on the group, this second answer was impossible.
+    await repository.setAttendanceResponse(group.id, creatorId, 'yes');
+    const summary = await repository.getAttendanceSummary(group.id, creatorId);
+    expect(summary.yes).toBe(1);
+    expect(summary.no).toBe(0);
+  });
+
+  it('lets only the moderator start an outing, and keeps exactly one current', async () => {
+    const group = await createGroup('open');
+    await repository.joinGroup(group.id, outsiderId);
+
+    await expect(
+      repository.startOuting(group.id, outsiderId, { title: 'Pas permis' })
+    ).rejects.toBeInstanceOf(NotGroupModeratorError);
+
+    await repository.startOuting(group.id, creatorId, { title: 'Deux' });
+    await repository.startOuting(group.id, creatorId, { title: 'Trois' });
+    const outings = await repository.listOutings(group.id, creatorId);
+    expect(outings.filter((outing) => !outing.archivedAt)).toHaveLength(1);
+    expect(outings).toHaveLength(3);
   });
 
   it('lets only the creator reshape the module layout', async () => {

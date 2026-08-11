@@ -14602,3 +14602,69 @@ a.venue-detail-info-row:hover {
   color: var(--text-secondary);
   font-size: 0.72rem;
 }
+
+/* Which outing the modules are describing, and how to start the next one.
+   Sits above the sponsored banner: it is the group's own plan, and a paid
+   placement is a proposal against it, not a replacement for it. */
+.group-outing-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin-bottom: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.85rem;
+  background: var(--surface-base);
+}
+.group-outing-current strong {
+  display: block;
+  font-size: 0.95rem;
+}
+.group-outing-current small {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+}
+.group-outing-past {
+  margin-top: 0.15rem;
+  opacity: 0.75;
+}
+.group-outing-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.group-outing-form input {
+  width: 15rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+}
+.group-sponsored-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.55rem;
+}
+.group-sponsored-secondary {
+  padding: 0.46rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.group-sponsored-secondary:hover {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.12);
+}

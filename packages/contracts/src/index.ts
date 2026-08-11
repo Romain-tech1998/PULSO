@@ -1049,6 +1049,38 @@ export const adminGroupSummariesResponseSchema = z.object({
   data: z.array(adminGroupSummarySchema)
 });
 
+/**
+ * One outing a group is organising. The programme, attendance and checklist
+ * describe an outing rather than the group itself, so a community that goes
+ * out weekly starts each week clean instead of inheriting last week's plan.
+ */
+export const groupOutingSchema = z.object({
+  id: z.uuid(),
+  groupId: z.uuid(),
+  eventId: z.uuid().optional(),
+  title: z.string().min(1).max(120),
+  startsAt: z.iso.datetime().optional(),
+  createdAt: z.iso.datetime(),
+  archivedAt: z.iso.datetime().optional()
+});
+
+export const groupOutingsResponseSchema = z.object({
+  data: z.array(groupOutingSchema)
+});
+
+export const groupOutingResponseSchema = z.object({
+  data: groupOutingSchema
+});
+
+// Starting a new outing archives the current one. `eventId` is set when the
+// group adopts a real Pulso event - including a sponsored placement it
+// decided to act on.
+export const startGroupOutingRequestSchema = z.object({
+  title: z.string().min(1).max(120),
+  eventId: z.uuid().optional(),
+  startsAt: z.iso.datetime().optional()
+});
+
 export const groupChannelSchema = z.object({
   id: z.uuid(),
   groupId: z.uuid(),
@@ -1520,6 +1552,11 @@ export type CreateGroupPlacementRequest = z.infer<
 export type AdminGroupSummary = z.infer<typeof adminGroupSummarySchema>;
 export type AdminGroupSummariesResponse = z.infer<
   typeof adminGroupSummariesResponseSchema
+>;
+export type GroupOuting = z.infer<typeof groupOutingSchema>;
+export type GroupOutingsResponse = z.infer<typeof groupOutingsResponseSchema>;
+export type StartGroupOutingRequest = z.infer<
+  typeof startGroupOutingRequestSchema
 >;
 export type GroupChannel = z.infer<typeof groupChannelSchema>;
 export type GroupChannelsResponse = z.infer<

@@ -387,6 +387,17 @@ export function fakeGroupsRepository(
     dismissPlacement: async () => undefined,
     listAllPlacements: async () => [],
     searchGroups: async () => [],
+    getCurrentOuting: async () => undefined,
+    listOutings: async () => [],
+    startOuting: async (groupId, _userId, input) => ({
+      id: '00000000-0000-4000-8000-000000000032',
+      groupId,
+      eventId: input.eventId,
+      title: input.title,
+      startsAt: input.startsAt,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      archivedAt: undefined
+    }),
     listChannels: async () => [],
     createChannel: async (groupId, _userId, name, staffOnly) => ({
       id: '00000000-0000-4000-8000-000000000031',

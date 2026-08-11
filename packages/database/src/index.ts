@@ -68,6 +68,7 @@ export {
   type Group,
   type GroupAttendanceSummary,
   type GroupChannel,
+  type GroupOuting,
   type GroupChecklistItem,
   type GroupMembershipStatus,
   type GroupMeetupVenue,

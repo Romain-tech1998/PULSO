@@ -10,7 +10,10 @@ import {
   discoverGroupsResponseSchema,
   groupChannelResponseSchema,
   groupChannelsResponseSchema,
+  groupOutingResponseSchema,
+  groupOutingsResponseSchema,
   groupSponsoredPlacementsResponseSchema,
+  startGroupOutingRequestSchema,
   groupAttendanceSummarySchema,
   groupChecklistItemsResponseSchema,
   groupJoinRequestsResponseSchema,
@@ -367,6 +370,42 @@ export function registerGroupsRoutes(
       return replyGroupError(reply, error);
     }
     return reply.status(204).send();
+  });
+
+  /**
+   * Outings. The modules always describe the current one; the archived ones
+   * stay readable so a group keeps its history instead of losing it every
+   * time it plans something new.
+   */
+  app.get('/groups/:id/outings', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id } = groupParamsSchema.parse(request.params);
+    try {
+      const outings = await groupsRepository.listOutings(id, user.id);
+      return groupOutingsResponseSchema.parse({ data: outings });
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+  });
+
+  app.post('/groups/:id/outings', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id } = groupParamsSchema.parse(request.params);
+    const body = startGroupOutingRequestSchema.parse(request.body);
+    try {
+      const outing = await groupsRepository.startOuting(id, user.id, {
+        title: body.title,
+        ...(body.eventId ? { eventId: body.eventId } : {}),
+        ...(body.startsAt ? { startsAt: body.startsAt } : {})
+      });
+      return reply
+        .status(201)
+        .send(groupOutingResponseSchema.parse({ data: outing }));
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
   });
 
   app.get('/groups/:id/posts', async (request, reply) => {
