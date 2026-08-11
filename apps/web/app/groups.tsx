@@ -100,6 +100,33 @@ export function GroupsPage({
       .finally(() => setCreating(false));
   };
 
+  if (selectedGroup) {
+    return (
+      <div className="groups-page groups-page-open">
+        <div className="groups-open-bar">
+          <button
+            type="button"
+            className="groups-open-back"
+            onClick={() => setSelectedGroup(undefined)}
+          >
+            <span aria-hidden="true">←</span>
+            Groupes
+          </button>
+        </div>
+        <div className="groups-open-workspace">
+          <GroupDetailContent
+            group={selectedGroup}
+            authToken={authToken}
+            userId={userId}
+            onGroupUpdated={setSelectedGroup}
+            onLeave={() => setSelectedGroup(undefined)}
+            onOpenEventForum={onOpenEventForum}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="messages-page groups-page">
       <div className="messages-list-column groups-directory-column">
@@ -208,22 +235,15 @@ export function GroupsPage({
         <MessagesGroupsTab
           key={listVersion}
           authToken={authToken}
-          selectedGroupId={selectedGroup?.id}
+          // Nothing is selected on this branch: picking a group returns the
+          // full-page workspace above instead of highlighting a row here.
+          selectedGroupId={undefined}
           onSelectGroup={setSelectedGroup}
         />
       </div>
 
       <div className="messages-conversation-column groups-workspace-column">
-        {selectedGroup ? (
-          <GroupDetailContent
-            group={selectedGroup}
-            authToken={authToken}
-            userId={userId}
-            onGroupUpdated={setSelectedGroup}
-            onLeave={() => setSelectedGroup(undefined)}
-            onOpenEventForum={onOpenEventForum}
-          />
-        ) : (
+        {
           <div className="groups-workspace-empty">
             <div className="groups-workspace-empty-copy">
               <span className="groups-page-eyebrow">Ton espace collectif</span>
@@ -258,7 +278,7 @@ export function GroupsPage({
               </span>
             </div>
           </div>
-        )}
+        }
       </div>
     </div>
   );

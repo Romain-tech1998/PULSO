@@ -14270,3 +14270,47 @@ a.venue-detail-info-row:hover {
   color: #9fd8ff;
   font-size: 0.72rem;
 }
+
+/* An opened group takes the whole page. The directory, its search and its
+   create form step aside entirely rather than holding a third of the width
+   for a list nobody is reading any more; "← Groupes" is the way back. */
+.groups-page-open {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.groups-open-bar {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--brand-border);
+}
+.groups-open-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.groups-open-back:hover {
+  border-color: rgba(255, 75, 148, 0.32);
+  color: #ff8ab8;
+}
+.groups-open-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.groups-open-workspace .group-detail {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 2rem;
+}

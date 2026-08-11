@@ -1,4 +1,5 @@
 import type { PublicUser } from '@pulso/contracts';
+import { defaultModulesForGroupType } from '@pulso/domain';
 import type { EventCategory, GroupModuleConfig } from '@pulso/domain';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
@@ -582,9 +583,19 @@ export class PostgresGroupsRepository implements GroupsRepository {
       // way, the SELECT below then finds the single row that actually won.
       await client.query(
         `INSERT INTO groups (id, name, description, created_by, event_id, type, visibility, modules_config)
-         VALUES ($1, $2, $3, $4, $5, 'event', 'open', '[]'::jsonb)
+         VALUES ($1, $2, $3, $4, $5, 'event', 'open', $6::jsonb)
          ON CONFLICT (event_id) WHERE event_id IS NOT NULL DO NOTHING`,
-        [randomUUID(), `Rencontre – ${eventTitle}`, null, userId, eventId]
+        [
+          randomUUID(),
+          `Rencontre – ${eventTitle}`,
+          null,
+          userId,
+          eventId,
+          // '[]' gave the meetup group a workspace with no modules at all,
+          // not even discussion - unlike every group created the normal way,
+          // which starts from its type's template.
+          JSON.stringify(defaultModulesForGroupType('event'))
+        ]
       );
       const existing = await client.query<{ id: string }>(
         `SELECT id FROM groups WHERE event_id = $1`,
