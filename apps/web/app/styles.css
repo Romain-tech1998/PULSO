@@ -14413,3 +14413,187 @@ a.venue-detail-info-row:hover {
 .group-modules-config-switch input {
   accent-color: var(--brand-purple);
 }
+
+/* A paid placement at the top of "Organiser" (DEC-0015). It is meant to
+   catch the eye, so it gets the event photo, the brand gradient and a size
+   no module card has - and it is labelled "Sponsorisé · {payer}" in plain
+   words, because a placement that reads as a staff pick is the one thing
+   the decision forbids. */
+.group-sponsored-banner {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(255, 75, 148, 0.34);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 88% 8%, rgba(255, 54, 143, 0.34), transparent 42%),
+    radial-gradient(circle at 8% 92%, rgba(112, 66, 224, 0.32), transparent 46%),
+    #17111f;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+}
+.group-sponsored-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.3;
+}
+.group-sponsored-banner.has-photo .group-sponsored-body {
+  background: linear-gradient(
+    100deg,
+    rgba(18, 13, 26, 0.94) 38%,
+    rgba(18, 13, 26, 0.62)
+  );
+}
+.group-sponsored-body {
+  position: relative;
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+  padding: 1.05rem 1.15rem;
+}
+.group-sponsored-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.6rem;
+}
+.group-sponsored-tag {
+  padding: 0.22rem 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffd9e8;
+  font-size: 0.56rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.group-sponsored-dismiss {
+  border: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.68rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.group-sponsored-dismiss:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+.group-sponsored-title {
+  font-size: 1.22rem;
+  line-height: 1.2;
+}
+.group-sponsored-meta {
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 0.74rem;
+}
+.group-sponsored-message {
+  margin: 0.25rem 0 0;
+  max-width: 46ch;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.group-sponsored-cta {
+  margin-top: 0.55rem;
+  padding: 0.48rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #7042e0, #ee368b);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.group-sponsored-cta:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Placing a bought event into a group, in the administration console. */
+.admin-placement-form {
+  display: grid;
+  gap: 0.9rem;
+  justify-items: start;
+  margin: 0.9rem 0 1.4rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.9rem;
+  background: var(--surface-base);
+}
+.admin-placement-picker,
+.admin-placement-field {
+  width: 100%;
+  max-width: 520px;
+}
+.admin-placement-picker label span,
+.admin-placement-field span {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+.admin-placement-picker label > div {
+  display: flex;
+  gap: 0.5rem;
+}
+.admin-placement-picker input,
+.admin-placement-field input {
+  flex: 1 1 auto;
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+}
+.admin-placement-results {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  list-style: none;
+}
+.admin-placement-results button {
+  display: grid;
+  width: 100%;
+  gap: 0.1rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.admin-placement-results button:hover {
+  border-color: rgba(255, 75, 148, 0.3);
+  background: rgba(255, 75, 148, 0.09);
+}
+.admin-placement-results strong {
+  font-size: 0.78rem;
+}
+.admin-placement-results small {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+.admin-placement-chosen {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.45rem 0 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid rgba(130, 79, 234, 0.4);
+  border-radius: 0.55rem;
+  background: rgba(104, 59, 211, 0.12);
+  font-size: 0.76rem;
+}

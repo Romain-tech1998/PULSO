@@ -985,6 +985,70 @@ export const groupChecklistItemsResponseSchema = z.object({
  * content model: everyone reads such a channel, only the moderator writes
  * in it.
  */
+/**
+ * A paid placement of an event inside a group (DEC-0015 §Future
+ * monetization). Created by a Pulso administrator only; the group's own
+ * moderator can take it down.
+ *
+ * `sponsorName` is typed by the administrator rather than derived from the
+ * event's organizer: the payer and the listed organizer are not always the
+ * same name, and a banner has to say who actually paid for it.
+ */
+export const groupSponsoredPlacementSchema = z.object({
+  id: z.uuid(),
+  groupId: z.uuid(),
+  sponsorName: z.string().min(1),
+  message: z.string().min(1).optional(),
+  createdAt: z.iso.datetime(),
+  endsAt: z.iso.datetime().optional(),
+  event: z.object({
+    id: z.uuid(),
+    title: z.string().min(1),
+    startsAt: z.iso.datetime(),
+    category: z.enum(EVENT_CATEGORIES),
+    imageUrl: z.url().optional(),
+    venueName: z.string().min(1).optional()
+  })
+});
+
+export const groupSponsoredPlacementsResponseSchema = z.object({
+  data: z.array(groupSponsoredPlacementSchema)
+});
+
+// Admin-side: the same placement plus which group it landed in and whether
+// that group's moderator has since taken it down - the two numbers that
+// say whether a package was actually delivered.
+export const adminGroupPlacementSchema = z.object({
+  placement: groupSponsoredPlacementSchema,
+  groupName: z.string().min(1),
+  groupMemberCount: z.number().int().min(0),
+  dismissedAt: z.iso.datetime().optional()
+});
+
+export const adminGroupPlacementsResponseSchema = z.object({
+  data: z.array(adminGroupPlacementSchema)
+});
+
+export const createGroupPlacementRequestSchema = z.object({
+  groupId: z.uuid(),
+  eventId: z.uuid(),
+  sponsorName: z.string().min(1).max(80),
+  message: z.string().min(1).max(280).optional(),
+  endsAt: z.iso.datetime().optional()
+});
+
+// The administrator has to find a group by name to place into one.
+export const adminGroupSummarySchema = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  memberCount: z.number().int().min(0),
+  verified: z.boolean()
+});
+
+export const adminGroupSummariesResponseSchema = z.object({
+  data: z.array(adminGroupSummarySchema)
+});
+
 export const groupChannelSchema = z.object({
   id: z.uuid(),
   groupId: z.uuid(),
@@ -1440,6 +1504,23 @@ export type CreateGroupPostRequest = z.infer<
 >;
 export type GroupPostsResponse = z.infer<typeof groupPostsResponseSchema>;
 export type GroupPostResponse = z.infer<typeof groupPostResponseSchema>;
+export type GroupSponsoredPlacement = z.infer<
+  typeof groupSponsoredPlacementSchema
+>;
+export type GroupSponsoredPlacementsResponse = z.infer<
+  typeof groupSponsoredPlacementsResponseSchema
+>;
+export type AdminGroupPlacement = z.infer<typeof adminGroupPlacementSchema>;
+export type AdminGroupPlacementsResponse = z.infer<
+  typeof adminGroupPlacementsResponseSchema
+>;
+export type CreateGroupPlacementRequest = z.infer<
+  typeof createGroupPlacementRequestSchema
+>;
+export type AdminGroupSummary = z.infer<typeof adminGroupSummarySchema>;
+export type AdminGroupSummariesResponse = z.infer<
+  typeof adminGroupSummariesResponseSchema
+>;
 export type GroupChannel = z.infer<typeof groupChannelSchema>;
 export type GroupChannelsResponse = z.infer<
   typeof groupChannelsResponseSchema

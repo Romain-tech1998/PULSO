@@ -118,6 +118,37 @@ export class NotChannelWriterError extends Error {
   }
 }
 
+export interface GroupSponsoredPlacement {
+  id: string;
+  groupId: string;
+  sponsorName: string;
+  message: string | undefined;
+  createdAt: string;
+  endsAt: string | undefined;
+  event: {
+    id: string;
+    title: string;
+    startsAt: string;
+    category: EventCategory;
+    imageUrl: string | undefined;
+    venueName: string | undefined;
+  };
+}
+
+export interface AdminGroupPlacement {
+  placement: GroupSponsoredPlacement;
+  groupName: string;
+  groupMemberCount: number;
+  dismissedAt: string | undefined;
+}
+
+export interface AdminGroupSummary {
+  id: string;
+  name: string;
+  memberCount: number;
+  verified: boolean;
+}
+
 export interface GroupVerificationRequest {
   group: Group;
   requester: PublicUser;
@@ -296,6 +327,34 @@ export interface GroupsRepository {
     userId: string,
     checked: boolean
   ): Promise<void>;
+  /**
+   * Paid placements (DEC-0015). Created by a Pulso administrator only -
+   * there is deliberately no self-serve path, since the sale happens
+   * outside the product.
+   */
+  createPlacement(input: {
+    groupId: string;
+    eventId: string;
+    sponsorName: string;
+    message: string | undefined;
+    endsAt: string | undefined;
+    placedBy: string;
+  }): Promise<void>;
+  /** What a group should show right now: live, in-window, not dismissed. */
+  listGroupPlacements(
+    groupId: string,
+    viewerId: string
+  ): Promise<GroupSponsoredPlacement[]>;
+  /** Moderator-only: the group keeps the last word on what it displays. */
+  dismissPlacement(
+    groupId: string,
+    placementId: string,
+    userId: string
+  ): Promise<void>;
+  /** Administration console: every placement and whether it still shows. */
+  listAllPlacements(): Promise<AdminGroupPlacement[]>;
+  /** Administration console: find a group by name to place into it. */
+  searchGroups(query: string): Promise<AdminGroupSummary[]>;
   deleteChecklistItem(itemId: string, authorId: string): Promise<void>;
   /**
    * Moderator-only. Returns the on-disk path of the photo being replaced,
@@ -439,6 +498,50 @@ function toGroupPost(row: PostRow): GroupPost {
       id: row.author_id,
       displayName: row.display_name,
       ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
+    }
+  };
+}
+
+
+const PLACEMENT_SELECT = `
+  p.id, p.group_id, p.sponsor_name, p.message, p.created_at, p.ends_at,
+  p.dismissed_at,
+  e.id AS event_id, e.title AS event_title, e.starts_at AS event_starts_at,
+  e.category AS event_category, e.image_url AS event_image_url,
+  v.name AS venue_name
+`;
+
+interface PlacementRow {
+  id: string;
+  group_id: string;
+  sponsor_name: string;
+  message: string | null;
+  created_at: string;
+  ends_at: string | null;
+  dismissed_at: string | null;
+  event_id: string;
+  event_title: string;
+  event_starts_at: string;
+  event_category: EventCategory;
+  event_image_url: string | null;
+  venue_name: string | null;
+}
+
+function toPlacement(row: PlacementRow): GroupSponsoredPlacement {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    sponsorName: row.sponsor_name,
+    message: row.message ?? undefined,
+    createdAt: new Date(row.created_at).toISOString(),
+    endsAt: row.ends_at ? new Date(row.ends_at).toISOString() : undefined,
+    event: {
+      id: row.event_id,
+      title: row.event_title,
+      startsAt: new Date(row.event_starts_at).toISOString(),
+      category: row.event_category,
+      imageUrl: row.event_image_url ?? undefined,
+      venueName: row.venue_name ?? undefined
     }
   };
 }
@@ -1339,5 +1442,123 @@ export class PostgresGroupsRepository implements GroupsRepository {
       `DELETE FROM group_channels WHERE id = $1 AND group_id = $2`,
       [channelId, groupId]
     );
+  }
+
+  async createPlacement(input: {
+    groupId: string;
+    eventId: string;
+    sponsorName: string;
+    message: string | undefined;
+    endsAt: string | undefined;
+    placedBy: string;
+  }): Promise<void> {
+    try {
+      await this.pool.query(
+        `INSERT INTO group_sponsored_placements
+           (id, group_id, event_id, sponsor_name, message, ends_at, placed_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT DO NOTHING`,
+        [
+          randomUUID(),
+          input.groupId,
+          input.eventId,
+          input.sponsorName,
+          input.message ?? null,
+          input.endsAt ?? null,
+          input.placedBy
+        ]
+      );
+    } catch (error) {
+      // Either the group or the event does not exist.
+      if (isForeignKeyViolation(error)) throw new GroupNotFoundError();
+      throw error;
+    }
+  }
+
+  async listGroupPlacements(
+    groupId: string,
+    viewerId: string
+  ): Promise<GroupSponsoredPlacement[]> {
+    await this.requireMembership(groupId, viewerId);
+    const result = await this.pool.query<PlacementRow>(
+      `SELECT ${PLACEMENT_SELECT}
+       FROM group_sponsored_placements p
+       JOIN events e ON e.id = p.event_id
+       LEFT JOIN venues v ON v.id = e.venue_id
+       WHERE p.group_id = $1
+         AND p.dismissed_at IS NULL
+         -- A banner for a party that already happened is worse than none,
+         -- so an absent ends_at means "until the event starts".
+         AND COALESCE(p.ends_at, e.starts_at) > now()
+       ORDER BY e.starts_at ASC`,
+      [groupId]
+    );
+    return result.rows.map(toPlacement);
+  }
+
+  async dismissPlacement(
+    groupId: string,
+    placementId: string,
+    userId: string
+  ): Promise<void> {
+    await this.requireModerator(groupId, userId);
+    await this.pool.query(
+      `UPDATE group_sponsored_placements
+       SET dismissed_at = now(), dismissed_by = $3
+       WHERE id = $1 AND group_id = $2 AND dismissed_at IS NULL`,
+      [placementId, groupId, userId]
+    );
+  }
+
+  async listAllPlacements(): Promise<AdminGroupPlacement[]> {
+    const result = await this.pool.query<
+      PlacementRow & { group_name: string; group_member_count: string }
+    >(
+      `SELECT ${PLACEMENT_SELECT},
+              g.name AS group_name,
+              (SELECT COUNT(*) FROM group_memberships gm
+               WHERE gm.group_id = g.id AND gm.status = 'member') AS group_member_count
+       FROM group_sponsored_placements p
+       JOIN groups g ON g.id = p.group_id
+       JOIN events e ON e.id = p.event_id
+       LEFT JOIN venues v ON v.id = e.venue_id
+       ORDER BY p.created_at DESC
+       LIMIT 100`
+    );
+    return result.rows.map((row) => ({
+      placement: toPlacement(row),
+      groupName: row.group_name,
+      groupMemberCount: Number(row.group_member_count),
+      dismissedAt: row.dismissed_at
+        ? new Date(row.dismissed_at).toISOString()
+        : undefined
+    }));
+  }
+
+  async searchGroups(query: string): Promise<AdminGroupSummary[]> {
+    const result = await this.pool.query<{
+      id: string;
+      name: string;
+      member_count: string;
+      verification_status: GroupVerificationStatus;
+    }>(
+      `SELECT g.id, g.name, g.verification_status,
+              (SELECT COUNT(*) FROM group_memberships gm
+               WHERE gm.group_id = g.id AND gm.status = 'member') AS member_count
+       FROM groups g
+       WHERE ($1 = '' OR g.name ILIKE '%' || $1 || '%')
+         -- A private crew is not inventory. Placing a paid banner in one
+         -- would expose a group that is invisible by design.
+         AND g.visibility <> 'private_invite'
+       ORDER BY member_count DESC
+       LIMIT 25`,
+      [query]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      memberCount: Number(row.member_count),
+      verified: row.verification_status === 'verified'
+    }));
   }
 }

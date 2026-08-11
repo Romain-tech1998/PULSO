@@ -382,6 +382,11 @@ export function fakeGroupsRepository(
     getJoinRequests: async () => [],
     respondToJoinRequest: async () => undefined,
     discoverGroups: async () => [],
+    createPlacement: async () => undefined,
+    listGroupPlacements: async () => [],
+    dismissPlacement: async () => undefined,
+    listAllPlacements: async () => [],
+    searchGroups: async () => [],
     listChannels: async () => [],
     createChannel: async (groupId, _userId, name, staffOnly) => ({
       id: '00000000-0000-4000-8000-000000000031',

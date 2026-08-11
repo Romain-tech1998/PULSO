@@ -29,6 +29,8 @@ import {
   friendsResponseSchema,
   friendSuggestionsResponseSchema,
   groupResponseSchema,
+  adminGroupPlacementsResponseSchema,
+  adminGroupSummariesResponseSchema,
   groupVerificationRequestsResponseSchema,
   groupsResponseSchema,
   intelligentSearchResponseSchema,
@@ -70,6 +72,8 @@ import {
   type FriendsMapEntry,
   type FriendSuggestion,
   type Group,
+  type AdminGroupPlacement,
+  type AdminGroupSummary,
   type GroupVerificationRequest,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
@@ -10233,6 +10237,7 @@ function AdministrationPage({ authToken }: { authToken: string | undefined }) {
         ))}
       </div>
 
+      <AdminGroupPlacementsBlock authToken={authToken} />
       <AdminGroupVerificationsBlock authToken={authToken} />
       <AdminVenuePhotosBlock authToken={authToken} />
     </div>
@@ -10248,6 +10253,271 @@ function AdministrationPage({ authToken }: { authToken: string | undefined }) {
  * the same shape of decision, and a second visual language for it would
  * only make the console harder to read.
  */
+/**
+ * Placing a bought event into a group (DEC-0015 §Future monetization).
+ *
+ * The sale happens outside Pulso - a venue buys a package - and this is
+ * where it is delivered: pick the group, pick the event, name who paid,
+ * and the banner appears at the top of that group's "Organiser" tab.
+ *
+ * The list below the form is the delivery report the decision asks for in
+ * its simplest honest form: which groups received the placement, how many
+ * members they have, and whether the group's own administrator has since
+ * taken it down. No impression or click counting exists yet, so none is
+ * shown rather than implied.
+ */
+function AdminGroupPlacementsBlock({
+  authToken
+}: {
+  authToken: string | undefined;
+}) {
+  const [placements, setPlacements] = useState<AdminGroupPlacement[]>([]);
+  const [groupQuery, setGroupQuery] = useState('');
+  const [groups, setGroups] = useState<AdminGroupSummary[]>([]);
+  const [group, setGroup] = useState<AdminGroupSummary>();
+  const [eventQuery, setEventQuery] = useState('');
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+  const [event, setEvent] = useState<PublicEvent>();
+  const [sponsorName, setSponsorName] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/admin/group-placements`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setPlacements(adminGroupPlacementsResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const searchGroups = () => {
+    if (!authToken) return;
+    fetch(
+      `${API_BASE_URL}/admin/groups?query=${encodeURIComponent(groupQuery)}`,
+      { headers: { authorization: `Bearer ${authToken}` } }
+    )
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setGroups(adminGroupSummariesResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+  };
+
+  const searchEvents = () => {
+    if (!authToken || !eventQuery.trim()) return;
+    fetch(
+      `${API_BASE_URL}/admin/events/search?query=${encodeURIComponent(eventQuery.trim())}`,
+      { headers: { authorization: `Bearer ${authToken}` } }
+    )
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setEvents(eventListResponseSchema.parse(json).data))
+      .catch(() => {});
+  };
+
+  const place = () => {
+    if (!authToken || !group || !event || !sponsorName.trim() || busy) return;
+    setBusy(true);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/admin/group-placements`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        groupId: group.id,
+        eventId: event.id,
+        sponsorName: sponsorName.trim(),
+        ...(message.trim() ? { message: message.trim() } : {})
+      })
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        setGroup(undefined);
+        setEvent(undefined);
+        setSponsorName('');
+        setMessage('');
+        setGroupQuery('');
+        setEventQuery('');
+        setGroups([]);
+        setEvents([]);
+        reload();
+      })
+      .catch(() => setError("Le placement n'a pas pu être créé."))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <section className="organisateur-section">
+      <div className="events-hero-text">
+        <p className="events-hero-kicker">Placements dans les groupes</p>
+        <p className="events-hero-eyebrow">
+          Place un événement acheté en haut de l&apos;onglet Organiser d&apos;un
+          groupe. La bannière est toujours affichée comme sponsorisée, et
+          l&apos;administrateur du groupe peut la retirer.
+        </p>
+      </div>
+
+      <div className="admin-placement-form">
+        <div className="admin-placement-picker">
+          <label>
+            <span>1. Le groupe</span>
+            <div>
+              <input
+                value={groupQuery}
+                onChange={(changeEvent) => setGroupQuery(changeEvent.target.value)}
+                placeholder="Ex. Français à Montréal"
+              />
+              <button type="button" className="text-btn" onClick={searchGroups}>
+                Chercher
+              </button>
+            </div>
+          </label>
+          {groups.length > 0 && !group && (
+            <ul className="admin-placement-results">
+              {groups.map((candidate) => (
+                <li key={candidate.id}>
+                  <button type="button" onClick={() => setGroup(candidate)}>
+                    <strong>{candidate.name}</strong>
+                    <small>
+                      {candidate.memberCount} membre
+                      {candidate.memberCount > 1 ? 's' : ''}
+                      {candidate.verified ? ' · vérifié' : ''}
+                    </small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {group && (
+            <p className="admin-placement-chosen">
+              <strong>{group.name}</strong> · {group.memberCount} membre
+              {group.memberCount > 1 ? 's' : ''}
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => setGroup(undefined)}
+              >
+                Changer
+              </button>
+            </p>
+          )}
+        </div>
+
+        <div className="admin-placement-picker">
+          <label>
+            <span>2. L&apos;événement</span>
+            <div>
+              <input
+                value={eventQuery}
+                onChange={(changeEvent) => setEventQuery(changeEvent.target.value)}
+                placeholder="Titre de l'événement"
+              />
+              <button type="button" className="text-btn" onClick={searchEvents}>
+                Chercher
+              </button>
+            </div>
+          </label>
+          {events.length > 0 && !event && (
+            <ul className="admin-placement-results">
+              {events.map((candidate) => (
+                <li key={candidate.id}>
+                  <button type="button" onClick={() => setEvent(candidate)}>
+                    <strong>{candidate.title}</strong>
+                    <small>
+                      {new Date(candidate.startsAt).toLocaleDateString('fr-CA', {
+                        day: 'numeric',
+                        month: 'short'
+                      })}
+                      {candidate.venue?.name ? ` · ${candidate.venue.name}` : ''}
+                    </small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {event && (
+            <p className="admin-placement-chosen">
+              <strong>{event.title}</strong>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => setEvent(undefined)}
+              >
+                Changer
+              </button>
+            </p>
+          )}
+        </div>
+
+        <label className="admin-placement-field">
+          <span>3. Qui a payé (affiché sur la bannière)</span>
+          <input
+            value={sponsorName}
+            onChange={(changeEvent) => setSponsorName(changeEvent.target.value)}
+            placeholder="Ex. Clébard"
+            maxLength={80}
+          />
+        </label>
+
+        <label className="admin-placement-field">
+          <span>Message (optionnel)</span>
+          <input
+            value={message}
+            onChange={(changeEvent) => setMessage(changeEvent.target.value)}
+            placeholder="Ex. Soirée techno, entrée gratuite avant 23h."
+            maxLength={280}
+          />
+        </label>
+
+        {error && <p className="create-event-error">{error}</p>}
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={busy || !group || !event || !sponsorName.trim()}
+          onClick={place}
+        >
+          {busy ? 'Placement…' : 'Placer dans le groupe'}
+        </button>
+      </div>
+
+      <div className="organisateur-list">
+        {placements.length === 0 && (
+          <p className="list-view-empty">Aucun placement pour le moment.</p>
+        )}
+        {placements.map((entry) => (
+          <div className="admin-request" key={entry.placement.id}>
+            <div className="admin-request-main">
+              <strong>{entry.placement.event.title}</strong>
+              <span className="admin-request-venue">
+                Dans {entry.groupName} · {entry.groupMemberCount} membre
+                {entry.groupMemberCount > 1 ? 's' : ''}
+              </span>
+              <span className="admin-request-who">
+                Payé par {entry.placement.sponsorName}
+              </span>
+              <span className="admin-request-when">
+                {entry.dismissedAt
+                  ? `Retiré par le groupe ${formatRelativeTime(entry.dismissedAt)}`
+                  : `Actif depuis ${formatRelativeTime(entry.placement.createdAt)}`}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function AdminGroupVerificationsBlock({
   authToken
 }: {

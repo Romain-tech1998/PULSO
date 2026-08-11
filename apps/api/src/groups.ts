@@ -10,6 +10,7 @@ import {
   discoverGroupsResponseSchema,
   groupChannelResponseSchema,
   groupChannelsResponseSchema,
+  groupSponsoredPlacementsResponseSchema,
   groupAttendanceSummarySchema,
   groupChecklistItemsResponseSchema,
   groupJoinRequestsResponseSchema,
@@ -80,6 +81,10 @@ const postParamsSchema = z.object({ postId: z.uuid() });
 const eventParamsSchema = z.object({ eventId: z.uuid() });
 const joinRequestParamsSchema = z.object({ id: z.uuid(), userId: z.uuid() });
 const channelParamsSchema = z.object({ id: z.uuid(), channelId: z.uuid() });
+const placementParamsSchema = z.object({
+  id: z.uuid(),
+  placementId: z.uuid()
+});
 const scheduleItemParamsSchema = z.object({ id: z.uuid(), itemId: z.uuid() });
 const checklistItemParamsSchema = z.object({ id: z.uuid(), itemId: z.uuid() });
 const postsQuerySchema = z.object({ channelId: z.uuid().optional() });
@@ -324,6 +329,40 @@ export function registerGroupsRoutes(
     const { id, channelId } = channelParamsSchema.parse(request.params);
     try {
       await groupsRepository.deleteChannel(id, channelId, user.id);
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+    return reply.status(204).send();
+  });
+
+  /**
+   * The paid placements this group should show right now (DEC-0015).
+   * Members read them; only the group's moderator can take one down, which
+   * is what keeps the community's last word real rather than nominal.
+   */
+  app.get('/groups/:id/placements', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id } = groupParamsSchema.parse(request.params);
+    try {
+      const placements = await groupsRepository.listGroupPlacements(
+        id,
+        user.id
+      );
+      return groupSponsoredPlacementsResponseSchema.parse({
+        data: placements
+      });
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+  });
+
+  app.delete('/groups/:id/placements/:placementId', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id, placementId } = placementParamsSchema.parse(request.params);
+    try {
+      await groupsRepository.dismissPlacement(id, placementId, user.id);
     } catch (error) {
       return replyGroupError(reply, error);
     }

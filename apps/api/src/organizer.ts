@@ -1,6 +1,11 @@
+import { EVENT_CATEGORIES } from '@pulso/domain';
 import {
   adminVenuePhotosResponseSchema,
+  adminGroupPlacementsResponseSchema,
+  adminGroupSummariesResponseSchema,
+  createGroupPlacementRequestSchema,
   createOrganizerRequestSchema,
+  eventListResponseSchema,
   groupVerificationRequestsResponseSchema,
   myOrganizerStatusResponseSchema,
   organizerRequestsResponseSchema,
@@ -182,7 +187,91 @@ export function registerOrganizerRoutes(
     }
   );
 
+
+  // Finding the event to place. Deliberately a wide forward window rather
+  // than the discovery default: a package is usually sold weeks before the
+  // night it advertises, and an administrator searching for it should not
+  // have to know how far ahead Pulso happens to look today.
+  app.get('/admin/events/search', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    if (!(await organizerRepository.isAdmin(user.id))) {
+      return sendForbidden(reply);
+    }
+    const { query } = photoQuerySchema.parse(request.query);
+    if (!query) return eventListResponseSchema.parse({ data: [] });
+    const now = new Date();
+    const events = await eventRepository.searchEvents(
+      { text: query, categories: [...EVENT_CATEGORIES], price: 'all' },
+      {
+        startsAt: now,
+        endsAt: new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000)
+      }
+    );
+    return eventListResponseSchema.parse({ data: events.slice(0, 25) });
+  });
+
   if (!groupsRepository) return;
+
+  /**
+   * DEC-0015 §Future monetization. A venue buys a package, an administrator
+   * places its event at the top of a relevant group's "Organiser" tab.
+   *
+   * There is deliberately no self-serve route: the sale happens outside the
+   * product, and a path that let a venue place its own banner would be an
+   * unpriced way into every community on Pulso.
+   */
+  app.get('/admin/group-placements', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    if (!(await organizerRepository.isAdmin(user.id))) {
+      return sendForbidden(reply);
+    }
+    return adminGroupPlacementsResponseSchema.parse({
+      data: await groupsRepository.listAllPlacements()
+    });
+  });
+
+  app.post('/admin/group-placements', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    if (!(await organizerRepository.isAdmin(user.id))) {
+      return sendForbidden(reply);
+    }
+    const body = createGroupPlacementRequestSchema.parse(request.body);
+    try {
+      await groupsRepository.createPlacement({
+        groupId: body.groupId,
+        eventId: body.eventId,
+        sponsorName: body.sponsorName,
+        message: body.message,
+        endsAt: body.endsAt,
+        placedBy: user.id
+      });
+    } catch {
+      return reply.status(404).send({
+        error: {
+          code: 'GROUP_OR_EVENT_NOT_FOUND',
+          message: 'That group or event does not exist.'
+        }
+      });
+    }
+    return reply.status(201).send();
+  });
+
+  // Finding the group to place into. Private crews are excluded by the
+  // repository: they are invisible by design and are not inventory.
+  app.get('/admin/groups', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    if (!(await organizerRepository.isAdmin(user.id))) {
+      return sendForbidden(reply);
+    }
+    const { query } = photoQuerySchema.parse(request.query);
+    return adminGroupSummariesResponseSchema.parse({
+      data: await groupsRepository.searchGroups(query ?? '')
+    });
+  });
 
   /**
    * DEC-0013/DEC-0015 group verification. A verified badge is what makes a

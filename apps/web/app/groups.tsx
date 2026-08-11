@@ -3,6 +3,7 @@
 import {
   discoverGroupsResponseSchema,
   groupChannelsResponseSchema,
+  groupSponsoredPlacementsResponseSchema,
   friendsResponseSchema,
   groupAttendanceSummarySchema,
   groupChecklistItemsResponseSchema,
@@ -16,6 +17,7 @@ import {
 import type {
   AttendanceResponse,
   GroupChannel,
+  GroupSponsoredPlacement,
   DiscoverGroupEntry,
   Group,
   GroupAttendanceSummary,
@@ -1058,6 +1060,84 @@ function GroupModulesCard({
   );
 }
 
+
+/**
+ * A paid placement at the top of "Organiser" (DEC-0015 §Future
+ * monetization).
+ *
+ * Three rules the decision is explicit about, and which the markup keeps:
+ * it is labelled as sponsored in plain words, never dressed as a staff
+ * recommendation; it names who paid for it; and the group's own
+ * administrator can take it down, which is what makes the community's
+ * consent real rather than nominal.
+ */
+function GroupSponsoredBanner({
+  placement,
+  canDismiss,
+  onOpenEvent,
+  onDismiss
+}: {
+  placement: GroupSponsoredPlacement;
+  canDismiss: boolean;
+  onOpenEvent: ((eventId: string) => void) | undefined;
+  onDismiss: () => void;
+}) {
+  const { event } = placement;
+  const startsAt = new Date(event.startsAt);
+  return (
+    <article
+      className={`group-sponsored-banner ${event.imageUrl ? 'has-photo' : ''}`}
+    >
+      {event.imageUrl && (
+        <img className="group-sponsored-photo" src={event.imageUrl} alt="" />
+      )}
+      <div className="group-sponsored-body">
+        <div className="group-sponsored-top">
+          {/* DEC-0015: always labelled, never presented as a staff pick. */}
+          <span className="group-sponsored-tag">
+            Sponsorisé · {placement.sponsorName}
+          </span>
+          {canDismiss && (
+            <button
+              type="button"
+              className="group-sponsored-dismiss"
+              onClick={onDismiss}
+              title="Retirer cette mise en avant du groupe"
+            >
+              Retirer
+            </button>
+          )}
+        </div>
+        <strong className="group-sponsored-title">{event.title}</strong>
+        <span className="group-sponsored-meta">
+          {startsAt.toLocaleDateString('fr-CA', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long'
+          })}
+          {' · '}
+          {startsAt.toLocaleTimeString('fr-CA', {
+            hour: '2-digit',
+            minute: '2-digit'
+          })}
+          {event.venueName ? ` · ${event.venueName}` : ''}
+        </span>
+        {placement.message && (
+          <p className="group-sponsored-message">{placement.message}</p>
+        )}
+        <button
+          type="button"
+          className="group-sponsored-cta"
+          onClick={() => onOpenEvent && onOpenEvent(event.id)}
+          disabled={!onOpenEvent}
+        >
+          Voir l’événement
+        </button>
+      </div>
+    </article>
+  );
+}
+
 export function GroupDetailContent({
   group,
   authToken,
@@ -1085,6 +1165,7 @@ export function GroupDetailContent({
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [members, setMembers] = useState<PublicUser[]>([]);
   const [channels, setChannels] = useState<GroupChannel[]>([]);
+  const [placements, setPlacements] = useState<GroupSponsoredPlacement[]>([]);
   const [activeChannelId, setActiveChannelId] = useState<string>();
   const [newChannelName, setNewChannelName] = useState('');
   const [newChannelStaffOnly, setNewChannelStaffOnly] = useState(false);
@@ -1136,6 +1217,40 @@ export function GroupDetailContent({
   useEffect(() => {
     refreshChannels();
   }, [refreshChannels]);
+
+  const refreshPlacements = useCallback(() => {
+    if (!authToken || !group.isMember) return;
+    fetch(`${API_BASE_URL}/groups/${group.id}/placements`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setPlacements(groupSponsoredPlacementsResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+  }, [authToken, group.id, group.isMember]);
+
+  useEffect(() => {
+    refreshPlacements();
+  }, [refreshPlacements]);
+
+  const dismissPlacement = (placementId: string) => {
+    if (!authToken) return;
+    // Optimistic: the banner goes now, and the route returns 204 with
+    // nothing to reconcile against.
+    setPlacements((current) =>
+      current.filter((entry) => entry.id !== placementId)
+    );
+    void fetch(
+      `${API_BASE_URL}/groups/${group.id}/placements/${placementId}`,
+      {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${authToken}` }
+      }
+    ).then((response) => {
+      if (!response.ok) refreshPlacements();
+    });
+  };
 
   const activeChannel = channels.find(
     (channel) => channel.id === activeChannelId
@@ -1524,6 +1639,15 @@ export function GroupDetailContent({
                 </div>
                 <p>Chaque action ici est partagée avec tous les membres.</p>
               </div>
+              {placements.map((placement) => (
+                <GroupSponsoredBanner
+                  key={placement.id}
+                  placement={placement}
+                  canDismiss={group.isModerator}
+                  onOpenEvent={onOpenEventForum}
+                  onDismiss={() => dismissPlacement(placement.id)}
+                />
+              ))}
               <div className="group-modules-grid">
                 {enabledModules.map((entry) => {
                   switch (entry.module) {
@@ -1564,7 +1688,7 @@ export function GroupDetailContent({
                   }
                 })}
               </div>
-              {enabledModules.length === 0 && (
+              {enabledModules.length === 0 && placements.length === 0 && (
                 <div className="group-empty-feed">
                   <span aria-hidden="true">▦</span>
                   <strong>Aucun module activé.</strong>
