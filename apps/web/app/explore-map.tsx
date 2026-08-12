@@ -3508,6 +3508,7 @@ export function ExploreMap({
     <div className={`app-container${user ? ' app-container-connected' : ''}`}>
       {user && (
         <Sidebar
+          locale={locale}
           activeSection={
             (section === 'compte' ? 'decouvrir' : section) as ConnectedSection
           }
@@ -8290,6 +8291,7 @@ function Sidebar({
   onNavigate,
   authToken,
   user,
+  locale,
   unreadMessagesCount,
   isAdmin,
   onOpenAccount,
@@ -8298,6 +8300,7 @@ function Sidebar({
   activeSection: ConnectedSection;
   onNavigate: (section: ConnectedSection) => void;
   authToken: string | undefined;
+  locale: SupportedLocale;
   user: User;
   unreadMessagesCount: number;
   isAdmin: boolean;
@@ -8438,6 +8441,7 @@ function Sidebar({
 
       {openGroup && (
         <GroupModal
+          locale={locale}
           group={openGroup}
           authToken={authToken}
           userId={user.id}
@@ -12502,6 +12506,7 @@ function MessagesPage({
           />
         ) : selectedGroup ? (
           <GroupDetailContent
+            locale={locale}
             group={selectedGroup}
             authToken={authToken}
             userId={user.id}
@@ -14524,7 +14529,11 @@ function CompteSection({
           )}
           {tab === 'groupes' && (
             <div className="profil-tab-content">
-              <GroupsBlock authToken={authToken} userId={user.id} />
+              <GroupsBlock
+                authToken={authToken}
+                userId={user.id}
+                locale={locale}
+              />
             </div>
           )}
           {tab === 'activite' && <ActiviteTab authToken={authToken} />}
@@ -17580,6 +17589,7 @@ function ForumPanel({
 
         {meetupGroup && user && (
           <GroupModal
+            locale={locale}
             group={meetupGroup}
             authToken={authToken}
             userId={user.id}

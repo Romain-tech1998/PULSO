@@ -127,6 +127,7 @@ export function GroupsPage({
             group={selectedGroup}
             authToken={authToken}
             userId={userId}
+            locale={locale}
             onGroupUpdated={setSelectedGroup}
             onLeave={() => setSelectedGroup(undefined)}
             onOpenEventForum={onOpenEventForum}
@@ -593,10 +594,12 @@ export function MessagesGroupsTab({
 // is always self-service (DEC-0013) - no invite/approval step to model.
 export function GroupsBlock({
   authToken,
-  userId
+  userId,
+  locale
 }: {
   authToken: string | undefined;
   userId: string;
+  locale: SupportedLocale;
 }) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>(
@@ -669,6 +672,7 @@ export function GroupsBlock({
           group={openGroup}
           authToken={authToken}
           userId={userId}
+          locale={locale}
           onClose={() => setOpenGroup(undefined)}
           onLeft={() => {
             setOpenGroup(undefined);
@@ -1182,15 +1186,18 @@ function GroupOutingCard({
   outing,
   authToken,
   modules,
+  locale,
   onAnswered
 }: {
   groupId: string;
   outing: NonNullable<GroupPost['outing']>;
   authToken: string | undefined;
+  locale: SupportedLocale;
   /** Which modules the group turned on, from its registry. */
   modules: Set<string>;
   onAnswered: () => void;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -1222,7 +1229,7 @@ function GroupOutingCard({
   return (
     <div className="group-outing-card">
       <div className="group-outing-card-head">
-        <span className="group-outing-chip">Sortie</span>
+        <span className="group-outing-chip">{t('groups.outingChip')}</span>
         <strong>{outing.title}</strong>
         <span className="group-outing-when">
           {when
@@ -1234,7 +1241,7 @@ function GroupOutingCard({
                 hour: '2-digit',
                 minute: '2-digit'
               })}`
-            : 'Date à définir'}
+            : t('groups.outingNoDate')}
           {outing.place ? ` · ${outing.place}` : ''}
         </span>
       </div>
@@ -1242,9 +1249,9 @@ function GroupOutingCard({
       <div className="group-outing-answers">
         {(
           [
-            ['yes', "J'y vais"],
-            ['maybe', 'Peut-être'],
-            ['no', 'Non']
+            ['yes', t('groups.outingGoing')],
+            ['maybe', t('groups.outingMaybe')],
+            ['no', t('groups.outingNo')]
           ] as const
         ).map(([value, label]) => (
           <button
@@ -1267,7 +1274,7 @@ function GroupOutingCard({
           onClick={() => setOpen((current) => !current)}
           aria-expanded={open}
         >
-          {open ? '▾' : '▸'} Programme, checklist
+          {open ? '▾' : '▸'} {t('groups.outingModules')}
         </button>
       )}
       {open && (
@@ -1296,6 +1303,7 @@ export function GroupDetailContent({
   group,
   authToken,
   userId,
+  locale,
   onGroupUpdated,
   onLeave,
   onOpenEventForum
@@ -1303,10 +1311,12 @@ export function GroupDetailContent({
   group: Group;
   authToken: string | undefined;
   userId: string;
+  locale: SupportedLocale;
   onGroupUpdated: (group: Group) => void;
   onLeave?: () => void;
   onOpenEventForum?: (eventId: string) => void;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [posts, setPosts] = useState<GroupPost[]>([]);
   const [postsState, setPostsState] = useState<'loading' | 'success' | 'error'>(
     'loading'
@@ -1660,7 +1670,9 @@ export function GroupDetailContent({
         <div className="group-detail-header-top">
           <div className="group-detail-header-info">
             <span className="groups-page-eyebrow">
-              {group.eventId ? 'Groupe événement' : 'Communauté permanente'}
+              {group.eventId
+                ? t('groups.kindEventLinked')
+                : t('groups.kindPermanent')}
             </span>
             <strong className="group-detail-name">
               {group.name}
@@ -1706,18 +1718,18 @@ export function GroupDetailContent({
                 disabled={pinning}
                 title={
                   group.pinned
-                    ? 'Retirer des raccourcis'
-                    : 'Épingler dans les raccourcis'
+                    ? t('groups.unpin')
+                    : t('groups.pin')
                 }
               >
-                {group.pinned ? '📌 Épinglé' : '📌 Épingler'}
+                {group.pinned ? `📌 ${t('groups.pinned')}` : `📌 ${t('groups.pin')}`}
               </button>
               <button
                 type="button"
                 className="text-btn"
                 onClick={leaveGroupAction}
               >
-                Quitter
+                {t('groups.leave')}
               </button>
             </div>
           )}
@@ -1752,7 +1764,7 @@ export function GroupDetailContent({
               className="text-btn"
               onClick={() => setInviteOpen(true)}
             >
-              Inviter des amis
+              {t('groups.invite')}
             </button>
           )}
         </div>
@@ -1762,8 +1774,8 @@ export function GroupDetailContent({
         <div className="group-detail-join-banner">
           <p>
             {group.visibility === 'restricted'
-              ? 'Ce groupe est à accès limité - ta demande sera envoyée au modérateur.'
-              : 'Rejoins ce groupe pour discuter, voter, et voir le programme.'}
+              ? t('groups.joinRestrictedPrompt')
+              : t('groups.joinOpenPrompt')}
           </p>
           <button
             type="button"
@@ -1772,16 +1784,16 @@ export function GroupDetailContent({
             disabled={joining}
           >
             {joining
-              ? 'Un instant…'
+              ? t('groups.joining')
               : group.visibility === 'restricted'
-                ? 'Demander à rejoindre'
-                : 'Rejoindre'}
+                ? t('groups.askToJoin')
+                : t('groups.join')}
           </button>
         </div>
       )}
       {group.myStatus === 'pending' && (
         <div className="group-detail-join-banner">
-          <p>Demande envoyée, en attente d'approbation du modérateur.</p>
+          <p>{t('groups.pendingRequest')}</p>
         </div>
       )}
 
@@ -1794,7 +1806,7 @@ export function GroupDetailContent({
               onClick={() => setTab('feed')}
             >
               <span aria-hidden="true">◌</span>
-              Accueil
+              {t('groups.tabHome')}
               {posts.length > 0 && <small>{posts.length}</small>}
             </button>
             <button
@@ -1803,7 +1815,7 @@ export function GroupDetailContent({
               onClick={() => setTab('members')}
             >
               <span aria-hidden="true">◎</span>
-              Membres
+              {t('groups.tabMembers')}
               <small>{group.memberCount}</small>
             </button>
             {group.isModerator && (
@@ -1813,7 +1825,7 @@ export function GroupDetailContent({
                 onClick={() => setTab('manage')}
               >
                 <span aria-hidden="true">◇</span>
-                Gestion
+                {t('groups.tabManage')}
                 {(group.pendingRequestCount ?? 0) > 0 && (
                   <small className="attention">
                     {group.pendingRequestCount}
@@ -1835,7 +1847,7 @@ export function GroupDetailContent({
                   }`}
                   onClick={() => setActiveChannelId(undefined)}
                 >
-                  Tout
+                  {t('groups.channelAll')}
                 </button>
                 {channels.map((channel) => (
                   <button
@@ -1861,8 +1873,8 @@ export function GroupDetailContent({
                       type="button"
                       className="group-channel-remove"
                       onClick={() => removeChannel(activeChannelId)}
-                      title="Supprimer ce fil"
-                      aria-label="Supprimer ce fil"
+                      title={t('groups.channelDelete')}
+                      aria-label={t('groups.channelDelete')}
                     >
                       ×
                     </button>
@@ -1880,11 +1892,11 @@ export function GroupDetailContent({
                       onChange={(changeEvent) =>
                         setNewChannelName(changeEvent.target.value)
                       }
-                      placeholder="Nouveau fil"
+                      placeholder={t('groups.channelNew')}
                       maxLength={40}
-                      aria-label="Nom du nouveau fil"
+                      aria-label={t('groups.channelNewLabel')}
                     />
-                    <label title="Seul l'administrateur peut y écrire">
+                    <label title={t('groups.channelStaffOnly')}>
                       <input
                         type="checkbox"
                         checked={newChannelStaffOnly}
@@ -1892,14 +1904,14 @@ export function GroupDetailContent({
                           setNewChannelStaffOnly(changeEvent.target.checked)
                         }
                       />
-                      Annonces
+                      {t('groups.channelAnnouncements')}
                     </label>
                     <button
                       type="submit"
                       className="text-btn"
                       disabled={addingChannel || !newChannelName.trim()}
                     >
-                      Ajouter
+                      {t('groups.channelAdd')}
                     </button>
                   </form>
                 )}
@@ -1928,8 +1940,7 @@ export function GroupDetailContent({
               )}
               {!canWriteHere && (
                 <p className="group-channel-readonly">
-                  Ce fil est réservé aux annonces de l’administrateur. Tu peux
-                  le lire et y réagir.
+                  {t('groups.channelReadOnly')}
                 </p>
               )}
               <form
@@ -1943,7 +1954,7 @@ export function GroupDetailContent({
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Partage une idée, une question ou une décision…"
+                  placeholder={t('groups.composerPlaceholder')}
                   maxLength={2000}
                   rows={3}
                 />
@@ -1953,7 +1964,7 @@ export function GroupDetailContent({
                     className="group-composer-outing-trigger"
                     onClick={() => setOutingComposerOpen((open) => !open)}
                   >
-                    📅 Proposer une sortie
+                    📅 {t('groups.proposeOuting')}
                   </button>
                   <span>{draft.length}/2000</span>
                   <button
@@ -1961,7 +1972,7 @@ export function GroupDetailContent({
                     className="btn-secondary"
                     disabled={posting || !draft.trim()}
                   >
-                    {posting ? 'Publication…' : 'Publier'}
+                    {posting ? t('groups.composerPosting') : t('groups.composerSubmit')}
                   </button>
                 </div>
               </form>
@@ -1993,7 +2004,7 @@ export function GroupDetailContent({
                         title: changeEvent.target.value
                       }))
                     }
-                    placeholder="On fait quoi ? Ex. Techno au Bal du Lezard"
+                    placeholder={t('groups.outingTitlePlaceholder')}
                     maxLength={120}
                     autoFocus
                   />
@@ -2006,7 +2017,7 @@ export function GroupDetailContent({
                           place: changeEvent.target.value
                         }))
                       }
-                      placeholder="Où ?"
+                      placeholder={t('groups.outingPlacePlaceholder')}
                       maxLength={120}
                     />
                     <input
@@ -2018,34 +2029,33 @@ export function GroupDetailContent({
                           startsAt: changeEvent.target.value
                         }))
                       }
-                      aria-label="Quand ?"
+                      aria-label={t('groups.outingWhenLabel')}
                     />
                     <button
                       type="submit"
                       className="btn-secondary"
                       disabled={startingOuting || !outingDraft.title.trim()}
                     >
-                      Publier
+                      {t('groups.outingPublish')}
                     </button>
                   </div>
                 </form>
               )}
               <div className="forum-posts group-posts-feed">
                 {postsState === 'loading' && (
-                  <p className="list-view-empty">Chargement…</p>
+                  <p className="list-view-empty">{t('groups.feedLoading')}</p>
                 )}
                 {postsState === 'error' && (
                   <p className="list-view-empty">
-                    Impossible de charger le fil pour le moment.
+                    {t('groups.feedError')}
                   </p>
                 )}
                 {postsState === 'success' && topLevelPosts.length === 0 && (
                   <div className="group-empty-feed">
                     <span aria-hidden="true">◌</span>
-                    <strong>Lance la première conversation.</strong>
+                    <strong>{t('groups.feedEmpty')}</strong>
                     <p>
-                      Une question simple suffit souvent à organiser toute une
-                      sortie.
+                      {t('groups.feedEmptyHint')}
                     </p>
                   </div>
                 )}
@@ -2058,6 +2068,7 @@ export function GroupDetailContent({
                         outing={post.outing}
                         authToken={authToken}
                         modules={enabledModuleNames}
+                        locale={locale}
                         onAnswered={refreshPosts}
                       />
                     ) : (
@@ -2091,7 +2102,9 @@ export function GroupDetailContent({
             <section className="group-members-view">
               <div className="group-view-heading">
                 <div>
-                  <span className="groups-page-eyebrow">La communauté</span>
+                  <span className="groups-page-eyebrow">
+                    {t('groups.membersEyebrow')}
+                  </span>
                   <h2>
                     {group.memberCount} membre
                     {group.memberCount !== 1 ? 's' : ''}
@@ -2119,8 +2132,8 @@ export function GroupDetailContent({
                       <strong>{member.displayName}</strong>
                       <small>
                         {member.id === group.createdBy
-                          ? 'Créateur du groupe'
-                          : 'Membre'}
+                          ? t('groups.membersCreator')
+                          : t('groups.membersMember')}
                       </small>
                     </span>
                   </div>
@@ -2134,29 +2147,29 @@ export function GroupDetailContent({
               <div className="group-view-heading">
                 <div>
                   <span className="groups-page-eyebrow">
-                    Espace gestionnaire
+                    {t('groups.manageEyebrow')}
                   </span>
-                  <h2>Gérer les accès au groupe.</h2>
+                  <h2>{t('groups.manageHeading')}</h2>
                 </div>
                 <span className="group-management-role">
-                  Créateur · Gestionnaire
+                  {t('groups.manageRole')}
                 </span>
               </div>
               <div className="group-management-summary">
                 <div>
-                  <span>Accès</span>
+                  <span>{t('groups.manageAccess')}</span>
                   <strong>
                     {group.visibility === 'restricted'
-                      ? 'Sur approbation'
-                      : 'Libre'}
+                      ? t('groups.manageAccessApproval')
+                      : t('groups.manageAccessOpen')}
                   </strong>
                 </div>
                 <div>
-                  <span>Membres</span>
+                  <span>{t('groups.manageMembers')}</span>
                   <strong>{group.memberCount}</strong>
                 </div>
                 <div>
-                  <span>Demandes</span>
+                  <span>{t('groups.manageRequests')}</span>
                   <strong>{group.pendingRequestCount ?? 0}</strong>
                 </div>
               </div>
@@ -2171,9 +2184,9 @@ export function GroupDetailContent({
                 <div className="group-detail-card group-management-empty">
                   <span aria-hidden="true">◎</span>
                   <div>
-                    <strong>Ce groupe est en accès libre.</strong>
+                    <strong>{t('groups.manageOpenTitle')}</strong>
                     <p>
-                      Les membres le rejoignent sans passer par une demande.
+                      {t('groups.manageOpenBody')}
                     </p>
                   </div>
                 </div>
@@ -2735,12 +2748,14 @@ export function GroupModal({
   group,
   authToken,
   userId,
+  locale,
   onClose,
   onLeft
 }: {
   group: Group;
   authToken: string | undefined;
   userId: string;
+  locale: SupportedLocale;
   onClose: () => void;
   onLeft: () => void;
 }) {
@@ -2757,6 +2772,7 @@ export function GroupModal({
           group={current}
           authToken={authToken}
           userId={userId}
+          locale={locale}
           onGroupUpdated={setCurrent}
           onLeave={onLeft}
         />
