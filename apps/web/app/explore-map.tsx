@@ -4247,13 +4247,16 @@ export function ExploreMap({
                         className={`view-toggle-fav ${showFavoriteVenuesOnly ? 'active' : ''}`}
                         aria-label={
                           showFavoriteVenuesOnly
-                            ? 'Afficher tous les lieux'
-                            : 'Afficher uniquement mes lieux suivis'
+                            ? translate(locale, 'filters.showAllVenues')
+                            : translate(
+                                locale,
+                                'filters.showFollowedVenuesOnly'
+                              )
                         }
                         title={
                           showFavoriteVenuesOnly
-                            ? 'Afficher tous les lieux'
-                            : 'Lieux suivis'
+                            ? translate(locale, 'filters.showAllVenues')
+                            : translate(locale, 'filters.followedVenues')
                         }
                         aria-pressed={showFavoriteVenuesOnly}
                         onClick={() =>
@@ -12491,29 +12494,41 @@ function MessagesPage({
       <div className="messages-list-column messaging-inbox-column">
         <header className="messages-list-header messaging-inbox-header">
           <div>
-            <span className="messages-page-eyebrow">Ton cercle Pulso</span>
-            <h1>Messages</h1>
-            <p>Prépare vos prochaines sorties, simplement.</p>
+            <span className="messages-page-eyebrow">
+              {translate(locale, 'messages.eyebrow')}
+            </span>
+            <h1>{translate(locale, 'messages.title')}</h1>
+            <p>{translate(locale, 'messages.tagline')}</p>
           </div>
           <button
             type="button"
             className="messages-compose-btn"
-            aria-label="Nouveau message"
-            title="Nouveau message"
+            aria-label={translate(locale, 'messages.compose')}
+            title={translate(locale, 'messages.compose')}
             onClick={() => setComposeOpen(true)}
           >
             <span aria-hidden="true">+</span>
-            <small>Écrire</small>
+            <small>{translate(locale, 'messages.write')}</small>
           </button>
         </header>
         <div className="messages-inbox-stats">
           <span>
             <b>{conversations.length}</b>
-            conversation{conversations.length !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              conversations.length,
+              'messages.conversationWord',
+              'messages.conversationWordPlural'
+            )}
           </span>
           <span className={unreadTotal > 0 ? 'active' : ''}>
             <b>{unreadTotal}</b>
-            non lu{unreadTotal !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              unreadTotal,
+              'messages.unreadWord',
+              'messages.unreadWordPlural'
+            )}
           </span>
         </div>
         <div className="details-tabs messages-main-tabs">
@@ -12522,7 +12537,7 @@ function MessagesPage({
             className={tab === 'discussions' ? 'active' : ''}
             onClick={() => setTab('discussions')}
           >
-            Discussions
+            {translate(locale, 'messages.tabDiscussions')}
             {unreadTotal > 0 && <small>{unreadTotal}</small>}
           </button>
           <button
@@ -12530,7 +12545,7 @@ function MessagesPage({
             className={tab === 'demandes' ? 'active' : ''}
             onClick={() => setTab('demandes')}
           >
-            Demandes
+            {translate(locale, 'messages.tabRequests')}
             {pendingCount > 0 && <small>{pendingCount}</small>}
           </button>
           <button
@@ -12538,7 +12553,7 @@ function MessagesPage({
             className={tab === 'groupes' ? 'active' : ''}
             onClick={() => setTab('groupes')}
           >
-            Groupes
+            {translate(locale, 'messages.tabGroups')}
           </button>
         </div>
 
@@ -12549,8 +12564,8 @@ function MessagesPage({
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Rechercher une conversation"
-                aria-label="Rechercher une conversation"
+                placeholder={translate(locale, 'messages.search')}
+                aria-label={translate(locale, 'messages.search')}
               />
             </label>
             {state === 'loading' && (
@@ -12558,27 +12573,29 @@ function MessagesPage({
             )}
             {state === 'error' && (
               <p className="list-view-empty">
-                Impossible de charger vos messages pour le moment.
+                {translate(locale, 'messages.loadError')}
               </p>
             )}
             {state === 'success' && conversations.length === 0 && (
               <div className="messages-inbox-empty">
                 <span aria-hidden="true">◌</span>
-                <strong>Ton espace de discussion est prêt.</strong>
-                <p>Ajoute des amis, puis lance la première conversation.</p>
+                <strong>{translate(locale, 'messages.readyTitle')}</strong>
+                <p>{translate(locale, 'messages.readyBody')}</p>
                 <button
                   type="button"
                   className="messages-empty-cta"
                   onClick={() => setComposeOpen(true)}
                 >
-                  Nouveau message
+                  {translate(locale, 'messages.compose')}
                 </button>
               </div>
             )}
             {state === 'success' &&
               conversations.length > 0 &&
               filtered.length === 0 && (
-                <p className="list-view-empty">Aucun résultat.</p>
+                <p className="list-view-empty">
+                  {translate(locale, 'messages.noResult')}
+                </p>
               )}
             <div className="conversation-list">
               {filtered.map((conversation) => (
@@ -12629,6 +12646,7 @@ function MessagesPage({
         {tab === 'demandes' && (
           <MessagesRequestsTab
             authToken={authToken}
+            locale={locale}
             onPendingCount={setPendingCount}
           />
         )}
@@ -12671,18 +12689,17 @@ function MessagesPage({
               <span>●</span>
               <b>◌</b>
             </div>
-            <span className="messages-page-eyebrow">Conversations privées</span>
-            <h2>Les meilleures sorties commencent souvent par un message.</h2>
-            <p>
-              Choisis un ami ou un groupe pour planifier, partager un événement
-              et décider ensemble.
-            </p>
+            <span className="messages-page-eyebrow">
+              {translate(locale, 'messages.privateEyebrow')}
+            </span>
+            <h2>{translate(locale, 'messages.privateTitle')}</h2>
+            <p>{translate(locale, 'messages.privateBody')}</p>
             <button
               type="button"
               className="messages-empty-cta"
               onClick={() => setComposeOpen(true)}
             >
-              Écrire à un ami
+              {translate(locale, 'messages.writeToFriend')}
             </button>
           </div>
         )}
@@ -12692,6 +12709,7 @@ function MessagesPage({
         <ComposeMessageModal
           authToken={authToken}
           existingFriendIds={existingFriendIds}
+          locale={locale}
           onSelect={(friend) => {
             setSelectedGroup(undefined);
             setSelectedFriend(friend);
@@ -12730,12 +12748,16 @@ function ConversationPane({
             )}
           </span>
           <span className="conversation-pane-identity">
-            <span className="messages-page-eyebrow">Conversation privée</span>
+            <span className="messages-page-eyebrow">
+              {translate(locale, 'messages.privateConversation')}
+            </span>
             <strong>{friend.displayName}</strong>
-            <small>Vous pouvez échanger car vous êtes amis sur Pulso.</small>
+            <small>{translate(locale, 'messages.canExchange')}</small>
           </span>
         </span>
-        <span className="conversation-pane-trust">Entre amis</span>
+        <span className="conversation-pane-trust">
+          {translate(locale, 'messages.betweenFriends')}
+        </span>
       </div>
       <ConversationThread
         friend={friend}
@@ -12754,9 +12776,11 @@ function ConversationPane({
 // request from a stranger" concept, which doesn't exist in Pulso.
 function MessagesRequestsTab({
   authToken,
+  locale,
   onPendingCount
 }: {
   authToken: string | undefined;
+  locale: SupportedLocale;
   onPendingCount: (count: number) => void;
 }) {
   const [requests, setRequests] = useState<FriendRequestEntry[]>([]);
@@ -12808,29 +12832,33 @@ function MessagesRequestsTab({
   return (
     <div className="messages-tab-panel messages-requests-panel">
       <div className="messages-request-heading">
-        <span className="messages-page-eyebrow">Nouvelles connexions</span>
-        <strong>Demandes d’amis</strong>
-        <p>Une fois acceptée, une conversation privée peut commencer.</p>
+        <span className="messages-page-eyebrow">
+          {translate(locale, 'messages.newConnections')}
+        </span>
+        <strong>{translate(locale, 'messages.friendRequests')}</strong>
+        <p>{translate(locale, 'messages.requestsHint')}</p>
       </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger vos demandes pour le moment.
+          {translate(locale, 'messages.requestsLoadError')}
         </p>
       )}
       {state === 'success' && requests.length === 0 && (
         <div className="messages-request-empty">
           <span aria-hidden="true">✓</span>
           <div>
-            <strong>Tout est à jour.</strong>
-            <p>Aucune demande en attente pour le moment.</p>
+            <strong>{translate(locale, 'messages.allUpToDate')}</strong>
+            <p>{translate(locale, 'messages.noPendingRequests')}</p>
           </div>
         </div>
       )}
       {incoming.length > 0 && (
         <section className="messages-request-section">
           <div className="messages-request-section-title">
-            <strong>À confirmer</strong>
+            <strong>{translate(locale, 'messages.toConfirm')}</strong>
             <span>{incoming.length}</span>
           </div>
           <div className="amis-list messages-request-list">
@@ -12852,14 +12880,14 @@ function MessagesRequestsTab({
                     className="amis-btn-accept"
                     onClick={() => respond(request.id, 'accept')}
                   >
-                    Accepter
+                    {translate(locale, 'messages.accept')}
                   </button>
                   <button
                     type="button"
                     className="amis-btn-ghost"
                     onClick={() => respond(request.id, 'decline')}
                   >
-                    Refuser
+                    {translate(locale, 'messages.decline')}
                   </button>
                 </div>
               </div>
@@ -12870,7 +12898,7 @@ function MessagesRequestsTab({
       {outgoing.length > 0 && (
         <section className="messages-request-section">
           <div className="messages-request-section-title">
-            <strong>Envoyées</strong>
+            <strong>{translate(locale, 'messages.sent')}</strong>
             <span>{outgoing.length}</span>
           </div>
           <div className="amis-list messages-request-list">
@@ -12903,11 +12931,13 @@ function MessagesRequestsTab({
 function ComposeMessageModal({
   authToken,
   existingFriendIds,
+  locale,
   onSelect,
   onClose
 }: {
   authToken: string | undefined;
   existingFriendIds: Set<string>;
+  locale: SupportedLocale;
   onSelect: (friend: PublicUser) => void;
   onClose: () => void;
 }) {
@@ -12938,11 +12968,11 @@ function ComposeMessageModal({
       >
         <div className="conversation-modal-header">
           <div className="messages-compose-modal-title">
-            <span className="messages-page-eyebrow">Conversation privée</span>
-            <strong>Nouveau message</strong>
-            <small>
-              Choisis un ami pour commencer ou reprendre un échange.
-            </small>
+            <span className="messages-page-eyebrow">
+              {translate(locale, 'messages.privateConversation')}
+            </span>
+            <strong>{translate(locale, 'messages.compose')}</strong>
+            <small>{translate(locale, 'messages.composeHint')}</small>
           </div>
           <button type="button" className="text-btn" onClick={onClose}>
             ✕
@@ -12950,16 +12980,18 @@ function ComposeMessageModal({
         </div>
         <div className="share-friend-list">
           {state === 'loading' && (
-            <p className="list-view-empty">Chargement…</p>
+            <p className="list-view-empty">
+              {translate(locale, 'common.loading')}
+            </p>
           )}
           {state === 'error' && (
             <p className="list-view-empty">
-              Impossible de charger vos amis pour le moment.
+              {translate(locale, 'messages.friendsLoadError')}
             </p>
           )}
           {state === 'success' && friends.length === 0 && (
             <p className="list-view-empty">
-              Ajoute des amis pour pouvoir leur écrire.
+              {translate(locale, 'messages.noFriendsToWrite')}
             </p>
           )}
           {state === 'success' &&
