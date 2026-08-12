@@ -7,7 +7,8 @@ import {
   MESSAGE_CATALOGS,
   normalizeSupportedLocale,
   resolveSupportedLocale,
-  translate
+  translate,
+  translatePlural
 } from './localization.js';
 
 describe('MVP locale resolution', () => {
@@ -60,5 +61,33 @@ describe('typed bilingual catalogue', () => {
     expect(formatMontrealDate(value, 'fr')).not.toBe(
       formatMontrealDate(value, 'en')
     );
+  });
+});
+
+describe('locale-aware pluralisation', () => {
+  // The rule the two languages disagree about, and the one hand-written
+  // `count > 1` / `count === 1` checks kept getting wrong on one side.
+  it('gives zero the singular in French and the plural in English', () => {
+    expect(
+      translatePlural('fr', 0, 'map.eventCount', 'map.eventCountPlural')
+    ).toBe('0 événement dans cette zone');
+    expect(
+      translatePlural('en', 0, 'map.eventCount', 'map.eventCountPlural')
+    ).toBe('0 events in this area');
+  });
+
+  it('agrees on one and on many', () => {
+    expect(
+      translatePlural('fr', 1, 'map.eventCount', 'map.eventCountPlural')
+    ).toBe('1 événement dans cette zone');
+    expect(
+      translatePlural('en', 1, 'map.eventCount', 'map.eventCountPlural')
+    ).toBe('1 event in this area');
+    expect(
+      translatePlural('fr', 7, 'map.eventCount', 'map.eventCountPlural')
+    ).toBe('7 événements dans cette zone');
+    expect(
+      translatePlural('en', 7, 'map.eventCount', 'map.eventCountPlural')
+    ).toBe('7 events in this area');
   });
 });

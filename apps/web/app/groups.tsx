@@ -26,7 +26,11 @@ import type {
   GroupVisibility,
   PublicUser
 } from '@pulso/contracts';
-import { displayLocale, translate } from '@pulso/domain/localization';
+import {
+  displayLocale,
+  translate,
+  translatePlural
+} from '@pulso/domain/localization';
 import type {
   MessageKey,
   SupportedLocale
@@ -567,12 +571,11 @@ export function MessagesGroupsTab({
               )}
               <span className="group-directory-meta">
                 <span>
-                  {translate(
+                  {translatePlural(
                     locale,
-                    group.memberCount === 1
-                      ? 'groups.memberCount'
-                      : 'groups.memberCountPlural',
-                    { count: group.memberCount }
+                    group.memberCount,
+                    'groups.memberCount',
+                    'groups.memberCountPlural'
                   )}
                 </span>
                 <span>
@@ -1819,12 +1822,11 @@ export function GroupDetailContent({
             </div>
           )}
           <span className="forum-members-count">
-            {translate(
+            {translatePlural(
               locale,
-              group.memberCount === 1
-                ? 'groups.memberCount'
-                : 'groups.memberCountPlural',
-              { count: group.memberCount }
+              group.memberCount,
+              'groups.memberCount',
+              'groups.memberCountPlural'
             )}
           </span>
           {group.isMember && (
@@ -2177,12 +2179,11 @@ export function GroupDetailContent({
                     {t('groups.membersEyebrow')}
                   </span>
                   <h2>
-                    {translate(
+                    {translatePlural(
                       locale,
-                      group.memberCount === 1
-                        ? 'groups.memberCount'
-                        : 'groups.memberCountPlural',
-                      { count: group.memberCount }
+                      group.memberCount,
+                      'groups.memberCount',
+                      'groups.memberCountPlural'
                     )}
                   </h2>
                 </div>
@@ -2965,12 +2966,11 @@ function GroupPostRow({
               >
                 {item.replyCount === 0
                   ? t('groups.postReply')
-                  : translate(
+                  : translatePlural(
                       locale,
-                      item.replyCount === 1
-                        ? 'groups.postReplyCount'
-                        : 'groups.postReplyCountPlural',
-                      { count: item.replyCount }
+                      item.replyCount,
+                      'groups.postReplyCount',
+                      'groups.postReplyCountPlural'
                     )}
               </button>
             )}

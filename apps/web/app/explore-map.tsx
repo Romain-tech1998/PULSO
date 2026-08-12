@@ -111,6 +111,7 @@ import {
   localizeSearchMessage,
   LOCALE_COOKIE_NAME,
   translate,
+  translatePlural,
   type SupportedLocale
 } from '@pulso/domain/localization';
 import {
@@ -1838,7 +1839,9 @@ export function ExploreMap({
         // details panel was open - it should not silently swallow this.
         setDetails({ kind: 'closed' });
         setPickerList({
-          title: `${matched.length} événements à cet endroit`,
+          title: translate(localeRef.current, 'map.eventsHere', {
+            count: matched.length
+          }),
           events: matched
         });
       });
@@ -1881,7 +1884,11 @@ export function ExploreMap({
             // details panel rather than leaving it stuck in front.
             setDetails({ kind: 'closed' });
             setPickerList({
-              title: `${matched.length} événements ${samePlace ? 'à cet endroit' : 'dans cette zone'}`,
+              title: translate(
+                localeRef.current,
+                samePlace ? 'map.eventsHere' : 'map.eventCountPlural',
+                { count: matched.length }
+              ),
               events: matched
             });
             return;
@@ -1957,8 +1964,11 @@ export function ExploreMap({
     if (!map.current || !userLocation) return;
     const el = document.createElement('div');
     el.className = 'user-location-marker';
-    el.title = 'Vous êtes ici';
-    el.setAttribute('aria-label', 'Vous êtes ici');
+    el.title = translate(localeRef.current, 'map.youAreHere');
+    el.setAttribute(
+      'aria-label',
+      translate(localeRef.current, 'map.youAreHere')
+    );
     // A plain dot read as just another marker at a glance - a small glyph
     // inside makes "this one is you" unambiguous rather than relying on
     // color alone to distinguish it from event pins.
@@ -1989,8 +1999,11 @@ export function ExploreMap({
       if (!target.map) continue;
       const element = document.createElement('div');
       element.className = 'user-location-marker';
-      element.title = 'Vous êtes ici';
-      element.setAttribute('aria-label', 'Vous êtes ici');
+      element.title = translate(localeRef.current, 'map.youAreHere');
+      element.setAttribute(
+        'aria-label',
+        translate(localeRef.current, 'map.youAreHere')
+      );
       element.innerHTML =
         '<span class="user-location-marker-pulse"></span>' +
         '<span class="user-location-marker-icon" aria-hidden="true"></span>';
@@ -2440,7 +2453,9 @@ export function ExploreMap({
         setVenueDetailsGroup(undefined);
         setPickerList(undefined);
         setVenuePickerList({
-          title: `${matched.length} lieux à cet endroit`,
+          title: translate(localeRef.current, 'map.venuesHere', {
+            count: matched.length
+          }),
           groups: matched
         });
       });
@@ -2463,7 +2478,9 @@ export function ExploreMap({
             setDetails({ kind: 'closed' });
             setPickerList(undefined);
             setVenuePickerList({
-              title: `${matched.length} lieux dans cette zone`,
+              title: translate(localeRef.current, 'map.venuesInArea', {
+                count: matched.length
+              }),
               groups: matched
             });
             return;
@@ -2865,7 +2882,9 @@ export function ExploreMap({
         }
         setSelected(undefined);
         setPickerList({
-          title: `${matched.length} événements à cet endroit`,
+          title: translate(localeRef.current, 'map.eventsHere', {
+            count: matched.length
+          }),
           events: matched
         });
       });
@@ -2891,7 +2910,9 @@ export function ExploreMap({
         setVenueDetailsGroup(undefined);
         setPickerList(undefined);
         setVenuePickerList({
-          title: `${matched.length} lieux à cet endroit`,
+          title: translate(localeRef.current, 'map.venuesHere', {
+            count: matched.length
+          }),
           groups: matched
         });
       });
@@ -2916,7 +2937,9 @@ export function ExploreMap({
             setDetails({ kind: 'closed' });
             setPickerList(undefined);
             setVenuePickerList({
-              title: `${matched.length} lieux dans cette zone`,
+              title: translate(localeRef.current, 'map.venuesInArea', {
+                count: matched.length
+              }),
               groups: matched
             });
             return;
@@ -3569,7 +3592,7 @@ export function ExploreMap({
             }}
           >
             <span aria-hidden="true">🎟️</span>
-            Événements
+            {translate(locale, 'nav.events')}
           </button>
           <button
             type="button"
@@ -3598,7 +3621,7 @@ export function ExploreMap({
             onClick={() => setMobileCommunityOpen(true)}
           >
             <span aria-hidden="true">👥</span>
-            Communauté
+            {translate(locale, 'nav.community')}
           </button>
           <button
             type="button"
@@ -3623,7 +3646,7 @@ export function ExploreMap({
           />
           <div className="mobile-community-sheet">
             <div className="sidebar-mobile-header">
-              <h2>Communauté</h2>
+              <h2>{translate(locale, 'nav.community')}</h2>
               <button
                 type="button"
                 className="sidebar-mobile-close"
@@ -3648,9 +3671,21 @@ export function ExploreMap({
                 unreliable rather than a second convenience. */}
             {(
               [
-                { section: 'forums', label: 'Forums', icon: '💬' },
-                { section: 'groupes', label: 'Groupes', icon: '👥' },
-                { section: 'amis', label: 'Amis', icon: '🧑‍🤝‍🧑' }
+                {
+                  section: 'forums',
+                  label: translate(locale, 'nav.forums'),
+                  icon: '💬'
+                },
+                {
+                  section: 'groupes',
+                  label: translate(locale, 'nav.groups'),
+                  icon: '👥'
+                },
+                {
+                  section: 'amis',
+                  label: translate(locale, 'nav.friends'),
+                  icon: '🧑‍🤝‍🧑'
+                }
               ] as const
             ).map((item) => (
               <button
@@ -3769,7 +3804,7 @@ export function ExploreMap({
                     setSection('evenement');
                   }}
                 >
-                  Événements
+                  {translate(locale, 'nav.events')}
                 </button>
                 <button
                   type="button"
@@ -3831,8 +3866,8 @@ export function ExploreMap({
                 data-about-toggle
                 className={`nav-icon-btn ${aboutOpen ? 'active' : ''}`}
                 onClick={() => setAboutOpen((prev) => !prev)}
-                aria-label="À propos"
-                title="À propos"
+                aria-label={translate(locale, 'nav.about')}
+                title={translate(locale, 'nav.about')}
               >
                 <InfoIcon />
               </button>
@@ -3840,8 +3875,8 @@ export function ExploreMap({
                 type="button"
                 className="nav-icon-btn nav-icon-btn-notifications"
                 disabled
-                aria-label="Notifications (bientôt disponible)"
-                title="Bientôt disponible"
+                aria-label={translate(locale, 'nav.notificationsSoon')}
+                title={translate(locale, 'nav.comingSoon')}
               >
                 <BellIcon />
               </button>
@@ -3877,7 +3912,7 @@ export function ExploreMap({
               }}
             >
               <ViewModeIcon kind="map" />
-              Événements
+              {translate(locale, 'nav.events')}
             </button>
             <button
               type="button"
@@ -3970,7 +4005,7 @@ export function ExploreMap({
                   }
                   style={{ marginTop: '1rem' }}
                 >
-                  Réessayer
+                  {translate(locale, 'nav.retry')}
                 </button>
               </div>
             )}
@@ -4094,7 +4129,9 @@ export function ExploreMap({
                 >
                   <div className="sidebar-mobile-header">
                     <h1 className="sidebar-section-title">
-                      {section === 'evenement' ? 'Événements' : 'Lieux'}
+                      {section === 'evenement'
+                      ? translate(locale, 'nav.events')
+                      : translate(locale, 'nav.venues')}
                     </h1>
                     <button
                       type="button"
@@ -4116,17 +4153,22 @@ export function ExploreMap({
                   </div>
                   <p className="sidebar-results-count">
                     {section === 'evenement'
-                      ? (() => {
-                          const count = showFavoritesOnly
+                      ? translatePlural(
+                          locale,
+                          showFavoritesOnly
                             ? events.filter((event) =>
                                 favorites.includes(event.id)
                               ).length
-                            : events.length;
-                          // French takes the singular for 0 as well as 1.
-                          return `${count} événement${count > 1 ? 's' : ''} dans cette zone`;
-                        })()
-                      : // "lieu" pluralizes in -x, not -s.
-                        `${filteredVenueGroups.length} lieu${filteredVenueGroups.length > 1 ? 'x' : ''} dans cette zone`}
+                            : events.length,
+                          'map.eventCount',
+                          'map.eventCountPlural'
+                        )
+                      : translatePlural(
+                          locale,
+                          filteredVenueGroups.length,
+                          'map.venueCount',
+                          'map.venueCountPlural'
+                        )}
                   </p>
 
                   <div className="view-toggles">
@@ -4138,7 +4180,7 @@ export function ExploreMap({
                             className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
                             onClick={() => setViewMode('map')}
                           >
-                            <ViewModeIcon kind="map" /> Carte
+                            <ViewModeIcon kind="map" /> {translate(locale, 'view.map')}
                           </button>
                           <button
                             type="button"
@@ -4148,14 +4190,14 @@ export function ExploreMap({
                               setViewMode('list');
                             }}
                           >
-                            <ViewModeIcon kind="list" /> Liste
+                            <ViewModeIcon kind="list" /> {translate(locale, 'view.list')}
                           </button>
                           <button
                             type="button"
                             className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
                             onClick={() => setViewMode('calendar')}
                           >
-                            <ViewModeIcon kind="calendar" /> Calendrier
+                            <ViewModeIcon kind="calendar" /> {translate(locale, 'view.calendar')}
                           </button>
                         </>
                       ) : (
@@ -4165,21 +4207,21 @@ export function ExploreMap({
                             className={`view-toggle-btn ${lieuTab === 'map' ? 'active' : ''}`}
                             onClick={() => setLieuTab('map')}
                           >
-                            <ViewModeIcon kind="map" /> Carte
+                            <ViewModeIcon kind="map" /> {translate(locale, 'view.map')}
                           </button>
                           <button
                             type="button"
                             className={`view-toggle-btn ${lieuTab === 'list' ? 'active' : ''}`}
                             onClick={() => setLieuTab('list')}
                           >
-                            <ViewModeIcon kind="list" /> Liste
+                            <ViewModeIcon kind="list" /> {translate(locale, 'view.list')}
                           </button>
                           <button
                             type="button"
                             className={`view-toggle-btn ${lieuTab === 'calendar' ? 'active' : ''}`}
                             onClick={() => setLieuTab('calendar')}
                           >
-                            <ViewModeIcon kind="calendar" /> Calendrier
+                            <ViewModeIcon kind="calendar" /> {translate(locale, 'view.calendar')}
                           </button>
                         </>
                       )}
@@ -4190,8 +4232,8 @@ export function ExploreMap({
                         className={`view-toggle-fav ${showFavoritesOnly ? 'active' : ''}`}
                         aria-label={
                           showFavoritesOnly
-                            ? 'Afficher tous les événements'
-                            : 'Afficher uniquement mes favoris'
+                            ? translate(locale, 'filters.showAllEvents')
+                            : translate(locale, 'filters.showFavoritesOnly')
                         }
                         aria-pressed={showFavoritesOnly}
                         onClick={() => setShowFavoritesOnly((prev) => !prev)}
@@ -4226,20 +4268,19 @@ export function ExploreMap({
                   {section === 'evenement' && (
                     <>
                       <div className="filter-group-title-row">
-                        <h3>Filtres</h3>
+                        <h3>{translate(locale, 'filters.title')}</h3>
                         <button className="filter-reset" onClick={clearAll}>
-                          Réinitialiser
+                          {translate(locale, 'filters.reset')}
                         </button>
                       </div>
 
                       <CollapsibleFilterGroup
-                        title="Catégories"
+                        title={translate(locale, 'filters.categories')}
                         collapsed={collapsedSections.has('categories')}
                         onToggle={() => toggleSection('categories')}
                       >
                         <p className="category-legend-hint">
-                          La couleur de chaque catégorie correspond à celle des
-                          pins sur la carte.
+                          {translate(locale, 'filters.categoryLegendHint')}
                         </p>
                         <div className="category-grid">
                           {CATEGORY_FILTER_OPTIONS.map((option) => (
@@ -4362,13 +4403,18 @@ export function ExploreMap({
                           </div>
                           <p className="distance-value">
                             {distanceFilterActive
-                              ? `Rayon actif : ${distanceKm} km`
-                              : `Rayon max (${distanceKm} km) — non appliqué`}
-                            {geoStatus === 'pending' && ' · localisation…'}
+                              ? translate(locale, 'filters.radiusActive', {
+                                  km: distanceKm
+                                })
+                              : translate(locale, 'filters.radiusMax', {
+                                  km: distanceKm
+                                })}
+                            {geoStatus === 'pending' &&
+                              ` · ${translate(locale, 'filters.geoPending')}`}
                             {geoStatus === 'denied' &&
-                              ' · position non partagée'}
+                              ` · ${translate(locale, 'filters.geoDenied')}`}
                             {geoStatus === 'unsupported' &&
-                              ' · non disponible sur cet appareil'}
+                              ` · ${translate(locale, 'filters.geoUnsupported')}`}
                           </p>
                         </div>
                       </CollapsibleFilterGroup>
@@ -4386,12 +4432,12 @@ export function ExploreMap({
                             applyFilters(withoutCustomDates(filters, 'next7'));
                           }}
                         >
-                          Réinitialiser
+                          {translate(locale, 'filters.reset')}
                         </button>
                       </div>
 
                       <CollapsibleFilterGroup
-                        title="Catégorie de lieu"
+                        title={translate(locale, 'filters.venueCategory')}
                         collapsed={collapsedSections.has('lieu-categorie')}
                         onToggle={() => toggleSection('lieu-categorie')}
                       >
@@ -4450,8 +4496,7 @@ export function ExploreMap({
                         onToggle={() => toggleSection('lieu-date')}
                       >
                         <p className="category-legend-hint">
-                          Affiche les lieux ayant un événement dans cette
-                          période.
+                          {translate(locale, 'filters.venueDateHint')}
                         </p>
                         <div className="pill-list">
                           {DATE_FILTER_OPTIONS.map((option) => (
@@ -4498,13 +4543,18 @@ export function ExploreMap({
                           </div>
                           <p className="distance-value">
                             {distanceFilterActive
-                              ? `Rayon actif : ${distanceKm} km`
-                              : `Rayon max (${distanceKm} km) — non appliqué`}
-                            {geoStatus === 'pending' && ' · localisation…'}
+                              ? translate(locale, 'filters.radiusActive', {
+                                  km: distanceKm
+                                })
+                              : translate(locale, 'filters.radiusMax', {
+                                  km: distanceKm
+                                })}
+                            {geoStatus === 'pending' &&
+                              ` · ${translate(locale, 'filters.geoPending')}`}
                             {geoStatus === 'denied' &&
-                              ' · position non partagée'}
+                              ` · ${translate(locale, 'filters.geoDenied')}`}
                             {geoStatus === 'unsupported' &&
-                              ' · non disponible sur cet appareil'}
+                              ` · ${translate(locale, 'filters.geoUnsupported')}`}
                           </p>
                         </div>
                       </CollapsibleFilterGroup>
@@ -4513,8 +4563,8 @@ export function ExploreMap({
 
                   <div className="promo-card">
                     <div className="promo-content">
-                      <h4>Téléchargez Pulso</h4>
-                      <p>Emportez la ville dans votre poche.</p>
+                      <h4>{translate(locale, 'promo.downloadTitle')}</h4>
+                      <p>{translate(locale, 'promo.downloadBody')}</p>
                     </div>
                     <div className="promo-store-badges">
                       <button
@@ -4529,7 +4579,9 @@ export function ExploreMap({
                           🍎
                         </span>
                         <span>
-                          <small>Bientôt sur</small>
+                          <small>
+                            {translate(locale, 'promo.comingSoonOn')}
+                          </small>
                           <strong>App Store</strong>
                         </span>
                       </button>
@@ -4545,7 +4597,9 @@ export function ExploreMap({
                           ▶️
                         </span>
                         <span>
-                          <small>Bientôt sur</small>
+                          <small>
+                            {translate(locale, 'promo.comingSoonOn')}
+                          </small>
                           <strong>Google Play</strong>
                         </span>
                       </button>
@@ -4622,7 +4676,7 @@ export function ExploreMap({
                       <line x1="2" y1="12" x2="5" y2="12" />
                       <line x1="19" y1="12" x2="22" y2="12" />
                     </svg>
-                    Recentrer
+                    {translate(locale, 'map.recenterShort')}
                   </button>
 
                   <MapFilterBar
@@ -4674,7 +4728,7 @@ export function ExploreMap({
                     <button
                       type="button"
                       className="map-zoom-btn"
-                      aria-label="Recentrer sur Montréal"
+                      aria-label={translate(locale, 'map.recenterMontreal')}
                       title="Montréal"
                       onClick={() =>
                         connectedMap.current?.flyTo({
@@ -4969,21 +5023,24 @@ export function ExploreMap({
                       className={explorerPinKind === 'all' ? 'active' : ''}
                       onClick={() => setExplorerPinKind('all')}
                     >
-                      Tout <span>{events.length + venueGroups.length}</span>
+                      {translate(locale, 'map.pinAll')}{' '}
+                      <span>{events.length + venueGroups.length}</span>
                     </button>
                     <button
                       type="button"
                       className={explorerPinKind === 'event' ? 'active' : ''}
                       onClick={() => setExplorerPinKind('event')}
                     >
-                      Événements <span>{events.length}</span>
+                      {translate(locale, 'nav.events')}{' '}
+                      <span>{events.length}</span>
                     </button>
                     <button
                       type="button"
                       className={explorerPinKind === 'venue' ? 'active' : ''}
                       onClick={() => setExplorerPinKind('venue')}
                     >
-                      Lieux <span>{venueGroups.length}</span>
+                      {translate(locale, 'nav.venues')}{' '}
+                      <span>{venueGroups.length}</span>
                     </button>
                     {/* Explorer's floating chrome is one cluster now. The
                         old top-left bar duplicated its own date filter - an
@@ -5018,12 +5075,17 @@ export function ExploreMap({
                       )}
                     </button>
                   </div>
-                  <div className="explorer-map-legend" aria-label="Légende">
+                  <div
+                    className="explorer-map-legend"
+                    aria-label={translate(locale, 'map.legend')}
+                  >
                     <span>
-                      <i className="legend-event-dot" /> Événement programmé
+                      <i className="legend-event-dot" />{' '}
+                      {translate(locale, 'map.legendEvent')}
                     </span>
                     <span>
-                      <i className="legend-venue-dot" /> Lieu récurrent
+                      <i className="legend-venue-dot" />{' '}
+                      {translate(locale, 'map.legendVenue')}
                     </span>
                   </div>
                   <div className="explorer-location-controls">
@@ -5074,9 +5136,14 @@ export function ExploreMap({
               >
                 <div className="map-shell connected-map-shell">
                   <div className="connected-map-context">
-                    <span>Explorer Montréal</span>
+                    <span>{translate(locale, 'map.exploreMontreal')}</span>
                     <strong>
-                      {events.length + venueGroups.length} repères
+                      {translatePlural(
+                        locale,
+                        events.length + venueGroups.length,
+                        'map.markerCount',
+                        'map.markerCountPlural'
+                      )}
                     </strong>
                   </div>
 
@@ -5092,7 +5159,7 @@ export function ExploreMap({
 
                   <div
                     className="explorer-date-shortcuts"
-                    aria-label="Période d'exploration"
+                    aria-label={translate(locale, 'map.explorePeriod')}
                   >
                     <button
                       type="button"
@@ -5133,7 +5200,8 @@ export function ExploreMap({
                       onClick={() => setExplorerPinKind('all')}
                     >
                       <i className="map-toggle-dot map-toggle-dot-all" />
-                      Tout <span>{events.length + venueGroups.length}</span>
+                      {translate(locale, 'map.pinAll')}{' '}
+                      <span>{events.length + venueGroups.length}</span>
                     </button>
                     <button
                       type="button"
@@ -5141,7 +5209,8 @@ export function ExploreMap({
                       onClick={() => setExplorerPinKind('event')}
                     >
                       <i className="map-toggle-dot map-toggle-dot-event" />
-                      Événements <span>{events.length}</span>
+                      {translate(locale, 'nav.events')}{' '}
+                      <span>{events.length}</span>
                     </button>
                     <button
                       type="button"
@@ -5149,7 +5218,8 @@ export function ExploreMap({
                       onClick={() => setExplorerPinKind('venue')}
                     >
                       <i className="map-toggle-dot map-toggle-dot-venue" />
-                      Lieux <span>{venueGroups.length}</span>
+                      {translate(locale, 'nav.venues')}{' '}
+                      <span>{venueGroups.length}</span>
                     </button>
                     {/* Connected map only (DEC-0017) - the anonymous
                         Explorer's identical toggle above deliberately has no
@@ -5165,13 +5235,18 @@ export function ExploreMap({
                     </button>
                   </div>
 
-                  <div className="explorer-map-legend" aria-label="Légende">
-                    <strong>Repères</strong>
+                  <div
+                    className="explorer-map-legend"
+                    aria-label={translate(locale, 'map.legend')}
+                  >
+                    <strong>{translate(locale, 'map.legendMarkers')}</strong>
                     <span>
-                      <i className="legend-event-dot" /> Événement programmé
+                      <i className="legend-event-dot" />{' '}
+                      {translate(locale, 'map.legendEvent')}
                     </span>
                     <span>
-                      <i className="legend-venue-dot" /> Lieu récurrent
+                      <i className="legend-venue-dot" />{' '}
+                      {translate(locale, 'map.legendVenue')}
                     </span>
                   </div>
 
@@ -5214,7 +5289,7 @@ export function ExploreMap({
                     <button
                       type="button"
                       className="map-zoom-btn"
-                      aria-label="Recentrer sur Montréal"
+                      aria-label={translate(locale, 'map.recenterMontreal')}
                       title="Montréal"
                       onClick={() =>
                         connectedMap.current?.flyTo({
@@ -5409,7 +5484,7 @@ export function ExploreMap({
                             }
                             style={{ marginTop: '1rem' }}
                           >
-                            Réessayer
+                            {translate(locale, 'nav.retry')}
                           </button>
                         </div>
                       );
@@ -5502,19 +5577,19 @@ export function ExploreMap({
 
             <div className="bottom-section">
               <div className="section-header">
-                <h2>Événements autour de vous</h2>
+                <h2>{translate(locale, 'landing.nearbyTitle')}</h2>
                 <button
                   type="button"
                   className="view-all"
                   onClick={() => {
                     setListOverride({
-                      title: 'Événements les plus proches de vous',
+                      title: translate(locale, 'landing.nearbyListTitle'),
                       events: carouselEvents.slice(0, 15)
                     });
                     setViewMode('list');
                   }}
                 >
-                  Voir tous les événements{' '}
+                  {translate(locale, 'landing.seeAllEvents')}{' '}
                   <svg
                     width="16"
                     height="16"
@@ -5584,48 +5659,42 @@ export function ExploreMap({
                     </div>
                   </div>
                 ))}
-                {carouselEmpty && <p>Aucun événement trouvé.</p>}
+                {carouselEmpty && (
+                  <p>{translate(locale, 'landing.noEvents')}</p>
+                )}
               </div>
 
               <div className="feature-footer">
                 <div className="feature-item">
                   <div className="feature-icon">⚡</div>
                   <div className="feature-text">
-                    <h4>Carte intelligente</h4>
-                    <p>
-                      Explorez votre ville et découvrez des événements autour de
-                      vous en temps réel.
-                    </p>
+                    <h4>{translate(locale, 'landing.featureMapTitle')}</h4>
+                    <p>{translate(locale, 'landing.featureMapBody')}</p>
                   </div>
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">🔍</div>
                   <div className="feature-text">
-                    <h4>Recherche puissante</h4>
-                    <p>
-                      Trouvez exactement ce que vous cherchez grâce à la
-                      recherche et à nos suggestions.
-                    </p>
+                    <h4>{translate(locale, 'landing.featureSearchTitle')}</h4>
+                    <p>{translate(locale, 'landing.featureSearchBody')}</p>
                   </div>
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">❤️</div>
                   <div className="feature-text">
-                    <h4>Vos favoris</h4>
-                    <p>
-                      Sauvegardez vos événements préférés et ne manquez jamais
-                      une sortie.
-                    </p>
+                    <h4>
+                      {translate(locale, 'landing.featureFavoritesTitle')}
+                    </h4>
+                    <p>{translate(locale, 'landing.featureFavoritesBody')}</p>
                   </div>
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">👥</div>
                   <div className="feature-text">
-                    <h4>Communauté</h4>
-                    <p>
-                      Rejoignez des milliers de passionnés et partagez vos
-                      meilleures découvertes.
-                    </p>
+                    <h4>
+                      {translate(locale, 'landing.featureCommunityTitle')}
+                    </h4>
+                    <p>{translate(locale, 'landing.featureCommunityBody')}</p>
                   </div>
                 </div>
               </div>
@@ -16299,12 +16368,14 @@ function FilterOverlay({
           </div>
           <p className="distance-value">
             {distanceFilterActive
-              ? `Rayon actif : ${distanceKm} km`
-              : `Rayon max (${distanceKm} km) — non appliqué`}
-            {geoStatus === 'pending' && ' · localisation…'}
-            {geoStatus === 'denied' && ' · position non partagée'}
+              ? translate(locale, 'filters.radiusActive', { km: distanceKm })
+              : translate(locale, 'filters.radiusMax', { km: distanceKm })}
+            {geoStatus === 'pending' &&
+              ` · ${translate(locale, 'filters.geoPending')}`}
+            {geoStatus === 'denied' &&
+              ` · ${translate(locale, 'filters.geoDenied')}`}
             {geoStatus === 'unsupported' &&
-              ' · non disponible sur cet appareil'}
+              ` · ${translate(locale, 'filters.geoUnsupported')}`}
           </p>
         </div>
       </fieldset>

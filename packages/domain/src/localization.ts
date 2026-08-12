@@ -517,6 +517,78 @@ const en = {
   'time.daysAgo': '{count}d ago',
   'report.prompt': 'Why are you reporting this content? (optional)',
   'report.sent': 'Report sent.',
+  // The map surface (explore-map.tsx). Marker pickers open only when two
+  // or more pins overlap, so their labels have no singular form.
+  'map.eventsHere': '{count} events at this spot',
+  'map.venuesHere': '{count} venues at this spot',
+  'map.venuesInArea': '{count} venues in this area',
+  'map.eventCount': '{count} event in this area',
+  'map.eventCountPlural': '{count} events in this area',
+  'map.venueCount': '{count} venue in this area',
+  'map.venueCountPlural': '{count} venues in this area',
+  'map.youAreHere': 'You are here',
+  // The shell's navigation: the desktop top bar and the mobile bottom nav
+  // with its Community sheet.
+  'nav.events': 'Events',
+  'nav.venues': 'Venues',
+  'nav.community': 'Community',
+  'nav.forums': 'Forums',
+  'nav.groups': 'Groups',
+  'nav.friends': 'Friends',
+  'nav.messages': 'Messages',
+  'nav.account': 'Account',
+  'nav.about': 'About',
+  'nav.notificationsSoon': 'Notifications (coming soon)',
+  'nav.comingSoon': 'Coming soon',
+  'nav.retry': 'Try again',
+  'view.map': 'Map',
+  'view.list': 'List',
+  'view.calendar': 'Calendar',
+  // The sidebar filter panel, on top of the filters.* keys the overlay
+  // already uses.
+  'filters.reset': 'Reset',
+  'filters.date': 'Date',
+  'filters.categoryLegendHint': 'Each category’s colour matches its pins on the map.',
+  'filters.venueCategory': 'Venue type',
+  'filters.venueDateHint': 'Shows venues with an event in this period.',
+  'filters.radiusActive': 'Active radius: {km} km',
+  'filters.radiusMax': 'Max radius ({km} km) — not applied',
+  'filters.geoPending': 'locating…',
+  'filters.geoDenied': 'location not shared',
+  'filters.geoUnsupported': 'not available on this device',
+  'filters.showAllEvents': 'Show all events',
+  'filters.showFavoritesOnly': 'Show only my favourites',
+  // The map's own chrome: recentre controls, the pin-kind toggles and the
+  // legend. 'Montréal' itself is a proper noun and stays as written.
+  'map.recenterShort': 'Recenter',
+  'map.recenterMontreal': 'Recenter on Montréal',
+  'map.exploreMontreal': 'Explore Montréal',
+  'map.explorePeriod': 'Exploration period',
+  'map.pinAll': 'All',
+  'map.legend': 'Legend',
+  'map.legendMarkers': 'Markers',
+  'map.legendEvent': 'Scheduled event',
+  'map.legendVenue': 'Recurring venue',
+  'map.markerCount': '{count} marker',
+  'map.markerCountPlural': '{count} markers',
+  // The mobile-app promo card in the sidebar.
+  'promo.downloadTitle': 'Download Pulso',
+  'promo.downloadBody': 'Take the city with you.',
+  'promo.comingSoonOn': 'Coming soon on',
+  // The signed-out landing: the nearby carousel and the four feature cards
+  // under it.
+  'landing.nearbyTitle': 'Events near you',
+  'landing.nearbyListTitle': 'Events closest to you',
+  'landing.seeAllEvents': 'See all events',
+  'landing.noEvents': 'No event found.',
+  'landing.featureMapTitle': 'Smart map',
+  'landing.featureMapBody': 'Explore your city and discover events around you in real time.',
+  'landing.featureSearchTitle': 'Powerful search',
+  'landing.featureSearchBody': 'Find exactly what you are looking for with search and our suggestions.',
+  'landing.featureFavoritesTitle': 'Your favourites',
+  'landing.featureFavoritesBody': 'Save the events you love and never miss a night out.',
+  'landing.featureCommunityTitle': 'Community',
+  'landing.featureCommunityBody': 'Join thousands of enthusiasts and share your best finds.',
   'groups.inviteMessage': 'Join the group “{name}” on Pulso!\n{url}',
   'details.linkCopied': 'Link copied to clipboard'
 } as const;
@@ -986,6 +1058,78 @@ const fr = {
   'time.daysAgo': 'il y a {count} j',
   'report.prompt': 'Pourquoi signalez-vous ce contenu ? (optionnel)',
   'report.sent': 'Signalement envoyé.',
+  // The map surface (explore-map.tsx). Marker pickers open only when two
+  // or more pins overlap, so their labels have no singular form.
+  'map.eventsHere': '{count} événements à cet endroit',
+  'map.venuesHere': '{count} lieux à cet endroit',
+  'map.venuesInArea': '{count} lieux dans cette zone',
+  'map.eventCount': '{count} événement dans cette zone',
+  'map.eventCountPlural': '{count} événements dans cette zone',
+  'map.venueCount': '{count} lieu dans cette zone',
+  'map.venueCountPlural': '{count} lieux dans cette zone',
+  'map.youAreHere': 'Vous êtes ici',
+  // The shell's navigation: the desktop top bar and the mobile bottom nav
+  // with its Community sheet.
+  'nav.events': 'Événements',
+  'nav.venues': 'Lieux',
+  'nav.community': 'Communauté',
+  'nav.forums': 'Forums',
+  'nav.groups': 'Groupes',
+  'nav.friends': 'Amis',
+  'nav.messages': 'Messages',
+  'nav.account': 'Compte',
+  'nav.about': 'À propos',
+  'nav.notificationsSoon': 'Notifications (bientôt disponible)',
+  'nav.comingSoon': 'Bientôt disponible',
+  'nav.retry': 'Réessayer',
+  'view.map': 'Carte',
+  'view.list': 'Liste',
+  'view.calendar': 'Calendrier',
+  // The sidebar filter panel, on top of the filters.* keys the overlay
+  // already uses.
+  'filters.reset': 'Réinitialiser',
+  'filters.date': 'Date',
+  'filters.categoryLegendHint': 'La couleur de chaque catégorie correspond à celle des pins sur la carte.',
+  'filters.venueCategory': 'Catégorie de lieu',
+  'filters.venueDateHint': 'Affiche les lieux ayant un événement dans cette période.',
+  'filters.radiusActive': 'Rayon actif : {km} km',
+  'filters.radiusMax': 'Rayon max ({km} km) — non appliqué',
+  'filters.geoPending': 'localisation…',
+  'filters.geoDenied': 'position non partagée',
+  'filters.geoUnsupported': 'non disponible sur cet appareil',
+  'filters.showAllEvents': 'Afficher tous les événements',
+  'filters.showFavoritesOnly': 'Afficher uniquement mes favoris',
+  // The map's own chrome: recentre controls, the pin-kind toggles and the
+  // legend. 'Montréal' itself is a proper noun and stays as written.
+  'map.recenterShort': 'Recentrer',
+  'map.recenterMontreal': 'Recentrer sur Montréal',
+  'map.exploreMontreal': 'Explorer Montréal',
+  'map.explorePeriod': 'Période d’exploration',
+  'map.pinAll': 'Tout',
+  'map.legend': 'Légende',
+  'map.legendMarkers': 'Repères',
+  'map.legendEvent': 'Événement programmé',
+  'map.legendVenue': 'Lieu récurrent',
+  'map.markerCount': '{count} repère',
+  'map.markerCountPlural': '{count} repères',
+  // The mobile-app promo card in the sidebar.
+  'promo.downloadTitle': 'Téléchargez Pulso',
+  'promo.downloadBody': 'Emportez la ville dans votre poche.',
+  'promo.comingSoonOn': 'Bientôt sur',
+  // The signed-out landing: the nearby carousel and the four feature cards
+  // under it.
+  'landing.nearbyTitle': 'Événements autour de vous',
+  'landing.nearbyListTitle': 'Événements les plus proches de vous',
+  'landing.seeAllEvents': 'Voir tous les événements',
+  'landing.noEvents': 'Aucun événement trouvé.',
+  'landing.featureMapTitle': 'Carte intelligente',
+  'landing.featureMapBody': 'Explorez votre ville et découvrez des événements autour de vous en temps réel.',
+  'landing.featureSearchTitle': 'Recherche puissante',
+  'landing.featureSearchBody': 'Trouvez exactement ce que vous cherchez grâce à la recherche et à nos suggestions.',
+  'landing.featureFavoritesTitle': 'Vos favoris',
+  'landing.featureFavoritesBody': 'Sauvegardez vos événements préférés et ne manquez jamais une sortie.',
+  'landing.featureCommunityTitle': 'Communauté',
+  'landing.featureCommunityBody': 'Rejoignez des milliers de passionnés et partagez vos meilleures découvertes.',
   'groups.inviteMessage': 'Rejoins le groupe « {name} » sur Pulso !\n{url}',
   'details.linkCopied': 'Lien copié dans le presse-papier'
 } satisfies Record<MessageKey, string>;
@@ -1025,6 +1169,30 @@ export function translate(
     /\{(\w+)\}/g,
     (_match, name: string) => String(params[name] ?? `{${name}}`)
   );
+}
+
+/**
+ * Picks between a singular and a plural catalogue key using the locale's
+ * real plural rule, and interpolates {count}.
+ *
+ * The two languages disagree about zero: French takes the singular ("0
+ * événement"), English the plural ("0 events"). Callers used to hardcode
+ * one side of that - `count > 1` in the map's result counter, `count === 1`
+ * in the group member and reply counters - so whichever language was not
+ * being looked at got it wrong. Intl.PluralRules knows the rule for both.
+ */
+export function translatePlural(
+  locale: SupportedLocale,
+  count: number,
+  one: MessageKey,
+  other: MessageKey,
+  params: Record<string, string | number> = {}
+): string {
+  const form = new Intl.PluralRules(displayLocale(locale)).select(count);
+  return translate(locale, form === 'one' ? one : other, {
+    count,
+    ...params
+  });
 }
 
 export function getDateFilterLabel(
