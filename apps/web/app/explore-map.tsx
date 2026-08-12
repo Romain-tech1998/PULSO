@@ -4003,6 +4003,7 @@ export function ExploreMap({
           <GroupsPage
             authToken={authToken}
             userId={user.id}
+            locale={locale}
             onOpenEventForum={(eventId) =>
               void openDetails(eventId, {
                 asForumPanel: true,
@@ -4014,6 +4015,7 @@ export function ExploreMap({
           <MessagesPage
             authToken={authToken}
             user={user}
+            locale={locale}
             onOpenEventForum={(eventId) =>
               void openDetails(eventId, {
                 asForumPanel: true,
@@ -12270,10 +12272,12 @@ type MessagesTab = 'discussions' | 'demandes' | 'groupes';
 function MessagesPage({
   authToken,
   user,
+  locale,
   onOpenEventForum
 }: {
   authToken: string | undefined;
   user: User;
+  locale: SupportedLocale;
   onOpenEventForum: (eventId: string) => void;
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -12480,6 +12484,7 @@ function MessagesPage({
           <MessagesGroupsTab
             authToken={authToken}
             selectedGroupId={selectedGroup?.id}
+            locale={locale}
             onSelectGroup={(group) => {
               setSelectedFriend(undefined);
               setSelectedGroup(group);

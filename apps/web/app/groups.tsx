@@ -27,6 +27,8 @@ import type {
   PublicUser
 } from '@pulso/contracts';
 import { GROUP_MODULE_LABELS } from '@pulso/domain';
+import { translate } from '@pulso/domain/localization';
+import type { SupportedLocale } from '@pulso/domain/localization';
 import type { GroupModuleConfig, GroupTypeValue } from '@pulso/domain';
 import maplibregl from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -59,12 +61,15 @@ import {
 export function GroupsPage({
   authToken,
   userId,
+  locale,
   onOpenEventForum
 }: {
   authToken: string | undefined;
   userId: string;
+  locale: SupportedLocale;
   onOpenEventForum: (eventId: string) => void;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [selectedGroup, setSelectedGroup] = useState<Group>();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -114,7 +119,7 @@ export function GroupsPage({
             onClick={() => setSelectedGroup(undefined)}
           >
             <span aria-hidden="true">←</span>
-            Groupes
+            {t('groups.back')}
           </button>
         </div>
         <div className="groups-open-workspace">
@@ -136,9 +141,9 @@ export function GroupsPage({
       <div className="messages-list-column groups-directory-column">
         <header className="groups-page-header">
           <div>
-            <span className="groups-page-eyebrow">Communautés Pulso</span>
-            <h1>Groupes</h1>
-            <p>Des espaces conçus pour passer de l’idée à la sortie.</p>
+            <span className="groups-page-eyebrow">{t('groups.eyebrow')}</span>
+            <h1>{t('groups.title')}</h1>
+            <p>{t('groups.tagline')}</p>
           </div>
           <button
             type="button"
@@ -147,7 +152,7 @@ export function GroupsPage({
             aria-expanded={createOpen}
           >
             <span aria-hidden="true">+</span>
-            Créer
+            {t('groups.create')}
           </button>
         </header>
         {createOpen && (
@@ -160,59 +165,61 @@ export function GroupsPage({
           >
             <div className="groups-create-form-heading">
               <div>
-                <span className="groups-page-eyebrow">Nouveau groupe</span>
-                <strong>Crée ton espace d’organisation</strong>
+                <span className="groups-page-eyebrow">
+                  {t('groups.createEyebrow')}
+                </span>
+                <strong>{t('groups.createHeading')}</strong>
               </div>
               <button
                 type="button"
                 className="text-btn"
                 onClick={() => setCreateOpen(false)}
               >
-                Fermer
+                {t('groups.close')}
               </button>
             </div>
             <label className="groups-create-field">
-              <span>Nom du groupe</span>
+              <span>{t('groups.nameLabel')}</span>
               <input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Ex. Français à Montréal"
+                placeholder={t('groups.namePlaceholder')}
                 maxLength={80}
                 autoFocus
               />
             </label>
             <label className="groups-create-field">
-              <span>Mission du groupe</span>
+              <span>{t('groups.missionLabel')}</span>
               <textarea
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                placeholder="À qui s’adresse le groupe et comment souhaitez-vous organiser les sorties ?"
+                placeholder={t('groups.missionPlaceholder')}
                 maxLength={500}
                 rows={3}
               />
               <small>{description.length}/500</small>
             </label>
             <fieldset className="groups-visibility-choice groups-type-choice">
-              <legend>Quel genre de groupe ?</legend>
+              <legend>{t('groups.typeLegend')}</legend>
               {(
                 [
                   {
                     value: 'community',
                     icon: '◇',
-                    title: 'Communauté',
-                    hint: 'Permanente, autour d’un thème. Ex. Techno Montréal.'
+                    title: t('groups.typeCommunity'),
+                    hint: t('groups.typeCommunityHint')
                   },
                   {
                     value: 'event',
                     icon: '◈',
-                    title: 'Sortie',
-                    hint: 'Une soirée précise, à organiser de bout en bout.'
+                    title: t('groups.typeEvent'),
+                    hint: t('groups.typeEventHint')
                   },
                   {
                     value: 'private_crew',
                     icon: '◆',
-                    title: 'Crew privé',
-                    hint: 'Un petit cercle. Invisible dans Découvrir.'
+                    title: t('groups.typeCrew'),
+                    hint: t('groups.typeCrewHint')
                   }
                 ] as const
               ).map((option) => (
@@ -251,7 +258,7 @@ export function GroupsPage({
               className="groups-visibility-choice"
               disabled={type === 'private_crew'}
             >
-              <legend>Comment peut-on rejoindre ?</legend>
+              <legend>{t('groups.joinLegend')}</legend>
               <label className={visibility === 'open' ? 'active' : ''}>
                 <input
                   type="radio"
@@ -263,8 +270,8 @@ export function GroupsPage({
                   ◎
                 </span>
                 <span>
-                  <strong>Accès libre</strong>
-                  <small>Visible et accessible immédiatement.</small>
+                  <strong>{t('groups.joinOpen')}</strong>
+                  <small>{t('groups.joinOpenHint')}</small>
                 </span>
               </label>
               <label className={visibility === 'restricted' ? 'active' : ''}>
@@ -278,15 +285,13 @@ export function GroupsPage({
                   ◇
                 </span>
                 <span>
-                  <strong>Sur demande</strong>
-                  <small>
-                    Visible, mais chaque entrée doit être approuvée.
-                  </small>
+                  <strong>{t('groups.joinRestricted')}</strong>
+                  <small>{t('groups.joinRestrictedHint')}</small>
                 </span>
               </label>
               {type === 'private_crew' && (
                 <p className="groups-type-note">
-                  Un crew privé se rejoint uniquement sur invitation.
+                  {t('groups.crewNote')}
                 </p>
               )}
             </fieldset>
@@ -295,13 +300,14 @@ export function GroupsPage({
               className="groups-create-submit"
               disabled={creating || !name.trim()}
             >
-              {creating ? 'Création…' : 'Créer le groupe'}
+              {creating ? t('groups.creating') : t('groups.createSubmit')}
             </button>
           </form>
         )}
         <MessagesGroupsTab
           key={listVersion}
           authToken={authToken}
+          locale={locale}
           // Nothing is selected on this branch: picking a group returns the
           // full-page workspace above instead of highlighting a row here.
           selectedGroupId={undefined}
@@ -313,18 +319,19 @@ export function GroupsPage({
         {
           <div className="groups-workspace-empty">
             <div className="groups-workspace-empty-copy">
-              <span className="groups-page-eyebrow">Ton espace collectif</span>
-              <h2>Organiser une sortie ne devrait jamais être compliqué.</h2>
+              <span className="groups-page-eyebrow">
+                {t('groups.emptyEyebrow')}
+              </span>
+              <h2>{t('groups.emptyHeading')}</h2>
               <p>
-                Ouvre un groupe pour retrouver au même endroit les décisions, le
-                programme, les présences, les tâches et la discussion.
+                {t('groups.emptyBody')}
               </p>
               <button
                 type="button"
                 className="groups-create-submit"
                 onClick={() => setCreateOpen(true)}
               >
-                Créer mon premier groupe
+                {t('groups.emptyCta')}
               </button>
             </div>
             <div
@@ -365,12 +372,15 @@ type GroupsSubTab = 'mine' | 'event' | 'discover';
 export function MessagesGroupsTab({
   authToken,
   selectedGroupId,
+  locale,
   onSelectGroup
 }: {
   authToken: string | undefined;
   selectedGroupId: string | undefined;
+  locale: SupportedLocale;
   onSelectGroup: (group: Group) => void;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [subTab, setSubTab] = useState<GroupsSubTab>('mine');
   const [myGroups, setMyGroups] = useState<Group[]>([]);
   const [eventGroups, setEventGroups] = useState<DiscoverGroupEntry[]>([]);
@@ -443,21 +453,21 @@ export function MessagesGroupsTab({
           className={subTab === 'mine' ? 'active' : ''}
           onClick={() => setSubTab('mine')}
         >
-          Mes groupes
+          {t('groups.tabMine')}
         </button>
         <button
           type="button"
           className={subTab === 'event' ? 'active' : ''}
           onClick={() => setSubTab('event')}
         >
-          Événements
+          {t('groups.tabEvents')}
         </button>
         <button
           type="button"
           className={subTab === 'discover' ? 'active' : ''}
           onClick={() => setSubTab('discover')}
         >
-          Découvrir
+          {t('groups.tabDiscover')}
         </button>
       </div>
 
@@ -486,14 +496,14 @@ export function MessagesGroupsTab({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Rechercher un groupe"
-          aria-label="Rechercher un groupe"
+          aria-label={t('groups.searchLabel')}
         />
       </label>
 
       {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger les groupes pour le moment.
+          {t('groups.loadError')}
         </p>
       )}
       {state === 'success' && rows.length === 0 && (
@@ -507,7 +517,7 @@ export function MessagesGroupsTab({
       )}
       {state === 'success' && rows.length > 0 && visibleRows.length === 0 && (
         <p className="list-view-empty">
-          Aucun groupe ne correspond à ta recherche.
+          {t('groups.noMatch')}
         </p>
       )}
       <div className="friends-list groups-directory-list">
@@ -531,10 +541,14 @@ export function MessagesGroupsTab({
                   )}
                 </strong>
                 {group.isModerator && (
-                  <span className="group-directory-admin">Administrateur</span>
+                  <span className="group-directory-admin">
+                    {t('groups.roleAdmin')}
+                  </span>
                 )}
                 <span className="group-directory-access">
-                  {group.visibility === 'restricted' ? 'Sur demande' : 'Libre'}
+                  {group.visibility === 'restricted'
+                    ? t('groups.accessRestricted')
+                    : t('groups.accessOpen')}
                 </span>
               </span>
               {group.description && (
@@ -546,7 +560,9 @@ export function MessagesGroupsTab({
                 <span>
                   {group.memberCount} membre{group.memberCount > 1 ? 's' : ''}
                 </span>
-                <span>{event ? 'Groupe événement' : 'Communauté'}</span>
+                <span>
+                  {event ? t('groups.kindEvent') : t('groups.kindCommunity')}
+                </span>
               </span>
               {event && (
                 <span className="group-directory-event">
