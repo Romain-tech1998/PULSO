@@ -1114,6 +1114,21 @@ export const groupPostSchema = z.object({
   // A message someone wrote, or an outing they proposed into the feed.
   kind: z.enum(['message', 'outing']),
   outingId: z.uuid().optional(),
+  // Present on an outing post: everything its feed card renders, votes
+  // included, so a feed of twenty outings is still one request.
+  outing: z
+    .object({
+      id: z.uuid(),
+      title: z.string().min(1),
+      place: z.string().min(1).optional(),
+      startsAt: z.iso.datetime().optional(),
+      eventId: z.uuid().optional(),
+      yes: z.number().int().min(0),
+      maybe: z.number().int().min(0),
+      no: z.number().int().min(0),
+      myResponse: attendanceResponseSchema.optional()
+    })
+    .optional(),
   author: publicUserSchema,
   body: z.string().min(1),
   createdAt: z.iso.datetime(),

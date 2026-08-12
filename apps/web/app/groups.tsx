@@ -33,7 +33,7 @@ import type {
 import { GROUP_MODULE_LABELS } from '@pulso/domain';
 import type { GroupModuleConfig, GroupTypeValue } from '@pulso/domain';
 import maplibregl from 'maplibre-gl';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   API_BASE_URL,
@@ -1251,6 +1251,121 @@ function GroupOutingBar({
   );
 }
 
+
+/**
+ * An outing as it appears in the feed: what it is, where, when, and the
+ * three answers taken on the spot.
+ *
+ * Attendance is inline rather than in a module of its own because that is
+ * the whole point of the redesign - an outing nobody can answer without
+ * leaving the stream is an outing nobody answers.
+ */
+function GroupOutingCard({
+  groupId,
+  outing,
+  authToken,
+  onAnswered
+}: {
+  groupId: string;
+  outing: NonNullable<GroupPost['outing']>;
+  authToken: string | undefined;
+  onAnswered: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const answer = (response: AttendanceResponse) => {
+    if (!authToken || busy) return;
+    setBusy(true);
+    fetch(`${API_BASE_URL}/groups/${groupId}/outings/${outing.id}/attendance`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ response })
+    })
+      .then((httpResponse) => {
+        if (httpResponse.ok) onAnswered();
+      })
+      .catch(() => {})
+      .finally(() => setBusy(false));
+  };
+
+  const when = outing.startsAt ? new Date(outing.startsAt) : undefined;
+  const counts: Record<AttendanceResponse, number> = {
+    yes: outing.yes,
+    maybe: outing.maybe,
+    no: outing.no
+  };
+
+  return (
+    <div className="group-outing-card">
+      <div className="group-outing-card-head">
+        <span className="group-outing-chip">Sortie</span>
+        <strong>{outing.title}</strong>
+        <span className="group-outing-when">
+          {when
+            ? `${when.toLocaleDateString('fr-CA', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long'
+              })} · ${when.toLocaleTimeString('fr-CA', {
+                hour: '2-digit',
+                minute: '2-digit'
+              })}`
+            : 'Date à définir'}
+          {outing.place ? ` · ${outing.place}` : ''}
+        </span>
+      </div>
+
+      <div className="group-outing-answers">
+        {(
+          [
+            ['yes', "J'y vais"],
+            ['maybe', 'Peut-être'],
+            ['no', 'Non']
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            className={outing.myResponse === value ? 'active' : ''}
+            onClick={() => answer(value)}
+            disabled={busy}
+          >
+            {label}
+            <small>{counts[value]}</small>
+          </button>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        className="group-outing-toggle"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+      >
+        {open ? '▾' : '▸'} Programme, checklist
+      </button>
+      {open && (
+        <div className="group-outing-modules">
+          <GroupScheduleCard
+            groupId={groupId}
+            authToken={authToken}
+            outingId={outing.id}
+          />
+          <GroupChecklistCard
+            groupId={groupId}
+            authToken={authToken}
+            outingId={outing.id}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function GroupDetailContent({
   group,
   authToken,
@@ -1271,6 +1386,12 @@ export function GroupDetailContent({
     'loading'
   );
   const [draft, setDraft] = useState('');
+  const [outingDraft, setOutingDraft] = useState({
+    title: '',
+    place: '',
+    startsAt: ''
+  });
+  const [outingComposerOpen, setOutingComposerOpen] = useState(false);
   const [posting, setPosting] = useState(false);
   const [expandedReplies, setExpandedReplies] = useState<Set<string>>(
     new Set()
@@ -1394,8 +1515,8 @@ export function GroupDetailContent({
       .then(() => {
         setNewOutingTitle('');
         refreshOutings();
-        // The modules now describe a different outing, so what they show
-        // has to be re-read rather than left on screen.
+        // The outing is a post now, so the feed is what has to be re-read.
+        refreshPosts();
         setModulesVersion((version) => version + 1);
       })
       .catch(() => {})
@@ -1989,6 +2110,13 @@ export function GroupDetailContent({
                   rows={3}
                 />
                 <div className="group-main-composer-footer">
+                  <button
+                    type="button"
+                    className="group-composer-outing-trigger"
+                    onClick={() => setOutingComposerOpen((open) => !open)}
+                  >
+                    📅 Proposer une sortie
+                  </button>
                   <span>{draft.length}/2000</span>
                   <button
                     type="submit"
@@ -1999,6 +2127,71 @@ export function GroupDetailContent({
                   </button>
                 </div>
               </form>
+              {outingComposerOpen && (
+                <form
+                  className="group-outing-composer"
+                  onSubmit={(submitEvent) => {
+                    submitEvent.preventDefault();
+                    startOuting({
+                      title: outingDraft.title,
+                      ...(outingDraft.place ? { place: outingDraft.place } : {}),
+                      ...(outingDraft.startsAt
+                        ? {
+                            startsAt: new Date(
+                              outingDraft.startsAt
+                            ).toISOString()
+                          }
+                        : {})
+                    });
+                    setOutingDraft({ title: '', place: '', startsAt: '' });
+                    setOutingComposerOpen(false);
+                  }}
+                >
+                  <input
+                    value={outingDraft.title}
+                    onChange={(changeEvent) =>
+                      setOutingDraft((current) => ({
+                        ...current,
+                        title: changeEvent.target.value
+                      }))
+                    }
+                    placeholder="On fait quoi ? Ex. Techno au Bal du Lezard"
+                    maxLength={120}
+                    autoFocus
+                  />
+                  <div className="group-outing-composer-row">
+                    <input
+                      value={outingDraft.place}
+                      onChange={(changeEvent) =>
+                        setOutingDraft((current) => ({
+                          ...current,
+                          place: changeEvent.target.value
+                        }))
+                      }
+                      placeholder="Où ?"
+                      maxLength={120}
+                    />
+                    <input
+                      type="datetime-local"
+                      value={outingDraft.startsAt}
+                      onChange={(changeEvent) =>
+                        setOutingDraft((current) => ({
+                          ...current,
+                          startsAt: changeEvent.target.value
+                        }))
+                      }
+                      aria-label="Quand ?"
+                    />
+                    <button
+                      type="submit"
+                      className="btn-secondary"
+                      disabled={startingOuting || !outingDraft.title.trim()}
+                    >
+                      Publier
+                    </button>
+                  </div>
+                </form>
+              )}
               <div className="forum-posts group-posts-feed">
                 {postsState === 'loading' && (
                   <p className="list-view-empty">Chargement…</p>
@@ -2019,7 +2212,16 @@ export function GroupDetailContent({
                   </div>
                 )}
                 {postsState === 'success' &&
-                  topLevelPosts.map((post) => (
+                  topLevelPosts.map((post) =>
+                    post.kind === 'outing' && post.outing ? (
+                      <GroupOutingCard
+                        key={post.id}
+                        groupId={group.id}
+                        outing={post.outing}
+                        authToken={authToken}
+                        onAnswered={refreshPosts}
+                      />
+                    ) : (
                     <GroupPostRow
                       key={post.id}
                       post={post}
@@ -2040,7 +2242,8 @@ export function GroupDetailContent({
                       onSubmitReply={() => submitPost(post.id)}
                       posting={posting}
                     />
-                  ))}
+                    )
+                  )}
               </div>
             </section>
           )}
@@ -2208,11 +2411,24 @@ function GroupMeetupCard({ venue }: { venue: GroupMeetupVenue }) {
 // ever guessed or auto-filled.
 function GroupScheduleCard({
   groupId,
-  authToken
+  authToken,
+  outingId
 }: {
   groupId: string;
   authToken: string | undefined;
+  /** Scopes the card to one outing. Absent, the newest one is used. */
+  outingId?: string;
 }) {
+  // Memoised so the fetch callbacks below can depend on it: it changes
+  // when the card is pointed at a different outing, and a stale base would
+  // silently keep reading the previous one.
+  const base = useMemo(
+    () =>
+      outingId
+        ? `${API_BASE_URL}/groups/${groupId}/outings/${outingId}`
+        : `${API_BASE_URL}/groups/${groupId}`,
+    [groupId, outingId]
+  );
   const [items, setItems] = useState<GroupScheduleItem[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
@@ -2224,7 +2440,7 @@ function GroupScheduleCard({
   const refresh = useCallback(() => {
     if (!authToken) return;
     setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/schedule`, {
+    fetch(`${base}/schedule`, {
       headers: { authorization: `Bearer ${authToken}` }
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
@@ -2233,7 +2449,7 @@ function GroupScheduleCard({
         setState('success');
       })
       .catch(() => setState('error'));
-  }, [authToken, groupId]);
+  }, [authToken, base]);
 
   useEffect(() => {
     refresh();
@@ -2242,7 +2458,7 @@ function GroupScheduleCard({
   const addItem = () => {
     if (!authToken || !label.trim() || !time || adding) return;
     setAdding(true);
-    fetch(`${API_BASE_URL}/groups/${groupId}/schedule`, {
+    fetch(`${base}/schedule`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -2427,11 +2643,24 @@ function GroupAttendanceCard({
 // fraction.
 function GroupChecklistCard({
   groupId,
-  authToken
+  authToken,
+  outingId
 }: {
   groupId: string;
   authToken: string | undefined;
+  /** Scopes the card to one outing. Absent, the newest one is used. */
+  outingId?: string;
 }) {
+  // Memoised so the fetch callbacks below can depend on it: it changes
+  // when the card is pointed at a different outing, and a stale base would
+  // silently keep reading the previous one.
+  const base = useMemo(
+    () =>
+      outingId
+        ? `${API_BASE_URL}/groups/${groupId}/outings/${outingId}`
+        : `${API_BASE_URL}/groups/${groupId}`,
+    [groupId, outingId]
+  );
   const [items, setItems] = useState<GroupChecklistItem[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
@@ -2442,7 +2671,7 @@ function GroupChecklistCard({
   const refresh = useCallback(() => {
     if (!authToken) return;
     setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/checklist`, {
+    fetch(`${base}/checklist`, {
       headers: { authorization: `Bearer ${authToken}` }
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
@@ -2451,7 +2680,7 @@ function GroupChecklistCard({
         setState('success');
       })
       .catch(() => setState('error'));
-  }, [authToken, groupId]);
+  }, [authToken, base]);
 
   useEffect(() => {
     refresh();
@@ -2460,7 +2689,7 @@ function GroupChecklistCard({
   const addItem = () => {
     if (!authToken || !label.trim() || adding) return;
     setAdding(true);
-    fetch(`${API_BASE_URL}/groups/${groupId}/checklist`, {
+    fetch(`${base}/checklist`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',

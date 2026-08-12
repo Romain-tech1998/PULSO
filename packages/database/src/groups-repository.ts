@@ -45,6 +45,19 @@ export type GroupVisibility = 'open' | 'restricted' | 'private_invite';
 export type GroupType = 'community' | 'event' | 'private_crew';
 export type GroupMembershipStatus = 'member' | 'pending';
 export type GroupPostKind = 'message' | 'outing';
+
+/** The outing carried by an outing post, with its live attendance. */
+export interface GroupPostOuting {
+  id: string;
+  title: string;
+  place: string | undefined;
+  startsAt: string | undefined;
+  eventId: string | undefined;
+  yes: number;
+  maybe: number;
+  no: number;
+  myResponse: AttendanceResponse | undefined;
+}
 export type AttendanceResponse = 'yes' | 'maybe' | 'no';
 export type GroupVerificationStatus =
   | 'none'
@@ -181,6 +194,8 @@ export interface GroupPost {
   /** A message someone wrote, or an outing they proposed (migration 0042). */
   kind: GroupPostKind;
   outingId: string | undefined;
+  /** Present on an outing post: what the card renders, votes included. */
+  outing?: GroupPostOuting;
   author: PublicUser;
   body: string;
   createdAt: string;
@@ -334,32 +349,38 @@ export interface GroupsRepository {
   unlikePost(postId: string, userId: string): Promise<void>;
   getScheduleItems(
     groupId: string,
-    viewerId: string
+    viewerId: string,
+    outingId?: string
   ): Promise<GroupScheduleItem[]>;
   addScheduleItem(
     groupId: string,
     authorId: string,
     label: string,
-    scheduledAt: string
+    scheduledAt: string,
+    outingId?: string
   ): Promise<void>;
   deleteScheduleItem(itemId: string, authorId: string): Promise<void>;
   getAttendanceSummary(
     groupId: string,
-    viewerId: string
+    viewerId: string,
+    outingId?: string
   ): Promise<GroupAttendanceSummary>;
   setAttendanceResponse(
     groupId: string,
     userId: string,
-    response: AttendanceResponse
+    response: AttendanceResponse,
+    outingId?: string
   ): Promise<void>;
   getChecklistItems(
     groupId: string,
-    viewerId: string
+    viewerId: string,
+    outingId?: string
   ): Promise<GroupChecklistItem[]>;
   addChecklistItem(
     groupId: string,
     authorId: string,
-    label: string
+    label: string,
+    outingId?: string
   ): Promise<void>;
   toggleChecklistCheck(
     itemId: string,
@@ -513,6 +534,14 @@ interface PostRow {
   channel_id: string;
   kind: GroupPostKind;
   outing_id: string | null;
+  outing_title?: string | null;
+  outing_place?: string | null;
+  outing_starts_at?: string | null;
+  outing_event_id?: string | null;
+  outing_yes?: string | null;
+  outing_maybe?: string | null;
+  outing_no?: string | null;
+  outing_my_response?: AttendanceResponse | null;
   body: string;
   created_at: string;
   parent_id: string | null;
@@ -531,6 +560,23 @@ function toGroupPost(row: PostRow): GroupPost {
     channelId: row.channel_id,
     kind: row.kind,
     outingId: row.outing_id ?? undefined,
+    ...(row.outing_id && row.outing_title
+      ? {
+          outing: {
+            id: row.outing_id,
+            title: row.outing_title,
+            place: row.outing_place ?? undefined,
+            startsAt: row.outing_starts_at
+              ? new Date(row.outing_starts_at).toISOString()
+              : undefined,
+            eventId: row.outing_event_id ?? undefined,
+            yes: Number(row.outing_yes ?? 0),
+            maybe: Number(row.outing_maybe ?? 0),
+            no: Number(row.outing_no ?? 0),
+            myResponse: row.outing_my_response ?? undefined
+          }
+        }
+      : {}),
     body: row.body,
     createdAt: new Date(row.created_at).toISOString(),
     parentId: row.parent_id ?? undefined,
@@ -1067,15 +1113,31 @@ export class PostgresGroupsRepository implements GroupsRepository {
               u.id AS author_id, u.display_name, u.avatar_url,
               COALESCE(likes.like_count, 0) AS like_count,
               COALESCE(replies.reply_count, 0) AS reply_count,
-              (my_like.user_id IS NOT NULL) AS liked_by_me
+              (my_like.user_id IS NOT NULL) AS liked_by_me,
+              o.title AS outing_title, o.place AS outing_place,
+              o.starts_at AS outing_starts_at, o.event_id AS outing_event_id,
+              COALESCE(att.yes, 0) AS outing_yes,
+              COALESCE(att.maybe, 0) AS outing_maybe,
+              COALESCE(att.no, 0) AS outing_no,
+              my_att.response AS outing_my_response
        FROM group_posts p
        JOIN users u ON u.id = p.author_id
+       LEFT JOIN group_outings o ON o.id = p.outing_id
+       LEFT JOIN (
+         SELECT outing_id,
+                COUNT(*) FILTER (WHERE response = 'yes') AS yes,
+                COUNT(*) FILTER (WHERE response = 'maybe') AS maybe,
+                COUNT(*) FILTER (WHERE response = 'no') AS no
+         FROM group_attendance_responses GROUP BY outing_id
+       ) att ON att.outing_id = p.outing_id
+       LEFT JOIN group_attendance_responses my_att
+         ON my_att.outing_id = p.outing_id AND my_att.user_id = $2
        LEFT JOIN (SELECT post_id, COUNT(*) AS like_count FROM group_post_likes GROUP BY post_id) likes ON likes.post_id = p.id
        LEFT JOIN (SELECT parent_id, COUNT(*) AS reply_count FROM group_posts WHERE parent_id IS NOT NULL GROUP BY parent_id) replies ON replies.parent_id = p.id
        LEFT JOIN group_post_likes my_like ON my_like.post_id = p.id AND my_like.user_id = $2
        WHERE p.group_id = $1
          AND ($3::uuid IS NULL OR p.channel_id = $3)
-       ORDER BY p.created_at ASC`,
+       ORDER BY p.created_at DESC`,
       [groupId, viewerId, channelId ?? null]
     );
     return result.rows.map(toGroupPost);
@@ -1149,7 +1211,8 @@ export class PostgresGroupsRepository implements GroupsRepository {
 
   async getScheduleItems(
     groupId: string,
-    viewerId: string
+    viewerId: string,
+    outingId?: string
   ): Promise<GroupScheduleItem[]> {
     await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<{
@@ -1162,16 +1225,17 @@ export class PostgresGroupsRepository implements GroupsRepository {
     }>(
       `SELECT id, group_id, label, scheduled_at, created_by, created_at
        FROM group_schedule_items
-       WHERE outing_id = (
-         -- Newest live outing. Several coexist since migration 0042, so
-         -- an unordered subquery here returned more than one row.
-         SELECT id FROM group_outings
-         WHERE group_id = $1 AND archived_at IS NULL
-         ORDER BY created_at DESC
-         LIMIT 1
+       WHERE outing_id = COALESCE(
+         $2::uuid,
+         (
+           SELECT id FROM group_outings
+           WHERE group_id = $1 AND archived_at IS NULL
+           ORDER BY created_at DESC
+           LIMIT 1
+         )
        )
        ORDER BY scheduled_at ASC`,
-      [groupId]
+      [groupId, outingId ?? null]
     );
     return result.rows.map((row) => ({
       id: row.id,
@@ -1187,7 +1251,8 @@ export class PostgresGroupsRepository implements GroupsRepository {
     groupId: string,
     authorId: string,
     label: string,
-    scheduledAt: string
+    scheduledAt: string,
+    outingId?: string
   ): Promise<void> {
     await this.requireMembership(groupId, authorId);
     await this.pool.query(
@@ -1200,7 +1265,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
         label,
         scheduledAt,
         authorId,
-        await this.requireCurrentOuting(groupId)
+        await this.resolveOuting(groupId, outingId)
       ]
     );
   }
@@ -1214,7 +1279,8 @@ export class PostgresGroupsRepository implements GroupsRepository {
 
   async getAttendanceSummary(
     groupId: string,
-    viewerId: string
+    viewerId: string,
+    outingId?: string
   ): Promise<GroupAttendanceSummary> {
     await this.requireMembership(groupId, viewerId);
     const counts = await this.pool.query<{
@@ -1222,28 +1288,30 @@ export class PostgresGroupsRepository implements GroupsRepository {
       count: string;
     }>(
       `SELECT response, COUNT(*) AS count FROM group_attendance_responses
-       WHERE outing_id = (
-         -- Newest live outing. Several coexist since migration 0042, so
-         -- an unordered subquery here returned more than one row.
-         SELECT id FROM group_outings
-         WHERE group_id = $1 AND archived_at IS NULL
-         ORDER BY created_at DESC
-         LIMIT 1
+       WHERE outing_id = COALESCE(
+         $2::uuid,
+         (
+           SELECT id FROM group_outings
+           WHERE group_id = $1 AND archived_at IS NULL
+           ORDER BY created_at DESC
+           LIMIT 1
+         )
        )
        GROUP BY response`,
-      [groupId]
+      [groupId, outingId ?? null]
     );
     const mine = await this.pool.query<{ response: AttendanceResponse }>(
       `SELECT response FROM group_attendance_responses
-       WHERE user_id = $2 AND outing_id = (
-         -- Newest live outing. Several coexist since migration 0042, so
-         -- an unordered subquery here returned more than one row.
-         SELECT id FROM group_outings
-         WHERE group_id = $1 AND archived_at IS NULL
-         ORDER BY created_at DESC
-         LIMIT 1
+       WHERE user_id = $2 AND outing_id = COALESCE(
+         $3::uuid,
+         (
+           SELECT id FROM group_outings
+           WHERE group_id = $1 AND archived_at IS NULL
+           ORDER BY created_at DESC
+           LIMIT 1
+         )
        )`,
-      [groupId, viewerId]
+      [groupId, viewerId, outingId ?? null]
     );
     const summary = { yes: 0, maybe: 0, no: 0 };
     for (const row of counts.rows) summary[row.response] = Number(row.count);
@@ -1253,10 +1321,11 @@ export class PostgresGroupsRepository implements GroupsRepository {
   async setAttendanceResponse(
     groupId: string,
     userId: string,
-    response: AttendanceResponse
+    response: AttendanceResponse,
+    outingId?: string
   ): Promise<void> {
     await this.requireMembership(groupId, userId);
-    const outing = await this.requireCurrentOuting(groupId);
+    const outing = await this.resolveOuting(groupId, outingId);
     await this.pool.query(
       `INSERT INTO group_attendance_responses (group_id, user_id, response, outing_id)
        VALUES ($1, $2, $3, $4)
@@ -1268,7 +1337,8 @@ export class PostgresGroupsRepository implements GroupsRepository {
 
   async getChecklistItems(
     groupId: string,
-    viewerId: string
+    viewerId: string,
+    outingId?: string
   ): Promise<GroupChecklistItem[]> {
     await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<{
@@ -1288,16 +1358,17 @@ export class PostgresGroupsRepository implements GroupsRepository {
        FROM group_checklist_items ci
        LEFT JOIN (SELECT item_id, COUNT(*) AS checked_count FROM group_checklist_checks GROUP BY item_id) checks ON checks.item_id = ci.id
        LEFT JOIN group_checklist_checks my_check ON my_check.item_id = ci.id AND my_check.user_id = $2
-       WHERE ci.outing_id = (
-         -- Newest live outing. Several coexist since migration 0042, so
-         -- an unordered subquery here returned more than one row.
-         SELECT id FROM group_outings
-         WHERE group_id = $1 AND archived_at IS NULL
-         ORDER BY created_at DESC
-         LIMIT 1
+       WHERE ci.outing_id = COALESCE(
+         $3::uuid,
+         (
+           SELECT id FROM group_outings
+           WHERE group_id = $1 AND archived_at IS NULL
+           ORDER BY created_at DESC
+           LIMIT 1
+         )
        )
        ORDER BY ci.created_at ASC`,
-      [groupId, viewerId]
+      [groupId, viewerId, outingId ?? null]
     );
     return result.rows.map((row) => ({
       id: row.id,
@@ -1314,13 +1385,14 @@ export class PostgresGroupsRepository implements GroupsRepository {
   async addChecklistItem(
     groupId: string,
     authorId: string,
-    label: string
+    label: string,
+    outingId?: string
   ): Promise<void> {
     await this.requireMembership(groupId, authorId);
     await this.pool.query(
       `INSERT INTO group_checklist_items (id, group_id, label, created_by, outing_id)
        VALUES ($1, $2, $3, $4, $5)`,
-      [randomUUID(), groupId, label, authorId, await this.requireCurrentOuting(groupId)]
+      [randomUUID(), groupId, label, authorId, await this.resolveOuting(groupId, outingId)]
     );
   }
 
@@ -1705,6 +1777,21 @@ export class PostgresGroupsRepository implements GroupsRepository {
    * and checklist; until then they act on the newest, which is the one a
    * member is looking at.
    */
+  private async resolveOuting(
+    groupId: string,
+    outingId: string | undefined
+  ): Promise<string> {
+    if (!outingId) return this.requireCurrentOuting(groupId);
+    const result = await this.pool.query(
+      `SELECT 1 FROM group_outings WHERE id = $1 AND group_id = $2`,
+      [outingId, groupId]
+    );
+    // An outing from another group is not a permission error, it is a
+    // reference to something that does not exist here.
+    if (result.rows.length === 0) throw new GroupNotFoundError();
+    return outingId;
+  }
+
   private async requireCurrentOuting(groupId: string): Promise<string> {
     const result = await this.pool.query<{ id: string }>(
       `SELECT id FROM group_outings

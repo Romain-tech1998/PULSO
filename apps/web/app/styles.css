@@ -14668,3 +14668,121 @@ a.venue-detail-info-row:hover {
   border-color: rgba(255, 255, 255, 0.45);
   background: rgba(255, 255, 255, 0.12);
 }
+
+/* An outing in the feed. Attendance is inline, not in a module of its own:
+   an outing nobody can answer without leaving the stream is an outing
+   nobody answers. */
+.group-outing-card {
+  margin-bottom: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(130, 79, 234, 0.34);
+  border-radius: 0.9rem;
+  background: rgba(104, 59, 211, 0.09);
+}
+.group-outing-chip {
+  display: inline-block;
+  margin-bottom: 0.3rem;
+  padding: 0.16rem 0.42rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #7042e0, #ee368b);
+  color: #fff;
+  font-size: 0.54rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.group-outing-card-head strong {
+  display: block;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+.group-outing-when {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+}
+.group-outing-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.7rem 0 0.55rem;
+}
+.group-outing-answers button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.group-outing-answers button:hover {
+  color: var(--text-primary);
+}
+.group-outing-answers button.active {
+  border-color: rgba(255, 75, 148, 0.5);
+  background: rgba(255, 75, 148, 0.16);
+  color: #ff9ec4;
+}
+.group-outing-answers small {
+  padding: 0.02rem 0.3rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.64rem;
+}
+.group-outing-toggle {
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.group-outing-toggle:hover {
+  color: var(--text-primary);
+}
+.group-outing-modules {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+/* Proposing an outing from the composer. */
+.group-composer-outing-trigger {
+  margin-right: auto;
+  border: 0;
+  background: none;
+  color: #ff8ab8;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.group-outing-composer {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 0.9rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(130, 79, 234, 0.34);
+  border-radius: 0.8rem;
+  background: rgba(104, 59, 211, 0.08);
+}
+.group-outing-composer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.group-outing-composer input {
+  flex: 1 1 8rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+}

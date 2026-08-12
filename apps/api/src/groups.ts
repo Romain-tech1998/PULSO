@@ -409,6 +409,108 @@ export function registerGroupsRoutes(
     }
   });
 
+  const outingParamsSchema = z.object({ id: z.uuid(), outingId: z.uuid() });
+
+  app.get('/groups/:id/outings/:outingId/attendance', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id, outingId } = outingParamsSchema.parse(request.params);
+    try {
+      const summary = await groupsRepository.getAttendanceSummary(
+        id,
+        user.id,
+        outingId
+      );
+      return groupAttendanceSummarySchema.parse(summary);
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+  });
+
+  app.put('/groups/:id/outings/:outingId/attendance', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id, outingId } = outingParamsSchema.parse(request.params);
+    const { response } = setGroupAttendanceRequestSchema.parse(request.body);
+    try {
+      await groupsRepository.setAttendanceResponse(
+        id,
+        user.id,
+        response,
+        outingId
+      );
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+    return reply.status(204).send();
+  });
+
+  app.get('/groups/:id/outings/:outingId/schedule', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id, outingId } = outingParamsSchema.parse(request.params);
+    try {
+      const items = await groupsRepository.getScheduleItems(
+        id,
+        user.id,
+        outingId
+      );
+      return groupScheduleItemsResponseSchema.parse({ data: items });
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+  });
+
+  app.post('/groups/:id/outings/:outingId/schedule', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id, outingId } = outingParamsSchema.parse(request.params);
+    const { label, scheduledAt } = createGroupScheduleItemRequestSchema.parse(
+      request.body
+    );
+    try {
+      await groupsRepository.addScheduleItem(
+        id,
+        user.id,
+        label,
+        scheduledAt,
+        outingId
+      );
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+    return reply.status(204).send();
+  });
+
+  app.get('/groups/:id/outings/:outingId/checklist', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id, outingId } = outingParamsSchema.parse(request.params);
+    try {
+      const items = await groupsRepository.getChecklistItems(
+        id,
+        user.id,
+        outingId
+      );
+      return groupChecklistItemsResponseSchema.parse({ data: items });
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+  });
+
+  app.post('/groups/:id/outings/:outingId/checklist', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    const { id, outingId } = outingParamsSchema.parse(request.params);
+    const { label } = createGroupChecklistItemRequestSchema.parse(request.body);
+    try {
+      await groupsRepository.addChecklistItem(id, user.id, label, outingId);
+    } catch (error) {
+      return replyGroupError(reply, error);
+    }
+    return reply.status(204).send();
+  });
+
   app.get('/groups/:id/posts', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
