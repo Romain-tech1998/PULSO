@@ -126,30 +126,6 @@ export const GROUP_MODULES = [
 ] as const;
 export type GroupModule = (typeof GROUP_MODULES)[number];
 
-/** What each module is called, and what it does, in the workspace UI. */
-export const GROUP_MODULE_LABELS: Record<
-  GroupModule,
-  { name: string; description: string }
-> = {
-  programme: {
-    name: 'Programme',
-    description: 'Le déroulé de la sortie, heure par heure.'
-  },
-  attendance: {
-    name: 'Qui vient ?',
-    description: 'Les présences réelles, comptées sur les votes des membres.'
-  },
-  meetup_point: {
-    name: 'Point de rendez-vous',
-    description:
-      "Dérivé du lieu réel de l'événement lié. Absent d'un groupe permanent."
-  },
-  checklist: {
-    name: 'Checklist',
-    description: 'Ce que chacun doit préparer, coché individuellement.'
-  }
-};
-
 export const GROUP_TYPES = ['community', 'event', 'private_crew'] as const;
 export type GroupTypeValue = (typeof GROUP_TYPES)[number];
 

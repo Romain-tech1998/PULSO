@@ -26,10 +26,16 @@ import type {
   GroupVisibility,
   PublicUser
 } from '@pulso/contracts';
-import { GROUP_MODULE_LABELS } from '@pulso/domain';
 import { translate } from '@pulso/domain/localization';
-import type { SupportedLocale } from '@pulso/domain/localization';
-import type { GroupModuleConfig, GroupTypeValue } from '@pulso/domain';
+import type {
+  MessageKey,
+  SupportedLocale
+} from '@pulso/domain/localization';
+import type {
+  GroupModule,
+  GroupModuleConfig,
+  GroupTypeValue
+} from '@pulso/domain';
 import maplibregl from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -538,7 +544,7 @@ export function MessagesGroupsTab({
                 <strong>
                   {group.name}
                   {group.verificationStatus === 'verified' && (
-                    <VerifiedBadge compact />
+                    <VerifiedBadge compact locale={locale} />
                   )}
                 </strong>
                 {group.isModerator && (
@@ -720,11 +726,17 @@ export function GroupAvatar({
 
 // Granted by a Pulso administrator, never self-awarded - so it is only
 // rendered for a group whose request was actually approved.
-function VerifiedBadge({ compact }: { compact?: boolean }) {
+function VerifiedBadge({
+  compact,
+  locale
+}: {
+  compact?: boolean;
+  locale: SupportedLocale;
+}) {
   return (
     <span
       className={`group-verified-badge ${compact ? 'compact' : ''}`}
-      title="Groupe vérifié par Pulso"
+      title={translate(locale, 'groups.verifiedTitle')}
     >
       <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
         <path
@@ -740,7 +752,7 @@ function VerifiedBadge({ compact }: { compact?: boolean }) {
           d="M8.5 12.2l2.4 2.4 4.6-4.9"
         />
       </svg>
-      {!compact && <span>Vérifié</span>}
+      {!compact && <span>{translate(locale, 'groups.verified')}</span>}
     </span>
   );
 }
@@ -754,12 +766,15 @@ function VerifiedBadge({ compact }: { compact?: boolean }) {
 function GroupIdentityCard({
   group,
   authToken,
+  locale,
   onGroupUpdated
 }: {
   group: Group;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onGroupUpdated: (group: Group) => void;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -782,10 +797,10 @@ function GroupIdentityCard({
       .catch(async (response: Response) => {
         setError(
           response?.status === 415
-            ? 'Format non supporté. Utilise JPEG, PNG, WebP ou GIF.'
+            ? t('groups.identityPhotoFormatError')
             : response?.status === 413
-              ? 'Photo trop lourde.'
-              : "La photo n'a pas pu être enregistrée."
+              ? t('groups.identityPhotoTooLarge')
+              : t('groups.identityPhotoSaveError')
         );
       })
       .finally(() => setBusy(false));
@@ -803,7 +818,7 @@ function GroupIdentityCard({
           ? onGroupUpdated({ ...group, imageUrl: undefined })
           : Promise.reject()
       )
-      .catch(() => setError("La photo n'a pas pu être retirée."))
+      .catch(() => setError(t('groups.identityPhotoRemoveError')))
       .finally(() => setBusy(false));
   };
 
@@ -824,7 +839,7 @@ function GroupIdentityCard({
         setAskOpen(false);
         setJustification('');
       })
-      .catch(() => setError("La demande n'a pas pu être envoyée."))
+      .catch(() => setError(t('groups.verificationSendError')))
       .finally(() => setBusy(false));
   };
 
@@ -833,8 +848,8 @@ function GroupIdentityCard({
       <div className="group-identity-photo">
         <GroupAvatar group={group} className="group-avatar-xl" />
         <div className="group-identity-photo-actions">
-          <strong>Photo du groupe</strong>
-          <p>Elle apparaît partout où le groupe est listé.</p>
+          <strong>{t('groups.identityPhotoTitle')}</strong>
+          <p>{t('groups.identityPhotoHint')}</p>
           <div>
             <button
               type="button"
@@ -842,7 +857,9 @@ function GroupIdentityCard({
               onClick={() => fileInput.current?.click()}
               disabled={busy}
             >
-              {group.imageUrl ? 'Remplacer' : 'Ajouter une photo'}
+              {group.imageUrl
+                ? t('groups.identityPhotoReplace')
+                : t('groups.identityPhotoAdd')}
             </button>
             {group.imageUrl && (
               <button
@@ -851,7 +868,7 @@ function GroupIdentityCard({
                 onClick={removePhoto}
                 disabled={busy}
               >
-                Retirer
+                {t('groups.identityPhotoRemove')}
               </button>
             )}
           </div>
@@ -871,38 +888,31 @@ function GroupIdentityCard({
 
       <div className="group-identity-verification">
         <div className="group-identity-verification-head">
-          <strong>Vérification Pulso</strong>
-          {group.verificationStatus === 'verified' && <VerifiedBadge />}
+          <strong>{t('groups.verificationHeading')}</strong>
+          {group.verificationStatus === 'verified' && (
+            <VerifiedBadge locale={locale} />
+          )}
         </div>
         {group.verificationStatus === 'verified' && (
-          <p>
-            Ce groupe est vérifié. Le badge est visible partout où il
-            apparaît.
-          </p>
+          <p>{t('groups.verificationVerified')}</p>
         )}
         {group.verificationStatus === 'pending' && (
-          <p>Demande envoyée. Une équipe Pulso va l’examiner.</p>
+          <p>{t('groups.verificationPending')}</p>
         )}
         {group.verificationStatus === 'declined' && (
-          <p>
-            La demande précédente n’a pas été retenue. Tu peux en soumettre
-            une nouvelle.
-          </p>
+          <p>{t('groups.verificationDeclined')}</p>
         )}
         {group.verificationStatus !== 'verified' &&
           group.verificationStatus !== 'pending' &&
           !askOpen && (
             <>
-              <p>
-                Un groupe vérifié inspire confiance aux personnes qui ne le
-                connaissent pas encore.
-              </p>
+              <p>{t('groups.verificationPrompt')}</p>
               <button
                 type="button"
                 className="btn-secondary"
                 onClick={() => setAskOpen(true)}
               >
-                Demander la vérification
+                {t('groups.verificationAsk')}
               </button>
             </>
           )}
@@ -915,7 +925,7 @@ function GroupIdentityCard({
             }}
           >
             <label>
-              <span>Qui êtes-vous et que fait ce groupe ?</span>
+              <span>{t('groups.verificationLabel')}</span>
               <textarea
                 value={justification}
                 onChange={(changeEvent) =>
@@ -923,7 +933,7 @@ function GroupIdentityCard({
                 }
                 maxLength={500}
                 rows={3}
-                placeholder="Ex. Collectif techno actif depuis 2019, 40 soirées par an au Plateau."
+                placeholder={t('groups.verificationPlaceholder')}
                 autoFocus
               />
               <small>{justification.length}/500</small>
@@ -934,14 +944,16 @@ function GroupIdentityCard({
                 className="text-btn"
                 onClick={() => setAskOpen(false)}
               >
-                Annuler
+                {t('groups.verificationCancel')}
               </button>
               <button
                 type="submit"
                 className="groups-create-submit"
                 disabled={busy || !justification.trim()}
               >
-                {busy ? 'Envoi…' : 'Envoyer la demande'}
+                {busy
+                  ? t('groups.verificationSending')
+                  : t('groups.verificationSubmit')}
               </button>
             </div>
           </form>
@@ -960,15 +972,45 @@ function GroupIdentityCard({
  * the copy says exactly that - turning "Qui vient ?" off does not discard
  * anyone's vote. Order here is the order of the cards in "Organiser".
  */
+/**
+ * What each module is called, and what it does, as catalogue keys. The
+ * strings themselves live in both catalogues; this map is only the
+ * module-to-key wiring.
+ */
+const MODULE_LABEL_KEYS: Record<
+  GroupModule,
+  { name: MessageKey; description: MessageKey }
+> = {
+  programme: {
+    name: 'groups.moduleProgrammeName',
+    description: 'groups.moduleProgrammeDescription'
+  },
+  attendance: {
+    name: 'groups.moduleAttendanceName',
+    description: 'groups.moduleAttendanceDescription'
+  },
+  meetup_point: {
+    name: 'groups.moduleMeetupPointName',
+    description: 'groups.moduleMeetupPointDescription'
+  },
+  checklist: {
+    name: 'groups.moduleChecklistName',
+    description: 'groups.moduleChecklistDescription'
+  }
+};
+
 function GroupModulesCard({
   group,
   authToken,
+  locale,
   onGroupUpdated
 }: {
   group: Group;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onGroupUpdated: (group: Group) => void;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -986,7 +1028,7 @@ function GroupModulesCard({
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => onGroupUpdated(groupResponseSchema.parse(json).data))
-      .catch(() => setError("La configuration n'a pas pu être enregistrée."))
+      .catch(() => setError(t('groups.modulesSaveError')))
       .finally(() => setBusy(false));
   };
 
@@ -1015,15 +1057,13 @@ function GroupModulesCard({
   return (
     <div className="group-detail-card group-modules-card">
       <div className="group-modules-card-head">
-        <strong>Modules du groupe</strong>
-        <p>
-          Ce que l’onglet Organiser affiche, et dans quel ordre. Désactiver un
-          module le masque sans effacer ce qu’il contient.
-        </p>
+        <strong>{t('groups.modulesHeading')}</strong>
+        <p>{t('groups.modulesHint')}</p>
       </div>
       <ul className="group-modules-config">
         {group.modulesConfig.map((entry, index) => {
-          const label = GROUP_MODULE_LABELS[entry.module];
+          const label = MODULE_LABEL_KEYS[entry.module];
+          const name = t(label.name);
           const unavailable =
             entry.module === 'meetup_point' && !group.meetupVenue;
           return (
@@ -1036,7 +1076,9 @@ function GroupModulesCard({
                   type="button"
                   onClick={() => move(index, -1)}
                   disabled={busy || index === 0}
-                  aria-label={`Monter ${label.name}`}
+                  aria-label={translate(locale, 'groups.modulesMoveUp', {
+                    name
+                  })}
                 >
                   ↑
                 </button>
@@ -1044,19 +1086,18 @@ function GroupModulesCard({
                   type="button"
                   onClick={() => move(index, 1)}
                   disabled={busy || index === group.modulesConfig.length - 1}
-                  aria-label={`Descendre ${label.name}`}
+                  aria-label={translate(locale, 'groups.modulesMoveDown', {
+                    name
+                  })}
                 >
                   ↓
                 </button>
               </span>
               <span className="group-modules-config-text">
-                <strong>{label.name}</strong>
-                <small>{label.description}</small>
+                <strong>{name}</strong>
+                <small>{t(label.description)}</small>
                 {unavailable && entry.enabled && (
-                  <em>
-                    Ce groupe n’est lié à aucun événement, donc rien à
-                    afficher pour l’instant.
-                  </em>
+                  <em>{t('groups.modulesUnavailable')}</em>
                 )}
               </span>
               <label className="group-modules-config-switch">
@@ -1066,7 +1107,11 @@ function GroupModulesCard({
                   disabled={busy}
                   onChange={() => toggle(entry.module)}
                 />
-                <span>{entry.enabled ? 'Activé' : 'Masqué'}</span>
+                <span>
+                  {entry.enabled
+                    ? t('groups.modulesEnabled')
+                    : t('groups.modulesHidden')}
+                </span>
               </label>
             </li>
           );
@@ -1092,6 +1137,7 @@ function GroupSponsoredBanner({
   placement,
   canDismiss,
   canOrganise,
+  locale,
   onOpenEvent,
   onDismiss,
   onOrganise
@@ -1099,10 +1145,12 @@ function GroupSponsoredBanner({
   placement: GroupSponsoredPlacement;
   canDismiss: boolean;
   canOrganise: boolean;
+  locale: SupportedLocale;
   onOpenEvent: ((eventId: string) => void) | undefined;
   onDismiss: () => void;
   onOrganise: () => void;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const { event } = placement;
   const startsAt = new Date(event.startsAt);
   return (
@@ -1116,16 +1164,18 @@ function GroupSponsoredBanner({
         <div className="group-sponsored-top">
           {/* DEC-0015: always labelled, never presented as a staff pick. */}
           <span className="group-sponsored-tag">
-            Sponsorisé · {placement.sponsorName}
+            {translate(locale, 'groups.sponsoredTag', {
+              sponsor: placement.sponsorName
+            })}
           </span>
           {canDismiss && (
             <button
               type="button"
               className="group-sponsored-dismiss"
               onClick={onDismiss}
-              title="Retirer cette mise en avant du groupe"
+              title={t('groups.sponsoredDismissTitle')}
             >
-              Retirer
+              {t('groups.sponsoredDismiss')}
             </button>
           )}
         </div>
@@ -1153,7 +1203,7 @@ function GroupSponsoredBanner({
             onClick={() => onOpenEvent && onOpenEvent(event.id)}
             disabled={!onOpenEvent}
           >
-            Voir l’événement
+            {t('groups.sponsoredCta')}
           </button>
           {canOrganise && (
             // The bridge: a banner becomes the group's current outing, and
@@ -1163,7 +1213,7 @@ function GroupSponsoredBanner({
               className="group-sponsored-secondary"
               onClick={onOrganise}
             >
-              Organiser cette sortie
+              {t('groups.sponsoredOrganise')}
             </button>
           )}
         </div>
@@ -1283,6 +1333,7 @@ function GroupOutingCard({
             <GroupScheduleCard
               groupId={groupId}
               authToken={authToken}
+              locale={locale}
               outingId={outing.id}
             />
           )}
@@ -1290,6 +1341,7 @@ function GroupOutingCard({
             <GroupChecklistCard
               groupId={groupId}
               authToken={authToken}
+              locale={locale}
               outingId={outing.id}
             />
           )}
@@ -1676,7 +1728,9 @@ export function GroupDetailContent({
             </span>
             <strong className="group-detail-name">
               {group.name}
-              {group.verificationStatus === 'verified' && <VerifiedBadge />}
+              {group.verificationStatus === 'verified' && (
+            <VerifiedBadge locale={locale} />
+          )}
             </strong>
             <div className="group-detail-status-row">
               <span className="group-detail-visibility-badge">
@@ -1923,6 +1977,7 @@ export function GroupDetailContent({
                   placement={placement}
                   canDismiss={group.isModerator}
                   canOrganise={group.isModerator}
+                  locale={locale}
                   onOpenEvent={onOpenEventForum}
                   onDismiss={() => dismissPlacement(placement.id)}
                   onOrganise={() =>
@@ -1936,7 +1991,7 @@ export function GroupDetailContent({
               ))}
 
               {group.meetupVenue && enabledModuleNames.has('meetup_point') && (
-                <GroupMeetupCard venue={group.meetupVenue} />
+                <GroupMeetupCard venue={group.meetupVenue} locale={locale} />
               )}
               {!canWriteHere && (
                 <p className="group-channel-readonly">
@@ -2077,6 +2132,7 @@ export function GroupDetailContent({
                       post={post}
                       userId={userId}
                       authToken={authToken}
+                      locale={locale}
                       onLike={toggleLike}
                       onDelete={removePost}
                       replies={repliesFor(post.id)}
@@ -2177,6 +2233,7 @@ export function GroupDetailContent({
                 <GroupJoinRequestsCard
                   groupId={group.id}
                   authToken={authToken}
+                  locale={locale}
                   onResolved={refreshGroup}
                   showEmpty
                 />
@@ -2194,11 +2251,13 @@ export function GroupDetailContent({
               <GroupModulesCard
                 group={group}
                 authToken={authToken}
+                locale={locale}
                 onGroupUpdated={onGroupUpdated}
               />
               <GroupIdentityCard
                 group={group}
                 authToken={authToken}
+                locale={locale}
                 onGroupUpdated={onGroupUpdated}
               />
             </section>
@@ -2210,6 +2269,7 @@ export function GroupDetailContent({
         <InviteToGroupModal
           group={group}
           authToken={authToken}
+          locale={locale}
           onClose={() => setInviteOpen(false)}
         />
       )}
@@ -2222,7 +2282,14 @@ export function GroupDetailContent({
 // in the app, not a third-party static-image API (no new dependency, no
 // cost). Absent entirely for permanent groups (no event to derive a
 // meetup point from).
-function GroupMeetupCard({ venue }: { venue: GroupMeetupVenue }) {
+function GroupMeetupCard({
+  venue,
+  locale
+}: {
+  venue: GroupMeetupVenue;
+  locale: SupportedLocale;
+}) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -2246,8 +2313,8 @@ function GroupMeetupCard({ venue }: { venue: GroupMeetupVenue }) {
       <div className="group-module-heading">
         <span aria-hidden="true">⌖</span>
         <div>
-          <h3>Point de rendez-vous</h3>
-          <p>Le lieu réel lié à l’événement.</p>
+          <h3>{t('groups.moduleMeetupPointName')}</h3>
+          <p>{t('groups.meetupCardHint')}</p>
         </div>
       </div>
       <div className="group-meetup-map" ref={container} />
@@ -2264,13 +2331,16 @@ function GroupMeetupCard({ venue }: { venue: GroupMeetupVenue }) {
 function GroupScheduleCard({
   groupId,
   authToken,
+  locale,
   outingId
 }: {
   groupId: string;
   authToken: string | undefined;
+  locale: SupportedLocale;
   /** Scopes the card to one outing. Absent, the newest one is used. */
   outingId?: string;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   // Memoised so the fetch callbacks below can depend on it: it changes
   // when the card is pointed at a different outing, and a stale base would
   // silently keep reading the previous one.
@@ -2336,13 +2406,15 @@ function GroupScheduleCard({
       <div className="group-module-heading">
         <span aria-hidden="true">◷</span>
         <div>
-          <h3>Programme</h3>
-          <p>Construisez le déroulé de la sortie.</p>
+          <h3>{t('groups.moduleProgrammeName')}</h3>
+          <p>{t('groups.scheduleHint')}</p>
         </div>
       </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{t('groups.loading')}</p>
+      )}
       {state === 'success' && items.length === 0 && (
-        <p className="list-view-empty">Aucun horaire pour l'instant.</p>
+        <p className="list-view-empty">{t('groups.scheduleEmpty')}</p>
       )}
       {state === 'success' && items.length > 0 && (
         <ul className="group-schedule-list">
@@ -2374,7 +2446,7 @@ function GroupScheduleCard({
         <input
           value={label}
           onChange={(event) => setLabel(event.target.value)}
-          placeholder="Ex: Rendez-vous au bar"
+          placeholder={t('groups.schedulePlaceholder')}
           maxLength={120}
         />
         <button
@@ -2382,7 +2454,7 @@ function GroupScheduleCard({
           className="text-btn"
           disabled={adding || !label.trim() || !time}
         >
-          + Ajouter
+          {t('groups.scheduleAdd')}
         </button>
       </form>
     </div>
@@ -2395,13 +2467,16 @@ function GroupScheduleCard({
 function GroupChecklistCard({
   groupId,
   authToken,
+  locale,
   outingId
 }: {
   groupId: string;
   authToken: string | undefined;
+  locale: SupportedLocale;
   /** Scopes the card to one outing. Absent, the newest one is used. */
   outingId?: string;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   // Memoised so the fetch callbacks below can depend on it: it changes
   // when the card is pointed at a different outing, and a stale base would
   // silently keep reading the previous one.
@@ -2486,13 +2561,15 @@ function GroupChecklistCard({
       <div className="group-module-heading">
         <span aria-hidden="true">✓</span>
         <div>
-          <h3>Checklist</h3>
-          <p>Les choses à prévoir avant de partir.</p>
+          <h3>{t('groups.moduleChecklistName')}</h3>
+          <p>{t('groups.checklistHint')}</p>
         </div>
       </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{t('groups.loading')}</p>
+      )}
       {state === 'success' && items.length === 0 && (
-        <p className="list-view-empty">Aucun item pour l'instant.</p>
+        <p className="list-view-empty">{t('groups.checklistEmpty')}</p>
       )}
       {state === 'success' && items.length > 0 && (
         <ul className="group-checklist-list">
@@ -2523,7 +2600,7 @@ function GroupChecklistCard({
         <input
           value={label}
           onChange={(event) => setLabel(event.target.value)}
-          placeholder="Ex: Tickets"
+          placeholder={t('groups.checklistPlaceholder')}
           maxLength={120}
         />
         <button
@@ -2531,7 +2608,7 @@ function GroupChecklistCard({
           className="text-btn"
           disabled={adding || !label.trim()}
         >
-          + Ajouter un item
+          {t('groups.checklistAdd')}
         </button>
       </form>
     </div>
@@ -2544,14 +2621,17 @@ function GroupChecklistCard({
 function GroupJoinRequestsCard({
   groupId,
   authToken,
+  locale,
   onResolved,
   showEmpty = false
 }: {
   groupId: string;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onResolved: () => void;
   showEmpty?: boolean;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [requests, setRequests] = useState<PublicUser[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
@@ -2594,12 +2674,14 @@ function GroupJoinRequestsCard({
 
   return (
     <div className="group-detail-card group-join-requests-card">
-      <h3>Demandes en attente</h3>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      <h3>{t('groups.requestsHeading')}</h3>
+      {state === 'loading' && (
+        <p className="list-view-empty">{t('groups.loading')}</p>
+      )}
       {state === 'success' && requests.length === 0 && (
         <div className="group-management-empty-inline">
           <span aria-hidden="true">✓</span>
-          <p>Aucune demande à traiter pour le moment.</p>
+          <p>{t('groups.requestsEmpty')}</p>
         </div>
       )}
       {requests.map((request) => (
@@ -2618,14 +2700,14 @@ function GroupJoinRequestsCard({
               className="amis-btn-accept"
               onClick={() => respond(request.id, 'accept')}
             >
-              Accepter
+              {t('groups.requestsAccept')}
             </button>
             <button
               type="button"
               className="amis-btn-ghost"
               onClick={() => respond(request.id, 'decline')}
             >
-              Refuser
+              {t('groups.requestsDecline')}
             </button>
           </div>
         </div>
@@ -2640,12 +2722,15 @@ function GroupJoinRequestsCard({
 function InviteToGroupModal({
   group,
   authToken,
+  locale,
   onClose
 }: {
   group: Group;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onClose: () => void;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [friendsList, setFriendsList] = useState<PublicUser[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
@@ -2678,7 +2763,10 @@ function InviteToGroupModal({
         authorization: `Bearer ${authToken}`
       },
       body: JSON.stringify({
-        body: `Rejoins le groupe « ${group.name} » sur Pulso !\n${url}`
+        body: translate(locale, 'groups.inviteMessage', {
+          name: group.name,
+          url
+        })
       })
     })
       .then((response) => (response.ok ? undefined : Promise.reject()))
@@ -2694,24 +2782,20 @@ function InviteToGroupModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="conversation-modal-header">
-          <strong>Inviter des amis</strong>
+          <strong>{t('groups.invite')}</strong>
           <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
+            {t('groups.close')}
           </button>
         </div>
         <div className="share-friend-list">
           {state === 'loading' && (
-            <p className="list-view-empty">Chargement…</p>
+            <p className="list-view-empty">{t('groups.loading')}</p>
           )}
           {state === 'error' && (
-            <p className="list-view-empty">
-              Impossible de charger vos amis pour le moment.
-            </p>
+            <p className="list-view-empty">{t('groups.inviteLoadError')}</p>
           )}
           {state === 'success' && friendsList.length === 0 && (
-            <p className="list-view-empty">
-              Ajoute des amis pour pouvoir les inviter.
-            </p>
+            <p className="list-view-empty">{t('groups.inviteNoFriends')}</p>
           )}
           {state === 'success' &&
             friendsList.map((friend) => (
@@ -2731,10 +2815,10 @@ function InviteToGroupModal({
                   disabled={sendingTo === friend.id || sentTo.has(friend.id)}
                 >
                   {sentTo.has(friend.id)
-                    ? 'Envoyé ✓'
+                    ? t('groups.inviteSent')
                     : sendingTo === friend.id
-                      ? 'Envoi…'
-                      : 'Inviter'}
+                      ? t('groups.inviteSending')
+                      : t('groups.inviteAction')}
                 </button>
               </div>
             ))}
@@ -2785,6 +2869,7 @@ function GroupPostRow({
   post,
   userId,
   authToken,
+  locale,
   onLike,
   onDelete,
   replies,
@@ -2798,6 +2883,7 @@ function GroupPostRow({
   post: GroupPost;
   userId: string;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onLike: (post: GroupPost) => void;
   onDelete: (postId: string) => void;
   replies: GroupPost[];
@@ -2808,6 +2894,7 @@ function GroupPostRow({
   onSubmitReply: () => void;
   posting: boolean;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   // Groups are a small, personal space between people who already know
   // each other (unlike the public, categorized Forum) - real chat bubbles
   // with a clear "mine vs. theirs" color/side distinction read as personal
@@ -2830,7 +2917,7 @@ function GroupPostRow({
         )}
         <div className="group-bubble-col">
           <span className="group-bubble-author">
-            {mine ? 'Vous' : item.author.displayName}
+            {mine ? t('groups.postAuthorYou') : item.author.displayName}
             <time dateTime={item.createdAt}>
               {formatRelativeTime(item.createdAt)}
             </time>
@@ -2845,7 +2932,9 @@ function GroupPostRow({
               onClick={() => onLike(item)}
             >
               <HeartIcon filled={item.likedByMe} />
-              <span>{item.likedByMe ? 'Aimé' : 'J’aime'}</span>
+              <span>
+                {item.likedByMe ? t('groups.postLiked') : t('groups.postLike')}
+              </span>
               {item.likeCount > 0 && <b>{item.likeCount}</b>}
             </button>
             {!isReply && (
@@ -2855,8 +2944,14 @@ function GroupPostRow({
                 onClick={onToggleExpanded}
               >
                 {item.replyCount === 0
-                  ? 'Répondre'
-                  : `${item.replyCount} réponse${item.replyCount !== 1 ? 's' : ''}`}
+                  ? t('groups.postReply')
+                  : translate(
+                      locale,
+                      item.replyCount === 1
+                        ? 'groups.postReplyCount'
+                        : 'groups.postReplyCountPlural',
+                      { count: item.replyCount }
+                    )}
               </button>
             )}
             {mine ? (
@@ -2865,7 +2960,7 @@ function GroupPostRow({
                 className="text-btn"
                 onClick={() => onDelete(item.id)}
               >
-                Supprimer
+                {t('groups.postDelete')}
               </button>
             ) : (
               <button
@@ -2873,7 +2968,7 @@ function GroupPostRow({
                 className="text-btn"
                 onClick={() => reportContent(authToken, 'group_post', item.id)}
               >
-                Signaler
+                {t('groups.postReport')}
               </button>
             )}
           </div>
@@ -2898,7 +2993,7 @@ function GroupPostRow({
             <textarea
               value={replyDraft}
               onChange={(event) => onReplyDraftChange(event.target.value)}
-              placeholder="Répondre…"
+              placeholder={t('groups.postReplyPlaceholder')}
               maxLength={2000}
               rows={1}
             />
@@ -2907,7 +3002,7 @@ function GroupPostRow({
               className="btn-secondary"
               disabled={posting || !replyDraft.trim()}
             >
-              Répondre
+              {t('groups.postReply')}
             </button>
           </form>
         </div>

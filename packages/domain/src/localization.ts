@@ -402,6 +402,91 @@ const en = {
   'groups.manageRequests': 'Requests',
   'groups.manageOpenTitle': 'This group is open.',
   'groups.manageOpenBody': 'Members join without going through a request.',
+  // The identity card: the group photo, and the verification a moderator
+  // asks for but never grants itself.
+  'groups.identityPhotoTitle': 'Group photo',
+  'groups.identityPhotoHint': 'It appears everywhere the group is listed.',
+  'groups.identityPhotoReplace': 'Replace',
+  'groups.identityPhotoAdd': 'Add a photo',
+  'groups.identityPhotoRemove': 'Remove',
+  'groups.identityPhotoFormatError': 'Unsupported format. Use JPEG, PNG, WebP or GIF.',
+  'groups.identityPhotoTooLarge': 'Photo too large.',
+  'groups.identityPhotoSaveError': 'The photo could not be saved.',
+  'groups.identityPhotoRemoveError': 'The photo could not be removed.',
+  'groups.verificationHeading': 'Pulso verification',
+  'groups.verificationVerified': 'This group is verified. The badge is visible everywhere it appears.',
+  'groups.verificationPending': 'Request sent. A Pulso team will review it.',
+  'groups.verificationDeclined': 'The previous request was not accepted. You can submit a new one.',
+  'groups.verificationPrompt': 'A verified group reassures the people who do not know it yet.',
+  'groups.verificationAsk': 'Ask for verification',
+  'groups.verificationLabel': 'Who are you, and what does this group do?',
+  'groups.verificationPlaceholder': 'e.g. Techno collective active since 2019, 40 nights a year in the Plateau.',
+  'groups.verificationCancel': 'Cancel',
+  'groups.verificationSending': 'Sending…',
+  'groups.verificationSubmit': 'Send the request',
+  'groups.verificationSendError': 'The request could not be sent.',
+  // The modules card, and the module registry it lists. These names and
+  // descriptions lived in GROUP_MODULE_LABELS, French-only; they are copy
+  // the workspace renders, so they belong in the catalogue like the rest.
+  'groups.modulesHeading': 'Group modules',
+  'groups.modulesHint': 'What the Organise tab shows, and in what order. Disabling a module hides it without erasing what it contains.',
+  'groups.modulesSaveError': 'The configuration could not be saved.',
+  'groups.modulesMoveUp': 'Move {name} up',
+  'groups.modulesMoveDown': 'Move {name} down',
+  'groups.modulesUnavailable': 'This group is not linked to any event, so there is nothing to show yet.',
+  'groups.modulesEnabled': 'On',
+  'groups.modulesHidden': 'Hidden',
+  'groups.moduleProgrammeName': 'Schedule',
+  'groups.moduleProgrammeDescription': 'The outing hour by hour.',
+  'groups.moduleAttendanceName': 'Who is coming?',
+  'groups.moduleAttendanceDescription': 'Real attendance, counted from members’ votes.',
+  'groups.moduleMeetupPointName': 'Meeting point',
+  'groups.moduleMeetupPointDescription': 'Derived from the linked event’s real venue. Absent from a permanent group.',
+  'groups.moduleChecklistName': 'Checklist',
+  'groups.moduleChecklistDescription': 'What each person has to prepare, ticked off individually.',
+  // The sponsored placement (DEC-0015 §Future monetization): always
+  // labelled as paid, always naming who paid, always dismissable.
+  'groups.sponsoredTag': 'Sponsored · {sponsor}',
+  'groups.sponsoredDismissTitle': 'Remove this promotion from the group',
+  'groups.sponsoredDismiss': 'Remove',
+  'groups.sponsoredCta': 'See the event',
+  'groups.sponsoredOrganise': 'Organise this outing',
+  // The meetup-point card. Its heading reuses the module name.
+  'groups.meetupCardHint': 'The real venue linked to the event.',
+  // The schedule card. Its heading reuses the module name.
+  'groups.scheduleHint': 'Build the running order for the outing.',
+  'groups.scheduleEmpty': 'No schedule yet.',
+  'groups.schedulePlaceholder': 'e.g. Meet at the bar',
+  'groups.scheduleAdd': '+ Add',
+  // The checklist card. Its heading reuses the module name.
+  'groups.checklistHint': 'The things to sort out before heading off.',
+  'groups.checklistEmpty': 'No item yet.',
+  'groups.checklistPlaceholder': 'e.g. Tickets',
+  'groups.checklistAdd': '+ Add an item',
+  // The join-request queue: the one moderation power a group creator has.
+  'groups.requestsHeading': 'Pending requests',
+  'groups.requestsEmpty': 'No request to handle right now.',
+  'groups.requestsAccept': 'Accept',
+  'groups.requestsDecline': 'Decline',
+  // The invite modal. It never joins anyone on their behalf (DEC-0013):
+  // it sends a direct message carrying a link, in the sender's language.
+  'groups.inviteLoadError': 'Your friends cannot be loaded right now.',
+  'groups.inviteNoFriends': 'Add friends so you can invite them.',
+  'groups.inviteSent': 'Sent ✓',
+  'groups.inviteSending': 'Sending…',
+  'groups.inviteAction': 'Invite',
+  // A post in the feed, and its replies. Plural follows the memberCount
+  // pair above: the caller picks the key, the catalogue holds both forms.
+  'groups.postAuthorYou': 'You',
+  'groups.postLiked': 'Liked',
+  'groups.postLike': 'Like',
+  'groups.postReply': 'Reply',
+  'groups.postReplyCount': '{count} reply',
+  'groups.postReplyCountPlural': '{count} replies',
+  'groups.postReplyPlaceholder': 'Reply…',
+  'groups.postDelete': 'Delete',
+  'groups.postReport': 'Report',
+  'groups.inviteMessage': 'Join the group “{name}” on Pulso!\n{url}',
   'details.linkCopied': 'Link copied to clipboard'
 } as const;
 
@@ -755,6 +840,91 @@ const fr = {
   'groups.manageRequests': 'Demandes',
   'groups.manageOpenTitle': 'Ce groupe est en accès libre.',
   'groups.manageOpenBody': 'Les membres le rejoignent sans passer par une demande.',
+  // The identity card: the group photo, and the verification a moderator
+  // asks for but never grants itself.
+  'groups.identityPhotoTitle': 'Photo du groupe',
+  'groups.identityPhotoHint': 'Elle apparaît partout où le groupe est listé.',
+  'groups.identityPhotoReplace': 'Remplacer',
+  'groups.identityPhotoAdd': 'Ajouter une photo',
+  'groups.identityPhotoRemove': 'Retirer',
+  'groups.identityPhotoFormatError': 'Format non supporté. Utilise JPEG, PNG, WebP ou GIF.',
+  'groups.identityPhotoTooLarge': 'Photo trop lourde.',
+  'groups.identityPhotoSaveError': 'La photo n’a pas pu être enregistrée.',
+  'groups.identityPhotoRemoveError': 'La photo n’a pas pu être retirée.',
+  'groups.verificationHeading': 'Vérification Pulso',
+  'groups.verificationVerified': 'Ce groupe est vérifié. Le badge est visible partout où il apparaît.',
+  'groups.verificationPending': 'Demande envoyée. Une équipe Pulso va l’examiner.',
+  'groups.verificationDeclined': 'La demande précédente n’a pas été retenue. Tu peux en soumettre une nouvelle.',
+  'groups.verificationPrompt': 'Un groupe vérifié inspire confiance aux personnes qui ne le connaissent pas encore.',
+  'groups.verificationAsk': 'Demander la vérification',
+  'groups.verificationLabel': 'Qui êtes-vous et que fait ce groupe ?',
+  'groups.verificationPlaceholder': 'Ex. Collectif techno actif depuis 2019, 40 soirées par an au Plateau.',
+  'groups.verificationCancel': 'Annuler',
+  'groups.verificationSending': 'Envoi…',
+  'groups.verificationSubmit': 'Envoyer la demande',
+  'groups.verificationSendError': 'La demande n’a pas pu être envoyée.',
+  // The modules card, and the module registry it lists. These names and
+  // descriptions lived in GROUP_MODULE_LABELS, French-only; they are copy
+  // the workspace renders, so they belong in the catalogue like the rest.
+  'groups.modulesHeading': 'Modules du groupe',
+  'groups.modulesHint': 'Ce que l’onglet Organiser affiche, et dans quel ordre. Désactiver un module le masque sans effacer ce qu’il contient.',
+  'groups.modulesSaveError': 'La configuration n’a pas pu être enregistrée.',
+  'groups.modulesMoveUp': 'Monter {name}',
+  'groups.modulesMoveDown': 'Descendre {name}',
+  'groups.modulesUnavailable': 'Ce groupe n’est lié à aucun événement, donc rien à afficher pour l’instant.',
+  'groups.modulesEnabled': 'Activé',
+  'groups.modulesHidden': 'Masqué',
+  'groups.moduleProgrammeName': 'Programme',
+  'groups.moduleProgrammeDescription': 'Le déroulé de la sortie, heure par heure.',
+  'groups.moduleAttendanceName': 'Qui vient ?',
+  'groups.moduleAttendanceDescription': 'Les présences réelles, comptées sur les votes des membres.',
+  'groups.moduleMeetupPointName': 'Point de rendez-vous',
+  'groups.moduleMeetupPointDescription': 'Dérivé du lieu réel de l’événement lié. Absent d’un groupe permanent.',
+  'groups.moduleChecklistName': 'Checklist',
+  'groups.moduleChecklistDescription': 'Ce que chacun doit préparer, coché individuellement.',
+  // The sponsored placement (DEC-0015 §Future monetization): always
+  // labelled as paid, always naming who paid, always dismissable.
+  'groups.sponsoredTag': 'Sponsorisé · {sponsor}',
+  'groups.sponsoredDismissTitle': 'Retirer cette mise en avant du groupe',
+  'groups.sponsoredDismiss': 'Retirer',
+  'groups.sponsoredCta': 'Voir l’événement',
+  'groups.sponsoredOrganise': 'Organiser cette sortie',
+  // The meetup-point card. Its heading reuses the module name.
+  'groups.meetupCardHint': 'Le lieu réel lié à l’événement.',
+  // The schedule card. Its heading reuses the module name.
+  'groups.scheduleHint': 'Construisez le déroulé de la sortie.',
+  'groups.scheduleEmpty': 'Aucun horaire pour l’instant.',
+  'groups.schedulePlaceholder': 'Ex. Rendez-vous au bar',
+  'groups.scheduleAdd': '+ Ajouter',
+  // The checklist card. Its heading reuses the module name.
+  'groups.checklistHint': 'Les choses à prévoir avant de partir.',
+  'groups.checklistEmpty': 'Aucun item pour l’instant.',
+  'groups.checklistPlaceholder': 'Ex. Billets',
+  'groups.checklistAdd': '+ Ajouter un item',
+  // The join-request queue: the one moderation power a group creator has.
+  'groups.requestsHeading': 'Demandes en attente',
+  'groups.requestsEmpty': 'Aucune demande à traiter pour le moment.',
+  'groups.requestsAccept': 'Accepter',
+  'groups.requestsDecline': 'Refuser',
+  // The invite modal. It never joins anyone on their behalf (DEC-0013):
+  // it sends a direct message carrying a link, in the sender's language.
+  'groups.inviteLoadError': 'Impossible de charger vos amis pour le moment.',
+  'groups.inviteNoFriends': 'Ajoute des amis pour pouvoir les inviter.',
+  'groups.inviteSent': 'Envoyé ✓',
+  'groups.inviteSending': 'Envoi…',
+  'groups.inviteAction': 'Inviter',
+  // A post in the feed, and its replies. Plural follows the memberCount
+  // pair above: the caller picks the key, the catalogue holds both forms.
+  'groups.postAuthorYou': 'Vous',
+  'groups.postLiked': 'Aimé',
+  'groups.postLike': 'J’aime',
+  'groups.postReply': 'Répondre',
+  'groups.postReplyCount': '{count} réponse',
+  'groups.postReplyCountPlural': '{count} réponses',
+  'groups.postReplyPlaceholder': 'Répondre…',
+  'groups.postDelete': 'Supprimer',
+  'groups.postReport': 'Signaler',
+  'groups.inviteMessage': 'Rejoins le groupe « {name} » sur Pulso !\n{url}',
   'details.linkCopied': 'Lien copié dans le presse-papier'
 } satisfies Record<MessageKey, string>;
 
