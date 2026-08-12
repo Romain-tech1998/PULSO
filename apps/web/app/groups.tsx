@@ -3,10 +3,8 @@
 import {
   discoverGroupsResponseSchema,
   groupChannelsResponseSchema,
-  groupOutingsResponseSchema,
   groupSponsoredPlacementsResponseSchema,
   friendsResponseSchema,
-  groupAttendanceSummarySchema,
   groupChecklistItemsResponseSchema,
   groupJoinRequestsResponseSchema,
   groupMembersResponseSchema,
@@ -18,11 +16,9 @@ import {
 import type {
   AttendanceResponse,
   GroupChannel,
-  GroupOuting,
   GroupSponsoredPlacement,
   DiscoverGroupEntry,
   Group,
-  GroupAttendanceSummary,
   GroupChecklistItem,
   GroupMeetupVenue,
   GroupPost,
@@ -37,7 +33,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   API_BASE_URL,
-  ATTENDANCE_LABELS,
   formatRelativeTime,
   HeartIcon,
   MAP_STYLE_URL,
@@ -677,7 +672,7 @@ export function GroupsBlock({
 // the linked event's actual venue, and member-added schedule/attendance/
 // checklist modules - no online presence, no kick/removal, no content
 // moderation beyond the existing author-only delete (DEC-0013 v1.2).
-type GroupDetailTab = 'organize' | 'discussion' | 'members' | 'manage';
+type GroupDetailTab = 'feed' | 'members' | 'manage';
 
 
 /**
@@ -1159,100 +1154,6 @@ function GroupSponsoredBanner({
 
 
 /**
- * Which outing the modules below are describing, and the way to start the
- * next one. Archiving is what keeps a permanent community usable: without
- * it, week two opens on week one's programme and week one's votes.
- */
-function GroupOutingBar({
-  outings,
-  isModerator,
-  busy,
-  title,
-  onTitleChange,
-  onStart
-}: {
-  outings: GroupOuting[];
-  isModerator: boolean;
-  busy: boolean;
-  title: string;
-  onTitleChange: (value: string) => void;
-  onStart: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const current = outings.find((outing) => !outing.archivedAt);
-  const past = outings.filter((outing) => outing.archivedAt);
-  if (!current) return null;
-
-  return (
-    <div className="group-outing-bar">
-      <div className="group-outing-current">
-        <span className="groups-page-eyebrow">Sortie en cours</span>
-        <strong>{current.title}</strong>
-        {current.startsAt && (
-          <small>
-            {new Date(current.startsAt).toLocaleDateString('fr-CA', {
-              weekday: 'long',
-              day: 'numeric',
-              month: 'long'
-            })}
-          </small>
-        )}
-        {past.length > 0 && (
-          <small className="group-outing-past">
-            {past.length} sortie{past.length > 1 ? 's' : ''} précédente
-            {past.length > 1 ? 's' : ''} conservée
-            {past.length > 1 ? 's' : ''}
-          </small>
-        )}
-      </div>
-      {isModerator &&
-        (open ? (
-          <form
-            className="group-outing-form"
-            onSubmit={(submitEvent) => {
-              submitEvent.preventDefault();
-              onStart();
-              setOpen(false);
-            }}
-          >
-            <input
-              value={title}
-              onChange={(changeEvent) => onTitleChange(changeEvent.target.value)}
-              placeholder="Nom de la prochaine sortie"
-              maxLength={120}
-              autoFocus
-            />
-            <button
-              type="submit"
-              className="btn-secondary"
-              disabled={busy || !title.trim()}
-            >
-              {busy ? 'Création…' : 'Démarrer'}
-            </button>
-            <button
-              type="button"
-              className="text-btn"
-              onClick={() => setOpen(false)}
-            >
-              Annuler
-            </button>
-          </form>
-        ) : (
-          <button
-            type="button"
-            className="text-btn"
-            onClick={() => setOpen(true)}
-            title="Archive la sortie en cours et repart d’une page blanche"
-          >
-            Nouvelle sortie
-          </button>
-        ))}
-    </div>
-  );
-}
-
-
-/**
  * An outing as it appears in the feed: what it is, where, when, and the
  * three answers taken on the spot.
  *
@@ -1264,11 +1165,14 @@ function GroupOutingCard({
   groupId,
   outing,
   authToken,
+  modules,
   onAnswered
 }: {
   groupId: string;
   outing: NonNullable<GroupPost['outing']>;
   authToken: string | undefined;
+  /** Which modules the group turned on, from its registry. */
+  modules: Set<string>;
   onAnswered: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -1340,26 +1244,32 @@ function GroupOutingCard({
         ))}
       </div>
 
-      <button
-        type="button"
-        className="group-outing-toggle"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-      >
-        {open ? '▾' : '▸'} Programme, checklist
-      </button>
+      {(modules.has('programme') || modules.has('checklist')) && (
+        <button
+          type="button"
+          className="group-outing-toggle"
+          onClick={() => setOpen((current) => !current)}
+          aria-expanded={open}
+        >
+          {open ? '▾' : '▸'} Programme, checklist
+        </button>
+      )}
       {open && (
         <div className="group-outing-modules">
-          <GroupScheduleCard
-            groupId={groupId}
-            authToken={authToken}
-            outingId={outing.id}
-          />
-          <GroupChecklistCard
-            groupId={groupId}
-            authToken={authToken}
-            outingId={outing.id}
-          />
+          {modules.has('programme') && (
+            <GroupScheduleCard
+              groupId={groupId}
+              authToken={authToken}
+              outingId={outing.id}
+            />
+          )}
+          {modules.has('checklist') && (
+            <GroupChecklistCard
+              groupId={groupId}
+              authToken={authToken}
+              outingId={outing.id}
+            />
+          )}
         </div>
       )}
     </div>
@@ -1400,8 +1310,6 @@ export function GroupDetailContent({
   const [members, setMembers] = useState<PublicUser[]>([]);
   const [channels, setChannels] = useState<GroupChannel[]>([]);
   const [placements, setPlacements] = useState<GroupSponsoredPlacement[]>([]);
-  const [outings, setOutings] = useState<GroupOuting[]>([]);
-  const [newOutingTitle, setNewOutingTitle] = useState('');
   const [startingOuting, setStartingOuting] = useState(false);
   const [activeChannelId, setActiveChannelId] = useState<string>();
   const [newChannelName, setNewChannelName] = useState('');
@@ -1409,11 +1317,10 @@ export function GroupDetailContent({
   const [addingChannel, setAddingChannel] = useState(false);
   const [joining, setJoining] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [tab, setTab] = useState<GroupDetailTab>('organize');
-  const [modulesVersion, setModulesVersion] = useState(0);
+  const [tab, setTab] = useState<GroupDetailTab>('feed');
 
   useEffect(() => {
-    setTab('organize');
+    setTab('feed');
   }, [group.id]);
 
   const refreshPosts = useCallback(() => {
@@ -1472,20 +1379,6 @@ export function GroupDetailContent({
     refreshPlacements();
   }, [refreshPlacements]);
 
-  const refreshOutings = useCallback(() => {
-    if (!authToken || !group.isMember) return;
-    fetch(`${API_BASE_URL}/groups/${group.id}/outings`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setOutings(groupOutingsResponseSchema.parse(json).data))
-      .catch(() => {});
-  }, [authToken, group.id, group.isMember]);
-
-  useEffect(() => {
-    refreshOutings();
-  }, [refreshOutings]);
-
   /**
    * Starting an outing archives the current one, so the programme,
    * attendance and checklist come back empty while the previous plan stays
@@ -1513,11 +1406,8 @@ export function GroupDetailContent({
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then(() => {
-        setNewOutingTitle('');
-        refreshOutings();
         // The outing is a post now, so the feed is what has to be re-read.
         refreshPosts();
-        setModulesVersion((version) => version + 1);
       })
       .catch(() => {})
       .finally(() => setStartingOuting(false));
@@ -1722,7 +1612,15 @@ export function GroupDetailContent({
     });
   };
 
-  const enabledModules = group.modulesConfig.filter((entry) => entry.enabled);
+  // The module registry now describes what an outing card offers, since
+  // the programme, attendance and checklist belong to an outing rather than
+  // to the group. `meetup_point` stays group-level: it is derived from the
+  // linked event's venue, not from any one outing.
+  const enabledModuleNames = new Set(
+    group.modulesConfig
+      .filter((entry) => entry.enabled)
+      .map((entry) => entry.module)
+  );
   const topLevelPosts = posts.filter((post) => !post.parentId);
   const repliesFor = (postId: string) =>
     posts.filter((post) => post.parentId === postId);
@@ -1876,19 +1774,11 @@ export function GroupDetailContent({
           <nav className="group-detail-tabs" aria-label="Espaces du groupe">
             <button
               type="button"
-              className={tab === 'organize' ? 'active' : ''}
-              onClick={() => setTab('organize')}
-            >
-              <span aria-hidden="true">▦</span>
-              Organiser
-            </button>
-            <button
-              type="button"
-              className={tab === 'discussion' ? 'active' : ''}
-              onClick={() => setTab('discussion')}
+              className={tab === 'feed' ? 'active' : ''}
+              onClick={() => setTab('feed')}
             >
               <span aria-hidden="true">◌</span>
-              Discussion
+              Accueil
               {posts.length > 0 && <small>{posts.length}</small>}
             </button>
             <button
@@ -1917,25 +1807,88 @@ export function GroupDetailContent({
             )}
           </nav>
 
-          {tab === 'organize' && (
-            <section className="group-organize-view">
-              <div className="group-view-heading">
-                <div>
-                  <span className="groups-page-eyebrow">
-                    Tableau d’organisation
-                  </span>
-                  <h2>Préparez la prochaine sortie ensemble.</h2>
-                </div>
-                <p>Chaque action ici est partagée avec tous les membres.</p>
+          {tab === 'feed' && (
+            <section className="group-detail-discussion group-feed-view">
+              <div className="group-feed-channels" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeChannelId === undefined}
+                  className={`group-channel-tab ${
+                    activeChannelId === undefined ? 'active' : ''
+                  }`}
+                  onClick={() => setActiveChannelId(undefined)}
+                >
+                  Tout
+                </button>
+                {channels.map((channel) => (
+                  <button
+                    key={channel.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={channel.id === activeChannelId}
+                    className={`group-channel-tab ${
+                      channel.id === activeChannelId ? 'active' : ''
+                    } ${channel.staffOnly ? 'staff' : ''}`}
+                    onClick={() => setActiveChannelId(channel.id)}
+                  >
+                    <span aria-hidden="true">
+                      {channel.staffOnly ? '◈' : '#'}
+                    </span>
+                    {channel.name}
+                  </button>
+                ))}
+                {group.isModerator &&
+                  activeChannelId &&
+                  channels.length > 1 && (
+                    <button
+                      type="button"
+                      className="group-channel-remove"
+                      onClick={() => removeChannel(activeChannelId)}
+                      title="Supprimer ce fil"
+                      aria-label="Supprimer ce fil"
+                    >
+                      ×
+                    </button>
+                  )}
+                {group.isModerator && (
+                  <form
+                    className="group-channel-add"
+                    onSubmit={(submitEvent) => {
+                      submitEvent.preventDefault();
+                      addChannel();
+                    }}
+                  >
+                    <input
+                      value={newChannelName}
+                      onChange={(changeEvent) =>
+                        setNewChannelName(changeEvent.target.value)
+                      }
+                      placeholder="Nouveau fil"
+                      maxLength={40}
+                      aria-label="Nom du nouveau fil"
+                    />
+                    <label title="Seul l'administrateur peut y écrire">
+                      <input
+                        type="checkbox"
+                        checked={newChannelStaffOnly}
+                        onChange={(changeEvent) =>
+                          setNewChannelStaffOnly(changeEvent.target.checked)
+                        }
+                      />
+                      Annonces
+                    </label>
+                    <button
+                      type="submit"
+                      className="text-btn"
+                      disabled={addingChannel || !newChannelName.trim()}
+                    >
+                      Ajouter
+                    </button>
+                  </form>
+                )}
               </div>
-              <GroupOutingBar
-                outings={outings}
-                isModerator={group.isModerator}
-                busy={startingOuting}
-                title={newOutingTitle}
-                onTitleChange={setNewOutingTitle}
-                onStart={() => startOuting({ title: newOutingTitle })}
-              />
+
               {placements.map((placement) => (
                 <GroupSponsoredBanner
                   key={placement.id}
@@ -1953,141 +1906,10 @@ export function GroupDetailContent({
                   }
                 />
               ))}
-              <div className="group-modules-grid">
-                {enabledModules.map((entry) => {
-                  switch (entry.module) {
-                    case 'meetup_point':
-                      // Derived from the linked event's venue, so a
-                      // permanent group has nothing to draw even when the
-                      // module is on.
-                      return group.meetupVenue ? (
-                        <GroupMeetupCard
-                          key={entry.module}
-                          venue={group.meetupVenue}
-                        />
-                      ) : null;
-                    case 'programme':
-                      return (
-                        <GroupScheduleCard
-                          key={`${entry.module}-${modulesVersion}`}
-                          groupId={group.id}
-                          authToken={authToken}
-                        />
-                      );
-                    case 'attendance':
-                      return (
-                        <GroupAttendanceCard
-                          key={`${entry.module}-${modulesVersion}`}
-                          groupId={group.id}
-                          authToken={authToken}
-                        />
-                      );
-                    case 'checklist':
-                      return (
-                        <GroupChecklistCard
-                          key={`${entry.module}-${modulesVersion}`}
-                          groupId={group.id}
-                          authToken={authToken}
-                        />
-                      );
-                  }
-                })}
-              </div>
-              {enabledModules.length === 0 && placements.length === 0 && (
-                <div className="group-empty-feed">
-                  <span aria-hidden="true">▦</span>
-                  <strong>Aucun module activé.</strong>
-                  <p>
-                    {group.isModerator
-                      ? 'Choisis ce que ce groupe affiche depuis l’onglet Gestion.'
-                      : 'L’administrateur du groupe n’a activé aucun module.'}
-                  </p>
-                </div>
-              )}
-            </section>
-          )}
 
-          {tab === 'discussion' && (
-            <section className="group-detail-discussion">
-              <div className="group-view-heading">
-                <div>
-                  <span className="groups-page-eyebrow">Fil du groupe</span>
-                  <h2>Décidez, échangez, avancez.</h2>
-                </div>
-                <p>
-                  {posts.length} message{posts.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <div className="group-channel-bar">
-                <div className="group-channel-list" role="tablist">
-                  {channels.map((channel) => (
-                    <button
-                      key={channel.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={channel.id === activeChannelId}
-                      className={`group-channel-tab ${
-                        channel.id === activeChannelId ? 'active' : ''
-                      } ${channel.staffOnly ? 'staff' : ''}`}
-                      onClick={() => setActiveChannelId(channel.id)}
-                    >
-                      <span aria-hidden="true">
-                        {channel.staffOnly ? '◈' : '#'}
-                      </span>
-                      {channel.name}
-                      {channel.postCount > 0 && (
-                        <small>{channel.postCount}</small>
-                      )}
-                    </button>
-                  ))}
-                </div>
-                {group.isModerator && (
-                  <form
-                    className="group-channel-add"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      addChannel();
-                    }}
-                  >
-                    <input
-                      value={newChannelName}
-                      onChange={(event) =>
-                        setNewChannelName(event.target.value)
-                      }
-                      placeholder="Nouveau fil"
-                      maxLength={40}
-                      aria-label="Nom du nouveau fil"
-                    />
-                    <label title="Seul l'administrateur peut y écrire">
-                      <input
-                        type="checkbox"
-                        checked={newChannelStaffOnly}
-                        onChange={(event) =>
-                          setNewChannelStaffOnly(event.target.checked)
-                        }
-                      />
-                      Annonces
-                    </label>
-                    <button
-                      type="submit"
-                      className="text-btn"
-                      disabled={addingChannel || !newChannelName.trim()}
-                    >
-                      Ajouter
-                    </button>
-                    {activeChannel && channels.length > 1 && (
-                      <button
-                        type="button"
-                        className="text-btn"
-                        onClick={() => removeChannel(activeChannel.id)}
-                        title={`Supprimer le fil ${activeChannel.name}`}
-                      >
-                        Supprimer
-                      </button>
-                    )}
-                  </form>
-                )}
-              </div>
+              {group.meetupVenue && enabledModuleNames.has('meetup_point') && (
+                <GroupMeetupCard venue={group.meetupVenue} />
+              )}
               {!canWriteHere && (
                 <p className="group-channel-readonly">
                   Ce fil est réservé aux annonces de l’administrateur. Tu peux
@@ -2219,6 +2041,7 @@ export function GroupDetailContent({
                         groupId={group.id}
                         outing={post.outing}
                         authToken={authToken}
+                        modules={enabledModuleNames}
                         onAnswered={refreshPosts}
                       />
                     ) : (
@@ -2533,107 +2356,6 @@ function GroupScheduleCard({
           + Ajouter
         </button>
       </form>
-    </div>
-  );
-}
-
-// "Qui vient ?" - real votes from real members, percentages computed from
-// the real total of votes cast (never simulated, never assumed).
-function GroupAttendanceCard({
-  groupId,
-  authToken
-}: {
-  groupId: string;
-  authToken: string | undefined;
-}) {
-  const [summary, setSummary] = useState<GroupAttendanceSummary>();
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/attendance`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setSummary(groupAttendanceSummarySchema.parse(json));
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken, groupId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const vote = (response: AttendanceResponse) => {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/groups/${groupId}/attendance`, {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ response })
-    }).then(() => refresh());
-  };
-
-  const total = summary ? summary.yes + summary.maybe + summary.no : 0;
-
-  return (
-    <div className="group-detail-card group-module-card group-attendance-card">
-      <div className="group-module-heading">
-        <span aria-hidden="true">◎</span>
-        <div>
-          <h3>Qui vient ?</h3>
-          <p>Une réponse claire par membre.</p>
-        </div>
-      </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'success' && summary && (
-        <>
-          <div className="group-attendance-bars">
-            {(['yes', 'maybe', 'no'] as const).map((key) => {
-              const count = summary[key];
-              const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-              return (
-                <div className="group-attendance-row" key={key}>
-                  <span className="group-attendance-label">
-                    {ATTENDANCE_LABELS[key]}
-                  </span>
-                  <div className="group-attendance-bar-track">
-                    <div
-                      className={`group-attendance-bar-fill group-attendance-${key}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="group-attendance-count">
-                    {count} ({pct}%)
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="group-attendance-total">
-            {total} réponse{total !== 1 ? 's' : ''}
-          </p>
-          <div className="group-attendance-actions">
-            {(['yes', 'maybe', 'no'] as const).map((key) => (
-              <button
-                type="button"
-                key={key}
-                className={`text-btn ${summary.myResponse === key ? 'active' : ''}`}
-                onClick={() => vote(key)}
-              >
-                {ATTENDANCE_LABELS[key]}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
     </div>
   );
 }

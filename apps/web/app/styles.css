@@ -14786,3 +14786,31 @@ a.venue-detail-info-row:hover {
   font: inherit;
   font-size: 0.8rem;
 }
+
+/* The channel row now sits above the feed as a filter rather than being a
+   tab of its own: one stream, narrowed. */
+.group-feed-channels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--brand-border);
+}
+.group-channel-remove {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.group-channel-remove:hover {
+  border-color: rgba(255, 75, 148, 0.4);
+  color: #ff8ab8;
+}
