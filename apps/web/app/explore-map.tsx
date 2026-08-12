@@ -94,7 +94,6 @@ import {
   DEFAULT_DISCOVERY_FILTERS,
   EVENT_CATEGORIES,
   FORUM_CATEGORIES,
-  FORUM_CATEGORY_LABELS,
   getMontrealCalendarDate,
   CATEGORY_COLORS,
   VENUE_CATEGORY_COLORS,
@@ -112,6 +111,7 @@ import {
   LOCALE_COOKIE_NAME,
   translate,
   translatePlural,
+  type MessageKey,
   type SupportedLocale
 } from '@pulso/domain/localization';
 import {
@@ -4005,7 +4005,7 @@ export function ExploreMap({
                   }
                   style={{ marginTop: '1rem' }}
                 >
-                  {translate(locale, 'nav.retry')}
+                  {translate(locale, 'common.retry')}
                 </button>
               </div>
             )}
@@ -4354,7 +4354,7 @@ export function ExploreMap({
                       </CollapsibleFilterGroup>
 
                       <CollapsibleFilterGroup
-                        title="Date"
+                        title={translate(locale, 'filters.date')}
                         collapsed={collapsedSections.has('date')}
                         onToggle={() => toggleSection('date')}
                       >
@@ -4491,7 +4491,7 @@ export function ExploreMap({
                       </CollapsibleFilterGroup>
 
                       <CollapsibleFilterGroup
-                        title="Date"
+                        title={translate(locale, 'filters.date')}
                         collapsed={collapsedSections.has('lieu-date')}
                         onToggle={() => toggleSection('lieu-date')}
                       >
@@ -5484,7 +5484,7 @@ export function ExploreMap({
                             }
                             style={{ marginTop: '1rem' }}
                           >
-                            {translate(locale, 'nav.retry')}
+                            {translate(locale, 'common.retry')}
                           </button>
                         </div>
                       );
@@ -6126,7 +6126,8 @@ function describeNotification(
         text: (
           <>
             <strong>{entry.venueName}</strong>
-            {" vient d'ajouter "}
+            {' '}
+            {translate(locale, 'notif.venueAdded')}{' '}
             <strong>{entry.eventTitle}</strong>
           </>
         ),
@@ -6138,7 +6139,8 @@ function describeNotification(
         text: (
           <>
             <strong>{entry.actorDisplayName}</strong>
-            {" t'a envoyé une demande d'ami"}
+            {' '}
+            {translate(locale, 'notif.friendRequest')}{' '}
           </>
         ),
         detail: formatRelativeTime(entry.createdAt, locale)
@@ -6149,7 +6151,8 @@ function describeNotification(
         text: (
           <>
             <strong>{entry.actorDisplayName}</strong>
-            {" a accepté ta demande d'ami"}
+            {' '}
+            {translate(locale, 'notif.friendAccepted')}{' '}
           </>
         ),
         detail: formatRelativeTime(entry.createdAt, locale)
@@ -6160,7 +6163,8 @@ function describeNotification(
         text: (
           <>
             <strong>{entry.actorDisplayName}</strong>
-            {" t'a envoyé un message"}
+            {' '}
+            {translate(locale, 'notif.messageReceived')}{' '}
           </>
         ),
         detail: formatRelativeTime(entry.createdAt, locale)
@@ -6171,7 +6175,8 @@ function describeNotification(
         text: (
           <>
             <strong>{entry.actorDisplayName}</strong>
-            {' a écrit dans le forum de '}
+            {' '}
+            {translate(locale, 'notif.forumReply')}{' '}
             <strong>{entry.eventTitle}</strong>
           </>
         ),
@@ -6183,7 +6188,8 @@ function describeNotification(
         text: (
           <>
             <strong>{entry.actorDisplayName}</strong>
-            {' demande à gérer '}
+            {' '}
+            {translate(locale, 'notif.organizerRequest')}{' '}
             <strong>{entry.venueName}</strong>
           </>
         ),
@@ -6194,14 +6200,15 @@ function describeNotification(
         icon: 'organisateur',
         text: entry.approved ? (
           <>
-            {'Tu es organisateur vérifié de '}
+            {translate(locale, 'notif.organizerApproved')}{' '}
             <strong>{entry.venueName}</strong>
           </>
         ) : (
           <>
-            {'Ta demande pour '}
+            {translate(locale, 'notif.requestFor')}{' '}
             <strong>{entry.venueName}</strong>
-            {" n'a pas été retenue"}
+            {' '}
+            {translate(locale, 'notif.declined')}
           </>
         ),
         detail: formatRelativeTime(entry.createdAt, locale)
@@ -6212,7 +6219,8 @@ function describeNotification(
         text: (
           <>
             <strong>{entry.actorDisplayName}</strong>
-            {' demande la vérification de '}
+            {' '}
+            {translate(locale, 'notif.groupVerificationRequest')}{' '}
             <strong>{entry.groupName}</strong>
           </>
         ),
@@ -6224,13 +6232,15 @@ function describeNotification(
         text: entry.approved ? (
           <>
             <strong>{entry.groupName}</strong>
-            {' est maintenant un groupe vérifié'}
+            {' '}
+            {translate(locale, 'notif.groupVerified')}{' '}
           </>
         ) : (
           <>
-            {'La vérification de '}
+            {translate(locale, 'notif.groupVerificationOf')}{' '}
             <strong>{entry.groupName}</strong>
-            {" n'a pas été retenue"}
+            {' '}
+            {translate(locale, 'notif.declined')}
           </>
         ),
         detail: formatRelativeTime(entry.createdAt, locale)
@@ -6241,7 +6251,8 @@ function describeNotification(
         text: (
           <>
             <strong>{entry.actorDisplayName}</strong>
-            {' demande à rejoindre '}
+            {' '}
+            {translate(locale, 'notif.groupJoinRequest')}{' '}
             <strong>{entry.groupName}</strong>
           </>
         ),
@@ -6252,7 +6263,7 @@ function describeNotification(
         icon: 'groupes',
         text: (
           <>
-            {'Tu as rejoint '}
+            {translate(locale, 'notif.groupJoined')}{' '}
             <strong>{entry.groupName}</strong>
           </>
         ),
@@ -6264,7 +6275,8 @@ function describeNotification(
         text: (
           <>
             <strong>{entry.eventTitle}</strong>
-            {' commence bientôt à '}
+            {' '}
+            {translate(locale, 'notif.eventStartsSoon')}{' '}
             <strong>{entry.venueName}</strong>
           </>
         ),
@@ -6292,15 +6304,15 @@ function NotificationsPanel({
     <div
       className="notifications-panel"
       role="dialog"
-      aria-label="Notifications"
+      aria-label={translate(locale, 'notif.title')}
     >
       <div className="notifications-panel-header">
-        <h3>Notifications</h3>
+        <h3>{translate(locale, 'notif.title')}</h3>
         <button
           type="button"
           className="close-button"
           onClick={onClose}
-          aria-label="Fermer"
+          aria-label={translate(locale, 'notif.close')}
         >
           <svg
             width="16"
@@ -6315,10 +6327,14 @@ function NotificationsPanel({
         </button>
       </div>
 
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">
+          {translate(locale, 'common.loading')}
+        </p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger tes notifications.
+          {translate(locale, 'notif.loadError')}
         </p>
       )}
       {state === 'success' && notifications.length === 0 && (
@@ -6326,11 +6342,8 @@ function NotificationsPanel({
           <span className="empty-state-icon" aria-hidden="true">
             <BellIcon />
           </span>
-          <p>Rien de neuf</p>
-          <p>
-            Suis un lieu pour être prévenu·e dès qu&apos;il programme quelque
-            chose.
-          </p>
+          <p>{translate(locale, 'notif.emptyTitle')}</p>
+          <p>{translate(locale, 'notif.emptyBody')}</p>
         </div>
       )}
 
@@ -6368,7 +6381,10 @@ function NotificationsPanel({
                 </span>
               </span>
               {unread && (
-                <span className="notifications-row-dot" aria-label="Non lu" />
+                <span
+                  className="notifications-row-dot"
+                  aria-label={translate(locale, 'notif.unread')}
+                />
               )}
             </button>
           );
@@ -6418,7 +6434,7 @@ function PickerList({
       <div className="picker-list-rows">
         {events.length === 0 && (
           <p className="list-view-empty">
-            Aucun événement prévu pour le moment.
+            {translate(locale, 'event.noUpcoming')}
           </p>
         )}
         {events.map((event) => {
@@ -7115,8 +7131,13 @@ function VenueListView({
               </div>
               <span className="venue-card-count">
                 {group.events.length > 0
-                  ? `${group.events.length} événement${group.events.length > 1 ? 's' : ''} à venir`
-                  : 'Aucun événement prévu pour le moment'}
+                  ? translatePlural(
+                      locale,
+                      group.events.length,
+                      'event.upcomingCount',
+                      'event.upcomingCountPlural'
+                    )
+                  : translate(locale, 'event.noUpcoming')}
               </span>
             </div>
           </div>
@@ -11726,9 +11747,17 @@ function DashboardHome({
                   {forum.lastPostExcerpt}
                 </span>
                 <span className="active-forum-row-meta">
-                  {FORUM_CATEGORY_LABELS[forum.category]} · {forum.postCount}{' '}
-                  message
-                  {forum.postCount !== 1 ? 's' : ''}
+                  {translate(
+                    locale,
+                    FORUM_ROOM_PRESENTATION[forum.category].label
+                  )}{' '}
+                  ·{' '}
+                  {translatePlural(
+                    locale,
+                    forum.postCount,
+                    'forum.messageCount',
+                    'forum.messageCountPlural'
+                  )}
                 </span>
               </button>
             ))}
@@ -12074,7 +12103,9 @@ function ForumDiscoverCard({
           className={`forum-discover-activity ${postCount > 0 ? 'active' : ''}`}
         >
           <span aria-hidden="true" />
-          {postCount > 0 ? 'Discussion active' : 'À lancer'}
+          {postCount > 0
+            ? translate(locale, 'forum.discoverActive')
+            : translate(locale, 'forum.discoverToStart')}
         </span>
       </div>
       <div className="forum-discover-card-body">
@@ -12089,10 +12120,20 @@ function ForumDiscoverCard({
         </span>
         <span className="forum-discover-card-members">
           <span>
-            {postCount} message{postCount !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              postCount,
+              'forum.messageCount',
+              'forum.messageCountPlural'
+            )}
           </span>
           <span>
-            {memberCount} participant{memberCount !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              memberCount,
+              'forum.participantCount',
+              'forum.participantCountPlural'
+            )}
           </span>
         </span>
         {lastPostExcerpt ? (
@@ -12109,7 +12150,7 @@ function ForumDiscoverCard({
           </span>
         ) : (
           <span className="forum-discover-card-last forum-discover-card-empty">
-            Lance la première discussion pour cet événement.
+            {translate(locale, 'forum.discoverStartFirst')}
           </span>
         )}
         <span className="forum-discover-card-cta">
@@ -12135,7 +12176,9 @@ function ForumDiscoverSpotlight({
       type="button"
       className="forum-discover-spotlight"
       onClick={onOpen}
-      aria-label={`Ouvrir la discussion mise en avant pour ${event.title}`}
+      aria-label={translate(locale, 'forum.openSpotlight', {
+        title: event.title
+      })}
     >
       <span
         className="forum-discover-spotlight-cover"
@@ -12165,7 +12208,7 @@ function ForumDiscoverSpotlight({
       </span>
       <span className="forum-discover-spotlight-content">
         <span className="forum-discover-section-eyebrow">
-          Discussion à découvrir
+          {translate(locale, 'forum.discoverTitle')}
         </span>
         <strong>{event.title}</strong>
         <span className="forum-discover-spotlight-meta">
@@ -12175,18 +12218,31 @@ function ForumDiscoverSpotlight({
         </span>
         <span className="forum-discover-spotlight-excerpt">
           {lastPostExcerpt ??
-            'La conversation est ouverte. Sois la première personne à lancer le sujet.'}
+            translate(locale, 'forum.discoverOpen')}
         </span>
         <span className="forum-discover-spotlight-footer">
           <span>
-            <b>{postCount}</b> message{postCount !== 1 ? 's' : ''}
+            <b>{postCount}</b>{' '}
+            {translatePlural(
+              locale,
+              postCount,
+              'forum.messageWord',
+              'forum.messageWordPlural'
+            )}
           </span>
           <span>
-            <b>{memberCount}</b> participant{memberCount !== 1 ? 's' : ''}
+            <b>{memberCount}</b>{' '}
+            {translatePlural(
+              locale,
+              memberCount,
+              'forum.participantWord',
+              'forum.participantWordPlural'
+            )}
           </span>
           {lastPostAt && <span>{formatRelativeTime(lastPostAt, locale)}</span>}
           <span className="forum-discover-spotlight-cta">
-            Entrer dans la discussion <span aria-hidden="true">→</span>
+            {translate(locale, 'forum.enterDiscussion')}{' '}
+            <span aria-hidden="true">→</span>
           </span>
         </span>
       </span>
@@ -12220,44 +12276,48 @@ function ActiveForumsPage({
       <section className="forum-discover-hero">
         <div className="forum-discover-hero-copy">
           <span className="forum-discover-hero-eyebrow">
-            La communauté Pulso · Montréal
+            {translate(locale, 'forum.communityTitle')}
           </span>
-          <h1>Les discussions qui donnent envie de sortir.</h1>
-          <p>
-            Trouve avec qui y aller, échange les bons plans et retrouve les
-            personnes qui font vivre chaque événement.
-          </p>
+          <h1>{translate(locale, 'forum.heroTitle')}</h1>
+          <p>{translate(locale, 'forum.communityBody')}</p>
           <a href="#forum-list" className="forum-discover-hero-cta">
-            Explorer les discussions <span aria-hidden="true">↓</span>
+            {translate(locale, 'forum.heroCta')}{' '}
+            <span aria-hidden="true">↓</span>
           </a>
         </div>
         <div
           className="forum-discover-hero-community"
-          aria-label="Salons disponibles"
+          aria-label={translate(locale, 'forum.roomsAvailable')}
         >
           <span className="forum-discover-orbit forum-discover-orbit-main">
-            <b>Forum</b>
-            <small>par événement</small>
+            <b>{translate(locale, 'forum.orbitForum')}</b>
+            <small>{translate(locale, 'forum.perEvent')}</small>
           </span>
-          <span className="forum-discover-orbit room-general">Discussion</span>
+          <span className="forum-discover-orbit room-general">
+            {translate(locale, 'forum.orbitDiscussion')}
+          </span>
           <span className="forum-discover-orbit room-partners">
-            Sortir ensemble
+            {translate(locale, 'forum.orbitTogether')}
           </span>
-          <span className="forum-discover-orbit room-tickets">Billets</span>
-          <span className="forum-discover-orbit room-find">Se retrouver</span>
+          <span className="forum-discover-orbit room-tickets">
+            {translate(locale, 'forum.orbitTickets')}
+          </span>
+          <span className="forum-discover-orbit room-find">
+            {translate(locale, 'forum.orbitFindEachOther')}
+          </span>
         </div>
         <div className="forum-discover-hero-stats">
           <span>
             <b>{entries.length}</b>
-            événements
+            {translate(locale, 'forum.statEvents')}
           </span>
           <span>
             <b>{totalMessages}</b>
-            messages
+            {translate(locale, 'forum.statMessages')}
           </span>
           <span>
             <b>{activeForumCount}</b>
-            forums actifs
+            {translate(locale, 'forum.statActive')}
           </span>
         </div>
       </section>
@@ -12266,20 +12326,23 @@ function ActiveForumsPage({
         <div className="forum-discover-browser-heading">
           <div>
             <span className="forum-discover-section-eyebrow">
-              À toi de choisir
+              {translate(locale, 'forum.yourChoice')}
             </span>
-            <h2>Explore les forums</h2>
+            <h2>{translate(locale, 'forum.browseTitle')}</h2>
           </div>
-          <p>Une discussion dédiée à chaque événement à venir.</p>
+          <p>{translate(locale, 'forum.oneDiscussionPerEvent')}</p>
         </div>
-        <div className="forum-discover-filters" aria-label="Filtrer les forums">
+        <div
+          className="forum-discover-filters"
+          aria-label={translate(locale, 'forum.filterLabel')}
+        >
           <button
             type="button"
             className={filter === 'mine' ? 'active' : ''}
             onClick={() => setFilter('mine')}
             aria-pressed={filter === 'mine'}
           >
-            Mes forums
+            {translate(locale, 'forum.filterMine')}
           </button>
           <button
             type="button"
@@ -12287,7 +12350,7 @@ function ActiveForumsPage({
             onClick={() => setFilter('popular')}
             aria-pressed={filter === 'popular'}
           >
-            Les plus actifs
+            {translate(locale, 'forum.filterPopular')}
           </button>
           {EVENT_CATEGORIES.filter((category) => category !== 'other').map(
             (category) => (
@@ -12304,21 +12367,22 @@ function ActiveForumsPage({
           )}
         </div>
       </section>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger les forums pour le moment.
+          {translate(locale, 'forum.loadError')}
         </p>
       )}
       {state === 'success' && entries.length === 0 && filter === 'mine' && (
         <p className="list-view-empty">
-          Aucun forum pour l'instant. Ajoute des favoris ou marque ta
-          participation à un événement pour en voir apparaître ici.
+          {translate(locale, 'forum.emptyMine')}
         </p>
       )}
       {state === 'success' && entries.length === 0 && filter !== 'mine' && (
         <p className="list-view-empty">
-          Aucun événement à venir pour le moment.
+          {translate(locale, 'forum.noUpcomingEvents')}
         </p>
       )}
       {state === 'success' && featuredEntry && (
@@ -17150,7 +17214,9 @@ function EventDetails({
                       : onSetAttendance('private')
                   }
                 >
-                  {attendanceVisibility ? '✓ Vous y allez' : "🎟️ J'y vais"}
+                  {attendanceVisibility
+                ? translate(locale, 'forum.attendanceGoing')
+                : translate(locale, 'forum.attendanceGo')}
                 </button>
                 {attendanceVisibility && (
                   <AttendanceVisibilityToggle
@@ -17326,12 +17392,12 @@ function ForumTeaser({
 type ForumPanelTab =
   'discussion' | 'evenement' | 'membres' | 'photos' | 'apropos';
 
-const FORUM_PANEL_TAB_LABELS: Record<ForumPanelTab, string> = {
-  discussion: 'Discussion',
-  evenement: 'Événement',
-  membres: 'Membres',
-  photos: 'Photos',
-  apropos: 'À propos'
+const FORUM_PANEL_TAB_KEYS: Record<ForumPanelTab, MessageKey> = {
+  discussion: 'forum.tabDiscussion',
+  evenement: 'forum.tabEvent',
+  membres: 'forum.tabMembers',
+  photos: 'forum.tabPhotos',
+  apropos: 'forum.tabAbout'
 };
 
 // The dedicated Forum panel (Phase 4.8 follow-up) - opened specifically
@@ -17465,7 +17531,10 @@ function ForumPanel({
   };
 
   return (
-    <div className="forum-panel-layout" aria-label="Forum de l'événement">
+    <div
+      className="forum-panel-layout"
+      aria-label={translate(locale, 'forum.panelLabel')}
+    >
       <div className="forum-panel-main">
         <div className="forum-panel-hero-wrap">
           <button type="button" className="forum-panel-back" onClick={onBack}>
@@ -17507,7 +17576,9 @@ function ForumPanel({
                   : onSetAttendance('private')
               }
             >
-              {attendanceVisibility ? '✓ Vous y allez' : "🎟️ J'y vais"}
+              {attendanceVisibility
+                ? translate(locale, 'forum.attendanceGoing')
+                : translate(locale, 'forum.attendanceGo')}
             </button>
             {attendanceVisibility && (
               <AttendanceVisibilityToggle
@@ -17522,7 +17593,9 @@ function ForumPanel({
               disabled={meetupLoading}
             >
               🤝{' '}
-              {meetupLoading ? 'Un instant…' : "Rencontrer avant l'événement"}
+              {meetupLoading
+                ? translate(locale, 'forum.meetupLoading')
+                : translate(locale, 'forum.meetupCta')}
             </button>
           </div>
         )}
@@ -17563,7 +17636,7 @@ function ForumPanel({
               className={tab === tabId ? 'active' : ''}
               onClick={() => setTab(tabId)}
             >
-              {FORUM_PANEL_TAB_LABELS[tabId]}
+              {translate(locale, FORUM_PANEL_TAB_KEYS[tabId])}
             </button>
           ))}
         </div>
@@ -17572,7 +17645,7 @@ function ForumPanel({
           <div className="details-section">
             {!user ? (
               <SignInPrompt
-                message="Connectez-vous pour lire et participer au forum de cet événement."
+                message={translate(locale, 'forum.signInDiscussion')}
                 onLogin={onLogin}
               />
             ) : (
@@ -17604,13 +17677,12 @@ function ForumPanel({
             )}
             {membersState === 'error' && (
               <p className="list-view-empty">
-                Impossible de charger les membres pour le moment.
+                {translate(locale, 'forum.membersLoadError')}
               </p>
             )}
             {membersState === 'success' && members.length === 0 && (
               <p className="list-view-empty">
-                Personne n'a encore écrit ici. Lance la discussion dans l'onglet
-                Discussion !
+                {translate(locale, 'forum.emptyDiscussion')}
               </p>
             )}
             {membersState === 'success' && members.length > 0 && (
@@ -17638,7 +17710,7 @@ function ForumPanel({
           <div className="details-section">
             {!user ? (
               <SignInPrompt
-                message="Connectez-vous pour voir et partager des photos de cet événement."
+                message={translate(locale, 'forum.signInPhotos')}
                 onLogin={onLogin}
               />
             ) : (
@@ -17646,6 +17718,7 @@ function ForumPanel({
                 eventId={event.id}
                 authToken={authToken}
                 userId={user.id}
+                locale={locale}
               />
             )}
           </div>
@@ -17658,10 +17731,11 @@ function ForumPanel({
                 💬
               </span>
               <div>
-                <strong>Un espace pour cet événement</strong>
+                <strong>{translate(locale, 'forum.aboutSpaceTitle')}</strong>
                 <p>
-                  Discutez de « {event.title} », posez vos questions et trouvez
-                  des partenaires pour la soirée.
+                  {translate(locale, 'forum.aboutSpaceBody', {
+                    title: event.title
+                  })}
                 </p>
               </div>
             </div>
@@ -17670,11 +17744,8 @@ function ForumPanel({
                 ✏️
               </span>
               <div>
-                <strong>Un message, une fois</strong>
-                <p>
-                  Un message publié n'est pas modifiable après coup — seulement
-                  supprimable par son auteur.
-                </p>
+                <strong>{translate(locale, 'forum.aboutOnceTitle')}</strong>
+                <p>{translate(locale, 'forum.aboutOnceBody')}</p>
               </div>
             </div>
             <div className="forum-about-card">
@@ -17682,11 +17753,10 @@ function ForumPanel({
                 🎟️
               </span>
               <div>
-                <strong>Revente entre particuliers</strong>
-                <p>
-                  La revente de billets entre participants reste entièrement
-                  pair-à-pair — Pulso n'y est jamais partie prenante.
-                </p>
+                <strong>
+                  {translate(locale, 'forum.aboutResaleTitle')}
+                </strong>
+                <p>{translate(locale, 'forum.aboutResaleBody')}</p>
               </div>
             </div>
             <div className="forum-about-card">
@@ -17694,11 +17764,10 @@ function ForumPanel({
                 🚩
               </span>
               <div>
-                <strong>Signalement</strong>
-                <p>
-                  Chaque message peut être signalé. Restez courtois·e envers les
-                  autres participants.
-                </p>
+                <strong>
+                  {translate(locale, 'forum.aboutReportTitle')}
+                </strong>
+                <p>{translate(locale, 'forum.aboutReportBody')}</p>
               </div>
             </div>
           </div>
@@ -17718,7 +17787,7 @@ function ForumPanel({
 
       <aside className="forum-panel-rail">
         <div className="forum-panel-rail-card">
-          <h3>À propos de l'événement</h3>
+          <h3>{translate(locale, 'forum.aboutEvent')}</h3>
           <div className="forum-panel-rail-event">
             <div
               className="forum-panel-rail-thumb"
@@ -17749,7 +17818,7 @@ function ForumPanel({
             className="text-btn"
             onClick={() => setTab('evenement')}
           >
-            Voir l'événement
+            {translate(locale, 'forum.seeEvent')}
           </button>
         </div>
 
@@ -17777,17 +17846,19 @@ function ForumPanel({
               </span>
             </div>
           ) : (
-            <p className="list-view-empty">Personne n'a encore écrit ici.</p>
+            <p className="list-view-empty">
+              {translate(locale, 'forum.empty')}
+            </p>
           )}
         </div>
 
         <div className="forum-panel-rail-card">
-          <h3>Règles du forum</h3>
+          <h3>{translate(locale, 'forum.rulesTitle')}</h3>
           <ul className="forum-panel-rail-rules">
             <li>Respect et bienveillance avant tout</li>
-            <li>Pas de spam ni de publicité</li>
-            <li>Revente de billets uniquement pair-à-pair</li>
-            <li>Reste sur le sujet de l'événement</li>
+            <li>{translate(locale, 'forum.ruleNoSpam')}</li>
+            <li>{translate(locale, 'forum.ruleResale')}</li>
+            <li>{translate(locale, 'forum.ruleOnTopic')}</li>
           </ul>
         </div>
 
@@ -17823,11 +17894,13 @@ function ForumPanel({
 function EventPhotosTab({
   eventId,
   authToken,
-  userId
+  userId,
+  locale
 }: {
   eventId: string;
   authToken: string | undefined;
   userId: string;
+  locale: SupportedLocale;
 }) {
   const [photos, setPhotos] = useState<EventPhoto[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
@@ -17904,24 +17977,28 @@ function EventPhotosTab({
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
         >
-          {uploading ? 'Envoi en cours…' : '📷 Ajouter une photo'}
+          {uploading
+            ? translate(locale, 'forum.photoUploading')
+            : translate(locale, 'forum.photoAdd')}
         </button>
         {uploadError && (
           <span className="event-photos-upload-error">
-            L'envoi a échoué. Réessayez avec une photo JPEG, PNG, WebP ou GIF.
+            {translate(locale, 'forum.photoUploadError')}
           </span>
         )}
       </div>
 
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger les photos pour le moment.
+          {translate(locale, 'forum.photosLoadError')}
         </p>
       )}
       {state === 'success' && photos.length === 0 && (
         <p className="list-view-empty">
-          Aucune photo pour l'instant. Partage la première !
+          {translate(locale, 'forum.photosEmpty')}
         </p>
       )}
       {state === 'success' && photos.length > 0 && (
@@ -17934,7 +18011,7 @@ function EventPhotosTab({
                   type="button"
                   className="event-photo-delete"
                   onClick={() => removePhoto(photo.id)}
-                  aria-label="Supprimer cette photo"
+                  aria-label={translate(locale, 'forum.photoDelete')}
                 >
                   ✕
                 </button>
@@ -17982,38 +18059,39 @@ const FORUM_ROOM_PRESENTATION: Record<
   ForumCategory,
   {
     icon: string;
-    description: string;
-    placeholder: string;
-    emptyMessage: string;
+    label: MessageKey;
+    description: MessageKey;
+    placeholder: MessageKey;
+    emptyMessage: MessageKey;
   }
 > = {
   general: {
     icon: '💬',
-    description: 'Questions, conseils et impressions autour de la sortie.',
-    placeholder: 'Pose une question ou partage un bon plan…',
-    emptyMessage:
-      'Pose la première question ou partage ton conseil sur la soirée.'
+    label: 'forum.roomGeneral',
+    description: 'forum.roomGeneralDescription',
+    placeholder: 'forum.roomGeneralPlaceholder',
+    emptyMessage: 'forum.roomGeneralEmpty'
   },
   find_partners: {
     icon: '👋',
-    description: 'Présente-toi et trouve des personnes avec qui y aller.',
-    placeholder: 'Dis qui tu es et avec qui tu aimerais y aller…',
-    emptyMessage:
-      'Présente-toi et propose un point de rendez-vous avant l’événement.'
+    label: 'forum.roomPartners',
+    description: 'forum.roomPartnersDescription',
+    placeholder: 'forum.roomPartnersPlaceholder',
+    emptyMessage: 'forum.roomPartnersEmpty'
   },
   ticket_resale: {
     icon: '🎟️',
-    description: 'Propositions de billets entre membres de la communauté.',
-    placeholder: 'Décris clairement le billet que tu proposes ou recherches…',
-    emptyMessage:
-      'Indique le type de billet recherché ou proposé, sans partager de données sensibles.'
+    label: 'forum.roomResale',
+    description: 'forum.roomResaleDescription',
+    placeholder: 'forum.roomResalePlaceholder',
+    emptyMessage: 'forum.roomResaleEmpty'
   },
   find_someone: {
     icon: '🔎',
-    description: 'Retrouve une personne croisée pendant l’événement.',
-    placeholder: 'Décris le contexte de votre rencontre avec respect…',
-    emptyMessage:
-      'Décris sobrement le moment et le lieu de la rencontre pour lancer la recherche.'
+    label: 'forum.roomFindSomeone',
+    description: 'forum.roomFindSomeoneDescription',
+    placeholder: 'forum.roomFindSomeonePlaceholder',
+    emptyMessage: 'forum.roomFindSomeoneEmpty'
   }
 };
 
@@ -18173,20 +18251,28 @@ function EventForum({
     <div className="event-forum">
       <div className="forum-community-intro">
         <div>
-          <span className="forum-section-eyebrow">L’agora de l’événement</span>
-          <h2>Choisis ton espace de discussion</h2>
-          <p>
-            Quatre salons, un seul événement : va directement vers la
-            conversation qui t’intéresse.
-          </p>
+          <span className="forum-section-eyebrow">
+            {translate(locale, 'forum.agoraEyebrow')}
+          </span>
+          <h2>{translate(locale, 'forum.chooseSpace')}</h2>
+          <p>{translate(locale, 'forum.agoraBody')}</p>
         </div>
         <span className="forum-community-count">
           <b>{totalMessages}</b>
-          message{totalMessages !== 1 ? 's' : ''}
+          {translatePlural(
+            locale,
+            totalMessages,
+            'forum.messageWord',
+            'forum.messageWordPlural'
+          )}
         </span>
       </div>
 
-      <div className="forum-rooms" role="tablist" aria-label="Salons du forum">
+      <div
+        className="forum-rooms"
+        role="tablist"
+        aria-label={translate(locale, 'forum.roomsLabel')}
+      >
         {FORUM_CATEGORIES.map((option) => (
           <button
             type="button"
@@ -18200,8 +18286,15 @@ function EventForum({
               {FORUM_ROOM_PRESENTATION[option].icon}
             </span>
             <span className="forum-room-copy">
-              <strong>{FORUM_CATEGORY_LABELS[option]}</strong>
-              <small>{FORUM_ROOM_PRESENTATION[option].description}</small>
+              <strong>
+                {translate(locale, FORUM_ROOM_PRESENTATION[option].label)}
+              </strong>
+              <small>
+                {translate(
+                  locale,
+                  FORUM_ROOM_PRESENTATION[option].description
+                )}
+              </small>
             </span>
             <span className="forum-room-count">
               {roomCounts[option] ?? '—'}
@@ -18216,13 +18309,21 @@ function EventForum({
             {activeRoom.icon}
           </span>
           <div>
-            <span className="forum-section-eyebrow">Salon sélectionné</span>
-            <h3 id="forum-feed-title">{FORUM_CATEGORY_LABELS[category]}</h3>
-            <p>{activeRoom.description}</p>
+            <span className="forum-section-eyebrow">
+              {translate(locale, 'forum.roomSelected')}
+            </span>
+            <h3 id="forum-feed-title">
+              {translate(locale, activeRoom.label)}
+            </h3>
+            <p>{translate(locale, activeRoom.description)}</p>
           </div>
           <span className="forum-feed-count">
-            {roomCounts[category] ?? 0} message
-            {(roomCounts[category] ?? 0) !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              roomCounts[category] ?? 0,
+              'forum.messageCount',
+              'forum.messageCountPlural'
+            )}
           </span>
         </div>
 
@@ -18230,9 +18331,10 @@ function EventForum({
           <p className="forum-disclaimer">
             <span aria-hidden="true">!</span>
             <span>
-              <strong>Échange entre particuliers uniquement.</strong> Pulso
-              n’intervient pas dans la transaction : aucun paiement ni billet ne
-              transite par la plateforme.
+              <strong>
+                {translate(locale, 'forum.resaleDisclaimer')}
+              </strong>{' '}
+              {translate(locale, 'forum.resaleDisclaimerBody')}
             </span>
           </p>
         )}
@@ -18251,8 +18353,10 @@ function EventForum({
             <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder={activeRoom.placeholder}
-              aria-label={`Écrire dans le salon ${FORUM_CATEGORY_LABELS[category]}`}
+              placeholder={translate(locale, activeRoom.placeholder)}
+              aria-label={translate(locale, 'forum.writeInRoom', {
+                room: translate(locale, activeRoom.label)
+              })}
               maxLength={2000}
               rows={3}
             />
@@ -18263,7 +18367,9 @@ function EventForum({
                 className="btn-secondary"
                 disabled={posting || !draft.trim()}
               >
-                {posting ? 'Publication…' : 'Publier'}
+                {posting
+                  ? translate(locale, 'forum.posting')
+                  : translate(locale, 'forum.post')}
               </button>
             </div>
           </div>
@@ -18404,13 +18510,22 @@ function ForumPostRow({
             onClick={() => onLike(post)}
           >
             <HeartIcon filled={post.likedByMe} />
-            <span>{post.likedByMe ? 'Aimé' : 'J’aime'}</span>
+            <span>
+              {post.likedByMe
+                ? translate(locale, 'post.liked')
+                : translate(locale, 'post.like')}
+            </span>
             {post.likeCount > 0 && <b>{post.likeCount}</b>}
           </button>
           <button type="button" className="text-btn" onClick={onToggleExpanded}>
             {post.replyCount === 0
-              ? 'Répondre'
-              : `${post.replyCount} réponse${post.replyCount !== 1 ? 's' : ''}`}
+              ? translate(locale, 'post.reply')
+              : translatePlural(
+                  locale,
+                  post.replyCount,
+                  'post.replyCount',
+                  'post.replyCountPlural'
+                )}
           </button>
         </div>
 
@@ -18443,7 +18558,11 @@ function ForumPostRow({
                     onClick={() => onLike(reply)}
                   >
                     <HeartIcon filled={reply.likedByMe} />
-                    <span>{reply.likedByMe ? 'Aimé' : 'J’aime'}</span>
+                    <span>
+                      {reply.likedByMe
+                        ? translate(locale, 'post.liked')
+                        : translate(locale, 'post.like')}
+                    </span>
                     {reply.likeCount > 0 && <b>{reply.likeCount}</b>}
                   </button>
                 </div>
@@ -18459,7 +18578,7 @@ function ForumPostRow({
               <textarea
                 value={replyDraft}
                 onChange={(event) => onReplyDraftChange(event.target.value)}
-                placeholder="Répondre…"
+                placeholder={translate(locale, 'post.replyPlaceholder')}
                 maxLength={2000}
                 rows={1}
               />
@@ -18468,7 +18587,7 @@ function ForumPostRow({
                 className="btn-secondary"
                 disabled={posting || !replyDraft.trim()}
               >
-                Répondre
+                {translate(locale, 'post.reply')}
               </button>
             </form>
           </div>

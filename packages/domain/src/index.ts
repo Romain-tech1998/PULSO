@@ -77,16 +77,6 @@ export const FORUM_CATEGORIES = [
   'find_someone'
 ] as const;
 
-export const FORUM_CATEGORY_LABELS: Record<
-  (typeof FORUM_CATEGORIES)[number],
-  string
-> = {
-  find_partners: 'Trouver des partenaires',
-  general: 'Discussion générale',
-  ticket_resale: 'Revente de place',
-  find_someone: 'Retrouver quelqu’un qui était là'
-};
-
 export type EventCategory = (typeof EVENT_CATEGORIES)[number];
 export type VenueCategory = (typeof VENUE_CATEGORIES)[number];
 export type ForumCategory = (typeof FORUM_CATEGORIES)[number];

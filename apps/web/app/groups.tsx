@@ -2938,7 +2938,7 @@ function GroupPostRow({
         )}
         <div className="group-bubble-col">
           <span className="group-bubble-author">
-            {mine ? t('groups.postAuthorYou') : item.author.displayName}
+            {mine ? t('post.authorYou') : item.author.displayName}
             <time dateTime={item.createdAt}>
               {formatRelativeTime(item.createdAt, locale)}
             </time>
@@ -2954,7 +2954,7 @@ function GroupPostRow({
             >
               <HeartIcon filled={item.likedByMe} />
               <span>
-                {item.likedByMe ? t('groups.postLiked') : t('groups.postLike')}
+                {item.likedByMe ? t('post.liked') : t('post.like')}
               </span>
               {item.likeCount > 0 && <b>{item.likeCount}</b>}
             </button>
@@ -2965,12 +2965,12 @@ function GroupPostRow({
                 onClick={onToggleExpanded}
               >
                 {item.replyCount === 0
-                  ? t('groups.postReply')
+                  ? t('post.reply')
                   : translatePlural(
                       locale,
                       item.replyCount,
-                      'groups.postReplyCount',
-                      'groups.postReplyCountPlural'
+                      'post.replyCount',
+                      'post.replyCountPlural'
                     )}
               </button>
             )}
@@ -2980,7 +2980,7 @@ function GroupPostRow({
                 className="text-btn"
                 onClick={() => onDelete(item.id)}
               >
-                {t('groups.postDelete')}
+                {t('post.delete')}
               </button>
             ) : (
               <button
@@ -2990,7 +2990,7 @@ function GroupPostRow({
                   reportContent(authToken, 'group_post', item.id, locale)
                 }
               >
-                {t('groups.postReport')}
+                {t('post.report')}
               </button>
             )}
           </div>
@@ -3015,7 +3015,7 @@ function GroupPostRow({
             <textarea
               value={replyDraft}
               onChange={(event) => onReplyDraftChange(event.target.value)}
-              placeholder={t('groups.postReplyPlaceholder')}
+              placeholder={t('post.replyPlaceholder')}
               maxLength={2000}
               rows={1}
             />
@@ -3024,7 +3024,7 @@ function GroupPostRow({
               className="btn-secondary"
               disabled={posting || !replyDraft.trim()}
             >
-              {t('groups.postReply')}
+              {t('post.reply')}
             </button>
           </form>
         </div>
