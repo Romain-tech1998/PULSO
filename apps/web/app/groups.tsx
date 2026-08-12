@@ -2192,7 +2192,7 @@ export function GroupDetailContent({
                   className="groups-create-submit"
                   onClick={() => setInviteOpen(true)}
                 >
-                  Inviter des amis
+                  {t('groups.invite')}
                 </button>
               </div>
               <div className="group-members-grid">
