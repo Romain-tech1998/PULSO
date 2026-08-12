@@ -508,6 +508,15 @@ const en = {
   'groups.accessOpenBadge': 'Open access',
   'groups.linkedTo': 'Group linked to',
   'groups.tabsLabel': 'Group spaces',
+  // Shared chrome that is not a group concern: relative timestamps, and
+  // the content-report prompt. Both live in apps/web/app/shared.tsx and
+  // are called from the map surface as well as the group workspace.
+  'time.justNow': 'just now',
+  'time.minutesAgo': '{count} min ago',
+  'time.hoursAgo': '{count}h ago',
+  'time.daysAgo': '{count}d ago',
+  'report.prompt': 'Why are you reporting this content? (optional)',
+  'report.sent': 'Report sent.',
   'groups.inviteMessage': 'Join the group “{name}” on Pulso!\n{url}',
   'details.linkCopied': 'Link copied to clipboard'
 } as const;
@@ -968,6 +977,15 @@ const fr = {
   'groups.accessOpenBadge': 'Accès libre',
   'groups.linkedTo': 'Groupe lié à',
   'groups.tabsLabel': 'Espaces du groupe',
+  // Shared chrome that is not a group concern: relative timestamps, and
+  // the content-report prompt. Both live in apps/web/app/shared.tsx and
+  // are called from the map surface as well as the group workspace.
+  'time.justNow': 'à l’instant',
+  'time.minutesAgo': 'il y a {count} min',
+  'time.hoursAgo': 'il y a {count} h',
+  'time.daysAgo': 'il y a {count} j',
+  'report.prompt': 'Pourquoi signalez-vous ce contenu ? (optionnel)',
+  'report.sent': 'Signalement envoyé.',
   'groups.inviteMessage': 'Rejoins le groupe « {name} » sur Pulso !\n{url}',
   'details.linkCopied': 'Lien copié dans le presse-papier'
 } satisfies Record<MessageKey, string>;

@@ -2939,7 +2939,7 @@ function GroupPostRow({
           <span className="group-bubble-author">
             {mine ? t('groups.postAuthorYou') : item.author.displayName}
             <time dateTime={item.createdAt}>
-              {formatRelativeTime(item.createdAt)}
+              {formatRelativeTime(item.createdAt, locale)}
             </time>
           </span>
           <div className="group-bubble">
@@ -2986,7 +2986,9 @@ function GroupPostRow({
               <button
                 type="button"
                 className="text-btn"
-                onClick={() => reportContent(authToken, 'group_post', item.id)}
+                onClick={() =>
+                  reportContent(authToken, 'group_post', item.id, locale)
+                }
               >
                 {t('groups.postReport')}
               </button>

@@ -1,4 +1,6 @@
-import type { AttendanceResponse, ReportTargetType } from '@pulso/contracts';
+import type { ReportTargetType } from '@pulso/contracts';
+import { displayLocale, translate } from '@pulso/domain/localization';
+import type { SupportedLocale } from '@pulso/domain/localization';
 import type maplibregl from 'maplibre-gl';
 
 /**
@@ -26,15 +28,14 @@ export const MAP_STYLE_URL: string | maplibregl.StyleSpecification =
 export function reportContent(
   authToken: string | undefined,
   targetType: ReportTargetType,
-  targetId: string
+  targetId: string,
+  locale: SupportedLocale
 ) {
   if (!authToken) return;
   // Cancelling the prompt aborts the report entirely; confirming with an
   // empty reason still sends it (the target/reporter/timestamp alone are
   // useful even with no reason given).
-  const input = window.prompt(
-    'Pourquoi signalez-vous ce contenu ? (optionnel)'
-  );
+  const input = window.prompt(translate(locale, 'report.prompt'));
   if (input === null) return;
   fetch(`${API_BASE_URL}/reports`, {
     method: 'POST',
@@ -49,7 +50,7 @@ export function reportContent(
     })
   })
     .then((response) => {
-      if (response.ok) alert('Signalement envoyé.');
+      if (response.ok) alert(translate(locale, 'report.sent'));
     })
     .catch(() => {});
 }
@@ -72,20 +73,17 @@ export function HeartIcon({ filled }: { filled: boolean }) {
   );
 }
 
-export function formatRelativeTime(iso: string): string {
+export function formatRelativeTime(
+  iso: string,
+  locale: SupportedLocale
+): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return "à l'instant";
-  if (minutes < 60) return `il y a ${minutes} min`;
+  if (minutes < 1) return translate(locale, 'time.justNow');
+  if (minutes < 60) return translate(locale, 'time.minutesAgo', { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `il y a ${hours}h`;
+  if (hours < 24) return translate(locale, 'time.hoursAgo', { count: hours });
   const days = Math.floor(hours / 24);
-  if (days < 7) return `il y a ${days}j`;
-  return new Date(iso).toLocaleDateString('fr-CA');
+  if (days < 7) return translate(locale, 'time.daysAgo', { count: days });
+  return new Date(iso).toLocaleDateString(displayLocale(locale));
 }
-
-export const ATTENDANCE_LABELS: Record<AttendanceResponse, string> = {
-  yes: 'Oui',
-  maybe: 'Peut-être',
-  no: 'Non'
-};

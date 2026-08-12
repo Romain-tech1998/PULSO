@@ -3728,6 +3728,7 @@ export function ExploreMap({
                     <NotificationsPanel
                       notifications={notifications.notifications}
                       state={notifications.state}
+                      locale={locale}
                       onClose={() => setNotificationsOpen(false)}
                       onOpenEvent={(eventId) =>
                         void openDetails(eventId, {
@@ -4038,7 +4039,7 @@ export function ExploreMap({
             onNavigate={setSection}
           />
         ) : user && isAdmin && section === 'administration' ? (
-          <AdministrationPage authToken={authToken} />
+          <AdministrationPage authToken={authToken} locale={locale} />
         ) : user && section === 'organisateur' ? (
           <OrganisateurPage
             authToken={authToken}
@@ -6041,7 +6042,10 @@ function SidebarNavIcon({ kind }: { kind: SidebarIconKind }) {
 // plain space after `</strong>` is silently dropped at compile time (it
 // rendered as "Camille Royt'a envoyé…"), and Prettier rewrites an explicit
 // {' '} straight back into that bare space. A string literal survives both.
-function describeNotification(entry: PulsoNotification): {
+function describeNotification(
+  entry: PulsoNotification,
+  locale: SupportedLocale
+): {
   icon: SidebarIconKind;
   text: ReactNode;
   detail: string;
@@ -6068,7 +6072,7 @@ function describeNotification(entry: PulsoNotification): {
             {" t'a envoyé une demande d'ami"}
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'friend_request_accepted':
       return {
@@ -6079,7 +6083,7 @@ function describeNotification(entry: PulsoNotification): {
             {" a accepté ta demande d'ami"}
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'message_received':
       return {
@@ -6090,7 +6094,7 @@ function describeNotification(entry: PulsoNotification): {
             {" t'a envoyé un message"}
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'forum_reply':
       return {
@@ -6102,7 +6106,7 @@ function describeNotification(entry: PulsoNotification): {
             <strong>{entry.eventTitle}</strong>
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'organizer_request_received':
       return {
@@ -6114,7 +6118,7 @@ function describeNotification(entry: PulsoNotification): {
             <strong>{entry.venueName}</strong>
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'organizer_request_resolved':
       return {
@@ -6131,7 +6135,7 @@ function describeNotification(entry: PulsoNotification): {
             {" n'a pas été retenue"}
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'group_verification_received':
       return {
@@ -6143,7 +6147,7 @@ function describeNotification(entry: PulsoNotification): {
             <strong>{entry.groupName}</strong>
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'group_verification_resolved':
       return {
@@ -6160,7 +6164,7 @@ function describeNotification(entry: PulsoNotification): {
             {" n'a pas été retenue"}
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'group_join_request_received':
       return {
@@ -6172,7 +6176,7 @@ function describeNotification(entry: PulsoNotification): {
             <strong>{entry.groupName}</strong>
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'group_join_request_accepted':
       return {
@@ -6183,7 +6187,7 @@ function describeNotification(entry: PulsoNotification): {
             <strong>{entry.groupName}</strong>
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'upcoming_event':
       return {
@@ -6203,12 +6207,14 @@ function describeNotification(entry: PulsoNotification): {
 function NotificationsPanel({
   notifications,
   state,
+  locale,
   onClose,
   onOpenEvent,
   onOpenSection
 }: {
   notifications: PulsoNotification[];
   state: 'loading' | 'success' | 'error';
+  locale: SupportedLocale;
   onClose: () => void;
   onOpenEvent: (eventId: string) => void;
   onOpenSection: (section: ConnectedSection) => void;
@@ -6261,7 +6267,7 @@ function NotificationsPanel({
 
       <div className="notifications-list">
         {notifications.map((entry) => {
-          const described = describeNotification(entry);
+          const described = describeNotification(entry, locale);
           const unread = 'readAt' in entry && entry.readAt === null;
           const key = 'id' in entry ? entry.id : `upcoming-${entry.eventId}`;
           const openTarget = () => {
@@ -10123,7 +10129,13 @@ function AdminVenuePhotosBlock({
   );
 }
 
-function AdministrationPage({ authToken }: { authToken: string | undefined }) {
+function AdministrationPage({
+  authToken,
+  locale
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+}) {
   const [requests, setRequests] = useState<OrganizerRequest[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
@@ -10218,7 +10230,7 @@ function AdministrationPage({ authToken }: { authToken: string | undefined }) {
                 {entry.justification}
               </p>
               <span className="admin-request-when">
-                {formatRelativeTime(entry.createdAt)}
+                {formatRelativeTime(entry.createdAt, locale)}
               </span>
             </div>
             <div className="admin-request-actions">
@@ -10243,8 +10255,8 @@ function AdministrationPage({ authToken }: { authToken: string | undefined }) {
         ))}
       </div>
 
-      <AdminGroupPlacementsBlock authToken={authToken} />
-      <AdminGroupVerificationsBlock authToken={authToken} />
+      <AdminGroupPlacementsBlock authToken={authToken} locale={locale} />
+      <AdminGroupVerificationsBlock authToken={authToken} locale={locale} />
       <AdminVenuePhotosBlock authToken={authToken} />
     </div>
   );
@@ -10273,9 +10285,11 @@ function AdministrationPage({ authToken }: { authToken: string | undefined }) {
  * shown rather than implied.
  */
 function AdminGroupPlacementsBlock({
-  authToken
+  authToken,
+  locale
 }: {
   authToken: string | undefined;
+  locale: SupportedLocale;
 }) {
   const [placements, setPlacements] = useState<AdminGroupPlacement[]>([]);
   const [groupQuery, setGroupQuery] = useState('');
@@ -10552,8 +10566,8 @@ function AdminGroupPlacementsBlock({
               </span>
               <span className="admin-request-when">
                 {entry.dismissedAt
-                  ? `Retiré par le groupe ${formatRelativeTime(entry.dismissedAt)}`
-                  : `Actif depuis ${formatRelativeTime(entry.placement.createdAt)}`}
+                  ? `Retiré par le groupe ${formatRelativeTime(entry.dismissedAt, locale)}`
+                  : `Actif depuis ${formatRelativeTime(entry.placement.createdAt, locale)}`}
               </span>
             </div>
           </div>
@@ -10564,9 +10578,11 @@ function AdminGroupPlacementsBlock({
 }
 
 function AdminGroupVerificationsBlock({
-  authToken
+  authToken,
+  locale
 }: {
   authToken: string | undefined;
+  locale: SupportedLocale;
 }) {
   const [requests, setRequests] = useState<GroupVerificationRequest[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
@@ -10663,7 +10679,7 @@ function AdminGroupVerificationsBlock({
                 {entry.justification}
               </p>
               <span className="admin-request-when">
-                {formatRelativeTime(entry.requestedAt)}
+                {formatRelativeTime(entry.requestedAt, locale)}
               </span>
             </div>
             <div className="admin-request-actions">
@@ -12018,7 +12034,7 @@ function ForumDiscoverCard({
             <span>
               {lastPostExcerpt}
               {lastPostAt ? (
-                <small>{formatRelativeTime(lastPostAt)}</small>
+                <small>{formatRelativeTime(lastPostAt, locale)}</small>
               ) : null}
             </span>
           </span>
@@ -12099,7 +12115,7 @@ function ForumDiscoverSpotlight({
           <span>
             <b>{memberCount}</b> participant{memberCount !== 1 ? 's' : ''}
           </span>
-          {lastPostAt && <span>{formatRelativeTime(lastPostAt)}</span>}
+          {lastPostAt && <span>{formatRelativeTime(lastPostAt, locale)}</span>}
           <span className="forum-discover-spotlight-cta">
             Entrer dans la discussion <span aria-hidden="true">→</span>
           </span>
@@ -12502,6 +12518,7 @@ function MessagesPage({
           <ConversationPane
             friend={selectedFriend}
             authToken={authToken}
+            locale={locale}
             onActivity={refresh}
           />
         ) : selectedGroup ? (
@@ -12560,10 +12577,12 @@ function MessagesPage({
 function ConversationPane({
   friend,
   authToken,
+  locale,
   onActivity
 }: {
   friend: PublicUser;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onActivity: () => void;
 }) {
   return (
@@ -12588,6 +12607,7 @@ function ConversationPane({
       <ConversationThread
         friend={friend}
         authToken={authToken}
+        locale={locale}
         onActivity={onActivity}
       />
     </div>
@@ -13443,6 +13463,7 @@ function AmisPage({
         <ConversationModal
           friend={conversationWith}
           authToken={authToken}
+          locale={locale}
           onClose={() => setConversationWith(undefined)}
         />
       )}
@@ -13868,10 +13889,12 @@ function useActivity(authToken: string | undefined, limit: number) {
 
 function ActivityList({
   entries,
-  emptyMessage
+  emptyMessage,
+  locale
 }: {
   entries: ActivityEntry[];
   emptyMessage: string;
+  locale: SupportedLocale;
 }) {
   if (entries.length === 0) {
     return <p className="list-view-empty">{emptyMessage}</p>;
@@ -13887,7 +13910,7 @@ function ActivityList({
             </span>
             <span className="profil-activity-text">{text}</span>
             <span className="profil-activity-time">
-              {formatRelativeTime(entry.occurredAt)}
+              {formatRelativeTime(entry.occurredAt, locale)}
             </span>
           </li>
         );
@@ -14247,9 +14270,11 @@ function ProfilAmisCard({
 
 function ProfilActivityRecentCard({
   authToken,
+  locale,
   onSeeAll
 }: {
   authToken: string | undefined;
+  locale: SupportedLocale;
   onSeeAll: () => void;
 }) {
   const { activity, state } = useActivity(authToken, 4);
@@ -14268,6 +14293,7 @@ function ProfilActivityRecentCard({
         <ActivityList
           entries={activity}
           emptyMessage="Aucune activité pour le moment."
+          locale={locale}
         />
       )}
       <button type="button" className="profil-card-link" onClick={onSeeAll}>
@@ -14406,7 +14432,13 @@ function MesEvenementsTab({
   );
 }
 
-function ActiviteTab({ authToken }: { authToken: string | undefined }) {
+function ActiviteTab({
+  authToken,
+  locale
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+}) {
   const { activity, state } = useActivity(authToken, 50);
   return (
     <div className="profil-tab-content">
@@ -14418,6 +14450,7 @@ function ActiviteTab({ authToken }: { authToken: string | undefined }) {
         <ActivityList
           entries={activity}
           emptyMessage="Aucune activité pour le moment."
+          locale={locale}
         />
       )}
     </div>
@@ -14536,7 +14569,9 @@ function CompteSection({
               />
             </div>
           )}
-          {tab === 'activite' && <ActiviteTab authToken={authToken} />}
+          {tab === 'activite' && (
+            <ActiviteTab authToken={authToken} locale={locale} />
+          )}
         </div>
 
         <div className="profil-side">
@@ -14545,6 +14580,7 @@ function CompteSection({
           <ProfilTrendsCard authToken={authToken} />
           <ProfilActivityRecentCard
             authToken={authToken}
+            locale={locale}
             onSeeAll={() => setTab('activite')}
           />
           <div className="profil-side-card profil-settings-card">
@@ -14811,6 +14847,7 @@ function FriendDetailPanel({
         <ActivityList
           entries={activity}
           emptyMessage="Rien à afficher pour l'instant."
+          locale={locale}
         />
       </div>
 
@@ -15138,10 +15175,12 @@ function FriendsMapModal({
 function ConversationThread({
   friend,
   authToken,
+  locale,
   onActivity
 }: {
   friend: PublicUser;
   authToken: string | undefined;
+  locale: SupportedLocale;
   // Fired after a message is sent or the conversation is marked read, so
   // a parent showing a conversation LIST (unread badges, last-message
   // preview) can refresh itself - ConversationModal has no such list, so
@@ -15279,7 +15318,7 @@ function ConversationThread({
                         type="button"
                         className="conversation-message-report"
                         onClick={() =>
-                          reportContent(authToken, 'message', message.id)
+                          reportContent(authToken, 'message', message.id, locale)
                         }
                       >
                         Signaler
@@ -15326,10 +15365,12 @@ function ConversationThread({
 function ConversationModal({
   friend,
   authToken,
+  locale,
   onClose
 }: {
   friend: PublicUser;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onClose: () => void;
 }) {
   return (
@@ -15353,7 +15394,11 @@ function ConversationModal({
             Fermer
           </button>
         </div>
-        <ConversationThread friend={friend} authToken={authToken} />
+        <ConversationThread
+          friend={friend}
+          authToken={authToken}
+          locale={locale}
+        />
       </div>
     </div>
   );
@@ -17465,6 +17510,7 @@ function ForumPanel({
                 authToken={authToken}
                 userId={user.id}
                 user={user}
+                locale={locale}
               />
             )}
           </div>
@@ -17904,12 +17950,14 @@ function EventForum({
   eventId,
   authToken,
   userId,
-  user
+  user,
+  locale
 }: {
   eventId: string;
   authToken: string | undefined;
   userId: string;
   user: User;
+  locale: SupportedLocale;
 }) {
   const [category, setCategory] = useState<ForumCategory>('general');
   const [posts, setPosts] = useState<ForumPost[]>([]);
@@ -18173,6 +18221,7 @@ function EventForum({
                 post={post}
                 userId={userId}
                 authToken={authToken}
+                locale={locale}
                 onLike={toggleLike}
                 onDelete={removePost}
                 replies={repliesFor(post.id)}
@@ -18196,11 +18245,13 @@ function ForumPostAuthorRow({
   post,
   userId,
   authToken,
+  locale,
   onDelete
 }: {
   post: ForumPost;
   userId: string;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onDelete: () => void;
 }) {
   return (
@@ -18208,7 +18259,7 @@ function ForumPostAuthorRow({
       <span className="forum-post-author">
         <strong>{post.author.displayName}</strong>
         <time dateTime={post.createdAt}>
-          {formatRelativeTime(post.createdAt)}
+          {formatRelativeTime(post.createdAt, locale)}
         </time>
       </span>
       {post.author.id === userId ? (
@@ -18219,7 +18270,7 @@ function ForumPostAuthorRow({
         <button
           type="button"
           className="text-btn"
-          onClick={() => reportContent(authToken, 'forum_post', post.id)}
+          onClick={() => reportContent(authToken, 'forum_post', post.id, locale)}
         >
           Signaler
         </button>
@@ -18232,6 +18283,7 @@ function ForumPostRow({
   post,
   userId,
   authToken,
+  locale,
   onLike,
   onDelete,
   replies,
@@ -18245,6 +18297,7 @@ function ForumPostRow({
   post: ForumPost;
   userId: string;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onLike: (post: ForumPost) => void;
   onDelete: (postId: string) => void;
   replies: ForumPost[];
@@ -18269,6 +18322,7 @@ function ForumPostRow({
           post={post}
           userId={userId}
           authToken={authToken}
+          locale={locale}
           onDelete={() => onDelete(post.id)}
         />
         <p>{post.body}</p>
@@ -18308,6 +18362,7 @@ function ForumPostRow({
                     post={reply}
                     userId={userId}
                     authToken={authToken}
+                    locale={locale}
                     onDelete={() => onDelete(reply.id)}
                   />
                   <p>{reply.body}</p>
