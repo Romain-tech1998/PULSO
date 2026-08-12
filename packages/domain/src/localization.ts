@@ -486,6 +486,28 @@ const en = {
   'groups.postReplyPlaceholder': 'Reply…',
   'groups.postDelete': 'Delete',
   'groups.postReport': 'Report',
+  // The showcase on the empty groups page: what a workspace is for, before
+  // the visitor has one.
+  'groups.showcaseLabel': 'Available modules',
+  'groups.showcaseProgramme': 'Shared schedule',
+  'groups.showcaseAttendance': 'Real attendance',
+  'groups.showcaseChecklist': 'Collective checklist',
+  'groups.showcaseDiscussion': 'Group discussion',
+  // The directory's context strip: what the selected sub-tab is showing.
+  'groups.contextMineTitle': 'Your spaces',
+  'groups.contextMineBody': 'Every group you have joined.',
+  'groups.contextEventTitle': 'Around events',
+  'groups.contextEventBody': 'Groups created to prepare one specific outing.',
+  'groups.contextDiscoverTitle': 'Communities to discover',
+  'groups.contextDiscoverBody': 'Montréal communities, open or on request.',
+  // The compact groups block (sidebar mini-list, Profile tab).
+  'groups.blockEmpty': 'No group yet.',
+  'groups.blockOpen': 'Open',
+  // The workspace header chrome. The open-access badge is its own key: the
+  // directory says 'Open' in a tight row, the header spells it out.
+  'groups.accessOpenBadge': 'Open access',
+  'groups.linkedTo': 'Group linked to',
+  'groups.tabsLabel': 'Group spaces',
   'groups.inviteMessage': 'Join the group “{name}” on Pulso!\n{url}',
   'details.linkCopied': 'Link copied to clipboard'
 } as const;
@@ -924,6 +946,28 @@ const fr = {
   'groups.postReplyPlaceholder': 'Répondre…',
   'groups.postDelete': 'Supprimer',
   'groups.postReport': 'Signaler',
+  // The showcase on the empty groups page: what a workspace is for, before
+  // the visitor has one.
+  'groups.showcaseLabel': 'Modules disponibles',
+  'groups.showcaseProgramme': 'Programme partagé',
+  'groups.showcaseAttendance': 'Présences réelles',
+  'groups.showcaseChecklist': 'Checklist collective',
+  'groups.showcaseDiscussion': 'Discussion du groupe',
+  // The directory's context strip: what the selected sub-tab is showing.
+  'groups.contextMineTitle': 'Tes espaces',
+  'groups.contextMineBody': 'Tous les groupes que tu as rejoints.',
+  'groups.contextEventTitle': 'Autour des événements',
+  'groups.contextEventBody': 'Des groupes créés pour préparer une sortie précise.',
+  'groups.contextDiscoverTitle': 'Communautés à découvrir',
+  'groups.contextDiscoverBody': 'Des communautés montréalaises ouvertes ou sur demande.',
+  // The compact groups block (sidebar mini-list, Profile tab).
+  'groups.blockEmpty': 'Aucun groupe pour le moment.',
+  'groups.blockOpen': 'Ouvrir',
+  // The workspace header chrome. The open-access badge is its own key: the
+  // directory says 'Libre' in a tight row, the header spells it out.
+  'groups.accessOpenBadge': 'Accès libre',
+  'groups.linkedTo': 'Groupe lié à',
+  'groups.tabsLabel': 'Espaces du groupe',
   'groups.inviteMessage': 'Rejoins le groupe « {name} » sur Pulso !\n{url}',
   'details.linkCopied': 'Lien copié dans le presse-papier'
 } satisfies Record<MessageKey, string>;

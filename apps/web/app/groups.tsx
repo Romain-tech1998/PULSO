@@ -343,19 +343,19 @@ export function GroupsPage({
             </div>
             <div
               className="groups-workspace-modules"
-              aria-label="Modules disponibles"
+              aria-label={t('groups.showcaseLabel')}
             >
               <span>
-                <b>01</b> Programme partagé
+                <b>01</b> {t('groups.showcaseProgramme')}
               </span>
               <span>
-                <b>02</b> Présences réelles
+                <b>02</b> {t('groups.showcaseAttendance')}
               </span>
               <span>
-                <b>03</b> Checklist collective
+                <b>03</b> {t('groups.showcaseChecklist')}
               </span>
               <span>
-                <b>04</b> Discussion du groupe
+                <b>04</b> {t('groups.showcaseDiscussion')}
               </span>
             </div>
           </div>
@@ -482,17 +482,17 @@ export function MessagesGroupsTab({
         <div>
           <strong>
             {subTab === 'mine'
-              ? 'Tes espaces'
+              ? t('groups.contextMineTitle')
               : subTab === 'event'
-                ? 'Autour des événements'
-                : 'Communautés à découvrir'}
+                ? t('groups.contextEventTitle')
+                : t('groups.contextDiscoverTitle')}
           </strong>
           <span>
             {subTab === 'mine'
-              ? 'Tous les groupes que tu as rejoints.'
+              ? t('groups.contextMineBody')
               : subTab === 'event'
-                ? 'Des groupes créés pour préparer une sortie précise.'
-                : 'Des communautés montréalaises ouvertes ou sur demande.'}
+                ? t('groups.contextEventBody')
+                : t('groups.contextDiscoverBody')}
           </span>
         </div>
         <span className="groups-directory-count">{rows.length}</span>
@@ -502,12 +502,14 @@ export function MessagesGroupsTab({
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Rechercher un groupe"
+          placeholder={t('groups.searchLabel')}
           aria-label={t('groups.searchLabel')}
         />
       </label>
 
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{t('groups.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
           {t('groups.loadError')}
@@ -516,10 +518,10 @@ export function MessagesGroupsTab({
       {state === 'success' && rows.length === 0 && (
         <p className="list-view-empty">
           {subTab === 'mine'
-            ? 'Aucun groupe pour le moment. Découvre-en un dans l\'onglet Découvrir, ou rejoins-en un depuis "Rencontrer avant l\'événement" sur un forum.'
+            ? t('groups.emptyMine')
             : subTab === 'event'
-              ? "Aucun groupe d'événement pour le moment."
-              : 'Aucun groupe permanent pour le moment.'}
+              ? t('groups.emptyEvents')
+              : t('groups.emptyDiscover')}
         </p>
       )}
       {state === 'success' && rows.length > 0 && visibleRows.length === 0 && (
@@ -565,7 +567,13 @@ export function MessagesGroupsTab({
               )}
               <span className="group-directory-meta">
                 <span>
-                  {group.memberCount} membre{group.memberCount > 1 ? 's' : ''}
+                  {translate(
+                    locale,
+                    group.memberCount === 1
+                      ? 'groups.memberCount'
+                      : 'groups.memberCountPlural',
+                    { count: group.memberCount }
+                  )}
                 </span>
                 <span>
                   {event ? t('groups.kindEvent') : t('groups.kindCommunity')}
@@ -607,6 +615,7 @@ export function GroupsBlock({
   userId: string;
   locale: SupportedLocale;
 }) {
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>(
     'loading'
@@ -638,20 +647,18 @@ export function GroupsBlock({
         group's type. This block used to carry a second, simpler copy that
         always produced a 'community' group whatever the creator meant.
       */}
-      <h3>Mes groupes</h3>
+      <h3>{t('groups.tabMine')}</h3>
       {loadState === 'loading' && (
-        <p className="list-view-empty">Chargement…</p>
+        <p className="list-view-empty">{t('groups.loading')}</p>
       )}
       {loadState === 'error' && (
-        <p className="list-view-empty">
-          Impossible de charger vos groupes pour le moment.
-        </p>
+        <p className="list-view-empty">{t('groups.loadError')}</p>
       )}
       {loadState === 'success' && (
         <div className="friends-block">
           <div className="friends-list">
             {groups.length === 0 && (
-              <p className="list-view-empty">Aucun groupe pour le moment.</p>
+              <p className="list-view-empty">{t('groups.blockEmpty')}</p>
             )}
             {groups.map((group) => (
               <div className="friends-row" key={group.id}>
@@ -666,7 +673,7 @@ export function GroupsBlock({
                   className="text-btn"
                   onClick={() => setOpenGroup(group)}
                 >
-                  Ouvrir
+                  {t('groups.blockOpen')}
                 </button>
               </div>
             ))}
@@ -1735,16 +1742,18 @@ export function GroupDetailContent({
             <div className="group-detail-status-row">
               <span className="group-detail-visibility-badge">
                 {group.visibility === 'restricted'
-                  ? '◇ Sur demande'
-                  : '◎ Accès libre'}
+                  ? `◇ ${t('groups.accessRestricted')}`
+                  : `◎ ${t('groups.accessOpenBadge')}`}
               </span>
               {group.isModerator && (
-                <span className="group-detail-role-badge">Administrateur</span>
+                <span className="group-detail-role-badge">
+                  {t('groups.roleAdmin')}
+                </span>
               )}
             </div>
             {group.eventId && group.eventTitle && (
               <span className="group-detail-event-badge">
-                Groupe lié à{' '}
+                {t('groups.linkedTo')}{' '}
                 <button
                   type="button"
                   className="group-detail-event-link"
@@ -1810,7 +1819,13 @@ export function GroupDetailContent({
             </div>
           )}
           <span className="forum-members-count">
-            {group.memberCount} membre{group.memberCount !== 1 ? 's' : ''}
+            {translate(
+              locale,
+              group.memberCount === 1
+                ? 'groups.memberCount'
+                : 'groups.memberCountPlural',
+              { count: group.memberCount }
+            )}
           </span>
           {group.isMember && (
             <button
@@ -1853,7 +1868,7 @@ export function GroupDetailContent({
 
       {group.isMember && (
         <>
-          <nav className="group-detail-tabs" aria-label="Espaces du groupe">
+          <nav className="group-detail-tabs" aria-label={t('groups.tabsLabel')}>
             <button
               type="button"
               className={tab === 'feed' ? 'active' : ''}
@@ -2162,8 +2177,13 @@ export function GroupDetailContent({
                     {t('groups.membersEyebrow')}
                   </span>
                   <h2>
-                    {group.memberCount} membre
-                    {group.memberCount !== 1 ? 's' : ''}
+                    {translate(
+                      locale,
+                      group.memberCount === 1
+                        ? 'groups.memberCount'
+                        : 'groups.memberCountPlural',
+                      { count: group.memberCount }
+                    )}
                   </h2>
                 </div>
                 <button
