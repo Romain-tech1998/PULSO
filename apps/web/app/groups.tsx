@@ -26,7 +26,7 @@ import type {
   GroupVisibility,
   PublicUser
 } from '@pulso/contracts';
-import { translate } from '@pulso/domain/localization';
+import { displayLocale, translate } from '@pulso/domain/localization';
 import type {
   MessageKey,
   SupportedLocale
@@ -574,10 +574,10 @@ export function MessagesGroupsTab({
               {event && (
                 <span className="group-directory-event">
                   {event.title} ·{' '}
-                  {new Date(event.startsAt).toLocaleDateString('fr-CA', {
-                    day: 'numeric',
-                    month: 'short'
-                  })}
+                  {new Date(event.startsAt).toLocaleDateString(
+                    displayLocale(locale),
+                    { day: 'numeric', month: 'short' }
+                  )}
                 </span>
               )}
             </span>
@@ -1181,13 +1181,13 @@ function GroupSponsoredBanner({
         </div>
         <strong className="group-sponsored-title">{event.title}</strong>
         <span className="group-sponsored-meta">
-          {startsAt.toLocaleDateString('fr-CA', {
+          {startsAt.toLocaleDateString(displayLocale(locale), {
             weekday: 'long',
             day: 'numeric',
             month: 'long'
           })}
           {' · '}
-          {startsAt.toLocaleTimeString('fr-CA', {
+          {startsAt.toLocaleTimeString(displayLocale(locale), {
             hour: '2-digit',
             minute: '2-digit'
           })}
@@ -1283,11 +1283,11 @@ function GroupOutingCard({
         <strong>{outing.title}</strong>
         <span className="group-outing-when">
           {when
-            ? `${when.toLocaleDateString('fr-CA', {
+            ? `${when.toLocaleDateString(displayLocale(locale), {
                 weekday: 'long',
                 day: 'numeric',
                 month: 'long'
-              })} · ${when.toLocaleTimeString('fr-CA', {
+              })} · ${when.toLocaleTimeString(displayLocale(locale), {
                 hour: '2-digit',
                 minute: '2-digit'
               })}`
@@ -1757,7 +1757,7 @@ export function GroupDetailContent({
                 >
                   {group.eventTitle}
                   {group.eventStartsAt &&
-                    ` — ${new Date(group.eventStartsAt).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}`}
+                    ` — ${new Date(group.eventStartsAt).toLocaleDateString(displayLocale(locale), { day: 'numeric', month: 'short' })}`}
                   {group.meetupVenue && ` · ${group.meetupVenue.name}`}
                 </button>
               </span>
@@ -2421,10 +2421,10 @@ function GroupScheduleCard({
           {items.map((item) => (
             <li key={item.id}>
               <span className="group-schedule-time">
-                {new Date(item.scheduledAt).toLocaleTimeString('fr-CA', {
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
+                {new Date(item.scheduledAt).toLocaleTimeString(
+                  displayLocale(locale),
+                  { hour: '2-digit', minute: '2-digit' }
+                )}
               </span>
               <span>{item.label}</span>
             </li>
