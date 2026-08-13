@@ -28,6 +28,17 @@ export interface AuthRepository {
   findUserBySessionToken(token: string): Promise<User | undefined>;
   deleteSession(token: string): Promise<void>;
   updateProfile(userId: string, update: ProfileUpdate): Promise<User>;
+  // DEC-0020. Returns the previously stored file path, if any, so the
+  // caller can delete the orphaned file from disk - same contract the
+  // group photo upload already uses.
+  setProfilePhoto(
+    userId: string,
+    photoUrl: string,
+    photoPath: string
+  ): Promise<{ user: User; previousPath: string | undefined }>;
+  clearProfilePhoto(
+    userId: string
+  ): Promise<{ user: User; previousPath: string | undefined }>;
 }
 
 interface UserRow {
@@ -39,6 +50,7 @@ interface UserRow {
   bio: string | null;
   cover_style: string | null;
   avatar_style: string | null;
+  photo_url: string | null;
 }
 
 function toUser(row: UserRow): User {
@@ -50,7 +62,8 @@ function toUser(row: UserRow): User {
     ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {}),
     ...(row.bio !== null ? { bio: row.bio } : {}),
     ...(row.cover_style !== null ? { coverStyle: row.cover_style } : {}),
-    ...(row.avatar_style !== null ? { avatarStyle: row.avatar_style } : {})
+    ...(row.avatar_style !== null ? { avatarStyle: row.avatar_style } : {}),
+    ...(row.photo_url !== null ? { photoUrl: row.photo_url } : {})
   };
 }
 
@@ -73,7 +86,7 @@ export class PostgresAuthRepository implements AuthRepository {
          email = EXCLUDED.email,
          display_name = EXCLUDED.display_name,
          avatar_url = EXCLUDED.avatar_url
-       RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style, avatar_style`,
+       RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style, avatar_style, photo_url`,
       [
         randomUUID(),
         profile.email,
@@ -100,7 +113,7 @@ export class PostgresAuthRepository implements AuthRepository {
 
   async findUserBySessionToken(token: string): Promise<User | undefined> {
     const result = await this.pool.query<UserRow>(
-      `SELECT u.id, u.email, u.display_name, u.avatar_url, u.created_at, u.bio, u.cover_style, u.avatar_style
+      `SELECT u.id, u.email, u.display_name, u.avatar_url, u.created_at, u.bio, u.cover_style, u.avatar_style, u.photo_url
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token = $1 AND s.expires_at > now()`,
@@ -134,7 +147,7 @@ export class PostgresAuthRepository implements AuthRepository {
            ELSE avatar_style
          END
        WHERE id = $1
-       RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style, avatar_style`,
+       RETURNING id, email, display_name, avatar_url, created_at, bio, cover_style, avatar_style, photo_url`,
       [
         userId,
         update.bio ?? null,
@@ -143,5 +156,52 @@ export class PostgresAuthRepository implements AuthRepository {
       ]
     );
     return toUser(result.rows[0]!);
+  }
+
+  // DEC-0020. photo_path is returned from the pre-update row rather than
+  // read separately, so a replace can delete exactly the file it replaced
+  // without a second round trip that could race another upload.
+  async setProfilePhoto(
+    userId: string,
+    photoUrl: string,
+    photoPath: string
+  ): Promise<{ user: User; previousPath: string | undefined }> {
+    const result = await this.pool.query<
+      UserRow & { previous_path: string | null }
+    >(
+      `UPDATE users SET photo_url = $2, photo_path = $3
+       FROM (SELECT photo_path AS previous_path FROM users WHERE id = $1) AS before
+       WHERE users.id = $1
+       RETURNING users.id, users.email, users.display_name, users.avatar_url,
+                 users.created_at, users.bio, users.cover_style,
+                 users.avatar_style, users.photo_url, before.previous_path`,
+      [userId, photoUrl, photoPath]
+    );
+    const row = result.rows[0]!;
+    return {
+      user: toUser(row),
+      previousPath: row.previous_path ?? undefined
+    };
+  }
+
+  async clearProfilePhoto(
+    userId: string
+  ): Promise<{ user: User; previousPath: string | undefined }> {
+    const result = await this.pool.query<
+      UserRow & { previous_path: string | null }
+    >(
+      `UPDATE users SET photo_url = NULL, photo_path = NULL
+       FROM (SELECT photo_path AS previous_path FROM users WHERE id = $1) AS before
+       WHERE users.id = $1
+       RETURNING users.id, users.email, users.display_name, users.avatar_url,
+                 users.created_at, users.bio, users.cover_style,
+                 users.avatar_style, users.photo_url, before.previous_path`,
+      [userId]
+    );
+    const row = result.rows[0]!;
+    return {
+      user: toUser(row),
+      previousPath: row.previous_path ?? undefined
+    };
   }
 }

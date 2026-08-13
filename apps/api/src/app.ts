@@ -14,6 +14,7 @@ import type {
   AttendanceRepository,
   AuthRepository,
   EventPhotosRepository,
+  UserPhotosRepository,
   EventRepository,
   FavoritesRepository,
   ForumRepository,
@@ -53,6 +54,7 @@ import {
 import { resolveAllowedOrigin, resolveApiConfig } from './config.js';
 import { registerCreatedEventsRoutes } from './created-events.js';
 import { registerEventPhotosRoutes } from './event-photos.js';
+import { registerUserPhotosRoutes } from './user-photos.js';
 import { registerForumRoutes } from './forum.js';
 import { registerGroupsRoutes } from './groups.js';
 import { registerMessagesRoutes } from './messages.js';
@@ -97,6 +99,7 @@ export function buildApp(
     notificationsRepository?: NotificationsRepository;
     organizerRepository?: OrganizerRepository;
     eventPhotosRepository?: EventPhotosRepository;
+    userPhotosRepository?: UserPhotosRepository;
     ratingsRepository?: RatingsRepository;
     // Where uploaded photo files live on disk, and the base URL the API
     // serves them back from (see the /uploads static mount below) - local
@@ -146,6 +149,7 @@ export function buildApp(
     options.groupsRepository &&
     options.profileRepository &&
     options.eventPhotosRepository &&
+    options.userPhotosRepository &&
     options.ratingsRepository &&
     options.notificationsRepository &&
     options.organizerRepository &&
@@ -207,6 +211,13 @@ export function buildApp(
       app,
       options.authRepository,
       options.eventPhotosRepository,
+      options.uploadDir,
+      options.publicUploadUrl
+    );
+    registerUserPhotosRoutes(
+      app,
+      options.authRepository,
+      options.userPhotosRepository,
       options.uploadDir,
       options.publicUploadUrl
     );

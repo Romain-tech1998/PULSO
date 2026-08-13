@@ -2,6 +2,12 @@ import type { PublicUser } from '@pulso/contracts';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
+import {
+  publicUserColumns,
+  toPublicUser,
+  type PublicUserRow
+} from './public-user.js';
+
 export class FriendCodeNotFoundError extends Error {
   constructor() {
     super('No account matches this friend code.');
@@ -92,20 +98,6 @@ export interface FriendsRepository {
   sendRequestToUser(requesterId: string, addresseeId: string): Promise<string>;
 }
 
-interface PublicUserRow {
-  id: string;
-  display_name: string;
-  avatar_url: string | null;
-}
-
-function toPublicUser(row: PublicUserRow): PublicUser {
-  return {
-    id: row.id,
-    displayName: row.display_name,
-    ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-  };
-}
-
 export class PostgresFriendsRepository implements FriendsRepository {
   constructor(private readonly pool: Pool) {}
 
@@ -170,11 +162,13 @@ export class PostgresFriendsRepository implements FriendsRepository {
       other_id: string;
       display_name: string;
       avatar_url: string | null;
+      photo_url: string | null;
+      avatar_style: string | null;
     }
     const result = await this.pool.query<Row>(
       `SELECT f.id AS request_id, f.created_at,
          CASE WHEN f.requester_id = $1 THEN 'outgoing' ELSE 'incoming' END AS direction,
-         u.id AS other_id, u.display_name, u.avatar_url
+         u.id AS other_id, u.display_name, u.avatar_url, u.photo_url, u.avatar_style
        FROM friendships f
        JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
        WHERE f.status = 'pending' AND (f.requester_id = $1 OR f.addressee_id = $1)
@@ -186,7 +180,9 @@ export class PostgresFriendsRepository implements FriendsRepository {
       user: toPublicUser({
         id: row.other_id,
         display_name: row.display_name,
-        avatar_url: row.avatar_url
+        avatar_url: row.avatar_url,
+        photo_url: row.photo_url,
+        avatar_style: row.avatar_style
       }),
       direction: row.direction,
       createdAt: new Date(row.created_at).toISOString()
@@ -219,7 +215,7 @@ export class PostgresFriendsRepository implements FriendsRepository {
 
   async getFriends(userId: string): Promise<PublicUser[]> {
     const result = await this.pool.query<PublicUserRow>(
-      `SELECT u.id, u.display_name, u.avatar_url
+      `SELECT ${publicUserColumns('u')}
        FROM friendships f
        JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
        WHERE f.status = 'accepted' AND (f.requester_id = $1 OR f.addressee_id = $1)
@@ -287,6 +283,8 @@ export class PostgresFriendsRepository implements FriendsRepository {
       id: string;
       display_name: string;
       avatar_url: string | null;
+      photo_url: string | null;
+      avatar_style: string | null;
       mutual_count: string;
     }>(
       `WITH my_friends AS (
@@ -309,21 +307,17 @@ export class PostgresFriendsRepository implements FriendsRepository {
          JOIN my_friends mf ON f.requester_id = mf.friend_id OR f.addressee_id = mf.friend_id
          WHERE f.status = 'accepted'
        )
-       SELECT u.id, u.display_name, u.avatar_url, COUNT(*) AS mutual_count
+       SELECT ${publicUserColumns('u')}, COUNT(*) AS mutual_count
        FROM friends_of_friends fof
        JOIN users u ON u.id = fof.candidate
        WHERE fof.candidate NOT IN (SELECT friend_id FROM excluded)
-       GROUP BY u.id, u.display_name, u.avatar_url
+       GROUP BY ${publicUserColumns('u')}
        ORDER BY mutual_count DESC, u.display_name ASC
        LIMIT $2`,
       [userId, limit]
     );
     return result.rows.map((row) => ({
-      user: toPublicUser({
-        id: row.id,
-        display_name: row.display_name,
-        avatar_url: row.avatar_url
-      }),
+      user: toPublicUser(row),
       mutualFriendCount: Number(row.mutual_count)
     }));
   }
@@ -336,10 +330,12 @@ export class PostgresFriendsRepository implements FriendsRepository {
       id: string;
       display_name: string;
       avatar_url: string | null;
+      photo_url: string | null;
+      avatar_style: string | null;
       bio: string | null;
       created_at: string;
     }>(
-      `SELECT u.id, u.display_name, u.avatar_url, u.bio, u.created_at
+      `SELECT ${publicUserColumns('u')}, u.bio, u.created_at
        FROM users u
        WHERE u.id = $2
          AND EXISTS (
@@ -353,11 +349,7 @@ export class PostgresFriendsRepository implements FriendsRepository {
     const row = result.rows[0];
     if (!row) return undefined;
     return {
-      ...toPublicUser({
-        id: row.id,
-        display_name: row.display_name,
-        avatar_url: row.avatar_url
-      }),
+      ...toPublicUser(row),
       bio: row.bio ?? undefined,
       createdAt: new Date(row.created_at).toISOString()
     };

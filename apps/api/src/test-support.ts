@@ -5,6 +5,7 @@ import type {
   AuthRepository,
   EventPhoto,
   EventPhotosRepository,
+  UserPhotosRepository,
   EventRepository,
   FavoritesRepository,
   ForumPost,
@@ -91,6 +92,14 @@ export function fakeAuthRepository(
       token === 'valid-token' ? testUser : undefined,
     deleteSession: async () => undefined,
     updateProfile: async () => testUser,
+    setProfilePhoto: async (_userId, photoUrl) => ({
+      user: { ...testUser, photoUrl },
+      previousPath: undefined
+    }),
+    clearProfilePhoto: async () => ({
+      user: testUser,
+      previousPath: undefined
+    }),
     ...overrides
   };
 }
@@ -231,6 +240,8 @@ export function fakeMessagesRepository(
     markConversationRead: async () => undefined,
     getUnreadCount: async () => 0,
     getConversations: async () => [],
+    getMessageRequests: async () => [],
+    respondToMessageRequest: async () => true,
     ...overrides
   };
 }
@@ -496,6 +507,24 @@ export function fakeEventPhotosRepository(
   };
 }
 
+export function fakeUserPhotosRepository(
+  overrides: Partial<UserPhotosRepository> = {}
+): UserPhotosRepository {
+  return {
+    listPhotos: async () => [],
+    createPhoto: async (_ownerId, filePath, input) => ({
+      id: '00000000-0000-4000-8000-0000000000f0',
+      filePath,
+      caption: input.caption,
+      eventId: input.eventId,
+      venueId: input.venueId,
+      createdAt: new Date('2026-08-13T12:00:00.000Z').toISOString()
+    }),
+    deletePhoto: async () => undefined,
+    ...overrides
+  };
+}
+
 // Isolated from any real upload directory the dev server might be using -
 // a fresh temp folder per test process, safe to leave behind (OS temp dir).
 export const testUploadDir = join(tmpdir(), 'pulso-test-uploads');
@@ -518,6 +547,7 @@ export function accountRepositories(
     groupsRepository?: GroupsRepository;
     profileRepository?: ProfileRepository;
     eventPhotosRepository?: EventPhotosRepository;
+    userPhotosRepository?: UserPhotosRepository;
     ratingsRepository?: RatingsRepository;
     notificationsRepository?: NotificationsRepository;
     organizerRepository?: OrganizerRepository;
@@ -541,6 +571,8 @@ export function accountRepositories(
     profileRepository: overrides.profileRepository ?? fakeProfileRepository(),
     eventPhotosRepository:
       overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
+    userPhotosRepository:
+      overrides.userPhotosRepository ?? fakeUserPhotosRepository(),
     ratingsRepository: overrides.ratingsRepository ?? fakeRatingsRepository(),
     notificationsRepository:
       overrides.notificationsRepository ?? fakeNotificationsRepository(),

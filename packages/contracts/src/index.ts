@@ -275,8 +275,10 @@ export const venueRatingSummariesResponseSchema = z.object({
 // Google or derived on demand (see /me/trends), never a stored preference
 // invented beyond what the user actually gave Pulso. `coverStyle`/
 // `avatarStyle` are keys into small fixed preset sets (see
-// PROFILE_COVER_STYLES/PROFILE_AVATAR_STYLES on the web side), never a photo
-// upload - Pulso doesn't store user images beyond the Google avatar.
+// PROFILE_COVER_STYLES/PROFILE_AVATAR_STYLES on the web side). They were
+// once the only avatar a user could choose, because Phase 4.7 stored no
+// user image at all; DEC-0020 lifted that and added `photoUrl`, so the
+// presets are now the fallback rather than the whole story.
 export const userSchema = z.object({
   id: z.uuid(),
   email: z.email(),
@@ -285,7 +287,11 @@ export const userSchema = z.object({
   createdAt: z.iso.datetime(),
   bio: z.string().max(280).optional(),
   coverStyle: z.string().optional(),
-  avatarStyle: z.string().optional()
+  avatarStyle: z.string().optional(),
+  // DEC-0020: a real uploaded photo, and the highest-priority avatar
+  // source. Separate from avatarUrl, which mirrors Google and is
+  // overwritten on every sign-in - see the migration's note.
+  photoUrl: z.url().optional()
 });
 
 export const meResponseSchema = z.object({ data: userSchema });
@@ -555,7 +561,12 @@ export const trendsResponseSchema = z.object({
 export const publicUserSchema = z.object({
   id: z.uuid(),
   displayName: z.string().min(1),
-  avatarUrl: z.url().optional()
+  avatarUrl: z.url().optional(),
+  // DEC-0020. Carried here so an uploaded photo shows wherever another
+  // account already appears (conversation list, members, participants)
+  // rather than only on the profile page.
+  photoUrl: z.url().optional(),
+  avatarStyle: z.string().optional()
 });
 
 export const friendCodeResponseSchema = z.object({
@@ -736,8 +747,10 @@ export const unreadCountResponseSchema = z.object({
   data: z.object({ count: z.number().int().min(0) })
 });
 
-// One row per accepted friend (not just ones with an existing message
-// history) - powers the Messages page's conversation list.
+// One row per account this user has an inbox with: every accepted friend
+// (whether or not anything was ever said) plus, since DEC-0020, every
+// accepted message request. A pending request is not here - it belongs to
+// messageRequestSchema below.
 export const conversationSummarySchema = z.object({
   friend: publicUserSchema,
   lastMessage: messageSchema.optional(),
@@ -746,6 +759,24 @@ export const conversationSummarySchema = z.object({
 
 export const conversationsResponseSchema = z.object({
   data: z.array(conversationSummarySchema)
+});
+
+// DEC-0020 - a conversation waiting to be let in. Carries the one message
+// the sender was allowed to send, so the recipient answers on the content
+// rather than on a display name alone. `message` is optional only because
+// the row and the message are separate writes; in practice one exists.
+export const messageRequestSchema = z.object({
+  sender: publicUserSchema,
+  message: messageSchema.optional(),
+  createdAt: z.iso.datetime()
+});
+
+export const messageRequestsResponseSchema = z.object({
+  data: z.array(messageRequestSchema)
+});
+
+export const respondToMessageRequestSchema = z.object({
+  action: z.enum(['accept', 'decline'])
 });
 
 // Captures a report only (DEC-0012) - no moderation queue or automated
@@ -1442,6 +1473,25 @@ export const eventPhotosResponseSchema = z.object({
 export const eventPhotoResponseSchema = z.object({
   data: eventPhotoSchema
 });
+// DEC-0020 - the personal photo gallery. A gallery, not a feed: a photo is
+// only ever read as part of one account's own grid, which is why there is
+// no author field (the owner is the profile being viewed) and no like or
+// comment count. `eventId`/`venueId` are an optional "taken at" reference,
+// at most one of the two; hydrating either into a name is the caller's job,
+// exactly as the Favoris section already hydrates ids.
+export const userPhotoSchema = z.object({
+  id: z.uuid(),
+  url: z.url(),
+  caption: z.string().max(280).optional(),
+  eventId: z.uuid().optional(),
+  venueId: z.uuid().optional(),
+  createdAt: z.iso.datetime()
+});
+export const userPhotosResponseSchema = z.object({
+  data: z.array(userPhotoSchema)
+});
+export const userPhotoResponseSchema = z.object({ data: userPhotoSchema });
+
 export const eventDetailsResponseSchema = z.object({ data: publicEventSchema });
 export const errorResponseSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() })
@@ -1457,6 +1507,9 @@ export type ForumMembersResponse = z.infer<typeof forumMembersResponseSchema>;
 export type ForumFollowResponse = z.infer<typeof forumFollowResponseSchema>;
 export type EventPhoto = z.infer<typeof eventPhotoSchema>;
 export type EventPhotosResponse = z.infer<typeof eventPhotosResponseSchema>;
+export type UserPhoto = z.infer<typeof userPhotoSchema>;
+export type UserPhotosResponse = z.infer<typeof userPhotosResponseSchema>;
+export type UserPhotoResponse = z.infer<typeof userPhotoResponseSchema>;
 export type EventDetailsResponse = z.infer<typeof eventDetailsResponseSchema>;
 export type MapBoundsQuery = z.infer<typeof mapBoundsQuerySchema>;
 export type DirectDistanceQuery = z.infer<typeof directDistanceQuerySchema>;
@@ -1545,6 +1598,10 @@ export type MessageResponse = z.infer<typeof messageResponseSchema>;
 export type UnreadCountResponse = z.infer<typeof unreadCountResponseSchema>;
 export type ConversationSummary = z.infer<typeof conversationSummarySchema>;
 export type ConversationsResponse = z.infer<typeof conversationsResponseSchema>;
+export type MessageRequest = z.infer<typeof messageRequestSchema>;
+export type MessageRequestsResponse = z.infer<
+  typeof messageRequestsResponseSchema
+>;
 export type ReportTargetType = z.infer<typeof reportTargetTypeSchema>;
 export type CreateReportRequest = z.infer<typeof createReportRequestSchema>;
 export type Group = z.infer<typeof groupSchema>;
@@ -1581,9 +1638,7 @@ export type StartGroupOutingRequest = z.infer<
   typeof startGroupOutingRequestSchema
 >;
 export type GroupChannel = z.infer<typeof groupChannelSchema>;
-export type GroupChannelsResponse = z.infer<
-  typeof groupChannelsResponseSchema
->;
+export type GroupChannelsResponse = z.infer<typeof groupChannelsResponseSchema>;
 export type CreateGroupChannelRequest = z.infer<
   typeof createGroupChannelRequestSchema
 >;

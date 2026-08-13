@@ -48,8 +48,11 @@ export {
 } from './forum-repository.js';
 export {
   PostgresMessagesRepository,
+  MessageRequestDeclinedError,
+  MessageRequestPendingError,
   NotFriendsError,
   type Message,
+  type MessageRequest,
   type MessagesRepository
 } from './messages-repository.js';
 export {
@@ -90,6 +93,12 @@ export {
   type EventPhotosRepository
 } from './event-photos-repository.js';
 export {
+  PostgresUserPhotosRepository,
+  type CreateUserPhotoInput,
+  type UserPhoto,
+  type UserPhotosRepository
+} from './user-photos-repository.js';
+export {
   OrganizerRequestExistsError,
   PostgresOrganizerRepository,
   type OrganizerRepository,
@@ -104,4 +113,9 @@ export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';
+export {
+  publicUserColumns,
+  toPublicUser,
+  type PublicUserRow
+} from './public-user.js';
 export * as schema from './schema.js';
