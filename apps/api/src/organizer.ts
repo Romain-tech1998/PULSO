@@ -186,7 +186,6 @@ export function registerOrganizerRoutes(
     }
   );
 
-
   // Finding the event to place. Deliberately a wide forward window rather
   // than the discovery default: a package is usually sold weeks before the
   // night it advertises, and an administrator searching for it should not
@@ -322,7 +321,6 @@ export function registerOrganizerRoutes(
     );
     return reply.status(204).send();
   });
-
 }
 
 // 403 rather than 404: the caller is authenticated, and the route's

@@ -168,9 +168,9 @@ describe('group module registry', () => {
       position: 0
     });
     // What survived keeps its order; everything else lands disabled after.
-    expect(
-      normalized.slice(1).every((entry) => entry.enabled === false)
-    ).toBe(true);
+    expect(normalized.slice(1).every((entry) => entry.enabled === false)).toBe(
+      true
+    );
   });
 
   it('renumbers positions contiguously and ignores duplicates', () => {

@@ -65,3 +65,8 @@ next-env.d.ts
 /output/
 /tmp/
 /packages/ingestion/scratch/
+
+# Knowledge-graph output from the graphify skill - generated from the
+# repository itself, so it is regenerated rather than reviewed, and its
+# ~35 cache files otherwise sit in every git status and format check.
+/graphify-out/

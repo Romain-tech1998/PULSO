@@ -773,7 +773,9 @@ describe('groups API', () => {
       payload: { justification: 'Communauté techno de 1200 personnes.' }
     });
     expect(response.statusCode).toBe(200);
-    expect(recorded?.justification).toBe('Communauté techno de 1200 personnes.');
+    expect(recorded?.justification).toBe(
+      'Communauté techno de 1200 personnes.'
+    );
     expect(notified).toEqual([['admin-1', 'admin-2']]);
     expect(response.json().data.verificationStatus).toBe('pending');
     await app.close();
@@ -800,7 +802,8 @@ describe('groups API', () => {
   });
 
   it('tells the moderator when someone asks to join their restricted group', async () => {
-    const notified: { moderator: string; actor: string; groupId: string }[] = [];
+    const notified: { moderator: string; actor: string; groupId: string }[] =
+      [];
     const group = fakeGroup({ visibility: 'restricted', createdBy: 'mod-1' });
     const app = buildApp(
       event,
@@ -834,7 +837,9 @@ describe('groups API', () => {
     const app = buildApp(
       event,
       accountRepositories({
-        groupsRepository: fakeGroupsRepository({ joinGroup: async () => 'member' }),
+        groupsRepository: fakeGroupsRepository({
+          joinGroup: async () => 'member'
+        }),
         notificationsRepository: fakeNotificationsRepository({
           notifyGroupJoinRequestReceived: async (moderator) => {
             notified.push(moderator);

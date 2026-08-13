@@ -105,14 +105,18 @@ describeWithDatabase('group sponsored placements', () => {
         `DELETE FROM group_sponsored_placements WHERE group_id = $1`,
         [groupId]
       );
-      await pool.query(`DELETE FROM group_posts WHERE group_id = $1`, [groupId]);
+      await pool.query(`DELETE FROM group_posts WHERE group_id = $1`, [
+        groupId
+      ]);
       await pool.query(`DELETE FROM group_channels WHERE group_id = $1`, [
         groupId
       ]);
       await pool.query(`DELETE FROM group_memberships WHERE group_id = $1`, [
         groupId
       ]);
-      await pool.query(`DELETE FROM group_roles WHERE group_id = $1`, [groupId]);
+      await pool.query(`DELETE FROM group_roles WHERE group_id = $1`, [
+        groupId
+      ]);
       await pool.query(`DELETE FROM groups WHERE id = $1`, [groupId]);
     }
     await pool.query(`DELETE FROM events WHERE id = ANY($1::uuid[])`, [
