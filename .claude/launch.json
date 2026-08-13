@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pulso-api",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@pulso/api", "dev"],
+      "port": 3001,
+      "env": {
+        "DATABASE_URL": "postgresql://pulso:pulso@localhost:5432/pulso"
+      }
+    },
+    {
+      "name": "pulso-web",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@pulso/web", "dev"],
+      "port": 3000
+    }
+  ]
+}

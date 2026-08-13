@@ -66,6 +66,14 @@ next-env.d.ts
 /tmp/
 /packages/ingestion/scratch/
 
+# Claude Code, per-machine only. settings.local.json holds a permission
+# allow-list carrying absolute paths from one developer's home directory,
+# and worktrees/ is scratch state the tool manages itself. The shared half
+# of this directory - launch.json, which is how the API and web dev servers
+# are started - is tracked.
+/.claude/settings.local.json
+/.claude/worktrees/
+
 # Knowledge-graph output from the graphify skill - generated from the
 # repository itself, so it is regenerated rather than reviewed, and its
 # ~35 cache files otherwise sit in every git status and format check.
