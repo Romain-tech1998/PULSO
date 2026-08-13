@@ -7,22 +7,16 @@ import {
 } from '@pulso/contracts';
 import type { AuthRepository, EventRepository } from '@pulso/database';
 import type { FastifyInstance } from 'fastify';
-import { randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 
 import { resolveBearerUser, sendUnauthenticated } from './auth.js';
+import { savePhotoUpload, STILL_IMAGE_MIME_TYPES } from './photo-upload.js';
 
 const eventParamsSchema = z.object({ id: z.uuid() });
 const geocodeQuerySchema = z.object({ address: z.string().min(4).max(300) });
 const pinRequestSchema = z.object({ pinned: z.boolean() });
-
-const COVER_MIME_TO_EXTENSION: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp'
-};
 
 /**
  * DEC-0017: an account can publish an event.
@@ -123,25 +117,19 @@ export function registerCreatedEventsRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { id } = eventParamsSchema.parse(request.params);
-    const file = await request.file();
-    if (!file) {
-      return reply.status(400).send({
-        error: { code: 'NO_FILE', message: 'No photo was uploaded.' }
-      });
-    }
-    const extension = COVER_MIME_TO_EXTENSION[file.mimetype];
-    if (!extension) {
-      return reply.status(415).send({
-        error: {
-          code: 'UNSUPPORTED_FILE_TYPE',
-          message: 'Only JPEG, PNG or WebP photos are supported.'
-        }
-      });
-    }
-    const buffer = await file.toBuffer();
-    const relativePath = `event-covers/${randomUUID()}.${extension}`;
-    await mkdir(join(uploadDir, 'event-covers'), { recursive: true });
-    await writeFile(join(uploadDir, relativePath), buffer);
+    // The narrower allow-list is passed explicitly: a cover is rendered at
+    // card size in every listing, so it stays still images only. Adopting
+    // the shared helper also fixes an oversized upload, which used to reach
+    // an unguarded toBuffer() and answer 500 instead of 413.
+    const upload = await savePhotoUpload(
+      await request.file(),
+      reply,
+      uploadDir,
+      'event-covers',
+      STILL_IMAGE_MIME_TYPES
+    );
+    if (!upload.ok) return upload.reply;
+    const relativePath = upload.filePath;
     const applied = await eventRepository.setCreatedEventImage(
       user.id,
       id,

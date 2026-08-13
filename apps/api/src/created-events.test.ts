@@ -1,10 +1,13 @@
 import type { PublicEvent } from '@pulso/contracts';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
 import {
   accountRepositories,
   fakeEventRepository,
+  testUploadDir,
   testUser
 } from './test-support.js';
 
@@ -169,6 +172,95 @@ describe('created-event visibility (DEC-0017)', () => {
       headers: { authorization: 'Bearer valid-token' }
     });
     expect(options).toMatchObject({ includeCreated: true, after: true });
+    await app.close();
+  });
+});
+
+describe('event cover upload', () => {
+  const auth = { authorization: 'Bearer valid-token' };
+  const eventId = '00000000-0000-4000-8000-0000000000b1';
+
+  // @fastify/multipart parses real multipart/form-data - build one with the
+  // platform's own FormData/Request rather than hand-rolling boundaries.
+  async function buildUpload(mimeType: string, bytes: number[]) {
+    const form = new FormData();
+    form.append(
+      'file',
+      new Blob([new Uint8Array(bytes)], { type: mimeType }),
+      'cover'
+    );
+    const request = new Request('http://local/upload', {
+      method: 'POST',
+      body: form
+    });
+    return {
+      contentType: request.headers.get('content-type')!,
+      payload: Buffer.from(await request.arrayBuffer())
+    };
+  }
+
+  it('rejects an animated GIF, which the gallery accepts', async () => {
+    // A cover is rendered at card size in every listing, so it stays still
+    // images only. This route and the photo routes share one upload helper,
+    // and the narrower list is passed to it explicitly - without this test
+    // nothing would notice the helper's default quietly widening covers to
+    // whatever the gallery allows.
+    const app = buildApp(fakeEventRepository(), accountRepositories());
+    const { contentType, payload } = await buildUpload('image/gif', [71, 73]);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/me/events/${eventId}/cover`,
+      headers: { ...auth, 'content-type': contentType },
+      payload
+    });
+    expect(response.statusCode).toBe(415);
+    expect(response.json().error.code).toBe('UNSUPPORTED_FILE_TYPE');
+    await app.close();
+  });
+
+  it('accepts a still image and stores it under event-covers', async () => {
+    let storedUrl: string | undefined;
+    const app = buildApp(
+      fakeEventRepository({
+        setCreatedEventImage: async (_userId, _id, imageUrl) => {
+          storedUrl = imageUrl;
+          return true;
+        }
+      }),
+      accountRepositories()
+    );
+    const { contentType, payload } = await buildUpload(
+      'image/webp',
+      [82, 73, 70, 70]
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/me/events/${eventId}/cover`,
+      headers: { ...auth, 'content-type': contentType },
+      payload
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(storedUrl).toContain('event-covers/');
+    expect(response.json().data.imageUrl).toContain('event-covers/');
+
+    await rm(join(testUploadDir, 'event-covers'), {
+      recursive: true,
+      force: true
+    });
+    await app.close();
+  });
+
+  it('rejects a request carrying no file at all', async () => {
+    const app = buildApp(fakeEventRepository(), accountRepositories());
+    const { contentType } = await buildUpload('image/png', [1]);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/me/events/${eventId}/cover`,
+      headers: { ...auth, 'content-type': contentType },
+      payload: Buffer.from('')
+    });
+    expect(response.statusCode).toBe(400);
     await app.close();
   });
 });

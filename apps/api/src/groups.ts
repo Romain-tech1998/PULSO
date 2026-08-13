@@ -44,12 +44,12 @@ import {
   NotGroupModeratorError
 } from '@pulso/database';
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 
 import { resolveBearerUser, sendUnauthenticated } from './auth.js';
+import { savePhotoUpload } from './photo-upload.js';
 
 /**
  * Every group route answers these three repository errors identically, so
@@ -104,13 +104,6 @@ const discoverQuerySchema = z.object({
  * modules (schedule, attendance, checklist) requires accepted membership,
  * same account-only UGC posture as the event forum.
  */
-const ALLOWED_MIME_TO_EXTENSION: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/gif': 'gif'
-};
-
 export function registerGroupsRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
@@ -411,39 +404,45 @@ export function registerGroupsRoutes(
 
   const outingParamsSchema = z.object({ id: z.uuid(), outingId: z.uuid() });
 
-  app.get('/groups/:id/outings/:outingId/attendance', async (request, reply) => {
-    const user = await resolveBearerUser(request, authRepository);
-    if (!user) return sendUnauthenticated(reply);
-    const { id, outingId } = outingParamsSchema.parse(request.params);
-    try {
-      const summary = await groupsRepository.getAttendanceSummary(
-        id,
-        user.id,
-        outingId
-      );
-      return groupAttendanceSummarySchema.parse(summary);
-    } catch (error) {
-      return replyGroupError(reply, error);
+  app.get(
+    '/groups/:id/outings/:outingId/attendance',
+    async (request, reply) => {
+      const user = await resolveBearerUser(request, authRepository);
+      if (!user) return sendUnauthenticated(reply);
+      const { id, outingId } = outingParamsSchema.parse(request.params);
+      try {
+        const summary = await groupsRepository.getAttendanceSummary(
+          id,
+          user.id,
+          outingId
+        );
+        return groupAttendanceSummarySchema.parse(summary);
+      } catch (error) {
+        return replyGroupError(reply, error);
+      }
     }
-  });
+  );
 
-  app.put('/groups/:id/outings/:outingId/attendance', async (request, reply) => {
-    const user = await resolveBearerUser(request, authRepository);
-    if (!user) return sendUnauthenticated(reply);
-    const { id, outingId } = outingParamsSchema.parse(request.params);
-    const { response } = setGroupAttendanceRequestSchema.parse(request.body);
-    try {
-      await groupsRepository.setAttendanceResponse(
-        id,
-        user.id,
-        response,
-        outingId
-      );
-    } catch (error) {
-      return replyGroupError(reply, error);
+  app.put(
+    '/groups/:id/outings/:outingId/attendance',
+    async (request, reply) => {
+      const user = await resolveBearerUser(request, authRepository);
+      if (!user) return sendUnauthenticated(reply);
+      const { id, outingId } = outingParamsSchema.parse(request.params);
+      const { response } = setGroupAttendanceRequestSchema.parse(request.body);
+      try {
+        await groupsRepository.setAttendanceResponse(
+          id,
+          user.id,
+          response,
+          outingId
+        );
+      } catch (error) {
+        return replyGroupError(reply, error);
+      }
+      return reply.status(204).send();
     }
-    return reply.status(204).send();
-  });
+  );
 
   app.get('/groups/:id/outings/:outingId/schedule', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -498,18 +497,23 @@ export function registerGroupsRoutes(
     }
   });
 
-  app.post('/groups/:id/outings/:outingId/checklist', async (request, reply) => {
-    const user = await resolveBearerUser(request, authRepository);
-    if (!user) return sendUnauthenticated(reply);
-    const { id, outingId } = outingParamsSchema.parse(request.params);
-    const { label } = createGroupChecklistItemRequestSchema.parse(request.body);
-    try {
-      await groupsRepository.addChecklistItem(id, user.id, label, outingId);
-    } catch (error) {
-      return replyGroupError(reply, error);
+  app.post(
+    '/groups/:id/outings/:outingId/checklist',
+    async (request, reply) => {
+      const user = await resolveBearerUser(request, authRepository);
+      if (!user) return sendUnauthenticated(reply);
+      const { id, outingId } = outingParamsSchema.parse(request.params);
+      const { label } = createGroupChecklistItemRequestSchema.parse(
+        request.body
+      );
+      try {
+        await groupsRepository.addChecklistItem(id, user.id, label, outingId);
+      } catch (error) {
+        return replyGroupError(reply, error);
+      }
+      return reply.status(204).send();
     }
-    return reply.status(204).send();
-  });
+  );
 
   app.get('/groups/:id/posts', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -696,38 +700,14 @@ export function registerGroupsRoutes(
     if (!user) return sendUnauthenticated(reply);
     const { id } = groupParamsSchema.parse(request.params);
 
-    const file = await request.file();
-    if (!file) {
-      return reply.status(400).send({
-        error: { code: 'NO_FILE', message: 'No photo was uploaded.' }
-      });
-    }
-    const extension = ALLOWED_MIME_TO_EXTENSION[file.mimetype];
-    if (!extension) {
-      return reply.status(415).send({
-        error: {
-          code: 'UNSUPPORTED_FILE_TYPE',
-          message: 'Only JPEG, PNG, WebP or GIF photos are supported.'
-        }
-      });
-    }
-    let buffer: Buffer;
-    try {
-      buffer = await file.toBuffer();
-    } catch {
-      return reply.status(413).send({
-        error: {
-          code: 'FILE_TOO_LARGE',
-          message: 'The photo exceeds the maximum allowed size.'
-        }
-      });
-    }
-
-    const groupDir = join(uploadDir, 'group-photos', id);
-    await mkdir(groupDir, { recursive: true });
-    const filename = `${randomUUID()}.${extension}`;
-    await writeFile(join(groupDir, filename), buffer);
-    const filePath = `group-photos/${id}/${filename}`;
+    const upload = await savePhotoUpload(
+      await request.file(),
+      reply,
+      uploadDir,
+      `group-photos/${id}`
+    );
+    if (!upload.ok) return upload.reply;
+    const { filePath } = upload;
 
     let previousPath: string | undefined;
     try {

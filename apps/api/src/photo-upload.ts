@@ -22,6 +22,16 @@ const ALLOWED_MIME_TO_EXTENSION: Record<string, string> = {
   'image/gif': 'gif'
 };
 
+// Event covers accept a narrower set than everything else: a cover is
+// rendered at card size in every listing, and an animated GIF there is a
+// different product decision from allowing one in a photo grid. Kept as an
+// explicit opt-out so extracting this helper did not quietly widen it.
+export const STILL_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp'
+] as const;
+
 export type PhotoUploadResult =
   { ok: true; filePath: string } | { ok: false; reply: FastifyReply };
 
@@ -38,7 +48,8 @@ export async function savePhotoUpload(
   file: MultipartFile | undefined,
   reply: FastifyReply,
   uploadDir: string,
-  subdirectory: string
+  subdirectory: string,
+  allowedMimeTypes?: readonly string[]
 ): Promise<PhotoUploadResult> {
   if (!file) {
     return {
@@ -50,13 +61,19 @@ export async function savePhotoUpload(
   }
 
   const extension = ALLOWED_MIME_TO_EXTENSION[file.mimetype];
-  if (!extension) {
+  const permitted =
+    extension !== undefined &&
+    (allowedMimeTypes === undefined ||
+      allowedMimeTypes.includes(file.mimetype));
+  if (!permitted) {
     return {
       ok: false,
       reply: await reply.status(415).send({
         error: {
           code: 'UNSUPPORTED_FILE_TYPE',
-          message: 'Only JPEG, PNG, WebP or GIF photos are supported.'
+          message: allowedMimeTypes
+            ? 'Only JPEG, PNG or WebP photos are supported.'
+            : 'Only JPEG, PNG, WebP or GIF photos are supported.'
         }
       })
     };
