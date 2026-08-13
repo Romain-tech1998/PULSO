@@ -713,6 +713,13 @@ export class PostgresEventRepository implements EventRepository {
          AND ($3::event_category[] IS NULL OR e.category = ANY($3))
          AND ($4::text = 'all' OR e.price_kind = $4)
          AND ($5::boolean OR e.origin = 'directory')
+         -- The same exclusion findInBounds applies. It was missing here,
+         -- while this method already read options.includeCreated - so a
+         -- named or venue-category search ("not comedy") derived the
+         -- exclusion, declared it a hard constraint, answered "exact", and
+         -- returned the excluded category anyway. Invisible against the
+         -- seeded fixtures, which carry no event in the excluded category.
+         AND ($9::event_category[] IS NULL OR NOT (e.category = ANY($9)))
          -- Either half may be absent. When both are present they are OR'd:
          -- "bar jazz" means either signal, and an AND would return nothing.
          AND (
@@ -760,7 +767,10 @@ export class PostgresEventRepository implements EventRepository {
         query.venueCategories && query.venueCategories.length > 0
           ? query.venueCategories
           : null,
-        query.limit ?? 60
+        query.limit ?? 60,
+        options.excludedCategories && options.excludedCategories.length > 0
+          ? options.excludedCategories
+          : null
       ]
     );
     return result.rows.map(toPublicEvent);

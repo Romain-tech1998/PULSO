@@ -88,11 +88,16 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
       '00000000-0000-4000-8000-000000000001'
     );
 
+    // A deliberately tiny envelope, not the city-wide one above. Postgres
+    // is right to sequential-scan a filter that matches nearly every row,
+    // so asserting the index on the wide box asserted something false the
+    // moment the database held real venues rather than two fixtures. The
+    // claim worth pinning is that the index is usable when it is selective.
     const plan = await pool.query<{ 'QUERY PLAN': string }>(
       `EXPLAIN (FORMAT TEXT)
        SELECT id FROM venues
        WHERE location && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
-      [-73.7, 45.4, -73.4, 45.7]
+      [-73.5683, 45.5007, -73.5663, 45.5027]
     );
     expect(plan.rows.map((row) => row['QUERY PLAN']).join('\n')).toMatch(
       /venues_location_gist_idx/i
@@ -151,10 +156,15 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
       });
       expect(boundsResponse.statusCode).toBe(200);
       const boundsBody = eventListResponseSchema.parse(boundsResponse.json());
-      expect(boundsBody.data[0]?.id).toBe(
-        '00000000-0000-4000-8000-000000000001'
+      // Found by id rather than taken from position 0. Ordering is by start
+      // time, so "the fixture is first" only held while the fixture was the
+      // only event in Montréal; a database carrying real ingested events
+      // puts something else there without anything being wrong.
+      const synthetic = boundsBody.data.find(
+        (event) => event.id === '00000000-0000-4000-8000-000000000001'
       );
-      expect(boundsBody.data[0]).toMatchObject({
+      expect(synthetic).toBeDefined();
+      expect(synthetic).toMatchObject({
         accessInformation:
           'Free entry. No reservation is required for this fictional fixture.',
         trust: { label: 'confirmed' },
