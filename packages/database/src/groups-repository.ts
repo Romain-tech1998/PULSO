@@ -8,6 +8,11 @@ import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
 import { EventNotFoundError } from './attendance-repository.js';
+import {
+  publicUserColumns,
+  toPublicUser,
+  type PublicUserRow
+} from './public-user.js';
 
 const FOREIGN_KEY_VIOLATION = '23503';
 
@@ -60,10 +65,7 @@ export interface GroupPostOuting {
 }
 export type AttendanceResponse = 'yes' | 'maybe' | 'no';
 export type GroupVerificationStatus =
-  | 'none'
-  | 'pending'
-  | 'verified'
-  | 'declined';
+  'none' | 'pending' | 'verified' | 'declined';
 
 export interface GroupMeetupVenue {
   name: string;
@@ -128,7 +130,7 @@ export interface GroupChannel {
 
 export class NotChannelWriterError extends Error {
   constructor() {
-    super('Only this group\'s moderator can post in this channel.');
+    super("Only this group's moderator can post in this channel.");
   }
 }
 
@@ -528,7 +530,9 @@ const GROUP_SELECT_FIELDS = `
   COALESCE((SELECT gm5.pinned FROM group_memberships gm5 WHERE gm5.group_id = g.id AND gm5.user_id = $VIEWER), false) AS pinned
 `;
 
-interface PostRow {
+// The author's columns arrive beside the post's own, and the post owns
+// `id` - hence Omit<..., 'id'> plus the reshape in toGroupPost.
+interface PostRow extends Omit<PublicUserRow, 'id'> {
   id: string;
   group_id: string;
   channel_id: string;
@@ -546,8 +550,6 @@ interface PostRow {
   created_at: string;
   parent_id: string | null;
   author_id: string;
-  display_name: string;
-  avatar_url: string | null;
   like_count: string;
   reply_count: string;
   liked_by_me: boolean;
@@ -583,14 +585,9 @@ function toGroupPost(row: PostRow): GroupPost {
     likeCount: Number(row.like_count),
     likedByMe: row.liked_by_me,
     replyCount: Number(row.reply_count),
-    author: {
-      id: row.author_id,
-      displayName: row.display_name,
-      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-    }
+    author: toPublicUser({ ...row, id: row.author_id })
   };
 }
-
 
 const PLACEMENT_SELECT = `
   p.id, p.group_id, p.sponsor_name, p.message, p.created_at, p.ends_at,
@@ -635,7 +632,6 @@ function toPlacement(row: PlacementRow): GroupSponsoredPlacement {
   };
 }
 
-
 interface OutingRow {
   id: string;
   group_id: string;
@@ -653,9 +649,7 @@ function toOuting(row: OutingRow): GroupOuting {
     groupId: row.group_id,
     eventId: row.event_id ?? undefined,
     title: row.title,
-    startsAt: row.starts_at
-      ? new Date(row.starts_at).toISOString()
-      : undefined,
+    startsAt: row.starts_at ? new Date(row.starts_at).toISOString() : undefined,
     place: row.place ?? undefined,
     createdAt: new Date(row.created_at).toISOString(),
     archivedAt: row.archived_at
@@ -926,28 +920,17 @@ export class PostgresGroupsRepository implements GroupsRepository {
     );
   }
 
-  async getMembers(
-    groupId: string,
-    viewerId: string
-  ): Promise<PublicUser[]> {
+  async getMembers(groupId: string, viewerId: string): Promise<PublicUser[]> {
     await this.requireVisibility(groupId, viewerId);
-    const result = await this.pool.query<{
-      id: string;
-      display_name: string;
-      avatar_url: string | null;
-    }>(
-      `SELECT u.id, u.display_name, u.avatar_url
+    const result = await this.pool.query<PublicUserRow>(
+      `SELECT ${publicUserColumns('u')}
        FROM group_memberships gm
        JOIN users u ON u.id = gm.user_id
        WHERE gm.group_id = $1 AND gm.status = 'member'
        ORDER BY gm.joined_at ASC`,
       [groupId]
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      displayName: row.display_name,
-      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-    }));
+    return result.rows.map(toPublicUser);
   }
 
   async getJoinRequests(
@@ -955,23 +938,15 @@ export class PostgresGroupsRepository implements GroupsRepository {
     moderatorId: string
   ): Promise<PublicUser[]> {
     await this.requireModerator(groupId, moderatorId);
-    const result = await this.pool.query<{
-      id: string;
-      display_name: string;
-      avatar_url: string | null;
-    }>(
-      `SELECT u.id, u.display_name, u.avatar_url
+    const result = await this.pool.query<PublicUserRow>(
+      `SELECT ${publicUserColumns('u')}
        FROM group_memberships gm
        JOIN users u ON u.id = gm.user_id
        WHERE gm.group_id = $1 AND gm.status = 'pending'
        ORDER BY gm.joined_at ASC`,
       [groupId]
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      displayName: row.display_name,
-      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-    }));
+    return result.rows.map(toPublicUser);
   }
 
   async respondToJoinRequest(
@@ -1111,6 +1086,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
     const result = await this.pool.query<PostRow>(
       `SELECT p.id, p.group_id, p.channel_id, p.kind, p.outing_id, p.body, p.created_at, p.parent_id,
               u.id AS author_id, u.display_name, u.avatar_url,
+              u.photo_url, u.avatar_style,
               COALESCE(likes.like_count, 0) AS like_count,
               COALESCE(replies.reply_count, 0) AS reply_count,
               (my_like.user_id IS NOT NULL) AS liked_by_me,
@@ -1172,7 +1148,9 @@ export class PostgresGroupsRepository implements GroupsRepository {
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING id, group_id, channel_id, kind, outing_id, body, created_at, author_id, parent_id
          )
-         SELECT inserted.*, u.display_name, u.avatar_url, 0 AS like_count, 0 AS reply_count, false AS liked_by_me
+         SELECT inserted.*, u.display_name, u.avatar_url,
+                u.photo_url, u.avatar_style,
+                0 AS like_count, 0 AS reply_count, false AS liked_by_me
          FROM inserted JOIN users u ON u.id = inserted.author_id`,
         [id, groupId, authorId, body, parentId ?? null, target.id]
       );
@@ -1392,7 +1370,13 @@ export class PostgresGroupsRepository implements GroupsRepository {
     await this.pool.query(
       `INSERT INTO group_checklist_items (id, group_id, label, created_by, outing_id)
        VALUES ($1, $2, $3, $4, $5)`,
-      [randomUUID(), groupId, label, authorId, await this.resolveOuting(groupId, outingId)]
+      [
+        randomUUID(),
+        groupId,
+        label,
+        authorId,
+        await this.resolveOuting(groupId, outingId)
+      ]
     );
   }
 
@@ -1491,13 +1475,17 @@ export class PostgresGroupsRepository implements GroupsRepository {
         requester_id: string;
         requester_display_name: string;
         requester_avatar_url: string | null;
+        requester_photo_url: string | null;
+        requester_avatar_style: string | null;
       }
     >(
       `SELECT ${GROUP_SELECT_FIELDS.replaceAll('$VIEWER', 'g.created_by')},
               g.verification_requested_at AS requested_at,
               g.verification_justification AS justification,
               u.id AS requester_id, u.display_name AS requester_display_name,
-              u.avatar_url AS requester_avatar_url
+              u.avatar_url AS requester_avatar_url,
+              u.photo_url AS requester_photo_url,
+              u.avatar_style AS requester_avatar_style
        FROM groups g
        JOIN users u ON u.id = g.created_by
        LEFT JOIN events e ON e.id = g.event_id
@@ -1507,13 +1495,13 @@ export class PostgresGroupsRepository implements GroupsRepository {
     );
     return result.rows.map((row) => ({
       group: toGroup(row),
-      requester: {
+      requester: toPublicUser({
         id: row.requester_id,
-        displayName: row.requester_display_name,
-        ...(row.requester_avatar_url !== null
-          ? { avatarUrl: row.requester_avatar_url }
-          : {})
-      },
+        display_name: row.requester_display_name,
+        avatar_url: row.requester_avatar_url,
+        photo_url: row.requester_photo_url,
+        avatar_style: row.requester_avatar_style
+      }),
       requestedAt: new Date(row.requested_at).toISOString(),
       justification: row.justification
     }));
@@ -1817,10 +1805,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
     return result.rows[0] ? toOuting(result.rows[0]) : undefined;
   }
 
-  async listOutings(
-    groupId: string,
-    viewerId: string
-  ): Promise<GroupOuting[]> {
+  async listOutings(groupId: string, viewerId: string): Promise<GroupOuting[]> {
     await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<OutingRow>(
       `SELECT id, group_id, event_id, title, starts_at, place, created_at, archived_at
@@ -1877,13 +1862,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
             ORDER BY c.position ASC, c.created_at ASC LIMIT 1),
            'outing', $5
          )`,
-        [
-          randomUUID(),
-          groupId,
-          userId,
-          input.title,
-          inserted.rows[0]!.id
-        ]
+        [randomUUID(), groupId, userId, input.title, inserted.rows[0]!.id]
       );
       await client.query('COMMIT');
       return toOuting(inserted.rows[0]!);

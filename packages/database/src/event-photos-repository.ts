@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
 import { EventNotFoundError } from './attendance-repository.js';
+import { toPublicUser, type PublicUserRow } from './public-user.js';
 
 const FOREIGN_KEY_VIOLATION = '23503';
 
@@ -43,14 +44,15 @@ export interface EventPhotosRepository {
   deletePhoto(photoId: string, uploaderId: string): Promise<string | undefined>;
 }
 
-interface PhotoRow {
+// The uploader's columns come back under `uploader_id` rather than `id`,
+// since the photo owns `id` here - hence the reshape in toEventPhoto rather
+// than using PublicUserRow directly.
+interface PhotoRow extends Omit<PublicUserRow, 'id'> {
   id: string;
   event_id: string;
   file_path: string;
   created_at: string;
   uploader_id: string;
-  display_name: string;
-  avatar_url: string | null;
 }
 
 function toEventPhoto(row: PhotoRow): EventPhoto {
@@ -59,11 +61,7 @@ function toEventPhoto(row: PhotoRow): EventPhoto {
     eventId: row.event_id,
     filePath: row.file_path,
     createdAt: new Date(row.created_at).toISOString(),
-    uploader: {
-      id: row.uploader_id,
-      displayName: row.display_name,
-      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-    }
+    uploader: toPublicUser({ ...row, id: row.uploader_id })
   };
 }
 
@@ -73,7 +71,8 @@ export class PostgresEventPhotosRepository implements EventPhotosRepository {
   async listPhotos(eventId: string): Promise<EventPhoto[]> {
     const result = await this.pool.query<PhotoRow>(
       `SELECT p.id, p.event_id, p.file_path, p.created_at,
-              u.id AS uploader_id, u.display_name, u.avatar_url
+              u.id AS uploader_id, u.display_name, u.avatar_url,
+              u.photo_url, u.avatar_style
        FROM event_photos p
        JOIN users u ON u.id = p.uploader_id
        WHERE p.event_id = $1
@@ -96,7 +95,8 @@ export class PostgresEventPhotosRepository implements EventPhotosRepository {
            VALUES ($1, $2, $3, $4)
            RETURNING id, event_id, uploader_id, file_path, created_at
          )
-         SELECT inserted.*, u.display_name, u.avatar_url
+         SELECT inserted.*, u.display_name, u.avatar_url,
+                u.photo_url, u.avatar_style
          FROM inserted
          JOIN users u ON u.id = inserted.uploader_id`,
         [id, eventId, uploaderId, filePath]

@@ -1,6 +1,12 @@
 import type { PublicUser } from '@pulso/contracts';
 import type { Pool } from 'pg';
 
+import {
+  publicUserColumns,
+  toPublicUser,
+  type PublicUserRow
+} from './public-user.js';
+
 export type AttendanceVisibility = 'private' | 'friends';
 
 export class EventNotFoundError extends Error {
@@ -107,12 +113,8 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
     viewerId: string,
     eventId: string
   ): Promise<PublicUser[]> {
-    const result = await this.pool.query<{
-      id: string;
-      display_name: string;
-      avatar_url: string | null;
-    }>(
-      `SELECT u.id, u.display_name, u.avatar_url
+    const result = await this.pool.query<PublicUserRow>(
+      `SELECT ${publicUserColumns('u')}
        FROM event_attendance ea
        JOIN friendships f
          ON f.status = 'accepted'
@@ -123,11 +125,7 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
        ORDER BY u.display_name ASC`,
       [viewerId, eventId]
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      displayName: row.display_name,
-      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-    }));
+    return result.rows.map(toPublicUser);
   }
 
   async getAttendanceCountsForEvents(
@@ -149,13 +147,8 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
     eventIds: string[]
   ): Promise<Map<string, PublicUser[]>> {
     if (eventIds.length === 0) return new Map();
-    const result = await this.pool.query<{
-      event_id: string;
-      id: string;
-      display_name: string;
-      avatar_url: string | null;
-    }>(
-      `SELECT ea.event_id, u.id, u.display_name, u.avatar_url
+    const result = await this.pool.query<PublicUserRow & { event_id: string }>(
+      `SELECT ea.event_id, ${publicUserColumns('u')}
        FROM event_attendance ea
        JOIN friendships f
          ON f.status = 'accepted'
@@ -168,11 +161,7 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
     );
     const byEvent = new Map<string, PublicUser[]>();
     for (const row of result.rows) {
-      const friend: PublicUser = {
-        id: row.id,
-        displayName: row.display_name,
-        ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-      };
+      const friend = toPublicUser(row);
       const existing = byEvent.get(row.event_id);
       if (existing) existing.push(friend);
       else byEvent.set(row.event_id, [friend]);
@@ -197,13 +186,8 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
   async getFriendsUpcomingAttendance(
     viewerId: string
   ): Promise<Array<{ friend: PublicUser; eventId: string }>> {
-    const result = await this.pool.query<{
-      event_id: string;
-      id: string;
-      display_name: string;
-      avatar_url: string | null;
-    }>(
-      `SELECT ea.event_id, u.id, u.display_name, u.avatar_url
+    const result = await this.pool.query<PublicUserRow & { event_id: string }>(
+      `SELECT ea.event_id, ${publicUserColumns('u')}
        FROM event_attendance ea
        JOIN users u ON u.id = ea.user_id
        JOIN events e ON e.id = ea.event_id
@@ -216,11 +200,7 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
       [viewerId]
     );
     return result.rows.map((row) => ({
-      friend: {
-        id: row.id,
-        displayName: row.display_name,
-        ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-      },
+      friend: toPublicUser(row),
       eventId: row.event_id
     }));
   }

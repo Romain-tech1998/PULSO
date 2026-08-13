@@ -149,9 +149,13 @@ import {
 import { persistBrowserLocale, resolveBrowserLocale } from './locale-client';
 import {
   API_BASE_URL,
+  DEFAULT_PROFILE_COVER,
   formatRelativeTime,
   HeartIcon,
   MAP_STYLE_URL,
+  PROFILE_AVATAR_PRESETS,
+  PROFILE_COVER_GRADIENTS,
+  renderAvatarContent,
   reportContent
 } from './shared';
 import { deriveVenuePriceTier, type VenuePriceTier } from './venue-price-tier';
@@ -9703,11 +9707,7 @@ function EventsPage({
                       key={person.id}
                       title={person.displayName}
                     >
-                      {person.avatarUrl ? (
-                        <img src={person.avatarUrl} alt="" />
-                      ) : (
-                        person.displayName.slice(0, 1).toUpperCase()
-                      )}
+                      {renderAvatarContent(person)}
                     </span>
                   ))}
                 </div>
@@ -11624,11 +11624,7 @@ function EventGridCard({
                   key={person.id}
                   title={person.displayName}
                 >
-                  {person.avatarUrl ? (
-                    <img src={person.avatarUrl} alt="" />
-                  ) : (
-                    person.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(person)}
                 </span>
               ))}
               {friendsAttending.length > 3 && (
@@ -13099,11 +13095,7 @@ function MessagesPage({
                   }}
                 >
                   <span className="friends-row-avatar friends-row-avatar-lg">
-                    {conversation.friend.avatarUrl ? (
-                      <img src={conversation.friend.avatarUrl} alt="" />
-                    ) : (
-                      conversation.friend.displayName.slice(0, 1).toUpperCase()
-                    )}
+                    {renderAvatarContent(conversation.friend)}
                   </span>
                   <span className="conversation-list-info">
                     <span className="conversation-list-row-top">
@@ -13231,11 +13223,7 @@ function ConversationPane({
       <div className="conversation-pane-header">
         <span className="conversation-modal-friend">
           <span className="friends-row-avatar friends-row-avatar-lg conversation-pane-avatar">
-            {friend.avatarUrl ? (
-              <img src={friend.avatarUrl} alt="" />
-            ) : (
-              friend.displayName.slice(0, 1).toUpperCase()
-            )}
+            {renderAvatarContent(friend)}
           </span>
           <span className="conversation-pane-identity">
             <span className="messages-page-eyebrow">
@@ -13355,11 +13343,7 @@ function MessagesRequestsTab({
             {incoming.map((request) => (
               <div className="amis-row" key={request.id}>
                 <span className="friends-row-avatar friends-row-avatar-lg">
-                  {request.user.avatarUrl ? (
-                    <img src={request.user.avatarUrl} alt="" />
-                  ) : (
-                    request.user.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(request.user)}
                 </span>
                 <span className="amis-row-name">
                   {request.user.displayName}
@@ -13395,11 +13379,7 @@ function MessagesRequestsTab({
             {outgoing.map((request) => (
               <div className="amis-row" key={request.id}>
                 <span className="friends-row-avatar friends-row-avatar-lg">
-                  {request.user.avatarUrl ? (
-                    <img src={request.user.avatarUrl} alt="" />
-                  ) : (
-                    request.user.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(request.user)}
                 </span>
                 <span className="amis-row-name">
                   {request.user.displayName}
@@ -13491,11 +13471,7 @@ function ComposeMessageModal({
                 key={friend.id}
               >
                 <span className="friends-row-avatar">
-                  {friend.avatarUrl ? (
-                    <img src={friend.avatarUrl} alt="" />
-                  ) : (
-                    friend.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(friend)}
                 </span>
                 <span className="friends-row-name">{friend.displayName}</span>
                 <button
@@ -13845,11 +13821,7 @@ function AmisPage({
                   onClick={() => setSelectedFriend(friendUser)}
                 >
                   <span className="friends-row-avatar friends-row-avatar-lg">
-                    {friendUser.avatarUrl ? (
-                      <img src={friendUser.avatarUrl} alt="" />
-                    ) : (
-                      friendUser.displayName.slice(0, 1).toUpperCase()
-                    )}
+                    {renderAvatarContent(friendUser)}
                   </span>
                   <span className="conversation-list-info">
                     <strong>{friendUser.displayName}</strong>
@@ -13900,11 +13872,7 @@ function AmisPage({
                   {incoming.map((request) => (
                     <div className="amis-row" key={request.id}>
                       <span className="friends-row-avatar friends-row-avatar-lg">
-                        {request.user.avatarUrl ? (
-                          <img src={request.user.avatarUrl} alt="" />
-                        ) : (
-                          request.user.displayName.slice(0, 1).toUpperCase()
-                        )}
+                        {renderAvatarContent(request.user)}
                       </span>
                       <span className="amis-row-name">
                         {request.user.displayName}
@@ -13948,11 +13916,7 @@ function AmisPage({
                   {outgoing.map((request) => (
                     <div className="amis-row" key={request.id}>
                       <span className="friends-row-avatar friends-row-avatar-lg">
-                        {request.user.avatarUrl ? (
-                          <img src={request.user.avatarUrl} alt="" />
-                        ) : (
-                          request.user.displayName.slice(0, 1).toUpperCase()
-                        )}
+                        {renderAvatarContent(request.user)}
                       </span>
                       <span className="amis-row-name">
                         {request.user.displayName}
@@ -13979,11 +13943,7 @@ function AmisPage({
                 {suggestions.map((suggestion) => (
                   <div className="amis-row" key={suggestion.user.id}>
                     <span className="friends-row-avatar friends-row-avatar-lg">
-                      {suggestion.user.avatarUrl ? (
-                        <img src={suggestion.user.avatarUrl} alt="" />
-                      ) : (
-                        suggestion.user.displayName.slice(0, 1).toUpperCase()
-                      )}
+                      {renderAvatarContent(suggestion.user)}
                     </span>
                     <span className="amis-row-name">
                       {suggestion.user.displayName}
@@ -14083,11 +14043,7 @@ function AmisPage({
                   onClick={() => onOpenEventForum(event.id)}
                 >
                   <span className="friends-row-avatar">
-                    {entry.friend.avatarUrl ? (
-                      <img src={entry.friend.avatarUrl} alt="" />
-                    ) : (
-                      entry.friend.displayName.slice(0, 1).toUpperCase()
-                    )}
+                    {renderAvatarContent(entry.friend)}
                   </span>
                   <span>
                     <strong>{entry.friend.displayName}</strong>
@@ -14315,77 +14271,6 @@ const PROFIL_TABS: Array<{
   { id: 'groupes', label: 'Groupes', icon: '♟' },
   { id: 'activite', label: 'Activité', icon: '↗' }
 ];
-
-// Brand-gradient banner presets (Phase 4.7) - never a photo upload, Pulso
-// stores no user images beyond the Google avatar. Keys match
-// PROFILE_COVER_STYLES in @pulso/contracts.
-const PROFILE_COVER_GRADIENTS: Record<string, string> = {
-  aurora: 'linear-gradient(135deg, #a73ee8, #ff2a7a)',
-  sunset: 'linear-gradient(135deg, #ff8a3d, #ff2a7a)',
-  midnight: 'linear-gradient(135deg, #1c192b, #5b3fe0)',
-  nebula: 'linear-gradient(135deg, #5b3fe0, #00c2a8)'
-};
-const DEFAULT_PROFILE_COVER = 'aurora';
-
-// Preset avatars (Phase 4.7) - picking one overrides the Google avatar photo
-// everywhere the user's own avatar appears (Sidebar profile card, TopBar
-// account menu, profile header), same "no upload" rationale as the cover
-// presets. Reuses the same brand gradients rather than inventing a second
-// palette.
-const PROFILE_AVATAR_PRESETS: Record<
-  string,
-  { emoji: string; gradient: string }
-> = {
-  note: { emoji: '🎧', gradient: PROFILE_COVER_GRADIENTS['aurora']! },
-  disco: { emoji: '🪩', gradient: PROFILE_COVER_GRADIENTS['midnight']! },
-  moon: { emoji: '🌙', gradient: PROFILE_COVER_GRADIENTS['nebula']! },
-  star: { emoji: '⭐', gradient: PROFILE_COVER_GRADIENTS['sunset']! },
-  flame: { emoji: '🔥', gradient: PROFILE_COVER_GRADIENTS['aurora']! },
-  heart: { emoji: '💜', gradient: PROFILE_COVER_GRADIENTS['midnight']! }
-};
-
-// Shared by every spot an avatar appears (AccountMenu, Sidebar profile
-// card, ProfilHeader, conversation list, friends list). One resolution
-// order, defined once, per DEC-0020:
-//
-//   uploaded photo -> chosen preset -> Google photo -> initial
-//
-// The uploaded photo leads because it is the only one the user deliberately
-// put there as their face. The presets stay ahead of the Google photo, as
-// they were before DEC-0020, since choosing one is still an explicit "not
-// my Google picture".
-//
-// Takes the structural minimum rather than a User, so a PublicUser (a
-// friend, a participant) resolves through exactly the same order instead of
-// a second, drifting copy.
-function renderAvatarContent(user: {
-  displayName: string;
-  avatarUrl?: string | undefined;
-  avatarStyle?: string | undefined;
-  photoUrl?: string | undefined;
-}): ReactNode {
-  if (user.photoUrl) {
-    return <img src={user.photoUrl} alt="" />;
-  }
-  const preset = user.avatarStyle
-    ? PROFILE_AVATAR_PRESETS[user.avatarStyle]
-    : undefined;
-  if (preset) {
-    return (
-      <span
-        className="user-avatar-preset"
-        style={{ background: preset.gradient }}
-        aria-hidden="true"
-      >
-        {preset.emoji}
-      </span>
-    );
-  }
-  if (user.avatarUrl) {
-    return <img src={user.avatarUrl} alt="" />;
-  }
-  return user.displayName.slice(0, 1).toUpperCase();
-}
 
 function renderUserAvatarContent(user: User): ReactNode {
   return renderAvatarContent(user);
@@ -14731,11 +14616,7 @@ function EditProfileModal({
               aria-label="Photo Google"
               title="Photo Google"
             >
-              {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt="" />
-              ) : (
-                user.displayName.slice(0, 1).toUpperCase()
-              )}
+              {renderAvatarContent(user)}
             </button>
             {PROFILE_AVATAR_STYLES.map((style) => (
               <button
@@ -15321,11 +15202,7 @@ function ProfilAmisCard({
               key={friend.id}
               title={friend.displayName}
             >
-              {friend.avatarUrl ? (
-                <img src={friend.avatarUrl} alt="" />
-              ) : (
-                friend.displayName.slice(0, 1).toUpperCase()
-              )}
+              {renderAvatarContent(friend)}
             </span>
           ))}
           {friends.length > 6 && (
@@ -16255,11 +16132,7 @@ function FriendsMapModal({
                   }}
                 >
                   <span className="friends-row-avatar">
-                    {entry.friend.avatarUrl ? (
-                      <img src={entry.friend.avatarUrl} alt="" />
-                    ) : (
-                      entry.friend.displayName.slice(0, 1).toUpperCase()
-                    )}
+                    {renderAvatarContent(entry.friend)}
                   </span>
                   <span className="friends-map-row-info">
                     <strong>{entry.friend.displayName}</strong>
@@ -16366,11 +16239,7 @@ function ConversationThread({
         {state === 'success' && messages.length === 0 && (
           <div className="conversation-empty-state">
             <span className="friends-row-avatar friends-row-avatar-lg">
-              {friend.avatarUrl ? (
-                <img src={friend.avatarUrl} alt="" />
-              ) : (
-                friend.displayName.slice(0, 1).toUpperCase()
-              )}
+              {renderAvatarContent(friend)}
             </span>
             <strong>Commence la conversation avec {friend.displayName}.</strong>
             <p>
@@ -16400,11 +16269,7 @@ function ConversationThread({
                 >
                   {incoming && (
                     <span className="friends-row-avatar conversation-message-avatar">
-                      {friend.avatarUrl ? (
-                        <img src={friend.avatarUrl} alt="" />
-                      ) : (
-                        friend.displayName.slice(0, 1).toUpperCase()
-                      )}
+                      {renderAvatarContent(friend)}
                     </span>
                   )}
                   <div
@@ -16498,11 +16363,7 @@ function ConversationModal({
         <div className="conversation-modal-header">
           <span className="conversation-modal-friend">
             <span className="friends-row-avatar friends-row-avatar-md">
-              {friend.avatarUrl ? (
-                <img src={friend.avatarUrl} alt="" />
-              ) : (
-                friend.displayName.slice(0, 1).toUpperCase()
-              )}
+              {renderAvatarContent(friend)}
             </span>
             <strong>{friend.displayName}</strong>
           </span>
@@ -17900,11 +17761,7 @@ function ShareToFriendModal({
             friends.map((friend) => (
               <div className="friends-row" key={friend.id}>
                 <span className="friends-row-avatar">
-                  {friend.avatarUrl ? (
-                    <img src={friend.avatarUrl} alt="" />
-                  ) : (
-                    friend.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(friend)}
                 </span>
                 <span className="friends-row-name">{friend.displayName}</span>
                 <button
@@ -18349,11 +18206,7 @@ function ForumTeaser({
                 key={member.id}
                 title={member.displayName}
               >
-                {member.avatarUrl ? (
-                  <img src={member.avatarUrl} alt="" />
-                ) : (
-                  member.displayName.slice(0, 1).toUpperCase()
-                )}
+                {renderAvatarContent(member)}
               </span>
             ))}
           </div>
@@ -18599,11 +18452,7 @@ function ForumPanel({
             {friendsAttending.map((attendee) => (
               <span className="attendance-friend" key={attendee.id}>
                 <span className="friends-row-avatar">
-                  {attendee.avatarUrl ? (
-                    <img src={attendee.avatarUrl} alt="" />
-                  ) : (
-                    attendee.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(attendee)}
                 </span>
                 {attendee.displayName}
               </span>
@@ -18685,11 +18534,7 @@ function ForumPanel({
                 {members.map((member) => (
                   <div className="friends-row" key={member.id}>
                     <span className="friends-row-avatar">
-                      {member.avatarUrl ? (
-                        <img src={member.avatarUrl} alt="" />
-                      ) : (
-                        member.displayName.slice(0, 1).toUpperCase()
-                      )}
+                      {renderAvatarContent(member)}
                     </span>
                     <span className="friends-row-name">
                       {member.displayName}
@@ -18824,11 +18669,7 @@ function ForumPanel({
                     key={member.id}
                     title={member.displayName}
                   >
-                    {member.avatarUrl ? (
-                      <img src={member.avatarUrl} alt="" />
-                    ) : (
-                      member.displayName.slice(0, 1).toUpperCase()
-                    )}
+                    {renderAvatarContent(member)}
                   </span>
                 ))}
               </div>
@@ -19474,11 +19315,7 @@ function ForumPostRow({
   return (
     <div className={`forum-post ${post.author.id === userId ? 'mine' : ''}`}>
       <span className="friends-row-avatar">
-        {post.author.avatarUrl ? (
-          <img src={post.author.avatarUrl} alt="" />
-        ) : (
-          post.author.displayName.slice(0, 1).toUpperCase()
-        )}
+        {renderAvatarContent(post.author)}
       </span>
       <div className="forum-post-body">
         <ForumPostAuthorRow
@@ -19523,11 +19360,7 @@ function ForumPostRow({
                 key={reply.id}
               >
                 <span className="friends-row-avatar">
-                  {reply.author.avatarUrl ? (
-                    <img src={reply.author.avatarUrl} alt="" />
-                  ) : (
-                    reply.author.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(reply.author)}
                 </span>
                 <div className="forum-post-body">
                   <ForumPostAuthorRow

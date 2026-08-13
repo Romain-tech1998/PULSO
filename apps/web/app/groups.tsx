@@ -31,10 +31,7 @@ import {
   translate,
   translatePlural
 } from '@pulso/domain/localization';
-import type {
-  MessageKey,
-  SupportedLocale
-} from '@pulso/domain/localization';
+import type { MessageKey, SupportedLocale } from '@pulso/domain/localization';
 import type {
   GroupModule,
   GroupModuleConfig,
@@ -48,6 +45,7 @@ import {
   formatRelativeTime,
   HeartIcon,
   MAP_STYLE_URL,
+  renderAvatarContent,
   reportContent
 } from './shared';
 
@@ -301,9 +299,7 @@ export function GroupsPage({
                 </span>
               </label>
               {type === 'private_crew' && (
-                <p className="groups-type-note">
-                  {t('groups.crewNote')}
-                </p>
+                <p className="groups-type-note">{t('groups.crewNote')}</p>
               )}
             </fieldset>
             <button
@@ -334,9 +330,7 @@ export function GroupsPage({
                 {t('groups.emptyEyebrow')}
               </span>
               <h2>{t('groups.emptyHeading')}</h2>
-              <p>
-                {t('groups.emptyBody')}
-              </p>
+              <p>{t('groups.emptyBody')}</p>
               <button
                 type="button"
                 className="groups-create-submit"
@@ -515,9 +509,7 @@ export function MessagesGroupsTab({
         <p className="list-view-empty">{t('groups.loading')}</p>
       )}
       {state === 'error' && (
-        <p className="list-view-empty">
-          {t('groups.loadError')}
-        </p>
+        <p className="list-view-empty">{t('groups.loadError')}</p>
       )}
       {state === 'success' && rows.length === 0 && (
         <p className="list-view-empty">
@@ -529,9 +521,7 @@ export function MessagesGroupsTab({
         </p>
       )}
       {state === 'success' && rows.length > 0 && visibleRows.length === 0 && (
-        <p className="list-view-empty">
-          {t('groups.noMatch')}
-        </p>
+        <p className="list-view-empty">{t('groups.noMatch')}</p>
       )}
       <div className="friends-list groups-directory-list">
         {visibleRows.map(({ group, event }) => (
@@ -710,7 +700,6 @@ export function GroupsBlock({
 // moderation beyond the existing author-only delete (DEC-0013 v1.2).
 type GroupDetailTab = 'feed' | 'members' | 'manage';
 
-
 /**
  * A group's face. Its uploaded photo when it has one, its initial when it
  * does not - never a stock image standing in for a picture the group never
@@ -802,7 +791,9 @@ function GroupIdentityCard({
       headers: { authorization: `Bearer ${authToken}` },
       body
     })
-      .then((response) => (response.ok ? response.json() : Promise.reject(response)))
+      .then((response) =>
+        response.ok ? response.json() : Promise.reject(response)
+      )
       .then((json) => onGroupUpdated(groupResponseSchema.parse(json).data))
       .catch(async (response: Response) => {
         setError(
@@ -974,7 +965,6 @@ function GroupIdentityCard({
   );
 }
 
-
 /**
  * The moderator's control over what the workspace actually shows.
  *
@@ -1132,7 +1122,6 @@ function GroupModulesCard({
   );
 }
 
-
 /**
  * A paid placement at the top of "Organiser" (DEC-0015 §Future
  * monetization).
@@ -1231,7 +1220,6 @@ function GroupSponsoredBanner({
     </article>
   );
 }
-
 
 /**
  * An outing as it appears in the feed: what it is, where, when, and the
@@ -1508,13 +1496,10 @@ export function GroupDetailContent({
     setPlacements((current) =>
       current.filter((entry) => entry.id !== placementId)
     );
-    void fetch(
-      `${API_BASE_URL}/groups/${group.id}/placements/${placementId}`,
-      {
-        method: 'DELETE',
-        headers: { authorization: `Bearer ${authToken}` }
-      }
-    ).then((response) => {
+    void fetch(`${API_BASE_URL}/groups/${group.id}/placements/${placementId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    }).then((response) => {
       if (!response.ok) refreshPlacements();
     });
   };
@@ -1739,8 +1724,8 @@ export function GroupDetailContent({
             <strong className="group-detail-name">
               {group.name}
               {group.verificationStatus === 'verified' && (
-            <VerifiedBadge locale={locale} />
-          )}
+                <VerifiedBadge locale={locale} />
+              )}
             </strong>
             <div className="group-detail-status-row">
               <span className="group-detail-visibility-badge">
@@ -1782,13 +1767,11 @@ export function GroupDetailContent({
                 className={`text-btn ${group.pinned ? 'active' : ''}`}
                 onClick={togglePin}
                 disabled={pinning}
-                title={
-                  group.pinned
-                    ? t('groups.unpin')
-                    : t('groups.pin')
-                }
+                title={group.pinned ? t('groups.unpin') : t('groups.pin')}
               >
-                {group.pinned ? `📌 ${t('groups.pinned')}` : `📌 ${t('groups.pin')}`}
+                {group.pinned
+                  ? `📌 ${t('groups.pinned')}`
+                  : `📌 ${t('groups.pin')}`}
               </button>
               <button
                 type="button"
@@ -1812,11 +1795,7 @@ export function GroupDetailContent({
                   key={member.id}
                   title={member.displayName}
                 >
-                  {member.avatarUrl ? (
-                    <img src={member.avatarUrl} alt="" />
-                  ) : (
-                    member.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(member)}
                 </span>
               ))}
             </div>
@@ -2044,7 +2023,9 @@ export function GroupDetailContent({
                     className="btn-secondary"
                     disabled={posting || !draft.trim()}
                   >
-                    {posting ? t('groups.composerPosting') : t('groups.composerSubmit')}
+                    {posting
+                      ? t('groups.composerPosting')
+                      : t('groups.composerSubmit')}
                   </button>
                 </div>
               </form>
@@ -2055,7 +2036,9 @@ export function GroupDetailContent({
                     submitEvent.preventDefault();
                     startOuting({
                       title: outingDraft.title,
-                      ...(outingDraft.place ? { place: outingDraft.place } : {}),
+                      ...(outingDraft.place
+                        ? { place: outingDraft.place }
+                        : {}),
                       ...(outingDraft.startsAt
                         ? {
                             startsAt: new Date(
@@ -2118,17 +2101,13 @@ export function GroupDetailContent({
                   <p className="list-view-empty">{t('groups.feedLoading')}</p>
                 )}
                 {postsState === 'error' && (
-                  <p className="list-view-empty">
-                    {t('groups.feedError')}
-                  </p>
+                  <p className="list-view-empty">{t('groups.feedError')}</p>
                 )}
                 {postsState === 'success' && topLevelPosts.length === 0 && (
                   <div className="group-empty-feed">
                     <span aria-hidden="true">◌</span>
                     <strong>{t('groups.feedEmpty')}</strong>
-                    <p>
-                      {t('groups.feedEmptyHint')}
-                    </p>
+                    <p>{t('groups.feedEmptyHint')}</p>
                   </div>
                 )}
                 {postsState === 'success' &&
@@ -2144,27 +2123,27 @@ export function GroupDetailContent({
                         onAnswered={refreshPosts}
                       />
                     ) : (
-                    <GroupPostRow
-                      key={post.id}
-                      post={post}
-                      userId={userId}
-                      authToken={authToken}
-                      locale={locale}
-                      onLike={toggleLike}
-                      onDelete={removePost}
-                      replies={repliesFor(post.id)}
-                      expanded={expandedReplies.has(post.id)}
-                      onToggleExpanded={() => toggleExpanded(post.id)}
-                      replyDraft={replyDrafts[post.id] ?? ''}
-                      onReplyDraftChange={(value) =>
-                        setReplyDrafts((prev) => ({
-                          ...prev,
-                          [post.id]: value
-                        }))
-                      }
-                      onSubmitReply={() => submitPost(post.id)}
-                      posting={posting}
-                    />
+                      <GroupPostRow
+                        key={post.id}
+                        post={post}
+                        userId={userId}
+                        authToken={authToken}
+                        locale={locale}
+                        onLike={toggleLike}
+                        onDelete={removePost}
+                        replies={repliesFor(post.id)}
+                        expanded={expandedReplies.has(post.id)}
+                        onToggleExpanded={() => toggleExpanded(post.id)}
+                        replyDraft={replyDrafts[post.id] ?? ''}
+                        onReplyDraftChange={(value) =>
+                          setReplyDrafts((prev) => ({
+                            ...prev,
+                            [post.id]: value
+                          }))
+                        }
+                        onSubmitReply={() => submitPost(post.id)}
+                        posting={posting}
+                      />
                     )
                   )}
               </div>
@@ -2199,11 +2178,7 @@ export function GroupDetailContent({
                 {members.map((member) => (
                   <div className="group-member-card" key={member.id}>
                     <span className="friends-row-avatar friends-row-avatar-lg">
-                      {member.avatarUrl ? (
-                        <img src={member.avatarUrl} alt="" />
-                      ) : (
-                        member.displayName.slice(0, 1).toUpperCase()
-                      )}
+                      {renderAvatarContent(member)}
                     </span>
                     <span>
                       <strong>{member.displayName}</strong>
@@ -2263,9 +2238,7 @@ export function GroupDetailContent({
                   <span aria-hidden="true">◎</span>
                   <div>
                     <strong>{t('groups.manageOpenTitle')}</strong>
-                    <p>
-                      {t('groups.manageOpenBody')}
-                    </p>
+                    <p>{t('groups.manageOpenBody')}</p>
                   </div>
                 </div>
               )}
@@ -2708,11 +2681,7 @@ function GroupJoinRequestsCard({
       {requests.map((request) => (
         <div className="amis-row" key={request.id}>
           <span className="friends-row-avatar friends-row-avatar-lg">
-            {request.avatarUrl ? (
-              <img src={request.avatarUrl} alt="" />
-            ) : (
-              request.displayName.slice(0, 1).toUpperCase()
-            )}
+            {renderAvatarContent(request)}
           </span>
           <span className="amis-row-name">{request.displayName}</span>
           <div className="amis-row-actions">
@@ -2822,11 +2791,7 @@ function InviteToGroupModal({
             friendsList.map((friend) => (
               <div className="friends-row" key={friend.id}>
                 <span className="friends-row-avatar">
-                  {friend.avatarUrl ? (
-                    <img src={friend.avatarUrl} alt="" />
-                  ) : (
-                    friend.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(friend)}
                 </span>
                 <span className="friends-row-name">{friend.displayName}</span>
                 <button
@@ -2929,11 +2894,7 @@ function GroupPostRow({
       >
         {!mine && (
           <span className="friends-row-avatar group-bubble-avatar">
-            {item.author.avatarUrl ? (
-              <img src={item.author.avatarUrl} alt="" />
-            ) : (
-              item.author.displayName.slice(0, 1).toUpperCase()
-            )}
+            {renderAvatarContent(item.author)}
           </span>
         )}
         <div className="group-bubble-col">
@@ -2953,9 +2914,7 @@ function GroupPostRow({
               onClick={() => onLike(item)}
             >
               <HeartIcon filled={item.likedByMe} />
-              <span>
-                {item.likedByMe ? t('post.liked') : t('post.like')}
-              </span>
+              <span>{item.likedByMe ? t('post.liked') : t('post.like')}</span>
               {item.likeCount > 0 && <b>{item.likeCount}</b>}
             </button>
             {!isReply && (

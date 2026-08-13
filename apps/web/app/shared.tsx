@@ -2,6 +2,7 @@ import type { ReportTargetType } from '@pulso/contracts';
 import { displayLocale, translate } from '@pulso/domain/localization';
 import type { SupportedLocale } from '@pulso/domain/localization';
 import type maplibregl from 'maplibre-gl';
+import type { ReactNode } from 'react';
 
 /**
  * The handful of definitions shared between `explore-map.tsx` and the
@@ -80,10 +81,82 @@ export function formatRelativeTime(
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diffMs / 60000);
   if (minutes < 1) return translate(locale, 'time.justNow');
-  if (minutes < 60) return translate(locale, 'time.minutesAgo', { count: minutes });
+  if (minutes < 60)
+    return translate(locale, 'time.minutesAgo', { count: minutes });
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return translate(locale, 'time.hoursAgo', { count: hours });
   const days = Math.floor(hours / 24);
   if (days < 7) return translate(locale, 'time.daysAgo', { count: days });
   return new Date(iso).toLocaleDateString(displayLocale(locale));
+}
+
+// Brand-gradient banner presets (Phase 4.7) - never a photo upload, Pulso
+// stores no user images beyond the Google avatar. Keys match
+// PROFILE_COVER_STYLES in @pulso/contracts.
+export const PROFILE_COVER_GRADIENTS: Record<string, string> = {
+  aurora: 'linear-gradient(135deg, #a73ee8, #ff2a7a)',
+  sunset: 'linear-gradient(135deg, #ff8a3d, #ff2a7a)',
+  midnight: 'linear-gradient(135deg, #1c192b, #5b3fe0)',
+  nebula: 'linear-gradient(135deg, #5b3fe0, #00c2a8)'
+};
+export const DEFAULT_PROFILE_COVER = 'aurora';
+
+// Preset avatars (Phase 4.7) - picking one overrides the Google avatar photo
+// everywhere the user's own avatar appears (Sidebar profile card, TopBar
+// account menu, profile header), same "no upload" rationale as the cover
+// presets. Reuses the same brand gradients rather than inventing a second
+// palette.
+export const PROFILE_AVATAR_PRESETS: Record<
+  string,
+  { emoji: string; gradient: string }
+> = {
+  note: { emoji: '🎧', gradient: PROFILE_COVER_GRADIENTS['aurora']! },
+  disco: { emoji: '🪩', gradient: PROFILE_COVER_GRADIENTS['midnight']! },
+  moon: { emoji: '🌙', gradient: PROFILE_COVER_GRADIENTS['nebula']! },
+  star: { emoji: '⭐', gradient: PROFILE_COVER_GRADIENTS['sunset']! },
+  flame: { emoji: '🔥', gradient: PROFILE_COVER_GRADIENTS['aurora']! },
+  heart: { emoji: '💜', gradient: PROFILE_COVER_GRADIENTS['midnight']! }
+};
+
+// Shared by every spot an avatar appears (AccountMenu, Sidebar profile
+// card, ProfilHeader, conversation list, friends list). One resolution
+// order, defined once, per DEC-0020:
+//
+//   uploaded photo -> chosen preset -> Google photo -> initial
+//
+// The uploaded photo leads because it is the only one the user deliberately
+// put there as their face. The presets stay ahead of the Google photo, as
+// they were before DEC-0020, since choosing one is still an explicit "not
+// my Google picture".
+//
+// Takes the structural minimum rather than a User, so a PublicUser (a
+// friend, a participant) resolves through exactly the same order instead of
+// a second, drifting copy.
+export function renderAvatarContent(user: {
+  displayName: string;
+  avatarUrl?: string | undefined;
+  avatarStyle?: string | undefined;
+  photoUrl?: string | undefined;
+}): ReactNode {
+  if (user.photoUrl) {
+    return <img src={user.photoUrl} alt="" />;
+  }
+  const preset = user.avatarStyle
+    ? PROFILE_AVATAR_PRESETS[user.avatarStyle]
+    : undefined;
+  if (preset) {
+    return (
+      <span
+        className="user-avatar-preset"
+        style={{ background: preset.gradient }}
+        aria-hidden="true"
+      >
+        {preset.emoji}
+      </span>
+    );
+  }
+  if (user.avatarUrl) {
+    return <img src={user.avatarUrl} alt="" />;
+  }
+  return user.displayName.slice(0, 1).toUpperCase();
 }
