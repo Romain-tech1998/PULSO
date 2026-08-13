@@ -7,6 +7,7 @@ import {
   CATEGORY_FILTER_OPTIONS,
   conversationResponseSchema,
   conversationsResponseSchema,
+  messageResponseSchema,
   DATE_FILTER_OPTIONS,
   discoverForumsResponseSchema,
   discoverGroupsResponseSchema,
@@ -86,7 +87,12 @@ import {
   type ProfileStatsResponse,
   type AdminVenuePhoto,
   type TrendsResponse,
-  type User
+  type MessageRequest,
+  messageRequestsResponseSchema,
+  type User,
+  type UserPhoto,
+  userPhotoResponseSchema,
+  userPhotosResponseSchema
 } from '@pulso/contracts';
 import {
   AFTER_WINDOW_END_HOUR,
@@ -1024,6 +1030,20 @@ export function ExploreMap({
   const [section, setSection] = useState<ConnectedSection | 'compte'>(
     'evenement'
   );
+  // DEC-0020: the Communauté entry has no page of its own - it reopens the
+  // sub-section the user was last on, so returning to it does not throw
+  // away where they were. Tracked rather than derived, because `section`
+  // has usually moved on to something else by the time they come back.
+  const [lastCommunitySection, setLastCommunitySection] =
+    useState<CommunitySection>(DEFAULT_COMMUNITY_SECTION);
+  // DEC-0020 - "message this person", from wherever an account is shown.
+  // Held here rather than inside MessagingDock because the surfaces that
+  // trigger it (a participant list, a friends list) are siblings of the
+  // dock, not children of it.
+  const [messageTarget, setMessageTarget] = useState<PublicUser>();
+  useEffect(() => {
+    if (isCommunitySection(section)) setLastCommunitySection(section);
+  }, [section]);
   // One-time redirect: an anonymous session always starts on 'evenement'
   // (the map), but once a session resolves to a signed-in user it should
   // land on the connected dashboard instead - only while the visitor
@@ -3544,6 +3564,7 @@ export function ExploreMap({
             setForumPanelMode(false);
             setSection(nextSection);
           }}
+          lastCommunitySection={lastCommunitySection}
           authToken={authToken}
           user={user}
           unreadMessagesCount={unreadMessagesCount}
@@ -3559,6 +3580,27 @@ export function ExploreMap({
               forumEventFirst: true
             })
           }
+        />
+      )}
+
+      {/* DEC-0020 - mounted beside the sidebar rather than inside any one
+          section, which is the whole point: the inbox is reachable from the
+          map, from an event, from a group, without leaving them. Hidden
+          while the Messages section itself is open, where it would be a
+          second, smaller copy of the page behind it. */}
+      {user && !isCommunitySection(section) && (
+        <MessagingDock
+          authToken={authToken}
+          user={user}
+          locale={locale}
+          unreadMessagesCount={unreadMessagesCount}
+          openWith={messageTarget}
+          onOpened={() => setMessageTarget(undefined)}
+          onOpenFullInbox={() => {
+            setAboutOpen(false);
+            setForumPanelMode(false);
+            setSection('messages');
+          }}
         />
       )}
 
@@ -4028,51 +4070,63 @@ export function ExploreMap({
             authToken={authToken}
             onNavigate={setSection}
           />
-        ) : user && section === 'forums' ? (
-          <ActiveForumsPage
-            authToken={authToken}
-            onOpenDetails={(eventId, knownEvent) =>
-              openDetails(eventId, { asForumPanel: true, knownEvent })
-            }
+        ) : user && isCommunitySection(section) ? (
+          <CommunityHub
+            section={section}
+            onSelect={(next) => {
+              setForumPanelMode(false);
+              setSection(next);
+            }}
+            unreadMessagesCount={unreadMessagesCount}
             locale={locale}
-          />
-        ) : user && section === 'groupes' ? (
-          <GroupsPage
-            authToken={authToken}
-            userId={user.id}
-            locale={locale}
-            onOpenEventForum={(eventId) =>
-              void openDetails(eventId, {
-                asForumPanel: true,
-                forumEventFirst: true
-              })
-            }
-          />
-        ) : user && section === 'messages' ? (
-          <MessagesPage
-            authToken={authToken}
-            user={user}
-            locale={locale}
-            onOpenEventForum={(eventId) =>
-              void openDetails(eventId, {
-                asForumPanel: true,
-                forumEventFirst: true
-              })
-            }
-          />
-        ) : user && section === 'amis' ? (
-          <AmisPage
-            authToken={authToken}
-            attendance={attendance}
-            locale={locale}
-            onOpenEventForum={(eventId) =>
-              void openDetails(eventId, {
-                asForumPanel: true,
-                forumEventFirst: true
-              })
-            }
-            onNavigate={setSection}
-          />
+          >
+            {section === 'forums' ? (
+              <ActiveForumsPage
+                authToken={authToken}
+                onOpenDetails={(eventId, knownEvent) =>
+                  openDetails(eventId, { asForumPanel: true, knownEvent })
+                }
+                locale={locale}
+              />
+            ) : section === 'groupes' ? (
+              <GroupsPage
+                authToken={authToken}
+                userId={user.id}
+                locale={locale}
+                onOpenEventForum={(eventId) =>
+                  void openDetails(eventId, {
+                    asForumPanel: true,
+                    forumEventFirst: true
+                  })
+                }
+              />
+            ) : section === 'messages' ? (
+              <MessagesPage
+                authToken={authToken}
+                user={user}
+                locale={locale}
+                onOpenEventForum={(eventId) =>
+                  void openDetails(eventId, {
+                    asForumPanel: true,
+                    forumEventFirst: true
+                  })
+                }
+              />
+            ) : (
+              <AmisPage
+                authToken={authToken}
+                attendance={attendance}
+                locale={locale}
+                onOpenEventForum={(eventId) =>
+                  void openDetails(eventId, {
+                    asForumPanel: true,
+                    forumEventFirst: true
+                  })
+                }
+                onNavigate={setSection}
+              />
+            )}
+          </CommunityHub>
         ) : user && isAdmin && section === 'administration' ? (
           <AdministrationPage authToken={authToken} locale={locale} />
         ) : user && section === 'organisateur' ? (
@@ -4130,8 +4184,8 @@ export function ExploreMap({
                   <div className="sidebar-mobile-header">
                     <h1 className="sidebar-section-title">
                       {section === 'evenement'
-                      ? translate(locale, 'nav.events')
-                      : translate(locale, 'nav.venues')}
+                        ? translate(locale, 'nav.events')
+                        : translate(locale, 'nav.venues')}
                     </h1>
                     <button
                       type="button"
@@ -4180,7 +4234,8 @@ export function ExploreMap({
                             className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
                             onClick={() => setViewMode('map')}
                           >
-                            <ViewModeIcon kind="map" /> {translate(locale, 'view.map')}
+                            <ViewModeIcon kind="map" />{' '}
+                            {translate(locale, 'view.map')}
                           </button>
                           <button
                             type="button"
@@ -4190,14 +4245,16 @@ export function ExploreMap({
                               setViewMode('list');
                             }}
                           >
-                            <ViewModeIcon kind="list" /> {translate(locale, 'view.list')}
+                            <ViewModeIcon kind="list" />{' '}
+                            {translate(locale, 'view.list')}
                           </button>
                           <button
                             type="button"
                             className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
                             onClick={() => setViewMode('calendar')}
                           >
-                            <ViewModeIcon kind="calendar" /> {translate(locale, 'view.calendar')}
+                            <ViewModeIcon kind="calendar" />{' '}
+                            {translate(locale, 'view.calendar')}
                           </button>
                         </>
                       ) : (
@@ -4207,21 +4264,24 @@ export function ExploreMap({
                             className={`view-toggle-btn ${lieuTab === 'map' ? 'active' : ''}`}
                             onClick={() => setLieuTab('map')}
                           >
-                            <ViewModeIcon kind="map" /> {translate(locale, 'view.map')}
+                            <ViewModeIcon kind="map" />{' '}
+                            {translate(locale, 'view.map')}
                           </button>
                           <button
                             type="button"
                             className={`view-toggle-btn ${lieuTab === 'list' ? 'active' : ''}`}
                             onClick={() => setLieuTab('list')}
                           >
-                            <ViewModeIcon kind="list" /> {translate(locale, 'view.list')}
+                            <ViewModeIcon kind="list" />{' '}
+                            {translate(locale, 'view.list')}
                           </button>
                           <button
                             type="button"
                             className={`view-toggle-btn ${lieuTab === 'calendar' ? 'active' : ''}`}
                             onClick={() => setLieuTab('calendar')}
                           >
-                            <ViewModeIcon kind="calendar" /> {translate(locale, 'view.calendar')}
+                            <ViewModeIcon kind="calendar" />{' '}
+                            {translate(locale, 'view.calendar')}
                           </button>
                         </>
                       )}
@@ -5463,6 +5523,7 @@ export function ExploreMap({
                           }
                           initialTab={detailsInitialTab}
                           onOpenForumPanel={() => setForumPanelMode(true)}
+                          onMessageUser={setMessageTarget}
                         />
                       );
                     })()}
@@ -6128,8 +6189,7 @@ function describeNotification(
         icon: 'lieux',
         text: (
           <>
-            <strong>{entry.venueName}</strong>
-            {' '}
+            <strong>{entry.venueName}</strong>{' '}
             {translate(locale, 'notif.venueAdded')}{' '}
             <strong>{entry.eventTitle}</strong>
           </>
@@ -6141,8 +6201,7 @@ function describeNotification(
         icon: 'amis',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {' '}
+            <strong>{entry.actorDisplayName}</strong>{' '}
             {translate(locale, 'notif.friendRequest')}{' '}
           </>
         ),
@@ -6153,8 +6212,7 @@ function describeNotification(
         icon: 'amis',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {' '}
+            <strong>{entry.actorDisplayName}</strong>{' '}
             {translate(locale, 'notif.friendAccepted')}{' '}
           </>
         ),
@@ -6165,8 +6223,7 @@ function describeNotification(
         icon: 'messages',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {' '}
+            <strong>{entry.actorDisplayName}</strong>{' '}
             {translate(locale, 'notif.messageReceived')}{' '}
           </>
         ),
@@ -6177,8 +6234,7 @@ function describeNotification(
         icon: 'forums',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {' '}
+            <strong>{entry.actorDisplayName}</strong>{' '}
             {translate(locale, 'notif.forumReply')}{' '}
             <strong>{entry.eventTitle}</strong>
           </>
@@ -6190,8 +6246,7 @@ function describeNotification(
         icon: 'administration',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {' '}
+            <strong>{entry.actorDisplayName}</strong>{' '}
             {translate(locale, 'notif.organizerRequest')}{' '}
             <strong>{entry.venueName}</strong>
           </>
@@ -6209,8 +6264,7 @@ function describeNotification(
         ) : (
           <>
             {translate(locale, 'notif.requestFor')}{' '}
-            <strong>{entry.venueName}</strong>
-            {' '}
+            <strong>{entry.venueName}</strong>{' '}
             {translate(locale, 'notif.declined')}
           </>
         ),
@@ -6221,8 +6275,7 @@ function describeNotification(
         icon: 'administration',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {' '}
+            <strong>{entry.actorDisplayName}</strong>{' '}
             {translate(locale, 'notif.groupVerificationRequest')}{' '}
             <strong>{entry.groupName}</strong>
           </>
@@ -6234,15 +6287,13 @@ function describeNotification(
         icon: 'groupes',
         text: entry.approved ? (
           <>
-            <strong>{entry.groupName}</strong>
-            {' '}
+            <strong>{entry.groupName}</strong>{' '}
             {translate(locale, 'notif.groupVerified')}{' '}
           </>
         ) : (
           <>
             {translate(locale, 'notif.groupVerificationOf')}{' '}
-            <strong>{entry.groupName}</strong>
-            {' '}
+            <strong>{entry.groupName}</strong>{' '}
             {translate(locale, 'notif.declined')}
           </>
         ),
@@ -6253,8 +6304,7 @@ function describeNotification(
         icon: 'groupes',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {' '}
+            <strong>{entry.actorDisplayName}</strong>{' '}
             {translate(locale, 'notif.groupJoinRequest')}{' '}
             <strong>{entry.groupName}</strong>
           </>
@@ -6277,8 +6327,7 @@ function describeNotification(
         icon: 'evenements',
         text: (
           <>
-            <strong>{entry.eventTitle}</strong>
-            {' '}
+            <strong>{entry.eventTitle}</strong>{' '}
             {translate(locale, 'notif.eventStartsSoon')}{' '}
             <strong>{entry.venueName}</strong>
           </>
@@ -6331,9 +6380,7 @@ function NotificationsPanel({
       </div>
 
       {state === 'loading' && (
-        <p className="list-view-empty">
-          {translate(locale, 'common.loading')}
-        </p>
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
       )}
       {state === 'error' && (
         <p className="list-view-empty">
@@ -8339,6 +8386,337 @@ function AccountMenu({
   );
 }
 
+// DEC-0020 - messaging, docked.
+//
+// The Messages page still exists and is still the full experience; this is
+// the part that had to change to keep conversations on Pulso. A message
+// used to cost a navigation: leave the map, leave the event you were
+// reading, go to a section, come back. That friction is why people trade
+// Instagram handles and never come back to the inbox here.
+//
+// Deliberately shows only data Pulso has - no presence dot, no typing
+// indicator, no call button - the same rule the Messages page follows.
+function MessagingDock({
+  authToken,
+  user,
+  locale,
+  unreadMessagesCount,
+  openWith,
+  onOpened,
+  onOpenFullInbox
+}: {
+  authToken: string | undefined;
+  user: User;
+  locale: SupportedLocale;
+  unreadMessagesCount: number;
+  // Set by a surface elsewhere in the app asking the dock to open straight
+  // onto a conversation - "Écrire" on a participant, say. Cleared through
+  // onOpened so the same person can be picked twice in a row.
+  openWith: PublicUser | undefined;
+  onOpened: () => void;
+  onOpenFullInbox: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<'conversations' | 'requests'>('conversations');
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [requests, setRequests] = useState<MessageRequest[]>([]);
+  const [selected, setSelected] = useState<PublicUser>();
+  const [thread, setThread] = useState<Message[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendFailed, setSendFailed] = useState(false);
+
+  const authHeaders = useMemo(
+    () => (authToken ? { authorization: `Bearer ${authToken}` } : undefined),
+    [authToken]
+  );
+
+  const refresh = useCallback(() => {
+    if (!authHeaders) return;
+    fetch(`${API_BASE_URL}/me/conversations`, { headers: authHeaders })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setConversations(conversationsResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+    fetch(`${API_BASE_URL}/me/message-requests`, { headers: authHeaders })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setRequests(messageRequestsResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+  }, [authHeaders]);
+
+  // Only fetches while the dock is open. It is mounted on every connected
+  // screen, so loading an inbox nobody is looking at would make the whole
+  // app pay for a panel that is closed most of the time.
+  useEffect(() => {
+    if (open) refresh();
+  }, [open, refresh]);
+
+  const openConversation = useCallback(
+    (friend: PublicUser) => {
+      if (!authHeaders) return;
+      setSelected(friend);
+      setThread([]);
+      setSendFailed(false);
+      fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages`, {
+        headers: authHeaders
+      })
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => setThread(conversationResponseSchema.parse(json).data))
+        .catch(() => {});
+      // Opening it is what clears it, same as the full page.
+      fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages/read`, {
+        method: 'PUT',
+        headers: authHeaders
+      })
+        .then(refresh)
+        .catch(() => {});
+    },
+    [authHeaders, refresh]
+  );
+
+  useEffect(() => {
+    if (!openWith) return;
+    setOpen(true);
+    openConversation(openWith);
+    onOpened();
+  }, [openWith, openConversation, onOpened]);
+
+  const send = () => {
+    const body = draft.trim();
+    if (!authHeaders || !selected || body.length === 0) return;
+    setSending(true);
+    setSendFailed(false);
+    fetch(`${API_BASE_URL}/me/friends/${selected.id}/messages`, {
+      method: 'POST',
+      headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ body })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setThread((current) => [
+          ...current,
+          messageResponseSchema.parse(json).data
+        ]);
+        setDraft('');
+        refresh();
+      })
+      .catch(() => setSendFailed(true))
+      .finally(() => setSending(false));
+  };
+
+  const respond = (senderId: string, action: 'accept' | 'decline') => {
+    if (!authHeaders) return;
+    fetch(`${API_BASE_URL}/me/message-requests/${senderId}`, {
+      method: 'PUT',
+      headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ action })
+    })
+      .then(refresh)
+      .catch(() => {});
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="messaging-dock-launcher"
+        aria-label={translate(locale, 'dock.open')}
+        onClick={() => setOpen(true)}
+      >
+        <SidebarNavIcon kind="messages" />
+        {unreadMessagesCount > 0 && (
+          <span className="messaging-dock-launcher-badge">
+            {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+          </span>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <section
+      className="messaging-dock"
+      aria-label={translate(locale, 'dock.title')}
+    >
+      <header className="messaging-dock-header">
+        {selected ? (
+          <button
+            type="button"
+            className="messaging-dock-back"
+            aria-label={translate(locale, 'dock.back')}
+            onClick={() => setSelected(undefined)}
+          >
+            &lsaquo;
+          </button>
+        ) : null}
+        <h2>
+          {selected ? selected.displayName : translate(locale, 'dock.title')}
+        </h2>
+        <button
+          type="button"
+          className="messaging-dock-close"
+          aria-label={translate(locale, 'dock.close')}
+          onClick={() => {
+            setOpen(false);
+            setSelected(undefined);
+          }}
+        >
+          &times;
+        </button>
+      </header>
+
+      {selected ? (
+        <>
+          <ol className="messaging-dock-thread">
+            {thread.map((message) => (
+              <li
+                key={message.id}
+                className={
+                  message.senderId === user.id ? 'is-mine' : 'is-theirs'
+                }
+              >
+                <span>{message.body}</span>
+                <time dateTime={message.createdAt}>
+                  {formatMessageTimestamp(message.createdAt)}
+                </time>
+              </li>
+            ))}
+          </ol>
+          {sendFailed && (
+            <p className="messaging-dock-error" role="alert">
+              {translate(locale, 'dock.sendFailed')}
+            </p>
+          )}
+          <form
+            className="messaging-dock-composer"
+            onSubmit={(submitEvent) => {
+              submitEvent.preventDefault();
+              send();
+            }}
+          >
+            <input
+              value={draft}
+              onChange={(changeEvent) => setDraft(changeEvent.target.value)}
+              placeholder={translate(locale, 'dock.compose')}
+              aria-label={translate(locale, 'dock.compose')}
+            />
+            <button
+              type="submit"
+              disabled={sending || draft.trim().length === 0}
+            >
+              {translate(locale, 'dock.send')}
+            </button>
+          </form>
+        </>
+      ) : (
+        <>
+          <nav className="messaging-dock-tabs">
+            <button
+              type="button"
+              className={tab === 'conversations' ? 'active' : ''}
+              onClick={() => setTab('conversations')}
+            >
+              {translate(locale, 'dock.conversations')}
+            </button>
+            <button
+              type="button"
+              className={tab === 'requests' ? 'active' : ''}
+              onClick={() => setTab('requests')}
+            >
+              {translate(locale, 'dock.requests')}
+              {requests.length > 0 && (
+                <span className="messaging-dock-tab-badge">
+                  {requests.length}
+                </span>
+              )}
+            </button>
+          </nav>
+
+          {tab === 'conversations' ? (
+            conversations.length === 0 ? (
+              <p className="messaging-dock-empty">
+                {translate(locale, 'dock.empty')}
+              </p>
+            ) : (
+              <ul className="messaging-dock-list">
+                {conversations.map((conversation) => (
+                  <li key={conversation.friend.id}>
+                    <button
+                      type="button"
+                      className="messaging-dock-row"
+                      onClick={() => openConversation(conversation.friend)}
+                    >
+                      <span className="messaging-dock-avatar">
+                        {renderAvatarContent(conversation.friend)}
+                      </span>
+                      <span className="messaging-dock-entry">
+                        <strong>{conversation.friend.displayName}</strong>
+                        <span>{conversation.lastMessage?.body ?? ''}</span>
+                      </span>
+                      {conversation.unreadCount > 0 && (
+                        <span className="messaging-dock-unread">
+                          {conversation.unreadCount}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : requests.length === 0 ? (
+            <p className="messaging-dock-empty">
+              {translate(locale, 'dock.requestsEmpty')}
+            </p>
+          ) : (
+            <ul className="messaging-dock-list">
+              {requests.map((request) => (
+                <li key={request.sender.id} className="messaging-dock-request">
+                  <span className="messaging-dock-avatar">
+                    {renderAvatarContent(request.sender)}
+                  </span>
+                  <span className="messaging-dock-entry">
+                    <strong>{request.sender.displayName}</strong>
+                    <span>{request.message?.body ?? ''}</span>
+                  </span>
+                  <span className="messaging-dock-request-actions">
+                    <button
+                      type="button"
+                      onClick={() => respond(request.sender.id, 'accept')}
+                    >
+                      {translate(locale, 'dock.accept')}
+                    </button>
+                    <button
+                      type="button"
+                      className="is-secondary"
+                      onClick={() => respond(request.sender.id, 'decline')}
+                    >
+                      {translate(locale, 'dock.decline')}
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            type="button"
+            className="messaging-dock-see-all"
+            onClick={() => {
+              setOpen(false);
+              onOpenFullInbox();
+            }}
+          >
+            {translate(locale, 'dock.seeAll')}
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+
 type ConnectedSection =
   | 'decouvrir'
   | 'evenement'
@@ -8352,32 +8730,121 @@ type ConnectedSection =
   | 'organisateur'
   | 'administration';
 
-const SIDEBAR_NAV_ITEMS: Array<{
-  section: ConnectedSection;
-  label: string;
+// DEC-0020: Forums, Groupes, Messages and Amis are the same thing from the
+// user's point of view - other people - and listing them as four peers made
+// the sidebar read as a feature list. They become sub-sections of one
+// "Communauté" entry. They stay real ConnectedSection values rather than
+// collapsing into one, so every existing deep link into them (a
+// notification, an event forum, a group invitation) still lands where it
+// always did; only the navigation chrome changed.
+const COMMUNITY_SECTIONS = [
+  'messages',
+  'amis',
+  'forums',
+  'groupes'
+] as const satisfies readonly ConnectedSection[];
+
+type CommunitySection = (typeof COMMUNITY_SECTIONS)[number];
+
+function isCommunitySection(
+  section: ConnectedSection | 'compte'
+): section is CommunitySection {
+  return (COMMUNITY_SECTIONS as readonly string[]).includes(section);
+}
+
+// Messages leads: it is the sub-section a user returns to, and the one the
+// product depends on to keep conversations here instead of on Instagram.
+const DEFAULT_COMMUNITY_SECTION: CommunitySection = 'messages';
+
+const COMMUNITY_SUB_NAV: Array<{
+  section: CommunitySection;
+  labelKey: MessageKey;
   icon: SidebarIconKind;
 }> = [
-  { section: 'decouvrir', label: 'Découvrir', icon: 'decouvrir' },
-  { section: 'explorer', label: 'Carte', icon: 'carte' },
-  { section: 'evenement', label: 'Événements', icon: 'evenements' },
-  { section: 'lieu', label: 'Lieux', icon: 'lieux' },
-  { section: 'forums', label: 'Forums', icon: 'forums' },
-  { section: 'groupes', label: 'Groupes', icon: 'groupes' },
-  { section: 'messages', label: 'Messages', icon: 'messages' },
-  { section: 'amis', label: 'Amis', icon: 'amis' },
-  { section: 'favoris', label: 'Favoris', icon: 'favoris' },
-  { section: 'organisateur', label: 'Organisateur', icon: 'organisateur' }
+  { section: 'messages', labelKey: 'nav.messages', icon: 'messages' },
+  { section: 'amis', labelKey: 'nav.friends', icon: 'amis' },
+  { section: 'forums', labelKey: 'nav.forums', icon: 'forums' },
+  { section: 'groupes', labelKey: 'nav.groups', icon: 'groupes' }
+];
+
+// 'communaute' is a hub, never an active section: clicking it resolves to
+// one of COMMUNITY_SECTIONS, so it is typed here and nowhere else.
+type SidebarDestination = ConnectedSection | 'communaute';
+
+// DEC-0020: the four community sub-sections share one header, so moving
+// between them costs a click and never a trip back through the sidebar.
+// Purely chrome - each sub-page below is the same component it always was.
+function CommunityHub({
+  section,
+  onSelect,
+  unreadMessagesCount,
+  locale,
+  children
+}: {
+  section: CommunitySection;
+  onSelect: (section: CommunitySection) => void;
+  unreadMessagesCount: number;
+  locale: SupportedLocale;
+  children: ReactNode;
+}) {
+  return (
+    <div className="community-hub">
+      <nav
+        className="community-hub-nav"
+        aria-label={translate(locale, 'nav.community')}
+      >
+        {COMMUNITY_SUB_NAV.map((item) => (
+          <button
+            type="button"
+            key={item.section}
+            className={`community-hub-tab ${section === item.section ? 'active' : ''}`}
+            aria-current={section === item.section ? 'page' : undefined}
+            onClick={() => onSelect(item.section)}
+          >
+            <span className="community-hub-tab-icon">
+              <SidebarNavIcon kind={item.icon} />
+            </span>
+            {translate(locale, item.labelKey)}
+            {item.section === 'messages' && unreadMessagesCount > 0 && (
+              <span className="community-hub-tab-badge">
+                {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </nav>
+      {children}
+    </div>
+  );
+}
+
+const SIDEBAR_NAV_ITEMS: Array<{
+  section: SidebarDestination;
+  labelKey: MessageKey;
+  icon: SidebarIconKind;
+}> = [
+  { section: 'decouvrir', labelKey: 'sidebar.discover', icon: 'decouvrir' },
+  { section: 'explorer', labelKey: 'sidebar.map', icon: 'carte' },
+  { section: 'evenement', labelKey: 'nav.events', icon: 'evenements' },
+  { section: 'lieu', labelKey: 'nav.venues', icon: 'lieux' },
+  { section: 'communaute', labelKey: 'nav.community', icon: 'amis' },
+  { section: 'favoris', labelKey: 'sidebar.favorites', icon: 'favoris' },
+  {
+    section: 'organisateur',
+    labelKey: 'sidebar.organizer',
+    icon: 'organisateur'
+  }
 ];
 
 // DEC-0018: appended only for an administrator. A non-admin never sees the
 // destination, and every /admin route answers 403 regardless.
 const ADMIN_NAV_ITEM: {
-  section: ConnectedSection;
-  label: string;
+  section: SidebarDestination;
+  labelKey: MessageKey;
   icon: SidebarIconKind;
 } = {
   section: 'administration',
-  label: 'Administration',
+  labelKey: 'sidebar.administration',
   icon: 'administration'
 };
 
@@ -8388,6 +8855,7 @@ const ADMIN_NAV_ITEM: {
 function Sidebar({
   activeSection,
   onNavigate,
+  lastCommunitySection,
   authToken,
   user,
   locale,
@@ -8398,6 +8866,7 @@ function Sidebar({
 }: {
   activeSection: ConnectedSection;
   onNavigate: (section: ConnectedSection) => void;
+  lastCommunitySection: CommunitySection;
   authToken: string | undefined;
   locale: SupportedLocale;
   user: User;
@@ -8477,14 +8946,32 @@ function Sidebar({
           <button
             type="button"
             key={item.section}
-            className={`primary-sidebar-nav-item ${activeSection === item.section ? 'active' : ''}`}
-            onClick={() => onNavigate(item.section)}
+            className={`primary-sidebar-nav-item ${
+              (
+                item.section === 'communaute'
+                  ? isCommunitySection(activeSection)
+                  : activeSection === item.section
+              )
+                ? 'active'
+                : ''
+            }`}
+            onClick={() =>
+              onNavigate(
+                item.section === 'communaute'
+                  ? lastCommunitySection
+                  : item.section
+              )
+            }
           >
             <span className="primary-sidebar-nav-icon">
               <SidebarNavIcon kind={item.icon} />
             </span>
-            {item.label}
-            {item.section === 'messages' && unreadMessagesCount > 0 && (
+            {translate(locale, item.labelKey)}
+            {/* The badge follows Messages up to its new parent: Messages is
+                no longer a primary entry, so without this an unread message
+                would light up nothing at all. It is repeated on the
+                Messages sub-tab below, which is what it actually counts. */}
+            {item.section === 'communaute' && unreadMessagesCount > 0 && (
               <span className="primary-sidebar-nav-badge">
                 {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
               </span>
@@ -10511,7 +10998,9 @@ function AdminGroupPlacementsBlock({
             <span>1. Le groupe</span>
             <input
               value={groupQuery}
-              onChange={(changeEvent) => setGroupQuery(changeEvent.target.value)}
+              onChange={(changeEvent) =>
+                setGroupQuery(changeEvent.target.value)
+              }
               placeholder="Ex. Français à Montréal — laisse vide pour tout voir"
             />
           </label>
@@ -10562,7 +11051,9 @@ function AdminGroupPlacementsBlock({
             <span>2. L&apos;événement</span>
             <input
               value={eventQuery}
-              onChange={(changeEvent) => setEventQuery(changeEvent.target.value)}
+              onChange={(changeEvent) =>
+                setEventQuery(changeEvent.target.value)
+              }
               placeholder="Titre, organisateur ou lieu"
             />
           </label>
@@ -10586,11 +11077,16 @@ function AdminGroupPlacementsBlock({
                   <button type="button" onClick={() => setEvent(candidate)}>
                     <strong>{candidate.title}</strong>
                     <small>
-                      {new Date(candidate.startsAt).toLocaleDateString('fr-CA', {
-                        day: 'numeric',
-                        month: 'short'
-                      })}
-                      {candidate.venue?.name ? ` · ${candidate.venue.name}` : ''}
+                      {new Date(candidate.startsAt).toLocaleDateString(
+                        'fr-CA',
+                        {
+                          day: 'numeric',
+                          month: 'short'
+                        }
+                      )}
+                      {candidate.venue?.name
+                        ? ` · ${candidate.venue.name}`
+                        : ''}
                     </small>
                   </button>
                 </li>
@@ -10691,9 +11187,7 @@ function AdminGroupVerificationsBlock({
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => {
-        setRequests(
-          groupVerificationRequestsResponseSchema.parse(json).data
-        );
+        setRequests(groupVerificationRequestsResponseSchema.parse(json).data);
         setState('success');
       })
       .catch(() => setState('error'));
@@ -10728,8 +11222,8 @@ function AdminGroupVerificationsBlock({
       <div className="events-hero-text">
         <p className="events-hero-kicker">Vérification de groupes</p>
         <p className="events-hero-eyebrow">
-          Approuver pose le badge vérifié partout où le groupe apparaît.
-          Refuser ne change rien et laisse le groupe libre de redemander.
+          Approuver pose le badge vérifié partout où le groupe apparaît. Refuser
+          ne change rien et laisse le groupe libre de redemander.
         </p>
       </div>
 
@@ -10747,9 +11241,7 @@ function AdminGroupVerificationsBlock({
             <SidebarNavIcon kind="groupes" />
           </span>
           <p>Aucune demande de vérification</p>
-          <p>
-            Tu seras notifié dès qu&apos;un groupe demande à être vérifié.
-          </p>
+          <p>Tu seras notifié dès qu&apos;un groupe demande à être vérifié.</p>
         </div>
       )}
 
@@ -10799,7 +11291,6 @@ function AdminGroupVerificationsBlock({
     </section>
   );
 }
-
 
 function OrganisateurPage({
   authToken,
@@ -12220,8 +12711,7 @@ function ForumDiscoverSpotlight({
           {event.venue.name}
         </span>
         <span className="forum-discover-spotlight-excerpt">
-          {lastPostExcerpt ??
-            translate(locale, 'forum.discoverOpen')}
+          {lastPostExcerpt ?? translate(locale, 'forum.discoverOpen')}
         </span>
         <span className="forum-discover-spotlight-footer">
           <span>
@@ -13176,7 +13666,7 @@ function AmisPage({
 
   const removeFriendAction = (friendUserId: string) => {
     if (!authToken) return;
-    if (!window.confirm('Retirer cette personne de tes amis ?')) return;
+    if (!window.confirm(translate(locale, 'friends.confirmRemove'))) return;
     void fetch(`${API_BASE_URL}/me/friends/${friendUserId}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${authToken}` }
@@ -13222,10 +13712,18 @@ function AmisPage({
       (entry) => entry.friend.id === friendUserId
     );
     const upcomingEvent = upcoming && upcomingEventsById.get(upcoming.eventId);
-    if (upcomingEvent) return `Va à ${upcomingEvent.title}`;
+    if (upcomingEvent)
+      return translate(locale, 'friends.goingTo', {
+        title: upcomingEvent.title
+      });
     const mutual = mutualCounts.get(friendUserId) ?? 0;
     return mutual > 0
-      ? `${mutual} ami${mutual > 1 ? 's' : ''} en commun`
+      ? translatePlural(
+          locale,
+          mutual,
+          'friends.mutualCount',
+          'friends.mutualCountPlural'
+        )
       : undefined;
   };
 
@@ -13235,35 +13733,44 @@ function AmisPage({
     >
       <div className="amis-list-column">
         <div className="amis-list-header">
-          <span className="amis-page-kicker">Ton cercle Pulso</span>
+          <span className="amis-page-kicker">
+            {translate(locale, 'friends.eyebrow')}
+          </span>
           <div className="amis-title-row">
             <div>
-              <h1>Mes amis</h1>
-              <p>Retrouve les personnes avec qui vivre Montréal.</p>
+              <h1>{translate(locale, 'friends.title')}</h1>
+              <p>{translate(locale, 'friends.tagline')}</p>
             </div>
             <button
               type="button"
               className="amis-invite-icon"
               onClick={() => setInviteOpen(true)}
-              aria-label="Inviter un ami"
-              title="Inviter un ami"
+              aria-label={translate(locale, 'friends.invite')}
+              title={translate(locale, 'friends.invite')}
             >
               +
             </button>
           </div>
           <div
             className="amis-overview-stats"
-            aria-label="Résumé de ton cercle"
+            aria-label={translate(locale, 'friends.circleSummary')}
           >
             <span>
-              <strong>{friends.length}</strong> amis
+              <strong>{friends.length}</strong>{' '}
+              {translate(locale, 'friends.friendsWord')}
             </span>
             <span>
-              <strong>{friendsWithPlansCount}</strong> ont une sortie visible
+              <strong>{friendsWithPlansCount}</strong>{' '}
+              {translate(locale, 'friends.havePlans')}
             </span>
             <span>
-              <strong>{incoming.length}</strong> demande
-              {incoming.length !== 1 ? 's' : ''}
+              <strong>{incoming.length}</strong>{' '}
+              {translatePlural(
+                locale,
+                incoming.length,
+                'friends.requestWord',
+                'friends.requestWordPlural'
+              )}
             </span>
           </div>
         </div>
@@ -13273,7 +13780,7 @@ function AmisPage({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Rechercher un ami"
+              placeholder={translate(locale, 'friends.search')}
             />
           </div>
         </div>
@@ -13284,30 +13791,35 @@ function AmisPage({
             className={tab === 'tous' ? 'active' : ''}
             onClick={() => setTab('tous')}
           >
-            Mon cercle <span>{friends.length}</span>
+            {translate(locale, 'friends.tabCircle')}{' '}
+            <span>{friends.length}</span>
           </button>
           <button
             type="button"
             className={tab === 'demandes' ? 'active' : ''}
             onClick={() => setTab('demandes')}
           >
-            Demandes {incoming.length > 0 && <span>{incoming.length}</span>}
+            {translate(locale, 'friends.tabRequests')}{' '}
+            {incoming.length > 0 && <span>{incoming.length}</span>}
           </button>
           <button
             type="button"
             className={tab === 'suggestions' ? 'active' : ''}
             onClick={() => setTab('suggestions')}
           >
-            À découvrir <span>{suggestions.length}</span>
+            {translate(locale, 'friends.tabDiscover')}{' '}
+            <span>{suggestions.length}</span>
           </button>
         </div>
 
         {loadState === 'loading' && (
-          <p className="list-view-empty">Chargement…</p>
+          <p className="list-view-empty">
+            {translate(locale, 'common.loading')}
+          </p>
         )}
         {loadState === 'error' && (
           <p className="list-view-empty">
-            Impossible de charger vos amis pour le moment.
+            {translate(locale, 'friends.loadError')}
           </p>
         )}
 
@@ -13318,8 +13830,8 @@ function AmisPage({
                 <span className="empty-state-icon" aria-hidden="true">
                   🧑‍🤝‍🧑
                 </span>
-                <p>Aucun ami pour le moment</p>
-                <p>Partage ton code pour commencer à te connecter.</p>
+                <p>{translate(locale, 'friends.noFriendsYet')}</p>
+                <p>{translate(locale, 'friends.shareCodeHint')}</p>
               </div>
             )}
             {filteredFriends.map((friendUser) => (
@@ -13342,15 +13854,16 @@ function AmisPage({
                   <span className="conversation-list-info">
                     <strong>{friendUser.displayName}</strong>
                     <span>
-                      {friendRowSubtitle(friendUser.id) ?? 'Dans ton cercle'}
+                      {friendRowSubtitle(friendUser.id) ??
+                        translate(locale, 'friends.inCircle')}
                     </span>
                   </span>
                 </button>
                 <button
                   type="button"
                   className="amis-row-icon-btn"
-                  aria-label="Envoyer un message"
-                  title="Message"
+                  aria-label={translate(locale, 'friends.sendMessage')}
+                  title={translate(locale, 'friends.messageShort')}
                   onClick={() => {
                     setConversationWith(friendUser);
                   }}
@@ -13360,8 +13873,8 @@ function AmisPage({
                 <button
                   type="button"
                   className="amis-row-icon-btn"
-                  aria-label="Retirer cet ami"
-                  title="Retirer"
+                  aria-label={translate(locale, 'friends.removeFriend')}
+                  title={translate(locale, 'friends.removeShort')}
                   onClick={() => {
                     removeFriendAction(friendUser.id);
                   }}
@@ -13377,7 +13890,7 @@ function AmisPage({
           <div className="messages-tab-panel">
             {incoming.length === 0 && outgoing.length === 0 && (
               <p className="list-view-empty">
-                Aucune demande d'ami pour le moment.
+                {translate(locale, 'friends.noRequests')}
               </p>
             )}
             {incoming.length > 0 && (
@@ -13428,7 +13941,9 @@ function AmisPage({
             )}
             {outgoing.length > 0 && (
               <div className="amis-section">
-                <h3 className="amis-section-title">Demandes envoyées</h3>
+                <h3 className="amis-section-title">
+                  {translate(locale, 'friends.requestsSent')}
+                </h3>
                 <div className="amis-list">
                   {outgoing.map((request) => (
                     <div className="amis-row" key={request.id}>
@@ -13442,7 +13957,9 @@ function AmisPage({
                       <span className="amis-row-name">
                         {request.user.displayName}
                       </span>
-                      <span className="amis-row-pending">En attente</span>
+                      <span className="amis-row-pending">
+                        {translate(locale, 'friends.pending')}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -13455,8 +13972,7 @@ function AmisPage({
           <div className="messages-tab-panel">
             {suggestions.length === 0 ? (
               <p className="list-view-empty">
-                Pas de suggestion pour l'instant - ajoute des amis pour en
-                découvrir de nouveaux via vos connexions en commun.
+                {translate(locale, 'friends.noSuggestions')}
               </p>
             ) : (
               <div className="amis-list">
@@ -13472,8 +13988,12 @@ function AmisPage({
                     <span className="amis-row-name">
                       {suggestion.user.displayName}
                       <span className="amis-row-mutual">
-                        {suggestion.mutualFriendCount} ami
-                        {suggestion.mutualFriendCount > 1 ? 's' : ''} en commun
+                        {translatePlural(
+                          locale,
+                          suggestion.mutualFriendCount,
+                          'friends.mutualCount',
+                          'friends.mutualCountPlural'
+                        )}
                       </span>
                     </span>
                     <button
@@ -13481,7 +14001,7 @@ function AmisPage({
                       className="amis-btn-accept"
                       onClick={() => addSuggestion(suggestion.user.id)}
                     >
-                      + Ajouter
+                      {translate(locale, 'friends.add')}
                     </button>
                   </div>
                 ))}
@@ -13510,14 +14030,13 @@ function AmisPage({
               <span>✦</span>
               <span>☺</span>
             </div>
-            <span className="amis-page-kicker">Ton cercle t’attend</span>
-            <h2>Choisis un ami</h2>
-            <p>
-              Consulte ses sorties partagées, vos événements en commun et
-              démarre l’organisation de votre prochaine soirée.
-            </p>
+            <span className="amis-page-kicker">
+              {translate(locale, 'friends.circleWaiting')}
+            </span>
+            <h2>{translate(locale, 'friends.pickAFriend')}</h2>
+            <p>{translate(locale, 'friends.panelHint')}</p>
             <button type="button" onClick={() => setInviteOpen(true)}>
-              Inviter une nouvelle personne
+              {translate(locale, 'friends.inviteNewPerson')}
             </button>
           </div>
         )}
@@ -13525,27 +14044,34 @@ function AmisPage({
 
       <aside className="amis-rail">
         <div className="amis-rail-hero">
-          <span className="amis-page-kicker">Ton cercle bouge</span>
+          <span className="amis-page-kicker">
+            {translate(locale, 'friends.circleMoving')}
+          </span>
           <strong>{friendsWithPlansCount}</strong>
           <p>
-            ami{friendsWithPlansCount !== 1 ? 's ont' : ' a'} partagé une sortie
-            à venir avec leur cercle.
+            {translatePlural(
+              locale,
+              friendsWithPlansCount,
+              'friends.sharedOutingOne',
+              'friends.sharedOutingMany'
+            )}
           </p>
           <button type="button" onClick={() => setMapOpen(true)}>
-            <span aria-hidden="true">⌖</span> Voir sur la carte
+            <span aria-hidden="true">⌖</span>{' '}
+            {translate(locale, 'friends.seeOnMap')}
           </button>
         </div>
 
         <div className="amis-rail-section amis-circle-outings">
           <div className="amis-rail-header">
             <div>
-              <span>À venir</span>
-              <h3>Sorties du cercle</h3>
+              <span>{translate(locale, 'friends.upcoming')}</span>
+              <h3>{translate(locale, 'friends.circleOutings')}</h3>
             </div>
           </div>
           {circleOutings.length === 0 ? (
             <p className="list-view-empty">
-              Les sorties que tes amis partagent apparaîtront ici.
+              {translate(locale, 'friends.sharedOutingsHint')}
             </p>
           ) : (
             <div className="amis-circle-list">
@@ -13757,12 +14283,35 @@ function EventCarouselRow({
 }
 
 type ProfilTab =
-  'apercu' | 'mes-evenements' | 'favoris' | 'groupes' | 'activite';
+  | 'apercu'
+  | 'photos'
+  | 'mes-evenements'
+  | 'favoris'
+  | 'amis'
+  | 'lieux'
+  | 'groupes'
+  | 'activite';
 
-const PROFIL_TABS: Array<{ id: ProfilTab; label: string; icon: string }> = [
+// `label` is a translation key where DEC-0020 added the tab, and literal
+// French where it predates the i18n work - the ratchet in
+// i18n-coverage.test.ts is what will eventually force the rest across.
+const PROFIL_TABS: Array<{
+  id: ProfilTab;
+  label: string;
+  labelKey?: MessageKey;
+  icon: string;
+}> = [
   { id: 'apercu', label: 'Vue d’ensemble', icon: '✦' },
+  { id: 'photos', label: 'Photos', labelKey: 'profile.tabPhotos', icon: '❑' },
   { id: 'mes-evenements', label: 'Mes sorties', icon: '◫' },
   { id: 'favoris', label: 'Favoris', icon: '♡' },
+  { id: 'amis', label: 'Amis', labelKey: 'profile.tabFriends', icon: '🧑‍🤝‍🧑' },
+  {
+    id: 'lieux',
+    label: 'Lieux suivis',
+    labelKey: 'profile.tabFollowedVenues',
+    icon: '⌖'
+  },
   { id: 'groupes', label: 'Groupes', icon: '♟' },
   { id: 'activite', label: 'Activité', icon: '↗' }
 ];
@@ -13795,10 +14344,29 @@ const PROFILE_AVATAR_PRESETS: Record<
   heart: { emoji: '💜', gradient: PROFILE_COVER_GRADIENTS['midnight']! }
 };
 
-// Shared by every spot the user's own avatar appears (AccountMenu, Sidebar
-// profile card, ProfilHeader) - a chosen preset always wins over the Google
-// photo; falls back to the initial only when neither exists.
-function renderUserAvatarContent(user: User): ReactNode {
+// Shared by every spot an avatar appears (AccountMenu, Sidebar profile
+// card, ProfilHeader, conversation list, friends list). One resolution
+// order, defined once, per DEC-0020:
+//
+//   uploaded photo -> chosen preset -> Google photo -> initial
+//
+// The uploaded photo leads because it is the only one the user deliberately
+// put there as their face. The presets stay ahead of the Google photo, as
+// they were before DEC-0020, since choosing one is still an explicit "not
+// my Google picture".
+//
+// Takes the structural minimum rather than a User, so a PublicUser (a
+// friend, a participant) resolves through exactly the same order instead of
+// a second, drifting copy.
+function renderAvatarContent(user: {
+  displayName: string;
+  avatarUrl?: string | undefined;
+  avatarStyle?: string | undefined;
+  photoUrl?: string | undefined;
+}): ReactNode {
+  if (user.photoUrl) {
+    return <img src={user.photoUrl} alt="" />;
+  }
   const preset = user.avatarStyle
     ? PROFILE_AVATAR_PRESETS[user.avatarStyle]
     : undefined;
@@ -13817,6 +14385,10 @@ function renderUserAvatarContent(user: User): ReactNode {
     return <img src={user.avatarUrl} alt="" />;
   }
   return user.displayName.slice(0, 1).toUpperCase();
+}
+
+function renderUserAvatarContent(user: User): ReactNode {
+  return renderAvatarContent(user);
 }
 
 // Messaging's own timestamp convention (clock time / "Hier" / weekday),
@@ -14209,24 +14781,356 @@ function EditProfileModal({
   );
 }
 
+// DEC-0020 - the personal photo gallery. A grid on a profile, deliberately
+// not a feed: it only ever renders one account's own photos, and carries no
+// like, comment or share affordance, because none of those exist.
+//
+// `ownerId` undefined means "the signed-in user's own gallery", which is
+// the only case that can upload or delete. A friend's gallery is read-only
+// here; a stranger's comes back empty from the API and shows the same
+// empty state a friend with no photos would, which is what keeps this from
+// being a way to detect whether someone has photos at all.
+function ProfilPhotosTab({
+  authToken,
+  ownerId,
+  locale
+}: {
+  authToken: string | undefined;
+  ownerId?: string | undefined;
+  locale: SupportedLocale;
+}) {
+  const [photos, setPhotos] = useState<UserPhoto[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [uploading, setUploading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const isOwn = ownerId === undefined;
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    const url = isOwn
+      ? `${API_BASE_URL}/me/photos`
+      : `${API_BASE_URL}/users/${ownerId}/photos`;
+    setState('loading');
+    fetch(url, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setPhotos(userPhotosResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, isOwn, ownerId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const upload = (file: File) => {
+    if (!authToken) return;
+    setUploading(true);
+    setFailed(false);
+    const body = new FormData();
+    body.append('file', file);
+    fetch(`${API_BASE_URL}/me/photos`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` },
+      body
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setPhotos((current) => [
+          userPhotoResponseSchema.parse(json).data,
+          ...current
+        ])
+      )
+      .catch(() => setFailed(true))
+      .finally(() => setUploading(false));
+  };
+
+  const remove = (photoId: string) => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/photos/${photoId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then(() =>
+        setPhotos((current) => current.filter((photo) => photo.id !== photoId))
+      )
+      .catch(() => {});
+  };
+
+  return (
+    <div className="profil-tab-content profil-photos">
+      {isOwn && (
+        <div className="profil-photos-actions">
+          <button
+            type="button"
+            className="profil-photos-add"
+            disabled={uploading}
+            onClick={() => fileInput.current?.click()}
+          >
+            <span aria-hidden="true">＋</span>
+            {uploading
+              ? translate(locale, 'profile.photoUploading')
+              : translate(locale, 'profile.galleryAdd')}
+          </button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) upload(file);
+              // Clear it, so picking the same file twice in a row still
+              // fires a change event.
+              event.target.value = '';
+            }}
+          />
+          <span className="profil-photos-note">
+            {translate(locale, 'profile.galleryPrivate')}
+          </span>
+        </div>
+      )}
+
+      {failed && (
+        <p className="profil-photos-error">
+          {translate(locale, 'profile.photoFailed')}
+        </p>
+      )}
+
+      {state === 'success' && photos.length === 0 && (
+        <p className="profil-photos-empty">
+          {isOwn
+            ? translate(locale, 'profile.galleryEmpty')
+            : translate(locale, 'profile.galleryEmptyOther')}
+        </p>
+      )}
+
+      {photos.length > 0 && (
+        <ul className="profil-photos-grid">
+          {photos.map((photo) => (
+            <li key={photo.id} className="profil-photo">
+              <img src={photo.url} alt={photo.caption ?? ''} />
+              {photo.caption && (
+                <span className="profil-photo-caption">{photo.caption}</span>
+              )}
+              {isOwn && (
+                <button
+                  type="button"
+                  className="profil-photo-delete"
+                  aria-label={translate(locale, 'profile.galleryDelete')}
+                  onClick={() => remove(photo.id)}
+                >
+                  ×
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// DEC-0020 - "Lieux suivis". These are the account's server-side venue
+// favourites (`user_favorite_venues`), which is the same set DEC-0016's
+// "new event at a followed venue" notification fans out from - hence the
+// bell wording rather than a second, parallel "follow" idea. Anonymous,
+// browser-local favourites (DEC-0007) are deliberately not here: they
+// belong to a device, not to a person.
+function ProfilLieuxTab({
+  groups,
+  locale,
+  onSelectVenue
+}: {
+  groups: VenueGroup[];
+  locale: SupportedLocale;
+  onSelectVenue: (group: VenueGroup) => void;
+}) {
+  if (groups.length === 0) {
+    return (
+      <div className="profil-tab-content">
+        <p className="profil-photos-empty">
+          {translate(locale, 'profile.followedVenuesEmpty')}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="profil-tab-content">
+      <ul className="profil-venues-grid">
+        {groups.map((group) => (
+          <li key={group.id}>
+            <button
+              type="button"
+              className="profil-venue-card"
+              onClick={() => onSelectVenue(group)}
+            >
+              <span
+                className="profil-venue-dot"
+                style={{
+                  background: CATEGORY_COLORS[group.categories[0] ?? 'other']
+                }}
+                aria-hidden="true"
+              />
+              <span className="profil-venue-copy">
+                <strong>{group.name}</strong>
+                <span>
+                  {group.venueCategory
+                    ? VENUE_CATEGORY_LABELS[locale][group.venueCategory]
+                    : group.address}
+                </span>
+              </span>
+              <span className="profil-venue-count">{group.events.length}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// The friend graph has existed since DEC-0011 and had never appeared on a
+// profile - only as a count in the header and a side card. DEC-0020 gives
+// it a tab of its own.
+function ProfilAmisTab({
+  friends,
+  locale,
+  onOpenAmis
+}: {
+  friends: PublicUser[];
+  locale: SupportedLocale;
+  onOpenAmis: () => void;
+}) {
+  if (friends.length === 0) {
+    return (
+      <div className="profil-tab-content">
+        <p className="profil-photos-empty">
+          {translate(locale, 'profile.friendsEmpty')}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="profil-tab-content">
+      <ul className="profil-friends-grid">
+        {friends.map((friend) => (
+          <li key={friend.id}>
+            <button
+              type="button"
+              className="profil-friend-card"
+              onClick={onOpenAmis}
+            >
+              <span className="profil-friend-avatar">
+                {renderAvatarContent(friend)}
+              </span>
+              <span className="profil-friend-name">{friend.displayName}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ProfilHeader({
   user,
   friendsCount,
-  onEdit
+  authToken,
+  locale,
+  onEdit,
+  onUserChange
 }: {
   user: User;
   friendsCount: number;
+  authToken: string | undefined;
+  locale: SupportedLocale;
   onEdit: () => void;
+  onUserChange: (user: User) => void;
 }) {
   const coverGradient =
     PROFILE_COVER_GRADIENTS[user.coverStyle ?? DEFAULT_PROFILE_COVER] ??
     PROFILE_COVER_GRADIENTS[DEFAULT_PROFILE_COVER];
+
+  // DEC-0020 - the profile photo. Uploading answers with the whole updated
+  // account, so the new avatar propagates everywhere at once (top bar,
+  // sidebar card, this header) instead of each surface refetching.
+  const photoInput = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const send = (method: 'PUT' | 'DELETE', body?: FormData) => {
+    if (!authToken) return;
+    setBusy(true);
+    setFailed(false);
+    fetch(`${API_BASE_URL}/me/photo`, {
+      method,
+      headers: { authorization: `Bearer ${authToken}` },
+      ...(body ? { body } : {})
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => onUserChange(meResponseSchema.parse(json).data))
+      .catch(() => setFailed(true))
+      .finally(() => setBusy(false));
+  };
+
   return (
     <div className="profil-header">
       <div className="profil-cover" style={{ background: coverGradient }} />
       <div className="profil-header-content">
         <div className="profil-identity">
-          <span className="profil-avatar">{renderUserAvatarContent(user)}</span>
+          <div className="profil-avatar-slot">
+            <span className="profil-avatar">
+              {renderUserAvatarContent(user)}
+            </span>
+            <button
+              type="button"
+              className="profil-avatar-edit"
+              disabled={busy}
+              aria-label={
+                user.photoUrl
+                  ? translate(locale, 'profile.photoChange')
+                  : translate(locale, 'profile.photoAdd')
+              }
+              onClick={() => photoInput.current?.click()}
+            >
+              <span aria-hidden="true">📷</span>
+            </button>
+            {user.photoUrl && (
+              <button
+                type="button"
+                className="profil-avatar-remove"
+                disabled={busy}
+                aria-label={translate(locale, 'profile.photoRemove')}
+                onClick={() => send('DELETE')}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            )}
+            <input
+              ref={photoInput}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  const body = new FormData();
+                  body.append('file', file);
+                  send('PUT', body);
+                }
+                event.target.value = '';
+              }}
+            />
+            {failed && (
+              <span className="profil-avatar-error" role="alert">
+                {translate(locale, 'profile.photoFailed')}
+              </span>
+            )}
+          </div>
           <div className="profil-identity-copy">
             <span className="profil-eyebrow">Mon espace Pulso</span>
             <div className="profil-name-row">
@@ -14674,7 +15578,10 @@ function CompteSection({
       <ProfilHeader
         user={user}
         friendsCount={friends.length}
+        authToken={authToken}
+        locale={locale}
         onEdit={() => setEditing(true)}
+        onUserChange={onUserUpdated}
       />
 
       <div className="profil-body">
@@ -14688,7 +15595,7 @@ function CompteSection({
                 onClick={() => setTab(item.id)}
               >
                 <span aria-hidden="true">{item.icon}</span>
-                {item.label}
+                {item.labelKey ? translate(locale, item.labelKey) : item.label}
               </button>
             ))}
           </nav>
@@ -14733,6 +15640,23 @@ function CompteSection({
                 locale={locale}
               />
             </div>
+          )}
+          {tab === 'photos' && (
+            <ProfilPhotosTab authToken={authToken} locale={locale} />
+          )}
+          {tab === 'amis' && (
+            <ProfilAmisTab
+              friends={friends}
+              locale={locale}
+              onOpenAmis={onOpenAmis}
+            />
+          )}
+          {tab === 'lieux' && (
+            <ProfilLieuxTab
+              groups={favoriteVenueGroups}
+              locale={locale}
+              onSelectVenue={onSelectVenue}
+            />
           )}
           {tab === 'activite' && (
             <ActiviteTab authToken={authToken} locale={locale} />
@@ -14882,11 +15806,7 @@ function FriendDetailPanel({
         </div>
         <div className="friend-detail-header">
           <span className="friends-row-avatar friends-row-avatar-xl">
-            {friend.avatarUrl ? (
-              <img src={friend.avatarUrl} alt="" />
-            ) : (
-              friend.displayName.slice(0, 1).toUpperCase()
-            )}
+            {renderAvatarContent(friend)}
           </span>
           <div className="friend-detail-identity">
             <span className="amis-page-kicker">Dans ton cercle</span>
@@ -14899,14 +15819,19 @@ function FriendDetailPanel({
               )}
               {mutualCount > 0 && (
                 <span>
-                  {mutualCount} ami{mutualCount > 1 ? 's' : ''} en commun
+                  {translatePlural(
+                    locale,
+                    mutualCount,
+                    'friends.mutualCount',
+                    'friends.mutualCountPlural'
+                  )}
                 </span>
               )}
             </div>
             <p
               className={`friend-detail-bio ${profile?.bio ? '' : 'is-empty'}`}
             >
-              {profile?.bio || 'Aucune bio partagée pour le moment.'}
+              {profile?.bio || translate(locale, 'friends.noBio')}
             </p>
           </div>
           <div className="friend-detail-actions">
@@ -14984,14 +15909,14 @@ function FriendDetailPanel({
       <div className="dashboard-home-section friend-detail-section">
         <div className="friend-section-title">
           <div>
-            <span>Vos rendez-vous</span>
-            <h2>Événements en commun</h2>
+            <span>{translate(locale, 'friends.yourMeetups')}</span>
+            <h2>{translate(locale, 'friends.commonEvents')}</h2>
           </div>
           <strong>{mutualEvents.length}</strong>
         </div>
         {mutualEvents.length === 0 ? (
           <p className="list-view-empty">
-            Aucun événement en commun pour l'instant.
+            {translate(locale, 'friends.noCommonEvents')}
           </p>
         ) : (
           <EventCarouselRow
@@ -15005,13 +15930,31 @@ function FriendDetailPanel({
       <div className="friend-detail-section">
         <div className="friend-section-title">
           <div>
-            <span>Historique partagé</span>
-            <h2>Activité récente</h2>
+            <span>{translate(locale, 'friends.theirPhotos')}</span>
+            <h2>{translate(locale, 'profile.tabPhotos')}</h2>
+          </div>
+        </div>
+        {/* DEC-0020 - the other half of the gallery. Passing ownerId is
+            what makes it read-only and routes it through
+            /users/:id/photos, where the friends-only rule is enforced in
+            SQL rather than by this component choosing to be polite. */}
+        <ProfilPhotosTab
+          authToken={authToken}
+          ownerId={friend.id}
+          locale={locale}
+        />
+      </div>
+
+      <div className="friend-detail-section">
+        <div className="friend-section-title">
+          <div>
+            <span>{translate(locale, 'friends.sharedHistory')}</span>
+            <h2>{translate(locale, 'friends.recentActivity')}</h2>
           </div>
         </div>
         <ActivityList
           entries={activity}
-          emptyMessage="Rien à afficher pour l'instant."
+          emptyMessage={translate(locale, 'friends.nothingToShow')}
           locale={locale}
         />
       </div>
@@ -15021,6 +15964,7 @@ function FriendDetailPanel({
           friend={friend}
           authToken={authToken}
           attendance={attendance}
+          locale={locale}
           onClose={() => setInviteEventOpen(false)}
         />
       )}
@@ -15036,11 +15980,13 @@ function InviteFriendToEventModal({
   friend,
   authToken,
   attendance,
+  locale,
   onClose
 }: {
   friend: PublicUser;
   authToken: string | undefined;
   attendance: Record<string, AttendanceVisibility>;
+  locale: SupportedLocale;
   onClose: () => void;
 }) {
   const { events, state } = useAttendanceEvents(attendance, 'upcoming');
@@ -15083,7 +16029,7 @@ function InviteFriendToEventModal({
           )}
           {state === 'success' && events.length === 0 && (
             <p className="list-view-empty">
-              Marque ta présence sur un événement pour pouvoir l'inviter.
+              {translate(locale, 'friends.markAttendanceFirst')}
             </p>
           )}
           {state === 'success' &&
@@ -15483,7 +16429,12 @@ function ConversationThread({
                         type="button"
                         className="conversation-message-report"
                         onClick={() =>
-                          reportContent(authToken, 'message', message.id, locale)
+                          reportContent(
+                            authToken,
+                            'message',
+                            message.id,
+                            locale
+                          )
                         }
                       >
                         Signaler
@@ -17127,7 +18078,8 @@ function EventDetails({
   onSetAttendance,
   onClearAttendance,
   initialTab,
-  onOpenForumPanel
+  onOpenForumPanel,
+  onMessageUser
 }: {
   event: PublicEvent;
   headingRef: RefObject<HTMLHeadingElement | null>;
@@ -17148,6 +18100,9 @@ function EventDetails({
   // ForumPanel mode for the same event instead of duplicating that
   // experience here.
   onOpenForumPanel: () => void;
+  // DEC-0020: a participant is an account, and every account displayed
+  // anywhere gets a way to be written to.
+  onMessageUser: (user: PublicUser) => void;
 }) {
   const [tab, setTab] = useState<EventDetailsTab>(initialTab ?? 'about');
   // EventDetails stays mounted across different events (see rightPanelMount)
@@ -17247,8 +18202,8 @@ function EventDetails({
                   }
                 >
                   {attendanceVisibility
-                ? translate(locale, 'forum.attendanceGoing')
-                : translate(locale, 'forum.attendanceGo')}
+                    ? translate(locale, 'forum.attendanceGoing')
+                    : translate(locale, 'forum.attendanceGo')}
                 </button>
                 {attendanceVisibility && (
                   <AttendanceVisibilityToggle
@@ -17260,16 +18215,24 @@ function EventDetails({
               {friendsAttending.length > 0 ? (
                 <div className="attendance-friends">
                   {friendsAttending.map((attendee) => (
-                    <span className="attendance-friend" key={attendee.id}>
+                    <button
+                      type="button"
+                      className="attendance-friend"
+                      key={attendee.id}
+                      title={translate(locale, 'friends.writeTo')}
+                      onClick={() => onMessageUser(attendee)}
+                    >
                       <span className="friends-row-avatar">
-                        {attendee.avatarUrl ? (
-                          <img src={attendee.avatarUrl} alt="" />
-                        ) : (
-                          attendee.displayName.slice(0, 1).toUpperCase()
-                        )}
+                        {renderAvatarContent(attendee)}
                       </span>
                       {attendee.displayName}
-                    </span>
+                      <span
+                        className="attendance-friend-write"
+                        aria-hidden="true"
+                      >
+                        ✉
+                      </span>
+                    </button>
                   ))}
                   <span className="attendance-friends-label">
                     {friendsAttending.length === 1
@@ -17785,9 +18748,7 @@ function ForumPanel({
                 🎟️
               </span>
               <div>
-                <strong>
-                  {translate(locale, 'forum.aboutResaleTitle')}
-                </strong>
+                <strong>{translate(locale, 'forum.aboutResaleTitle')}</strong>
                 <p>{translate(locale, 'forum.aboutResaleBody')}</p>
               </div>
             </div>
@@ -17796,9 +18757,7 @@ function ForumPanel({
                 🚩
               </span>
               <div>
-                <strong>
-                  {translate(locale, 'forum.aboutReportTitle')}
-                </strong>
+                <strong>{translate(locale, 'forum.aboutReportTitle')}</strong>
                 <p>{translate(locale, 'forum.aboutReportBody')}</p>
               </div>
             </div>
@@ -18322,10 +19281,7 @@ function EventForum({
                 {translate(locale, FORUM_ROOM_PRESENTATION[option].label)}
               </strong>
               <small>
-                {translate(
-                  locale,
-                  FORUM_ROOM_PRESENTATION[option].description
-                )}
+                {translate(locale, FORUM_ROOM_PRESENTATION[option].description)}
               </small>
             </span>
             <span className="forum-room-count">
@@ -18344,9 +19300,7 @@ function EventForum({
             <span className="forum-section-eyebrow">
               {translate(locale, 'forum.roomSelected')}
             </span>
-            <h3 id="forum-feed-title">
-              {translate(locale, activeRoom.label)}
-            </h3>
+            <h3 id="forum-feed-title">{translate(locale, activeRoom.label)}</h3>
             <p>{translate(locale, activeRoom.description)}</p>
           </div>
           <span className="forum-feed-count">
@@ -18363,9 +19317,7 @@ function EventForum({
           <p className="forum-disclaimer">
             <span aria-hidden="true">!</span>
             <span>
-              <strong>
-                {translate(locale, 'forum.resaleDisclaimer')}
-              </strong>{' '}
+              <strong>{translate(locale, 'forum.resaleDisclaimer')}</strong>{' '}
               {translate(locale, 'forum.resaleDisclaimerBody')}
             </span>
           </p>
@@ -18479,7 +19431,9 @@ function ForumPostAuthorRow({
         <button
           type="button"
           className="text-btn"
-          onClick={() => reportContent(authToken, 'forum_post', post.id, locale)}
+          onClick={() =>
+            reportContent(authToken, 'forum_post', post.id, locale)
+          }
         >
           Signaler
         </button>

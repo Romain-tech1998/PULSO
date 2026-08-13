@@ -24,22 +24,123 @@ import { describe, expect, it } from 'vitest';
 // plus a few longer giveaways. Deliberately excludes words English shares
 // (a, on, or, but, son, part, plus...) - see FALSE_FRIENDS below.
 const FRENCH_MARKERS = [
-  'le', 'la', 'les', 'des', 'une', 'du', 'et', 'ou', 'pour', 'avec',
-  'dans', 'sur', 'par', 'qui', 'que', 'quoi', 'pas', 'aucun', 'aucune',
-  'cette', 'ces', 'ses', 'leur', 'leurs', 'votre', 'vos', 'ton', 'tes',
-  'mon', 'mes', 'notre', 'nos', 'tous', 'toute', 'toutes', 'tout',
-  'sans', 'chez', 'vers', 'dont', 'mais', 'donc', 'car', 'est', 'sont',
-  'avez', 'avoir', 'etre', 'fait', 'faire', 'voir', 'vous', 'tu', 'toi',
-  'nous', 'je', 'elle', 'ils', 'elles', 'ici', 'rien', 'jamais',
-  'toujours', 'encore', 'deja', 'bien', 'tres', 'trop', 'peu',
-  'beaucoup', 'comme', 'quand', 'oui', 'non', 'merci', 'lieu', 'lieux',
-  'amis', 'ami', 'compte', 'sortie', 'sorties', 'soiree', 'soirees',
-  'billet', 'billets', 'forums', 'groupe', 'groupes', 'membre',
-  'membres', 'recherche', 'rechercher', 'ajouter', 'supprimer',
-  'modifier', 'envoyer', 'annuler', 'fermer', 'ouvrir', 'retirer',
-  'choisir', 'nouveau', 'nouvelle', 'prochain', 'prochaine', 'dernier',
-  'derniere', 'premier', 'premiere', 'jour', 'jours', 'semaine',
-  'heure', 'heures', 'gratuit', 'payant'
+  'le',
+  'la',
+  'les',
+  'des',
+  'une',
+  'du',
+  'et',
+  'ou',
+  'pour',
+  'avec',
+  'dans',
+  'sur',
+  'par',
+  'qui',
+  'que',
+  'quoi',
+  'pas',
+  'aucun',
+  'aucune',
+  'cette',
+  'ces',
+  'ses',
+  'leur',
+  'leurs',
+  'votre',
+  'vos',
+  'ton',
+  'tes',
+  'mon',
+  'mes',
+  'notre',
+  'nos',
+  'tous',
+  'toute',
+  'toutes',
+  'tout',
+  'sans',
+  'chez',
+  'vers',
+  'dont',
+  'mais',
+  'donc',
+  'car',
+  'est',
+  'sont',
+  'avez',
+  'avoir',
+  'etre',
+  'fait',
+  'faire',
+  'voir',
+  'vous',
+  'tu',
+  'toi',
+  'nous',
+  'je',
+  'elle',
+  'ils',
+  'elles',
+  'ici',
+  'rien',
+  'jamais',
+  'toujours',
+  'encore',
+  'deja',
+  'bien',
+  'tres',
+  'trop',
+  'peu',
+  'beaucoup',
+  'comme',
+  'quand',
+  'oui',
+  'non',
+  'merci',
+  'lieu',
+  'lieux',
+  'amis',
+  'ami',
+  'compte',
+  'sortie',
+  'sorties',
+  'soiree',
+  'soirees',
+  'billet',
+  'billets',
+  'forums',
+  'groupe',
+  'groupes',
+  'membre',
+  'membres',
+  'recherche',
+  'rechercher',
+  'ajouter',
+  'supprimer',
+  'modifier',
+  'envoyer',
+  'annuler',
+  'fermer',
+  'ouvrir',
+  'retirer',
+  'choisir',
+  'nouveau',
+  'nouvelle',
+  'prochain',
+  'prochaine',
+  'dernier',
+  'derniere',
+  'premier',
+  'premiere',
+  'jour',
+  'jours',
+  'semaine',
+  'heure',
+  'heures',
+  'gratuit',
+  'payant'
 ];
 
 const MARKER_RE_G = new RegExp(`\\b(?:${FRENCH_MARKERS.join('|')})\\b`, 'gi');
@@ -70,7 +171,9 @@ const ALLOWED = [
 
 function stripComments(source: string): string {
   return source
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => '\n'.repeat((m.match(/\n/g) ?? []).length))
+    .replace(/\/\*[\s\S]*?\*\//g, (m) =>
+      '\n'.repeat((m.match(/\n/g) ?? []).length)
+    )
     .replace(/^\s*\/\/.*$/gm, '');
 }
 
@@ -114,14 +217,14 @@ function countFrench(source: string): { line: number; text: string }[] {
  * them. Zero means the surface is done and must stay done.
  */
 const BUDGETS: Record<string, number> = {
-  'explore-map.tsx': 217,
+  'explore-map.tsx': 197,
   'groups.tsx': 0,
   'shared.tsx': 0
 };
 
 describe('French left in the web app (DEC-0003 ratchet)', () => {
   for (const [file, budget] of Object.entries(BUDGETS)) {
-    it(`${file} carries at most ${budget} untranslated strings`, () => {
+    it(`${file} carries exactly ${budget} untranslated strings`, () => {
       const path = fileURLToPath(new URL(`./${file}`, import.meta.url));
       const hits = countFrench(readFileSync(path, 'utf8'));
       // Report what is left, so a failure says where to look rather than
@@ -130,20 +233,35 @@ describe('French left in the web app (DEC-0003 ratchet)', () => {
         .slice(0, 15)
         .map((hit) => `  ${file}:${hit.line}  ${hit.text.slice(0, 70)}`)
         .join('\n');
+      // Exact, not an upper bound: going under the budget without lowering
+      // it leaves a number nobody trusts, which is how "done" got claimed
+      // wrongly twice already. Translating a surface means editing this
+      // file too.
       expect(
         hits.length,
         hits.length > budget
           ? `${hits.length} French strings, budget ${budget}. First few:\n${sample}`
-          : `Budget is stale: ${hits.length} left, budget ${budget}. Lower it.`
-      ).toBe(Math.min(hits.length, budget));
-      expect(hits.length).toBeLessThanOrEqual(budget);
+          : `Budget is stale: only ${hits.length} left but the budget says ` +
+              `${budget}. Lower it to ${hits.length}.`
+      ).toBe(budget);
     });
   }
 
   it('marker list stays free of words English shares', () => {
     // "a", "on", "or", "son", "part", "plus" and friends appear in English
     // copy and would make the ratchet fire on translated text.
-    const falseFriends = ['a', 'on', 'or', 'but', 'son', 'part', 'plus', 'sale', 'pain', 'coin'];
+    const falseFriends = [
+      'a',
+      'on',
+      'or',
+      'but',
+      'son',
+      'part',
+      'plus',
+      'sale',
+      'pain',
+      'coin'
+    ];
     for (const word of falseFriends) {
       expect(FRENCH_MARKERS).not.toContain(word);
     }

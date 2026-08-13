@@ -308,10 +308,12 @@ const en = {
   'groups.nameLabel': 'Group name',
   'groups.namePlaceholder': 'e.g. French speakers in Montréal',
   'groups.missionLabel': 'What is it for?',
-  'groups.missionPlaceholder': 'Who is it for, and how do you want to organise your outings?',
+  'groups.missionPlaceholder':
+    'Who is it for, and how do you want to organise your outings?',
   'groups.typeLegend': 'What kind of group?',
   'groups.typeCommunity': 'Community',
-  'groups.typeCommunityHint': 'Permanent, around a theme. e.g. Techno Montréal.',
+  'groups.typeCommunityHint':
+    'Permanent, around a theme. e.g. Techno Montréal.',
   'groups.typeEvent': 'Night out',
   'groups.typeEventHint': 'One specific night, organised end to end.',
   'groups.typeCrew': 'Private crew',
@@ -327,7 +329,8 @@ const en = {
   'groups.back': 'Groups',
   'groups.emptyEyebrow': 'Your collective space',
   'groups.emptyHeading': 'Organising a night out should never be complicated.',
-  'groups.emptyBody': 'Open a group to keep decisions, the schedule, who is coming, the tasks and the conversation in one place.',
+  'groups.emptyBody':
+    'Open a group to keep decisions, the schedule, who is coming, the tasks and the conversation in one place.',
   'groups.emptyCta': 'Create my first group',
   'groups.tabMine': 'My groups',
   'groups.tabEvents': 'Events',
@@ -336,7 +339,8 @@ const en = {
   'groups.loading': 'Loading…',
   'groups.loadError': 'Groups cannot be loaded right now.',
   'groups.noMatch': 'No group matches your search.',
-  'groups.emptyMine': 'No group yet. Find one in the Discover tab, or join one from “Meet before the event” on a forum.',
+  'groups.emptyMine':
+    'No group yet. Find one in the Discover tab, or join one from “Meet before the event” on a forum.',
   'groups.emptyEvents': 'No event group yet.',
   'groups.emptyDiscover': 'No permanent group yet.',
   'groups.accessOpen': 'Open',
@@ -355,12 +359,15 @@ const en = {
   'groups.pinned': 'Pinned',
   'groups.leave': 'Leave',
   'groups.invite': 'Invite friends',
-  'groups.joinOpenPrompt': 'Join this group to talk, vote and see the schedule.',
-  'groups.joinRestrictedPrompt': 'This group is restricted — your request will be sent to its moderator.',
+  'groups.joinOpenPrompt':
+    'Join this group to talk, vote and see the schedule.',
+  'groups.joinRestrictedPrompt':
+    'This group is restricted — your request will be sent to its moderator.',
   'groups.joining': 'One moment…',
   'groups.join': 'Join',
   'groups.askToJoin': 'Ask to join',
-  'groups.pendingRequest': 'Request sent, waiting for the moderator to approve it.',
+  'groups.pendingRequest':
+    'Request sent, waiting for the moderator to approve it.',
   'groups.tabHome': 'Home',
   'groups.tabMembers': 'Members',
   'groups.tabManage': 'Management',
@@ -371,12 +378,14 @@ const en = {
   'groups.channelStaffOnly': 'Only the administrator can write here',
   'groups.channelAdd': 'Add',
   'groups.channelDelete': 'Delete this thread',
-  'groups.channelReadOnly': 'This thread is for the administrator’s announcements. You can read it and react to it.',
+  'groups.channelReadOnly':
+    'This thread is for the administrator’s announcements. You can read it and react to it.',
   'groups.composerPlaceholder': 'Share an idea, a question or a decision…',
   'groups.composerSubmit': 'Post',
   'groups.composerPosting': 'Posting…',
   'groups.proposeOuting': 'Propose an outing',
-  'groups.outingTitlePlaceholder': 'What are we doing? e.g. Techno at Bal du Lezard',
+  'groups.outingTitlePlaceholder':
+    'What are we doing? e.g. Techno at Bal du Lezard',
   'groups.outingPlacePlaceholder': 'Where?',
   'groups.outingWhenLabel': 'When?',
   'groups.outingPublish': 'Publish',
@@ -389,7 +398,8 @@ const en = {
   'groups.feedLoading': 'Loading…',
   'groups.feedError': 'The feed cannot be loaded right now.',
   'groups.feedEmpty': 'Start the first conversation.',
-  'groups.feedEmptyHint': 'A simple question is often enough to organise a whole night out.',
+  'groups.feedEmptyHint':
+    'A simple question is often enough to organise a whole night out.',
   'groups.membersEyebrow': 'The community',
   'groups.membersCreator': 'Group creator',
   'groups.membersMember': 'Member',
@@ -410,18 +420,23 @@ const en = {
   'groups.identityPhotoReplace': 'Replace',
   'groups.identityPhotoAdd': 'Add a photo',
   'groups.identityPhotoRemove': 'Remove',
-  'groups.identityPhotoFormatError': 'Unsupported format. Use JPEG, PNG, WebP or GIF.',
+  'groups.identityPhotoFormatError':
+    'Unsupported format. Use JPEG, PNG, WebP or GIF.',
   'groups.identityPhotoTooLarge': 'Photo too large.',
   'groups.identityPhotoSaveError': 'The photo could not be saved.',
   'groups.identityPhotoRemoveError': 'The photo could not be removed.',
   'groups.verificationHeading': 'Pulso verification',
-  'groups.verificationVerified': 'This group is verified. The badge is visible everywhere it appears.',
+  'groups.verificationVerified':
+    'This group is verified. The badge is visible everywhere it appears.',
   'groups.verificationPending': 'Request sent. A Pulso team will review it.',
-  'groups.verificationDeclined': 'The previous request was not accepted. You can submit a new one.',
-  'groups.verificationPrompt': 'A verified group reassures the people who do not know it yet.',
+  'groups.verificationDeclined':
+    'The previous request was not accepted. You can submit a new one.',
+  'groups.verificationPrompt':
+    'A verified group reassures the people who do not know it yet.',
   'groups.verificationAsk': 'Ask for verification',
   'groups.verificationLabel': 'Who are you, and what does this group do?',
-  'groups.verificationPlaceholder': 'e.g. Techno collective active since 2019, 40 nights a year in the Plateau.',
+  'groups.verificationPlaceholder':
+    'e.g. Techno collective active since 2019, 40 nights a year in the Plateau.',
   'groups.verificationCancel': 'Cancel',
   'groups.verificationSending': 'Sending…',
   'groups.verificationSubmit': 'Send the request',
@@ -430,21 +445,26 @@ const en = {
   // descriptions lived in GROUP_MODULE_LABELS, French-only; they are copy
   // the workspace renders, so they belong in the catalogue like the rest.
   'groups.modulesHeading': 'Group modules',
-  'groups.modulesHint': 'What the Organise tab shows, and in what order. Disabling a module hides it without erasing what it contains.',
+  'groups.modulesHint':
+    'What the Organise tab shows, and in what order. Disabling a module hides it without erasing what it contains.',
   'groups.modulesSaveError': 'The configuration could not be saved.',
   'groups.modulesMoveUp': 'Move {name} up',
   'groups.modulesMoveDown': 'Move {name} down',
-  'groups.modulesUnavailable': 'This group is not linked to any event, so there is nothing to show yet.',
+  'groups.modulesUnavailable':
+    'This group is not linked to any event, so there is nothing to show yet.',
   'groups.modulesEnabled': 'On',
   'groups.modulesHidden': 'Hidden',
   'groups.moduleProgrammeName': 'Schedule',
   'groups.moduleProgrammeDescription': 'The outing hour by hour.',
   'groups.moduleAttendanceName': 'Who is coming?',
-  'groups.moduleAttendanceDescription': 'Real attendance, counted from members’ votes.',
+  'groups.moduleAttendanceDescription':
+    'Real attendance, counted from members’ votes.',
   'groups.moduleMeetupPointName': 'Meeting point',
-  'groups.moduleMeetupPointDescription': 'Derived from the linked event’s real venue. Absent from a permanent group.',
+  'groups.moduleMeetupPointDescription':
+    'Derived from the linked event’s real venue. Absent from a permanent group.',
   'groups.moduleChecklistName': 'Checklist',
-  'groups.moduleChecklistDescription': 'What each person has to prepare, ticked off individually.',
+  'groups.moduleChecklistDescription':
+    'What each person has to prepare, ticked off individually.',
   // The sponsored placement (DEC-0015 §Future monetization): always
   // labelled as paid, always naming who paid, always dismissable.
   'groups.sponsoredTag': 'Sponsored · {sponsor}',
@@ -533,12 +553,60 @@ const en = {
   'nav.events': 'Events',
   'nav.venues': 'Venues',
   'nav.community': 'Community',
+  'nav.messages': 'Messages',
   'nav.forums': 'Forums',
   'nav.groups': 'Groups',
   'nav.friends': 'Friends',
   'nav.about': 'About',
   'nav.notificationsSoon': 'Notifications (coming soon)',
   'nav.comingSoon': 'Coming soon',
+  // The connected experience's primary sidebar (DEC-0020). Forums,
+  // Groupes, Messages and Amis are no longer primary entries: they are
+  // sub-sections of Communauté, which is why only the hub is listed here.
+  'sidebar.discover': 'Discover',
+  'sidebar.map': 'Map',
+  'sidebar.favorites': 'Favorites',
+  'sidebar.organizer': 'Organizer',
+  'sidebar.administration': 'Administration',
+  // The profile page's DEC-0020 surfaces: the uploaded profile photo and
+  // the personal photo gallery. The rest of the profile is still
+  // hard-coded French and is being translated batch by batch.
+  'profile.tabPhotos': 'Photos',
+  'profile.tabFriends': 'Friends',
+  'profile.tabFollowedVenues': 'Followed venues',
+  'profile.followedVenuesEmpty':
+    'No followed venue yet. Follow one to hear about its next events.',
+  'profile.photoChange': 'Change photo',
+  'profile.photoAdd': 'Add a photo',
+  'profile.photoRemove': 'Remove photo',
+  'profile.photoUploading': 'Uploading…',
+  'profile.photoFailed': 'The photo could not be uploaded.',
+  'profile.galleryAdd': 'Add a photo',
+  'profile.galleryEmpty': 'No photo yet. Add one to fill your profile.',
+  'profile.galleryEmptyOther': 'No photo shared.',
+  'profile.galleryPrivate': 'This gallery is visible to friends only.',
+  'profile.galleryDelete': 'Delete this photo',
+  'profile.galleryCaption': 'Caption (optional)',
+  'profile.friendsEmpty': 'No friends yet.',
+  'friends.theirPhotos': 'Their moments',
+  'friends.writeTo': 'Write a message',
+  // DEC-0020 - the docked messaging panel, present on every connected
+  // screen so a conversation never requires navigating away from what the
+  // user was doing.
+  'dock.title': 'Messages',
+  'dock.open': 'Open messages',
+  'dock.close': 'Close messages',
+  'dock.back': 'Back to conversations',
+  'dock.empty': 'No conversation yet.',
+  'dock.compose': 'Write a message…',
+  'dock.send': 'Send',
+  'dock.requests': 'Requests',
+  'dock.requestsEmpty': 'No message request.',
+  'dock.accept': 'Accept',
+  'dock.decline': 'Decline',
+  'dock.conversations': 'Conversations',
+  'dock.seeAll': 'Open the full inbox',
+  'dock.sendFailed': 'The message could not be sent.',
   'view.map': 'Map',
   'view.list': 'List',
   'view.calendar': 'Calendar',
@@ -546,7 +614,8 @@ const en = {
   // already uses.
   'filters.reset': 'Reset',
   'filters.date': 'Date',
-  'filters.categoryLegendHint': 'Each category’s colour matches its pins on the map.',
+  'filters.categoryLegendHint':
+    'Each category’s colour matches its pins on the map.',
   'filters.venueCategory': 'Venue type',
   'filters.venueDateHint': 'Shows venues with an event in this period.',
   'filters.radiusActive': 'Active radius: {km} km',
@@ -583,13 +652,17 @@ const en = {
   'landing.seeAllEvents': 'See all events',
   'landing.noEvents': 'No event found.',
   'landing.featureMapTitle': 'Smart map',
-  'landing.featureMapBody': 'Explore your city and discover events around you in real time.',
+  'landing.featureMapBody':
+    'Explore your city and discover events around you in real time.',
   'landing.featureSearchTitle': 'Powerful search',
-  'landing.featureSearchBody': 'Find exactly what you are looking for with search and our suggestions.',
+  'landing.featureSearchBody':
+    'Find exactly what you are looking for with search and our suggestions.',
   'landing.featureFavoritesTitle': 'Your favourites',
-  'landing.featureFavoritesBody': 'Save the events you love and never miss a night out.',
+  'landing.featureFavoritesBody':
+    'Save the events you love and never miss a night out.',
   'landing.featureCommunityTitle': 'Community',
-  'landing.featureCommunityBody': 'Join thousands of enthusiasts and share your best finds.',
+  'landing.featureCommunityBody':
+    'Join thousands of enthusiasts and share your best finds.',
   // The notification feed. Each row is a sentence built around one or two
   // bold names, and every one of these keeps the same word order in both
   // languages - which is what lets them be keyed as fragments.
@@ -598,7 +671,8 @@ const en = {
   'notif.unread': 'Unread',
   'notif.loadError': 'Your notifications cannot be loaded.',
   'notif.emptyTitle': 'Nothing new',
-  'notif.emptyBody': 'Follow a venue to be notified as soon as it schedules something.',
+  'notif.emptyBody':
+    'Follow a venue to be notified as soon as it schedules something.',
   'notif.venueAdded': 'just added',
   'notif.friendRequest': 'sent you a friend request',
   'notif.friendAccepted': 'accepted your friend request',
@@ -622,9 +696,11 @@ const en = {
   'forum.panelLabel': 'Event forum',
   'forum.meetupCta': 'Meet before the event',
   'forum.meetupLoading': 'One moment…',
-  'forum.signInDiscussion': 'Sign in to read and take part in this event’s forum.',
+  'forum.signInDiscussion':
+    'Sign in to read and take part in this event’s forum.',
   'forum.signInPhotos': 'Sign in to see and share photos of this event.',
-  'forum.emptyDiscussion': 'Nobody has written here yet. Start the discussion in the Discussion tab!',
+  'forum.emptyDiscussion':
+    'Nobody has written here yet. Start the discussion in the Discussion tab!',
   'forum.membersLoadError': 'Members cannot be loaded right now.',
   'forum.attendanceGoing': '✓ You are going',
   'forum.attendanceGo': '🎟️ I am going',
@@ -636,51 +712,71 @@ const en = {
   'forum.ruleResale': 'Ticket resale peer-to-peer only',
   'forum.ruleOnTopic': 'Stay on the subject of the event',
   'forum.aboutSpaceTitle': 'A space for this event',
-  'forum.aboutSpaceBody': 'Talk about “{title}”, ask your questions and find people to go with.',
+  'forum.aboutSpaceBody':
+    'Talk about “{title}”, ask your questions and find people to go with.',
   'forum.aboutOnceTitle': 'One message, once',
-  'forum.aboutOnceBody': 'A published message cannot be edited afterwards — only deleted by its author.',
+  'forum.aboutOnceBody':
+    'A published message cannot be edited afterwards — only deleted by its author.',
   'forum.aboutResaleTitle': 'Peer-to-peer resale',
-  'forum.aboutResaleBody': 'Ticket resale between attendees stays entirely peer-to-peer — Pulso is never a party to it.',
+  'forum.aboutResaleBody':
+    'Ticket resale between attendees stays entirely peer-to-peer — Pulso is never a party to it.',
   'forum.aboutReportTitle': 'Reporting',
-  'forum.aboutReportBody': 'Every message can be reported. Stay courteous towards other attendees.',
-  'forum.photoUploadError': 'Upload failed. Try again with a JPEG, PNG, WebP or GIF photo.',
+  'forum.aboutReportBody':
+    'Every message can be reported. Stay courteous towards other attendees.',
+  'forum.photoUploadError':
+    'Upload failed. Try again with a JPEG, PNG, WebP or GIF photo.',
   'forum.photosEmpty': 'No photo yet. Share the first one!',
   'forum.agoraEyebrow': 'The event’s agora',
-  'forum.agoraBody': 'Four rooms, one event: go straight to the conversation you care about.',
+  'forum.agoraBody':
+    'Four rooms, one event: go straight to the conversation you care about.',
   'forum.roomSelected': 'Selected room',
   'forum.resaleDisclaimer': 'Private sales only.',
-  'forum.resaleDisclaimerBody': 'Pulso takes no part in the transaction: no payment and no ticket goes through the platform.',
+  'forum.resaleDisclaimerBody':
+    'Pulso takes no part in the transaction: no payment and no ticket goes through the platform.',
   'forum.writeInRoom': 'Write in the {room} room',
   'forum.discoverActive': 'Active discussion',
   'forum.discoverToStart': 'To be started',
   'forum.discoverStartFirst': 'Start the first discussion for this event.',
   'forum.discoverTitle': 'A discussion to discover',
-  'forum.discoverOpen': 'The conversation is open. Be the first to raise a subject.',
+  'forum.discoverOpen':
+    'The conversation is open. Be the first to raise a subject.',
   'forum.communityTitle': 'The Pulso community · Montréal',
-  'forum.communityBody': 'Find who to go with, swap tips and meet the people who bring each event to life.',
+  'forum.communityBody':
+    'Find who to go with, swap tips and meet the people who bring each event to life.',
   'forum.perEvent': 'per event',
   'forum.yourChoice': 'your call',
-  'forum.oneDiscussionPerEvent': 'One dedicated discussion for every upcoming event.',
+  'forum.oneDiscussionPerEvent':
+    'One dedicated discussion for every upcoming event.',
   'forum.noUpcomingEvents': 'No upcoming event right now.',
   // The four forum rooms. Their names came from FORUM_CATEGORY_LABELS in
   // the domain package and the rest from FORUM_ROOM_PRESENTATION here,
   // both French-only; the icons stay in the component.
   'forum.roomGeneral': 'General discussion',
-  'forum.roomGeneralDescription': 'Questions, tips and impressions about the outing.',
+  'forum.roomGeneralDescription':
+    'Questions, tips and impressions about the outing.',
   'forum.roomGeneralPlaceholder': 'Ask a question or share a good tip…',
-  'forum.roomGeneralEmpty': 'Ask the first question or share your tip about the night.',
+  'forum.roomGeneralEmpty':
+    'Ask the first question or share your tip about the night.',
   'forum.roomPartners': 'Find partners',
-  'forum.roomPartnersDescription': 'Introduce yourself and find people to go with.',
-  'forum.roomPartnersPlaceholder': 'Say who you are and who you would like to go with…',
-  'forum.roomPartnersEmpty': 'Introduce yourself and suggest a meeting point before the event.',
+  'forum.roomPartnersDescription':
+    'Introduce yourself and find people to go with.',
+  'forum.roomPartnersPlaceholder':
+    'Say who you are and who you would like to go with…',
+  'forum.roomPartnersEmpty':
+    'Introduce yourself and suggest a meeting point before the event.',
   'forum.roomResale': 'Ticket resale',
   'forum.roomResaleDescription': 'Ticket offers between community members.',
-  'forum.roomResalePlaceholder': 'Clearly describe the ticket you are offering or looking for…',
-  'forum.roomResaleEmpty': 'State the kind of ticket wanted or offered, without sharing sensitive details.',
+  'forum.roomResalePlaceholder':
+    'Clearly describe the ticket you are offering or looking for…',
+  'forum.roomResaleEmpty':
+    'State the kind of ticket wanted or offered, without sharing sensitive details.',
   'forum.roomFindSomeone': 'Find someone who was there',
-  'forum.roomFindSomeoneDescription': 'Find a person you crossed paths with during the event.',
-  'forum.roomFindSomeonePlaceholder': 'Describe the context of your meeting, respectfully…',
-  'forum.roomFindSomeoneEmpty': 'Describe the moment and place of the meeting plainly to start the search.',
+  'forum.roomFindSomeoneDescription':
+    'Find a person you crossed paths with during the event.',
+  'forum.roomFindSomeonePlaceholder':
+    'Describe the context of your meeting, respectfully…',
+  'forum.roomFindSomeoneEmpty':
+    'Describe the moment and place of the meeting plainly to start the search.',
   // The forum panel's five tabs.
   'forum.tabDiscussion': 'Discussion',
   'forum.tabEvent': 'Event',
@@ -726,7 +822,8 @@ const en = {
   'messages.noResult': 'No result.',
   'messages.privateEyebrow': 'Private conversations',
   'messages.privateTitle': 'The best outings often start with a message.',
-  'messages.privateBody': 'Pick a friend or a group to plan, share an event and decide together.',
+  'messages.privateBody':
+    'Pick a friend or a group to plan, share an event and decide together.',
   'messages.writeToFriend': 'Write to a friend',
   'messages.privateConversation': 'Private conversation',
   'messages.canExchange': 'You can talk because you are friends on Pulso.',
@@ -744,6 +841,73 @@ const en = {
   'messages.composeHint': 'Pick a friend to start or resume a conversation.',
   'messages.friendsLoadError': 'Your friends cannot be loaded right now.',
   'messages.noFriendsToWrite': 'Add friends so you can write to them.',
+  // The friends page, the friend panel and the two invite modals.
+  'friends.title': 'My friends',
+  'friends.eyebrow': 'Your Pulso circle',
+  'friends.tagline': 'Find the people to live Montréal with.',
+  'friends.invite': 'Invite a friend',
+  'friends.circleSummary': 'Summary of your circle',
+  'friends.friendsWord': 'friends',
+  'friends.havePlans': 'have a visible outing',
+  'friends.requestWord': 'request',
+  'friends.requestWordPlural': 'requests',
+  'friends.search': 'Search a friend',
+  'friends.tabCircle': 'My circle',
+  'friends.tabRequests': 'Requests',
+  'friends.tabSuggestions': 'Suggestions',
+  'friends.tabDiscover': 'To discover',
+  'friends.noFriendsYet': 'No friend yet',
+  'friends.shareCodeHint': 'Share your code to start connecting.',
+  'friends.messageShort': 'Message',
+  'friends.removeShort': 'Remove',
+  'friends.confirmRemove': 'Remove this person from your friends?',
+  'friends.loadError': 'Your friends cannot be loaded right now.',
+  'friends.inCircle': 'In your circle',
+  'friends.sendMessage': 'Send a message',
+  'friends.removeFriend': 'Remove this friend',
+  'friends.noRequests': 'No friend request right now.',
+  'friends.noSuggestions':
+    'No suggestion yet - add friends to discover new ones through your mutual connections.',
+  'friends.panelHint':
+    'See the outings they share, the events you have in common, and start planning your next night out.',
+  'friends.inviteNewPerson': 'Invite a new person',
+  'friends.upcomingWithCircle': 'upcoming with their circle.',
+  'friends.sharedOutingsHint':
+    'The outings your friends share will appear here.',
+  'friends.goingTo': 'Going to {title}',
+  'friends.mutualCount': '{count} mutual friend',
+  'friends.mutualCountPlural': '{count} mutual friends',
+  'friends.noBio': 'No bio shared yet.',
+  'friends.noCommonEvents': 'No event in common yet.',
+  'friends.nothingToShow': 'Nothing to show yet.',
+  'friends.markAttendanceFirst':
+    'Mark your attendance at an event to be able to invite them.',
+  'friends.inviteSent': 'Sent ✓',
+  'friends.inviteError': 'The request could not be sent right now.',
+  'friends.copied': 'Copied!',
+  'friends.pasteCode': 'Paste a friend’s code to add them',
+  'friends.codeToAdd': 'Friend code to add',
+  'friends.noSharedOutings': 'No friend has a shared upcoming outing yet.',
+  'friends.conversationError': 'The conversation could not be loaded.',
+  'friends.conversationHint':
+    'An event to share or an outing to plan? Write the first message.',
+  'friends.requestsSent': 'Sent requests',
+  'friends.pending': 'Pending',
+  'friends.add': '+ Add',
+  'friends.circleWaiting': 'Your circle is waiting',
+  'friends.pickAFriend': 'Pick a friend',
+  'friends.circleMoving': 'Your circle is on the move',
+  'friends.sharedOutingOne':
+    'friend has shared an upcoming outing with their circle.',
+  'friends.sharedOutingMany':
+    'friends have shared an upcoming outing with their circle.',
+  'friends.seeOnMap': 'See on the map',
+  'friends.upcoming': 'Upcoming',
+  'friends.circleOutings': 'Circle outings',
+  'friends.yourMeetups': 'Your meetups',
+  'friends.commonEvents': 'Events in common',
+  'friends.sharedHistory': 'Shared history',
+  'friends.recentActivity': 'Recent activity',
   'forum.heroTitle': 'The discussions that make you want to go out.',
   'forum.heroCta': 'Explore the discussions',
   'forum.roomsAvailable': 'Available rooms',
@@ -760,7 +924,8 @@ const en = {
   'forum.filterMine': 'My forums',
   'forum.filterPopular': 'Most active',
   'forum.loadError': 'Forums cannot be loaded right now.',
-  'forum.emptyMine': 'No forum yet. Add favourites or mark your attendance at an event to see some appear here.',
+  'forum.emptyMine':
+    'No forum yet. Add favourites or mark your attendance at an event to see some appear here.',
   'groups.inviteMessage': 'Join the group “{name}” on Pulso!\n{url}',
   'details.linkCopied': 'Link copied to clipboard'
 } as const;
@@ -1021,10 +1186,12 @@ const fr = {
   'groups.nameLabel': 'Nom du groupe',
   'groups.namePlaceholder': 'Ex. Français à Montréal',
   'groups.missionLabel': 'Mission du groupe',
-  'groups.missionPlaceholder': 'À qui s’adresse le groupe et comment souhaitez-vous organiser les sorties ?',
+  'groups.missionPlaceholder':
+    'À qui s’adresse le groupe et comment souhaitez-vous organiser les sorties ?',
   'groups.typeLegend': 'Quel genre de groupe ?',
   'groups.typeCommunity': 'Communauté',
-  'groups.typeCommunityHint': 'Permanente, autour d’un thème. Ex. Techno Montréal.',
+  'groups.typeCommunityHint':
+    'Permanente, autour d’un thème. Ex. Techno Montréal.',
   'groups.typeEvent': 'Sortie',
   'groups.typeEventHint': 'Une soirée précise, à organiser de bout en bout.',
   'groups.typeCrew': 'Crew privé',
@@ -1033,14 +1200,17 @@ const fr = {
   'groups.joinOpen': 'Accès libre',
   'groups.joinOpenHint': 'Visible et accessible immédiatement.',
   'groups.joinRestricted': 'Sur demande',
-  'groups.joinRestrictedHint': 'Visible, mais chaque entrée doit être approuvée.',
+  'groups.joinRestrictedHint':
+    'Visible, mais chaque entrée doit être approuvée.',
   'groups.crewNote': 'Un crew privé se rejoint uniquement sur invitation.',
   'groups.creating': 'Création…',
   'groups.createSubmit': 'Créer le groupe',
   'groups.back': 'Groupes',
   'groups.emptyEyebrow': 'Ton espace collectif',
-  'groups.emptyHeading': 'Organiser une sortie ne devrait jamais être compliqué.',
-  'groups.emptyBody': 'Ouvre un groupe pour retrouver au même endroit les décisions, le programme, les présences, les tâches et la discussion.',
+  'groups.emptyHeading':
+    'Organiser une sortie ne devrait jamais être compliqué.',
+  'groups.emptyBody':
+    'Ouvre un groupe pour retrouver au même endroit les décisions, le programme, les présences, les tâches et la discussion.',
   'groups.emptyCta': 'Créer mon premier groupe',
   'groups.tabMine': 'Mes groupes',
   'groups.tabEvents': 'Événements',
@@ -1049,7 +1219,8 @@ const fr = {
   'groups.loading': 'Chargement…',
   'groups.loadError': 'Impossible de charger les groupes pour le moment.',
   'groups.noMatch': 'Aucun groupe ne correspond à ta recherche.',
-  'groups.emptyMine': 'Aucun groupe pour le moment. Découvre-en un dans l’onglet Découvrir, ou rejoins-en un depuis « Rencontrer avant l’événement » sur un forum.',
+  'groups.emptyMine':
+    'Aucun groupe pour le moment. Découvre-en un dans l’onglet Découvrir, ou rejoins-en un depuis « Rencontrer avant l’événement » sur un forum.',
   'groups.emptyEvents': 'Aucun groupe d’événement pour le moment.',
   'groups.emptyDiscover': 'Aucun groupe permanent pour le moment.',
   'groups.accessOpen': 'Libre',
@@ -1068,12 +1239,15 @@ const fr = {
   'groups.pinned': 'Épinglé',
   'groups.leave': 'Quitter',
   'groups.invite': 'Inviter des amis',
-  'groups.joinOpenPrompt': 'Rejoins ce groupe pour discuter, voter, et voir le programme.',
-  'groups.joinRestrictedPrompt': 'Ce groupe est à accès limité — ta demande sera envoyée au modérateur.',
+  'groups.joinOpenPrompt':
+    'Rejoins ce groupe pour discuter, voter, et voir le programme.',
+  'groups.joinRestrictedPrompt':
+    'Ce groupe est à accès limité — ta demande sera envoyée au modérateur.',
   'groups.joining': 'Un instant…',
   'groups.join': 'Rejoindre',
   'groups.askToJoin': 'Demander à rejoindre',
-  'groups.pendingRequest': 'Demande envoyée, en attente d’approbation du modérateur.',
+  'groups.pendingRequest':
+    'Demande envoyée, en attente d’approbation du modérateur.',
   'groups.tabHome': 'Accueil',
   'groups.tabMembers': 'Membres',
   'groups.tabManage': 'Gestion',
@@ -1084,8 +1258,10 @@ const fr = {
   'groups.channelStaffOnly': 'Seul l’administrateur peut y écrire',
   'groups.channelAdd': 'Ajouter',
   'groups.channelDelete': 'Supprimer ce fil',
-  'groups.channelReadOnly': 'Ce fil est réservé aux annonces de l’administrateur. Tu peux le lire et y réagir.',
-  'groups.composerPlaceholder': 'Partage une idée, une question ou une décision…',
+  'groups.channelReadOnly':
+    'Ce fil est réservé aux annonces de l’administrateur. Tu peux le lire et y réagir.',
+  'groups.composerPlaceholder':
+    'Partage une idée, une question ou une décision…',
   'groups.composerSubmit': 'Publier',
   'groups.composerPosting': 'Publication…',
   'groups.proposeOuting': 'Proposer une sortie',
@@ -1102,7 +1278,8 @@ const fr = {
   'groups.feedLoading': 'Chargement…',
   'groups.feedError': 'Impossible de charger le fil pour le moment.',
   'groups.feedEmpty': 'Lance la première conversation.',
-  'groups.feedEmptyHint': 'Une question simple suffit souvent à organiser toute une sortie.',
+  'groups.feedEmptyHint':
+    'Une question simple suffit souvent à organiser toute une sortie.',
   'groups.membersEyebrow': 'La communauté',
   'groups.membersCreator': 'Créateur du groupe',
   'groups.membersMember': 'Membre',
@@ -1115,7 +1292,8 @@ const fr = {
   'groups.manageMembers': 'Membres',
   'groups.manageRequests': 'Demandes',
   'groups.manageOpenTitle': 'Ce groupe est en accès libre.',
-  'groups.manageOpenBody': 'Les membres le rejoignent sans passer par une demande.',
+  'groups.manageOpenBody':
+    'Les membres le rejoignent sans passer par une demande.',
   // The identity card: the group photo, and the verification a moderator
   // asks for but never grants itself.
   'groups.identityPhotoTitle': 'Photo du groupe',
@@ -1123,18 +1301,24 @@ const fr = {
   'groups.identityPhotoReplace': 'Remplacer',
   'groups.identityPhotoAdd': 'Ajouter une photo',
   'groups.identityPhotoRemove': 'Retirer',
-  'groups.identityPhotoFormatError': 'Format non supporté. Utilise JPEG, PNG, WebP ou GIF.',
+  'groups.identityPhotoFormatError':
+    'Format non supporté. Utilise JPEG, PNG, WebP ou GIF.',
   'groups.identityPhotoTooLarge': 'Photo trop lourde.',
   'groups.identityPhotoSaveError': 'La photo n’a pas pu être enregistrée.',
   'groups.identityPhotoRemoveError': 'La photo n’a pas pu être retirée.',
   'groups.verificationHeading': 'Vérification Pulso',
-  'groups.verificationVerified': 'Ce groupe est vérifié. Le badge est visible partout où il apparaît.',
-  'groups.verificationPending': 'Demande envoyée. Une équipe Pulso va l’examiner.',
-  'groups.verificationDeclined': 'La demande précédente n’a pas été retenue. Tu peux en soumettre une nouvelle.',
-  'groups.verificationPrompt': 'Un groupe vérifié inspire confiance aux personnes qui ne le connaissent pas encore.',
+  'groups.verificationVerified':
+    'Ce groupe est vérifié. Le badge est visible partout où il apparaît.',
+  'groups.verificationPending':
+    'Demande envoyée. Une équipe Pulso va l’examiner.',
+  'groups.verificationDeclined':
+    'La demande précédente n’a pas été retenue. Tu peux en soumettre une nouvelle.',
+  'groups.verificationPrompt':
+    'Un groupe vérifié inspire confiance aux personnes qui ne le connaissent pas encore.',
   'groups.verificationAsk': 'Demander la vérification',
   'groups.verificationLabel': 'Qui êtes-vous et que fait ce groupe ?',
-  'groups.verificationPlaceholder': 'Ex. Collectif techno actif depuis 2019, 40 soirées par an au Plateau.',
+  'groups.verificationPlaceholder':
+    'Ex. Collectif techno actif depuis 2019, 40 soirées par an au Plateau.',
   'groups.verificationCancel': 'Annuler',
   'groups.verificationSending': 'Envoi…',
   'groups.verificationSubmit': 'Envoyer la demande',
@@ -1143,21 +1327,27 @@ const fr = {
   // descriptions lived in GROUP_MODULE_LABELS, French-only; they are copy
   // the workspace renders, so they belong in the catalogue like the rest.
   'groups.modulesHeading': 'Modules du groupe',
-  'groups.modulesHint': 'Ce que l’onglet Organiser affiche, et dans quel ordre. Désactiver un module le masque sans effacer ce qu’il contient.',
+  'groups.modulesHint':
+    'Ce que l’onglet Organiser affiche, et dans quel ordre. Désactiver un module le masque sans effacer ce qu’il contient.',
   'groups.modulesSaveError': 'La configuration n’a pas pu être enregistrée.',
   'groups.modulesMoveUp': 'Monter {name}',
   'groups.modulesMoveDown': 'Descendre {name}',
-  'groups.modulesUnavailable': 'Ce groupe n’est lié à aucun événement, donc rien à afficher pour l’instant.',
+  'groups.modulesUnavailable':
+    'Ce groupe n’est lié à aucun événement, donc rien à afficher pour l’instant.',
   'groups.modulesEnabled': 'Activé',
   'groups.modulesHidden': 'Masqué',
   'groups.moduleProgrammeName': 'Programme',
-  'groups.moduleProgrammeDescription': 'Le déroulé de la sortie, heure par heure.',
+  'groups.moduleProgrammeDescription':
+    'Le déroulé de la sortie, heure par heure.',
   'groups.moduleAttendanceName': 'Qui vient ?',
-  'groups.moduleAttendanceDescription': 'Les présences réelles, comptées sur les votes des membres.',
+  'groups.moduleAttendanceDescription':
+    'Les présences réelles, comptées sur les votes des membres.',
   'groups.moduleMeetupPointName': 'Point de rendez-vous',
-  'groups.moduleMeetupPointDescription': 'Dérivé du lieu réel de l’événement lié. Absent d’un groupe permanent.',
+  'groups.moduleMeetupPointDescription':
+    'Dérivé du lieu réel de l’événement lié. Absent d’un groupe permanent.',
   'groups.moduleChecklistName': 'Checklist',
-  'groups.moduleChecklistDescription': 'Ce que chacun doit préparer, coché individuellement.',
+  'groups.moduleChecklistDescription':
+    'Ce que chacun doit préparer, coché individuellement.',
   // The sponsored placement (DEC-0015 §Future monetization): always
   // labelled as paid, always naming who paid, always dismissable.
   'groups.sponsoredTag': 'Sponsorisé · {sponsor}',
@@ -1211,9 +1401,11 @@ const fr = {
   'groups.contextMineTitle': 'Tes espaces',
   'groups.contextMineBody': 'Tous les groupes que tu as rejoints.',
   'groups.contextEventTitle': 'Autour des événements',
-  'groups.contextEventBody': 'Des groupes créés pour préparer une sortie précise.',
+  'groups.contextEventBody':
+    'Des groupes créés pour préparer une sortie précise.',
   'groups.contextDiscoverTitle': 'Communautés à découvrir',
-  'groups.contextDiscoverBody': 'Des communautés montréalaises ouvertes ou sur demande.',
+  'groups.contextDiscoverBody':
+    'Des communautés montréalaises ouvertes ou sur demande.',
   // The compact groups block (sidebar mini-list, Profile tab).
   'groups.blockEmpty': 'Aucun groupe pour le moment.',
   'groups.blockOpen': 'Ouvrir',
@@ -1246,12 +1438,52 @@ const fr = {
   'nav.events': 'Événements',
   'nav.venues': 'Lieux',
   'nav.community': 'Communauté',
+  'nav.messages': 'Messages',
   'nav.forums': 'Forums',
   'nav.groups': 'Groupes',
   'nav.friends': 'Amis',
   'nav.about': 'À propos',
   'nav.notificationsSoon': 'Notifications (bientôt disponible)',
   'nav.comingSoon': 'Bientôt disponible',
+  'sidebar.discover': 'Découvrir',
+  'sidebar.map': 'Carte',
+  'sidebar.favorites': 'Favoris',
+  'sidebar.organizer': 'Organisateur',
+  'sidebar.administration': 'Administration',
+  'profile.tabPhotos': 'Photos',
+  'profile.tabFriends': 'Amis',
+  'profile.tabFollowedVenues': 'Lieux suivis',
+  'profile.followedVenuesEmpty':
+    'Aucun lieu suivi pour l’instant. Suis un lieu pour être prévenu de ses prochains événements.',
+  'profile.photoChange': 'Changer la photo',
+  'profile.photoAdd': 'Ajouter une photo',
+  'profile.photoRemove': 'Retirer la photo',
+  'profile.photoUploading': 'Envoi en cours…',
+  'profile.photoFailed': 'La photo n’a pas pu être envoyée.',
+  'profile.galleryAdd': 'Ajouter une photo',
+  'profile.galleryEmpty':
+    'Aucune photo pour l’instant. Ajoutes-en une pour habiller ton profil.',
+  'profile.galleryEmptyOther': 'Aucune photo partagée.',
+  'profile.galleryPrivate': 'Cette galerie est visible par les amis seulement.',
+  'profile.galleryDelete': 'Supprimer cette photo',
+  'profile.galleryCaption': 'Légende (facultatif)',
+  'profile.friendsEmpty': 'Aucun ami pour l’instant.',
+  'friends.theirPhotos': 'Ses moments',
+  'friends.writeTo': 'Écrire un message',
+  'dock.title': 'Messages',
+  'dock.open': 'Ouvrir les messages',
+  'dock.close': 'Fermer les messages',
+  'dock.back': 'Retour aux conversations',
+  'dock.empty': 'Aucune conversation pour l’instant.',
+  'dock.compose': 'Écrire un message…',
+  'dock.send': 'Envoyer',
+  'dock.requests': 'Demandes',
+  'dock.requestsEmpty': 'Aucune demande de message.',
+  'dock.accept': 'Accepter',
+  'dock.decline': 'Refuser',
+  'dock.conversations': 'Conversations',
+  'dock.seeAll': 'Ouvrir la messagerie complète',
+  'dock.sendFailed': 'Le message n’a pas pu être envoyé.',
   'view.map': 'Carte',
   'view.list': 'Liste',
   'view.calendar': 'Calendrier',
@@ -1259,9 +1491,11 @@ const fr = {
   // already uses.
   'filters.reset': 'Réinitialiser',
   'filters.date': 'Date',
-  'filters.categoryLegendHint': 'La couleur de chaque catégorie correspond à celle des pins sur la carte.',
+  'filters.categoryLegendHint':
+    'La couleur de chaque catégorie correspond à celle des pins sur la carte.',
   'filters.venueCategory': 'Catégorie de lieu',
-  'filters.venueDateHint': 'Affiche les lieux ayant un événement dans cette période.',
+  'filters.venueDateHint':
+    'Affiche les lieux ayant un événement dans cette période.',
   'filters.radiusActive': 'Rayon actif : {km} km',
   'filters.radiusMax': 'Rayon max ({km} km) — non appliqué',
   'filters.geoPending': 'localisation…',
@@ -1296,13 +1530,17 @@ const fr = {
   'landing.seeAllEvents': 'Voir tous les événements',
   'landing.noEvents': 'Aucun événement trouvé.',
   'landing.featureMapTitle': 'Carte intelligente',
-  'landing.featureMapBody': 'Explorez votre ville et découvrez des événements autour de vous en temps réel.',
+  'landing.featureMapBody':
+    'Explorez votre ville et découvrez des événements autour de vous en temps réel.',
   'landing.featureSearchTitle': 'Recherche puissante',
-  'landing.featureSearchBody': 'Trouvez exactement ce que vous cherchez grâce à la recherche et à nos suggestions.',
+  'landing.featureSearchBody':
+    'Trouvez exactement ce que vous cherchez grâce à la recherche et à nos suggestions.',
   'landing.featureFavoritesTitle': 'Vos favoris',
-  'landing.featureFavoritesBody': 'Sauvegardez vos événements préférés et ne manquez jamais une sortie.',
+  'landing.featureFavoritesBody':
+    'Sauvegardez vos événements préférés et ne manquez jamais une sortie.',
   'landing.featureCommunityTitle': 'Communauté',
-  'landing.featureCommunityBody': 'Rejoignez des milliers de passionnés et partagez vos meilleures découvertes.',
+  'landing.featureCommunityBody':
+    'Rejoignez des milliers de passionnés et partagez vos meilleures découvertes.',
   // The notification feed. Each row is a sentence built around one or two
   // bold names, and every one of these keeps the same word order in both
   // languages - which is what lets them be keyed as fragments.
@@ -1311,7 +1549,8 @@ const fr = {
   'notif.unread': 'Non lu',
   'notif.loadError': 'Impossible de charger tes notifications.',
   'notif.emptyTitle': 'Rien de neuf',
-  'notif.emptyBody': 'Suis un lieu pour être prévenu·e dès qu’il programme quelque chose.',
+  'notif.emptyBody':
+    'Suis un lieu pour être prévenu·e dès qu’il programme quelque chose.',
   'notif.venueAdded': 'vient d’ajouter',
   'notif.friendRequest': 't’a envoyé une demande d’ami',
   'notif.friendAccepted': 'a accepté ta demande d’ami',
@@ -1335,9 +1574,12 @@ const fr = {
   'forum.panelLabel': 'Forum de l’événement',
   'forum.meetupCta': 'Rencontrer avant l’événement',
   'forum.meetupLoading': 'Un instant…',
-  'forum.signInDiscussion': 'Connectez-vous pour lire et participer au forum de cet événement.',
-  'forum.signInPhotos': 'Connectez-vous pour voir et partager des photos de cet événement.',
-  'forum.emptyDiscussion': 'Personne n’a encore écrit ici. Lance la discussion dans l’onglet Discussion !',
+  'forum.signInDiscussion':
+    'Connectez-vous pour lire et participer au forum de cet événement.',
+  'forum.signInPhotos':
+    'Connectez-vous pour voir et partager des photos de cet événement.',
+  'forum.emptyDiscussion':
+    'Personne n’a encore écrit ici. Lance la discussion dans l’onglet Discussion !',
   'forum.membersLoadError': 'Impossible de charger les membres pour le moment.',
   'forum.attendanceGoing': '✓ Vous y allez',
   'forum.attendanceGo': '🎟️ J’y vais',
@@ -1349,51 +1591,73 @@ const fr = {
   'forum.ruleResale': 'Revente de billets uniquement pair-à-pair',
   'forum.ruleOnTopic': 'Reste sur le sujet de l’événement',
   'forum.aboutSpaceTitle': 'Un espace pour cet événement',
-  'forum.aboutSpaceBody': 'Discutez de « {title} », posez vos questions et trouvez des partenaires pour la soirée.',
+  'forum.aboutSpaceBody':
+    'Discutez de « {title} », posez vos questions et trouvez des partenaires pour la soirée.',
   'forum.aboutOnceTitle': 'Un message, une fois',
-  'forum.aboutOnceBody': 'Un message publié n’est pas modifiable après coup — seulement supprimable par son auteur.',
+  'forum.aboutOnceBody':
+    'Un message publié n’est pas modifiable après coup — seulement supprimable par son auteur.',
   'forum.aboutResaleTitle': 'Revente entre particuliers',
-  'forum.aboutResaleBody': 'La revente de billets entre participants reste entièrement pair-à-pair — Pulso n’y est jamais partie prenante.',
+  'forum.aboutResaleBody':
+    'La revente de billets entre participants reste entièrement pair-à-pair — Pulso n’y est jamais partie prenante.',
   'forum.aboutReportTitle': 'Signalement',
-  'forum.aboutReportBody': 'Chaque message peut être signalé. Restez courtois·e envers les autres participants.',
-  'forum.photoUploadError': 'L’envoi a échoué. Réessayez avec une photo JPEG, PNG, WebP ou GIF.',
+  'forum.aboutReportBody':
+    'Chaque message peut être signalé. Restez courtois·e envers les autres participants.',
+  'forum.photoUploadError':
+    'L’envoi a échoué. Réessayez avec une photo JPEG, PNG, WebP ou GIF.',
   'forum.photosEmpty': 'Aucune photo pour l’instant. Partage la première !',
   'forum.agoraEyebrow': 'L’agora de l’événement',
-  'forum.agoraBody': 'Quatre salons, un seul événement : va directement vers la conversation qui t’intéresse.',
+  'forum.agoraBody':
+    'Quatre salons, un seul événement : va directement vers la conversation qui t’intéresse.',
   'forum.roomSelected': 'Salon sélectionné',
   'forum.resaleDisclaimer': 'Échange entre particuliers uniquement.',
-  'forum.resaleDisclaimerBody': 'Pulso n’intervient pas dans la transaction : aucun paiement ni billet ne transite par la plateforme.',
+  'forum.resaleDisclaimerBody':
+    'Pulso n’intervient pas dans la transaction : aucun paiement ni billet ne transite par la plateforme.',
   'forum.writeInRoom': 'Écrire dans le salon {room}',
   'forum.discoverActive': 'Discussion active',
   'forum.discoverToStart': 'À lancer',
-  'forum.discoverStartFirst': 'Lance la première discussion pour cet événement.',
+  'forum.discoverStartFirst':
+    'Lance la première discussion pour cet événement.',
   'forum.discoverTitle': 'Discussion à découvrir',
-  'forum.discoverOpen': 'La conversation est ouverte. Sois la première personne à lancer le sujet.',
+  'forum.discoverOpen':
+    'La conversation est ouverte. Sois la première personne à lancer le sujet.',
   'forum.communityTitle': 'La communauté Pulso · Montréal',
-  'forum.communityBody': 'Trouve avec qui y aller, échange les bons plans et retrouve les personnes qui font vivre chaque événement.',
+  'forum.communityBody':
+    'Trouve avec qui y aller, échange les bons plans et retrouve les personnes qui font vivre chaque événement.',
   'forum.perEvent': 'par événement',
   'forum.yourChoice': 'à toi de choisir',
-  'forum.oneDiscussionPerEvent': 'Une discussion dédiée à chaque événement à venir.',
+  'forum.oneDiscussionPerEvent':
+    'Une discussion dédiée à chaque événement à venir.',
   'forum.noUpcomingEvents': 'Aucun événement à venir pour le moment.',
   // The four forum rooms. Their names came from FORUM_CATEGORY_LABELS in
   // the domain package and the rest from FORUM_ROOM_PRESENTATION here,
   // both French-only; the icons stay in the component.
   'forum.roomGeneral': 'Discussion générale',
-  'forum.roomGeneralDescription': 'Questions, conseils et impressions autour de la sortie.',
+  'forum.roomGeneralDescription':
+    'Questions, conseils et impressions autour de la sortie.',
   'forum.roomGeneralPlaceholder': 'Pose une question ou partage un bon plan…',
-  'forum.roomGeneralEmpty': 'Pose la première question ou partage ton conseil sur la soirée.',
+  'forum.roomGeneralEmpty':
+    'Pose la première question ou partage ton conseil sur la soirée.',
   'forum.roomPartners': 'Trouver des partenaires',
-  'forum.roomPartnersDescription': 'Présente-toi et trouve des personnes avec qui y aller.',
-  'forum.roomPartnersPlaceholder': 'Dis qui tu es et avec qui tu aimerais y aller…',
-  'forum.roomPartnersEmpty': 'Présente-toi et propose un point de rendez-vous avant l’événement.',
+  'forum.roomPartnersDescription':
+    'Présente-toi et trouve des personnes avec qui y aller.',
+  'forum.roomPartnersPlaceholder':
+    'Dis qui tu es et avec qui tu aimerais y aller…',
+  'forum.roomPartnersEmpty':
+    'Présente-toi et propose un point de rendez-vous avant l’événement.',
   'forum.roomResale': 'Revente de place',
-  'forum.roomResaleDescription': 'Propositions de billets entre membres de la communauté.',
-  'forum.roomResalePlaceholder': 'Décris clairement le billet que tu proposes ou recherches…',
-  'forum.roomResaleEmpty': 'Indique le type de billet recherché ou proposé, sans partager de données sensibles.',
+  'forum.roomResaleDescription':
+    'Propositions de billets entre membres de la communauté.',
+  'forum.roomResalePlaceholder':
+    'Décris clairement le billet que tu proposes ou recherches…',
+  'forum.roomResaleEmpty':
+    'Indique le type de billet recherché ou proposé, sans partager de données sensibles.',
   'forum.roomFindSomeone': 'Retrouver quelqu’un qui était là',
-  'forum.roomFindSomeoneDescription': 'Retrouve une personne croisée pendant l’événement.',
-  'forum.roomFindSomeonePlaceholder': 'Décris le contexte de votre rencontre avec respect…',
-  'forum.roomFindSomeoneEmpty': 'Décris sobrement le moment et le lieu de la rencontre pour lancer la recherche.',
+  'forum.roomFindSomeoneDescription':
+    'Retrouve une personne croisée pendant l’événement.',
+  'forum.roomFindSomeonePlaceholder':
+    'Décris le contexte de votre rencontre avec respect…',
+  'forum.roomFindSomeoneEmpty':
+    'Décris sobrement le moment et le lieu de la rencontre pour lancer la recherche.',
   // The forum panel's five tabs.
   'forum.tabDiscussion': 'Discussion',
   'forum.tabEvent': 'Événement',
@@ -1438,25 +1702,98 @@ const fr = {
   'messages.readyBody': 'Ajoute des amis, puis lance la première conversation.',
   'messages.noResult': 'Aucun résultat.',
   'messages.privateEyebrow': 'Conversations privées',
-  'messages.privateTitle': 'Les meilleures sorties commencent souvent par un message.',
-  'messages.privateBody': 'Choisis un ami ou un groupe pour planifier, partager un événement et décider ensemble.',
+  'messages.privateTitle':
+    'Les meilleures sorties commencent souvent par un message.',
+  'messages.privateBody':
+    'Choisis un ami ou un groupe pour planifier, partager un événement et décider ensemble.',
   'messages.writeToFriend': 'Écrire à un ami',
   'messages.privateConversation': 'Conversation privée',
   'messages.canExchange': 'Vous pouvez échanger car vous êtes amis sur Pulso.',
   'messages.betweenFriends': 'Entre amis',
   'messages.newConnections': 'Nouvelles connexions',
   'messages.friendRequests': 'Demandes d’amis',
-  'messages.requestsHint': 'Une fois acceptée, une conversation privée peut commencer.',
-  'messages.requestsLoadError': 'Impossible de charger vos demandes pour le moment.',
+  'messages.requestsHint':
+    'Une fois acceptée, une conversation privée peut commencer.',
+  'messages.requestsLoadError':
+    'Impossible de charger vos demandes pour le moment.',
   'messages.allUpToDate': 'Tout est à jour.',
   'messages.noPendingRequests': 'Aucune demande en attente pour le moment.',
   'messages.toConfirm': 'À confirmer',
   'messages.sent': 'Envoyées',
   'messages.accept': 'Accepter',
   'messages.decline': 'Refuser',
-  'messages.composeHint': 'Choisis un ami pour commencer ou reprendre un échange.',
+  'messages.composeHint':
+    'Choisis un ami pour commencer ou reprendre un échange.',
   'messages.friendsLoadError': 'Impossible de charger vos amis pour le moment.',
   'messages.noFriendsToWrite': 'Ajoute des amis pour pouvoir leur écrire.',
+  // The friends page, the friend panel and the two invite modals.
+  'friends.title': 'Mes amis',
+  'friends.eyebrow': 'Ton cercle Pulso',
+  'friends.tagline': 'Retrouve les personnes avec qui vivre Montréal.',
+  'friends.invite': 'Inviter un ami',
+  'friends.circleSummary': 'Résumé de ton cercle',
+  'friends.friendsWord': 'amis',
+  'friends.havePlans': 'ont une sortie visible',
+  'friends.requestWord': 'demande',
+  'friends.requestWordPlural': 'demandes',
+  'friends.search': 'Rechercher un ami',
+  'friends.tabCircle': 'Mon cercle',
+  'friends.tabRequests': 'Demandes',
+  'friends.tabSuggestions': 'Suggestions',
+  'friends.tabDiscover': 'À découvrir',
+  'friends.noFriendsYet': 'Aucun ami pour le moment',
+  'friends.shareCodeHint': 'Partage ton code pour commencer à te connecter.',
+  'friends.messageShort': 'Message',
+  'friends.removeShort': 'Retirer',
+  'friends.confirmRemove': 'Retirer cette personne de tes amis ?',
+  'friends.loadError': 'Impossible de charger vos amis pour le moment.',
+  'friends.inCircle': 'Dans ton cercle',
+  'friends.sendMessage': 'Envoyer un message',
+  'friends.removeFriend': 'Retirer cet ami',
+  'friends.noRequests': 'Aucune demande d’ami pour le moment.',
+  'friends.noSuggestions':
+    'Pas de suggestion pour l’instant - ajoute des amis pour en découvrir de nouveaux via vos connexions en commun.',
+  'friends.panelHint':
+    'Consulte ses sorties partagées, vos événements en commun et démarre l’organisation de votre prochaine soirée.',
+  'friends.inviteNewPerson': 'Inviter une nouvelle personne',
+  'friends.upcomingWithCircle': 'à venir avec leur cercle.',
+  'friends.sharedOutingsHint':
+    'Les sorties que tes amis partagent apparaîtront ici.',
+  'friends.goingTo': 'Va à {title}',
+  'friends.mutualCount': '{count} ami en commun',
+  'friends.mutualCountPlural': '{count} amis en commun',
+  'friends.noBio': 'Aucune bio partagée pour le moment.',
+  'friends.noCommonEvents': 'Aucun événement en commun pour l’instant.',
+  'friends.nothingToShow': 'Rien à afficher pour l’instant.',
+  'friends.markAttendanceFirst':
+    'Marque ta présence sur un événement pour pouvoir l’inviter.',
+  'friends.inviteSent': 'Envoyé ✓',
+  'friends.inviteError': 'Impossible d’envoyer la demande pour le moment.',
+  'friends.copied': 'Copié !',
+  'friends.pasteCode': 'Coller le code d’un ami pour l’ajouter',
+  'friends.codeToAdd': 'Code ami à ajouter',
+  'friends.noSharedOutings':
+    'Aucun ami n’a de sortie à venir partagée pour l’instant.',
+  'friends.conversationError': 'Impossible de charger la conversation.',
+  'friends.conversationHint':
+    'Un événement à partager ou une sortie à préparer ? Écris le premier message.',
+  'friends.requestsSent': 'Demandes envoyées',
+  'friends.pending': 'En attente',
+  'friends.add': '+ Ajouter',
+  'friends.circleWaiting': 'Ton cercle t’attend',
+  'friends.pickAFriend': 'Choisis un ami',
+  'friends.circleMoving': 'Ton cercle bouge',
+  'friends.sharedOutingOne':
+    'ami a partagé une sortie à venir avec leur cercle.',
+  'friends.sharedOutingMany':
+    'amis ont partagé une sortie à venir avec leur cercle.',
+  'friends.seeOnMap': 'Voir sur la carte',
+  'friends.upcoming': 'À venir',
+  'friends.circleOutings': 'Sorties du cercle',
+  'friends.yourMeetups': 'Vos rendez-vous',
+  'friends.commonEvents': 'Événements en commun',
+  'friends.sharedHistory': 'Historique partagé',
+  'friends.recentActivity': 'Activité récente',
   'forum.heroTitle': 'Les discussions qui donnent envie de sortir.',
   'forum.heroCta': 'Explorer les discussions',
   'forum.roomsAvailable': 'Salons disponibles',
@@ -1473,7 +1810,8 @@ const fr = {
   'forum.filterMine': 'Mes forums',
   'forum.filterPopular': 'Les plus actifs',
   'forum.loadError': 'Impossible de charger les forums pour le moment.',
-  'forum.emptyMine': 'Aucun forum pour l’instant. Ajoute des favoris ou marque ta participation à un événement pour en voir apparaître ici.',
+  'forum.emptyMine':
+    'Aucun forum pour l’instant. Ajoute des favoris ou marque ta participation à un événement pour en voir apparaître ici.',
   'groups.inviteMessage': 'Rejoins le groupe « {name} » sur Pulso !\n{url}',
   'details.linkCopied': 'Lien copié dans le presse-papier'
 } satisfies Record<MessageKey, string>;

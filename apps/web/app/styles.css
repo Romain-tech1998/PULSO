@@ -2124,6 +2124,305 @@ span.search-result-title {
   font-size: 0.78rem;
 }
 
+/* DEC-0020 - the profile photo control. The camera and the clear button sit
+   on the avatar itself rather than inside the "Personnaliser" editor: a
+   photo is the one profile field a user changes on impulse, and burying it
+   one dialog deep is what keeps profiles faceless. */
+.profil-avatar-slot {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.profil-avatar-edit,
+.profil-avatar-remove {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 3px solid #100d19;
+  background: var(--brand-purple);
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    transform 0.15s,
+    filter 0.15s;
+}
+
+.profil-avatar-edit {
+  right: -4px;
+  bottom: -4px;
+}
+
+.profil-avatar-remove {
+  right: -4px;
+  top: -4px;
+  background: var(--surface-raised);
+  font-size: 1.1rem;
+}
+
+.profil-avatar-edit:hover:not(:disabled),
+.profil-avatar-remove:hover:not(:disabled) {
+  transform: scale(1.06);
+  filter: brightness(1.1);
+}
+
+.profil-avatar-edit:disabled,
+.profil-avatar-remove:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.profil-avatar-error {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  width: max-content;
+  max-width: 220px;
+  font-size: 0.78rem;
+  color: var(--brand-pink);
+}
+
+/* The gallery grid. Square tiles, because the photos are of nights out and
+   arrive in every aspect ratio there is - letting them size themselves
+   turns the grid into a ragged column. */
+.profil-photos-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.profil-photos-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  border: none;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, var(--brand-purple), var(--brand-pink));
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.profil-photos-add:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.profil-photos-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.profil-photos-error {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--brand-pink);
+}
+
+.profil-photos-empty {
+  margin: 0;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.profil-photos-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.profil-photo {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+.profil-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.profil-photo-caption {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 0.75rem 0.6rem 0.5rem;
+  font-size: 0.78rem;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+}
+
+.profil-photo-delete {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: rgba(9, 8, 13, 0.7);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.profil-photo:hover .profil-photo-delete,
+.profil-photo-delete:focus-visible {
+  opacity: 1;
+}
+
+/* The friends tab. Same tile rhythm as the gallery so the two read as one
+   profile rather than two different pages. */
+.profil-friends-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.75rem;
+}
+
+.profil-friend-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.9rem 0.5rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.9rem;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.profil-friend-card:hover {
+  border-color: var(--brand-pink);
+}
+
+.profil-friend-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--brand-purple);
+  color: #fff;
+  font-weight: 700;
+}
+
+.profil-friend-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* "Lieux suivis" - rows rather than the square tiles the gallery and the
+   friends grid use: a venue is read by its name and neighbourhood, which
+   a 120px tile truncates into uselessness. */
+.profil-venues-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.6rem;
+}
+
+.profil-venue-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.8rem;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.profil-venue-card:hover {
+  border-color: var(--brand-pink);
+}
+
+.profil-venue-dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 999px;
+}
+
+.profil-venue-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.profil-venue-copy strong {
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profil-venue-copy span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profil-venue-count {
+  flex-shrink: 0;
+  min-width: 26px;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-base);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.profil-friend-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 .profil-avatar {
   width: 118px;
   height: 118px;
@@ -6470,12 +6769,38 @@ a.venue-detail-info-row:hover {
   color: var(--text-secondary);
   font-size: 0.85rem;
 }
+/* A button since DEC-0020 ("write to this person"), so it needs the
+   affordance a plain span never had - and an explicit reset, since the
+   browser's button styling would otherwise show through. */
 .attendance-friend {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  background: none;
   color: var(--text-primary);
   font-weight: 600;
+  font-size: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.attendance-friend:hover {
+  border-color: var(--brand-border);
+  background: var(--surface-raised);
+}
+.attendance-friend-write {
+  margin-left: 0.15rem;
+  opacity: 0;
+  font-size: 0.8rem;
+  transition: opacity 0.15s;
+}
+.attendance-friend:hover .attendance-friend-write,
+.attendance-friend:focus-visible .attendance-friend-write {
+  opacity: 0.8;
 }
 .attendance-friends-label {
   color: var(--text-secondary);
@@ -8497,6 +8822,93 @@ a.venue-detail-info-row:hover {
 
 .primary-sidebar-nav-badge {
   margin-left: auto;
+  background: var(--brand-pink);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+  line-height: 1.4;
+}
+
+/* DEC-0020 - the Communauté sub-nav. A horizontal row of pills rather than
+   a second vertical rail: the four sub-sections are peers of each other,
+   and a nested rail would read as a second sidebar competing with the real
+   one. Sticks to the top of the scrolling panel so switching between
+   Messages, Amis, Forums and Groupes never requires scrolling back up. */
+.community-hub {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.community-hub-nav {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.35rem;
+  border-radius: 0.9rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--brand-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.community-hub-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.community-hub-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 0 auto;
+  justify-content: center;
+  padding: 0.55rem 0.9rem;
+  border: none;
+  border-radius: 0.65rem;
+  background: none;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.88rem;
+  white-space: nowrap;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+
+.community-hub-tab:hover {
+  background: var(--surface-base);
+  color: var(--text-primary);
+}
+
+.community-hub-tab.active {
+  background: linear-gradient(
+    90deg,
+    rgba(167, 62, 232, 0.22),
+    rgba(255, 42, 122, 0.1)
+  );
+  color: var(--text-primary);
+}
+
+.community-hub-tab-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  transition: color 0.2s;
+}
+
+.community-hub-tab:hover .community-hub-tab-icon,
+.community-hub-tab.active .community-hub-tab-icon {
+  color: var(--brand-pink);
+}
+
+.community-hub-tab-badge {
   background: var(--brand-pink);
   color: #fff;
   font-size: 0.68rem;
@@ -14427,8 +14839,16 @@ a.venue-detail-info-row:hover {
   border: 1px solid rgba(255, 75, 148, 0.34);
   border-radius: 1rem;
   background:
-    radial-gradient(circle at 88% 8%, rgba(255, 54, 143, 0.34), transparent 42%),
-    radial-gradient(circle at 8% 92%, rgba(112, 66, 224, 0.32), transparent 46%),
+    radial-gradient(
+      circle at 88% 8%,
+      rgba(255, 54, 143, 0.34),
+      transparent 42%
+    ),
+    radial-gradient(
+      circle at 8% 92%,
+      rgba(112, 66, 224, 0.32),
+      transparent 46%
+    ),
     #17111f;
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
 }
@@ -14813,4 +15233,360 @@ a.venue-detail-info-row:hover {
 .group-channel-remove:hover {
   border-color: rgba(255, 75, 148, 0.4);
   color: #ff8ab8;
+}
+
+/* DEC-0020 - the docked messaging panel. Fixed to the bottom-right corner
+   of every connected screen, so a conversation costs a click rather than a
+   navigation. Collapsed it is a single round launcher; open it is a
+   360px column that never covers the primary sidebar. */
+.messaging-dock-launcher {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--brand-purple), var(--brand-pink));
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.messaging-dock-launcher:hover {
+  transform: scale(1.05);
+}
+
+.messaging-dock-launcher-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 20px;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  border: 2px solid var(--background);
+  background: var(--brand-pink);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.messaging-dock {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: min(360px, calc(100vw - 2.5rem));
+  max-height: min(560px, calc(100vh - 2.5rem));
+  border-radius: 1rem;
+  border: 1px solid var(--brand-border);
+  background: var(--surface-base);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.messaging-dock-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid var(--brand-border);
+  background: var(--surface-raised);
+}
+
+.messaging-dock-header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.messaging-dock-back,
+.messaging-dock-close {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 0.5rem;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.messaging-dock-back:hover,
+.messaging-dock-close:hover {
+  background: var(--surface-base);
+  color: var(--text-primary);
+}
+
+.messaging-dock-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0.6rem 0;
+}
+
+.messaging-dock-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  justify-content: center;
+  padding: 0.45rem 0.5rem;
+  border: none;
+  border-radius: 0.6rem;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.messaging-dock-tabs button.active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.messaging-dock-tab-badge {
+  min-width: 18px;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--brand-pink);
+  color: #fff;
+  font-size: 0.65rem;
+  line-height: 1.5;
+}
+
+.messaging-dock-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.messaging-dock-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem;
+  border: none;
+  border-radius: 0.6rem;
+  background: none;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.messaging-dock-row:hover {
+  background: var(--surface-raised);
+}
+
+.messaging-dock-request {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 0.6rem;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--brand-border);
+}
+
+.messaging-dock-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--brand-purple);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.messaging-dock-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.messaging-dock-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.messaging-dock-entry strong {
+  font-size: 0.87rem;
+}
+
+.messaging-dock-entry span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.messaging-dock-request-actions {
+  grid-column: 2;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.messaging-dock-request-actions button {
+  padding: 0.3rem 0.7rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: var(--brand-purple);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.messaging-dock-request-actions button.is-secondary {
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+}
+
+.messaging-dock-unread {
+  min-width: 20px;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--brand-pink);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.messaging-dock-empty {
+  margin: 0;
+  padding: 2rem 1rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.messaging-dock-see-all {
+  margin: 0;
+  padding: 0.65rem;
+  border: none;
+  border-top: 1px solid var(--brand-border);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.messaging-dock-see-all:hover {
+  color: var(--text-primary);
+}
+
+.messaging-dock-thread {
+  list-style: none;
+  margin: 0;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.messaging-dock-thread li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-width: 82%;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.8rem;
+  font-size: 0.85rem;
+}
+
+.messaging-dock-thread li.is-mine {
+  align-self: flex-end;
+  background: linear-gradient(135deg, var(--brand-purple), var(--brand-pink));
+  color: #fff;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.messaging-dock-thread li.is-theirs {
+  align-self: flex-start;
+  background: var(--surface-raised);
+  border-bottom-left-radius: 0.25rem;
+}
+
+.messaging-dock-thread time {
+  font-size: 0.68rem;
+  opacity: 0.7;
+}
+
+.messaging-dock-error {
+  margin: 0;
+  padding: 0 0.75rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--brand-pink);
+}
+
+.messaging-dock-composer {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border-top: 1px solid var(--brand-border);
+  background: var(--surface-raised);
+}
+
+.messaging-dock-composer input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 999px;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.messaging-dock-composer button {
+  padding: 0.5rem 0.9rem;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--brand-purple), var(--brand-pink));
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.messaging-dock-composer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The mobile bottom nav already owns the bottom-right corner, so the dock
+   lifts above it rather than sitting under a tab bar the user cannot see
+   past. */
+@media (max-width: 1024px) {
+  .messaging-dock-launcher,
+  .messaging-dock {
+    bottom: 5.5rem;
+  }
 }
