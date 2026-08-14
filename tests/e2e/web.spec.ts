@@ -42,6 +42,20 @@ async function openFilterPanel(page: Page) {
   return sidebar;
 }
 
+/**
+ * Puts the panel away once a choice is made. On the small viewport it is a
+ * sheet laid over the map, and leaving it open means the next click lands on
+ * the view toggle underneath it - which is what a visitor would also hit.
+ */
+async function dismissFilterPanel(page: Page) {
+  const close = page.getByRole('button', {
+    name: /Close filters|Fermer les filtres/
+  });
+  if (await close.isVisible().catch(() => false)) {
+    await close.first().click();
+  }
+}
+
 /** Filter groups start collapsed; a visitor expands one before choosing. */
 async function expandGroup(page: Page, name: string) {
   const toggle = page.locator('button.filter-group-toggle', { hasText: name });
@@ -111,27 +125,54 @@ test('completes anonymous UJ-0001 and preserves map context', async ({
   await expect(page.locator('[data-map-context="preserved"]')).toBeVisible();
 });
 
-// UJ-0001 requires two things this record no longer shows, so they are
-// recorded here rather than dropped. "Cas sans billet" asks Pulso to state
-// the known access conditions when no booking is needed, and "Cas
+// UJ-0001's two honesty cases, restored. "Cas sans billet" asks Pulso to
+// state the known access conditions when no booking is needed, and "Cas
 // d'incertitude" asks it to flag anything unconfirmed before the visitor
-// decides - the journey's "aucune information trompeuse" success condition.
-// The fixture carries both (accessInformation, and a trust label the API
-// still returns), and the previous version of this file asserted both; the
-// anonymous record stopped rendering them at some point while this suite was
-// unable to run. Left failing-by-declaration so the gap stays visible.
-test.fixme('states access conditions and the freshness claim on a record (UJ-0001)', async ({
+// decides. Both were computed and never rendered - see the commit that
+// brought them back - so this was a declared-pending test until now.
+test('states access conditions and the trust verdict on a record (UJ-0001)', async ({
   page
 }) => {
   await landAnonymously(page, 'en');
   await page.getByRole('heading', { name: SYNTHETIC_EVENT }).first().click();
   const details = page.getByLabel('Event Details');
+
   await expect(
     details.getByText(
       'Free entry. No reservation is required for this fictional fixture.'
     )
   ).toBeVisible();
   await expect(details.getByText(/No freshness claim is made/)).toBeVisible();
+  await expect(details.getByText('Confirmed', { exact: true })).toBeVisible();
+});
+
+// The uncertainty case, on the fixture built for it: postponed, trust
+// "to_verify", location unconfirmed. The warning has to reach the visitor
+// before the action, which is the whole point of "avant que l'utilisateur
+// ne prenne sa décision".
+test('warns about a postponed, unverified record before the action (UJ-0001)', async ({
+  page
+}) => {
+  await landAnonymously(page, 'en');
+  const panel = await openFilterPanel(page);
+  await expandGroup(page, 'Date');
+  await panel.getByRole('button', { name: 'This week', exact: true }).click();
+  await dismissFilterPanel(page);
+
+  await page
+    .getByRole('heading', { name: 'Invented Weekend Festival' })
+    .first()
+    .click();
+  const details = page.getByLabel('Event Details');
+
+  await expect(details.getByText(/This event is postponed/)).toBeVisible();
+  await expect(details.getByText('To verify', { exact: true })).toBeVisible();
+  await expect(details.getByText(/Location not confirmed/)).toBeVisible();
+  await expect(
+    details.getByText(
+      'Access details and the revised schedule remain unconfirmed.'
+    )
+  ).toBeVisible();
 });
 
 test('filters anonymously and keeps the filters modifiable', async ({

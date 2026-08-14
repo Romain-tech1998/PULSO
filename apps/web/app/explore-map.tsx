@@ -17793,13 +17793,15 @@ function EventAboutContent({
   presentation,
   isFavorite,
   onToggleFavorite,
-  externalHref
+  externalHref,
+  locale
 }: {
   event: PublicEvent;
   presentation: ReturnType<typeof eventDetailsFields>['presentation'];
   isFavorite: boolean;
   onToggleFavorite: () => void;
   externalHref: string;
+  locale: SupportedLocale;
 }) {
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const DESCRIPTION_PREVIEW_LENGTH = 180;
@@ -17833,7 +17835,7 @@ function EventAboutContent({
             </svg>
           </span>
           <div>
-            <strong>Date et heure</strong>
+            <strong>{translate(locale, 'details.dateTime')}</strong>
             <p>{presentation.dateTime}</p>
           </div>
         </div>
@@ -17855,7 +17857,7 @@ function EventAboutContent({
             </svg>
           </span>
           <div>
-            <strong>Lieu</strong>
+            <strong>{translate(locale, 'details.venue')}</strong>
             <p>{event.venue.name}</p>
             <p className="info-sub">{event.venue.address}</p>
           </div>
@@ -17878,11 +17880,63 @@ function EventAboutContent({
             </svg>
           </span>
           <div>
-            <strong>Prix</strong>
+            <strong>{translate(locale, 'details.price')}</strong>
             <p>{presentation.price}</p>
           </div>
         </div>
+        {/* UJ-0001 "Cas sans billet": when no booking is needed, Pulso still
+            has to say what the known access conditions are. The field is
+            required by the contract, so there is always something to show. */}
+        <div className="info-item">
+          <span className="info-icon" aria-hidden="true">
+            ⓘ
+          </span>
+          <div>
+            <strong>{translate(locale, 'details.access')}</strong>
+            <p>{event.accessInformation}</p>
+          </div>
+        </div>
+        {/* DATA-0001's verdict on a sourced record, or - for one created
+            through the account layer, which carries no such verdict - its
+            provenance instead (DEC-0017). Never a placeholder that would
+            read like a downgraded trust label. */}
+        <div className="info-item">
+          <span className="info-icon" aria-hidden="true">
+            ◆
+          </span>
+          <div>
+            <strong>
+              {translate(
+                locale,
+                presentation.trust ? 'details.trust' : 'details.origin'
+              )}
+            </strong>
+            {presentation.trust ? (
+              <>
+                <p>{presentation.trust}</p>
+                <p className="info-sub">
+                  {[presentation.freshness, presentation.location]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              </>
+            ) : (
+              <p>
+                {translate(
+                  locale,
+                  `details.origin.${event.origin ?? 'directory'}` as MessageKey
+                )}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
+
+      {presentation.materialWarning && (
+        <p className="details-material-warning" role="alert">
+          {presentation.materialWarning}
+        </p>
+      )}
 
       <div className="details-actions-main">
         {presentation.externalAction ? (
@@ -18036,6 +18090,7 @@ function EventDetails({
           isFavorite={isFavorite}
           onToggleFavorite={onToggleFavorite}
           externalHref={externalHref}
+          locale={locale}
         />
       )}
 
@@ -18511,6 +18566,7 @@ function ForumPanel({
             isFavorite={isFavorite}
             onToggleFavorite={onToggleFavorite}
             externalHref={externalHref}
+            locale={locale}
           />
         )}
 
