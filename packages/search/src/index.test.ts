@@ -108,6 +108,29 @@ describe('deterministic intelligent-search interpretation', () => {
     });
   });
 
+  it('leaves no search text behind when the query is only an exclusion', () => {
+    // The negation particle used to survive the category it negated, so
+    // "not comedy" became a name search for "not". Against a small database
+    // that matched nothing and dead-ended the whole query into
+    // "alternative"; against a large one it matched something and routed
+    // the query through a named-search path it did not belong on.
+    const english = interpretDeterministicSearch('not comedy');
+    expect(english.excludedCategories).toEqual(['comedy']);
+    expect(english.searchText).toBeUndefined();
+
+    const french = interpretDeterministicSearch('sans humour', [], 'fr');
+    expect(french.excludedCategories).toEqual(['comedy']);
+    expect(french.searchText).toBeUndefined();
+  });
+
+  it('keeps a real name that sits beside an exclusion', () => {
+    // Only the exclusion phrase is consumed - the rest of the query is
+    // still what the visitor is looking for.
+    const result = interpretDeterministicSearch('lion king not comedy');
+    expect(result.excludedCategories).toEqual(['comedy']);
+    expect(result.searchText).toBe('lion king');
+  });
+
   it('recognizes French exclusions and ranking with the same semantics', () => {
     const result = interpretDeterministicSearch(
       'musique gratuite ce soir sans humour, abordable et fiable',

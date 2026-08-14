@@ -171,6 +171,27 @@ const rankingSignalDefinitions: ReadonlyArray<{
  * search engine rather than a filter builder when the provider is down or
  * unconfigured: without it, naming an event returns nothing at all.
  */
+// The words that turn a category into an exclusion. Shared by the
+// detector below and by the residual-text extraction, which has to strip
+// the whole phrase: consuming "comedy" but leaving "not" behind turned a
+// pure exclusion into a name search for the negation particle. Against a
+// small database nothing was named "not", so the query dead-ended and
+// answered "alternative"; against a large one the text matched something
+// and the query took a named-search path it had no business being on.
+const EXCLUSION_PREFIXES = 'not|no|exclude|without|pas de|sans|exclure';
+
+/**
+ * "<negation> <category label>", built once so the detector and the
+ * residual-text extraction cannot drift apart - they have to agree on what
+ * an exclusion phrase is, or one of them strips something the other kept.
+ */
+function exclusionPattern(labelPattern: string, flags: string): RegExp {
+  return new RegExp(
+    `\\b(?:${EXCLUSION_PREFIXES})\\s+(?:${labelPattern})`,
+    flags
+  );
+}
+
 const SEARCH_TEXT_STOPWORDS = new Set([
   'a',
   'au',
@@ -291,6 +312,11 @@ export function refineSearchText(text: string): string | undefined {
  */
 function extractResidualSearchText(normalized: string): string | undefined {
   let residual = normalized;
+  // Exclusion phrases first, and whole: "not comedy" has to leave nothing
+  // behind, where stripping the bare category below would leave "not".
+  for (const { pattern } of CATEGORY_PATTERNS) {
+    residual = residual.replace(exclusionPattern(pattern.source, 'gi'), ' ');
+  }
   for (const { pattern } of [
     ...CATEGORY_PATTERNS,
     ...VENUE_CATEGORY_PATTERNS,
@@ -434,13 +460,9 @@ export function interpretDeterministicSearch(
     });
   }
 
-  const excludedCategories = CATEGORY_PATTERNS.filter(({ pattern }) => {
-    const labelPattern = pattern.source;
-    return new RegExp(
-      `\\b(?:not|no|exclude|without|pas de|sans|exclure)\\s+(?:${labelPattern})`,
-      'i'
-    ).test(normalized);
-  }).map(({ category }) => category);
+  const excludedCategories = CATEGORY_PATTERNS.filter(({ pattern }) =>
+    exclusionPattern(pattern.source, 'i').test(normalized)
+  ).map(({ category }) => category);
 
   const categories = CATEGORY_PATTERNS.filter(
     ({ category, pattern }) =>
