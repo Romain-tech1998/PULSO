@@ -23,7 +23,11 @@ import { OrganizerRequestExistsError } from '@pulso/database';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { resolveBearerUser, sendUnauthenticated } from './auth.js';
+import {
+  resolveBearerUser,
+  sendForbidden,
+  sendUnauthenticated
+} from './auth.js';
 
 const requestParamsSchema = z.object({ id: z.uuid() });
 const venueParamsSchema = z.object({ venueId: z.uuid() });
@@ -325,11 +329,3 @@ export function registerOrganizerRoutes(
 
 // 403 rather than 404: the caller is authenticated, and the route's
 // existence is not a secret - only its contents are.
-function sendForbidden(reply: Parameters<typeof sendUnauthenticated>[0]) {
-  return reply.status(403).send({
-    error: {
-      code: 'FORBIDDEN',
-      message: 'This action requires an administrator account.'
-    }
-  });
-}

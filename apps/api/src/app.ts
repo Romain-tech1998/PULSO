@@ -15,6 +15,7 @@ import type {
   AuthRepository,
   EventPhotosRepository,
   UserPhotosRepository,
+  ImageModerationRepository,
   EventRepository,
   FavoritesRepository,
   ForumRepository,
@@ -55,6 +56,8 @@ import { resolveAllowedOrigin, resolveApiConfig } from './config.js';
 import { registerCreatedEventsRoutes } from './created-events.js';
 import { registerEventPhotosRoutes } from './event-photos.js';
 import { registerUserPhotosRoutes } from './user-photos.js';
+import type { ImageModerationProvider } from './image-moderation.js';
+import { registerImageModerationRoutes } from './image-moderation-routes.js';
 import { registerForumRoutes } from './forum.js';
 import { registerGroupsRoutes } from './groups.js';
 import { registerMessagesRoutes } from './messages.js';
@@ -100,6 +103,12 @@ export function buildApp(
     organizerRepository?: OrganizerRepository;
     eventPhotosRepository?: EventPhotosRepository;
     userPhotosRepository?: UserPhotosRepository;
+    imageModerationRepository?: ImageModerationRepository;
+    // DEC-0021. Injected the same way `interpretQuery` is: the real network
+    // call only happens when nothing is supplied, so the test suite never
+    // reaches OpenAI. Absent in production too means every upload is
+    // flagged for review rather than published unscreened.
+    imageModerationProvider?: ImageModerationProvider;
     ratingsRepository?: RatingsRepository;
     // Where uploaded photo files live on disk, and the base URL the API
     // serves them back from (see the /uploads static mount below) - local
@@ -150,6 +159,7 @@ export function buildApp(
     options.profileRepository &&
     options.eventPhotosRepository &&
     options.userPhotosRepository &&
+    options.imageModerationRepository &&
     options.ratingsRepository &&
     options.notificationsRepository &&
     options.organizerRepository &&
@@ -218,6 +228,16 @@ export function buildApp(
       app,
       options.authRepository,
       options.userPhotosRepository,
+      options.imageModerationRepository,
+      options.uploadDir,
+      options.publicUploadUrl,
+      options.imageModerationProvider
+    );
+    registerImageModerationRoutes(
+      app,
+      options.authRepository,
+      options.imageModerationRepository,
+      options.organizerRepository,
       options.uploadDir,
       options.publicUploadUrl
     );

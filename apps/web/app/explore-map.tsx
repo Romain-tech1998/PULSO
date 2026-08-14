@@ -87,6 +87,8 @@ import {
   type ProfileStatsResponse,
   type AdminVenuePhoto,
   type TrendsResponse,
+  type ImageModerationEntry,
+  imageModerationQueueResponseSchema,
   type MessageRequest,
   messageRequestsResponseSchema,
   type User,
@@ -10709,6 +10711,127 @@ function AdminVenuePhotosBlock({
   );
 }
 
+// DEC-0021 - the image moderation queue, inside the console that already
+// holds every other administrative queue rather than a second one. Shows why
+// each image is here: the automatic verdict and its scores, the reports and
+// their reasons, or both.
+function ImageModerationQueue({
+  authToken,
+  locale
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+}) {
+  const [entries, setEntries] = useState<ImageModerationEntry[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [busy, setBusy] = useState<string>();
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    setState('loading');
+    fetch(`${API_BASE_URL}/admin/image-moderation`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setEntries(imageModerationQueueResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const decide = (id: string, decision: 'approved' | 'rejected') => {
+    if (!authToken) return;
+    setBusy(id);
+    fetch(`${API_BASE_URL}/admin/image-moderation/${id}`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${authToken}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ decision })
+    })
+      .then(refresh)
+      .catch(() => {})
+      .finally(() => setBusy(undefined));
+  };
+
+  return (
+    <div className="admin-moderation">
+      <div className="friend-section-title">
+        <div>
+          <span>{translate(locale, 'admin.moderation.automatic')}</span>
+          <h2>{translate(locale, 'admin.moderation.title')}</h2>
+        </div>
+        <strong>{entries.length}</strong>
+      </div>
+
+      {state === 'success' && entries.length === 0 && (
+        <p className="list-view-empty">
+          {translate(locale, 'admin.moderation.empty')}
+        </p>
+      )}
+
+      <ul className="admin-moderation-list">
+        {entries.map((entry) => (
+          <li key={entry.id} className="admin-moderation-item">
+            <img src={entry.url} alt="" className="admin-moderation-thumb" />
+            <div className="admin-moderation-copy">
+              <strong>{entry.ownerDisplayName ?? entry.surface}</strong>
+              <span>{entry.surface}</span>
+              {entry.reason && <span>{entry.reason}</span>}
+              {entry.scores && (
+                <span className="admin-moderation-scores">
+                  {Object.entries(entry.scores)
+                    .filter(([, score]) => score >= 0.1)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 4)
+                    .map(([name, score]) => `${name} ${score.toFixed(2)}`)
+                    .join(' · ')}
+                </span>
+              )}
+              {entry.reportCount > 0 && (
+                <span className="admin-moderation-reports">
+                  {translate(locale, 'admin.moderation.reports', {
+                    count: entry.reportCount
+                  })}
+                  {entry.reportReasons.length > 0
+                    ? ` — ${entry.reportReasons.join(', ')}`
+                    : ''}
+                </span>
+              )}
+            </div>
+            <div className="admin-moderation-actions">
+              <button
+                type="button"
+                className="primary-action-btn"
+                disabled={busy === entry.id}
+                onClick={() => decide(entry.id, 'approved')}
+              >
+                {translate(locale, 'admin.moderation.approve')}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy === entry.id}
+                onClick={() => decide(entry.id, 'rejected')}
+              >
+                {translate(locale, 'admin.moderation.remove')}
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function AdministrationPage({
   authToken,
   locale
@@ -10795,6 +10918,8 @@ function AdministrationPage({
           <p>Tu seras notifié dès qu&apos;un compte demande à gérer un lieu.</p>
         </div>
       )}
+
+      <ImageModerationQueue authToken={authToken} locale={locale} />
 
       <div className="organisateur-list">
         {requests.map((entry) => (
@@ -14686,6 +14811,7 @@ function ProfilPhotosTab({
   );
   const [uploading, setUploading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [notice, setNotice] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
   const isOwn = ownerId === undefined;
 
@@ -14712,6 +14838,7 @@ function ProfilPhotosTab({
     if (!authToken) return;
     setUploading(true);
     setFailed(false);
+    setNotice(undefined);
     const body = new FormData();
     body.append('file', file);
     fetch(`${API_BASE_URL}/me/photos`, {
@@ -14719,15 +14846,41 @@ function ProfilPhotosTab({
       headers: { authorization: `Bearer ${authToken}` },
       body
     })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) =>
-        setPhotos((current) => [
-          userPhotoResponseSchema.parse(json).data,
-          ...current
-        ])
-      )
+      .then(async (response) => {
+        // DEC-0021 has three outcomes and the interface says something
+        // different for each: nothing at all when it passed, one sentence
+        // when it did not.
+        if (response.status === 422) {
+          setNotice(translate(locale, 'moderation.rejected'));
+          return undefined;
+        }
+        if (!response.ok) return Promise.reject();
+        const photo = userPhotoResponseSchema.parse(await response.json()).data;
+        if (photo.moderationStatus !== 'approved') {
+          setNotice(translate(locale, 'moderation.pending'));
+          return undefined;
+        }
+        return photo;
+      })
+      .then((photo) => {
+        if (photo) setPhotos((current) => [photo, ...current]);
+      })
       .catch(() => setFailed(true))
       .finally(() => setUploading(false));
+  };
+
+  const report = (photoId: string, reason: string) => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/images/${photoId}/report`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${authToken}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ reason })
+    })
+      .then(() => setNotice(translate(locale, 'moderation.reportSent')))
+      .catch(() => {});
   };
 
   const remove = (photoId: string) => {
@@ -14782,6 +14935,12 @@ function ProfilPhotosTab({
         </p>
       )}
 
+      {notice && (
+        <p className="profil-photos-notice" role="status">
+          {notice}
+        </p>
+      )}
+
       {state === 'success' && photos.length === 0 && (
         <p className="profil-photos-empty">
           {isOwn
@@ -14798,7 +14957,7 @@ function ProfilPhotosTab({
               {photo.caption && (
                 <span className="profil-photo-caption">{photo.caption}</span>
               )}
-              {isOwn && (
+              {isOwn ? (
                 <button
                   type="button"
                   className="profil-photo-delete"
@@ -14806,6 +14965,15 @@ function ProfilPhotosTab({
                   onClick={() => remove(photo.id)}
                 >
                   ×
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="profil-photo-report"
+                  aria-label={translate(locale, 'moderation.report')}
+                  onClick={() => report(photo.id, 'inappropriate')}
+                >
+                  ⚐
                 </button>
               )}
             </li>

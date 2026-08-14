@@ -4,6 +4,12 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import {
+  moderateImage,
+  type ImageModerationProvider,
+  type ImageModerationResult
+} from './image-moderation.js';
+
 /**
  * The one photo-upload path shared by every surface that accepts an image.
  *
@@ -33,7 +39,8 @@ export const STILL_IMAGE_MIME_TYPES = [
 ] as const;
 
 export type PhotoUploadResult =
-  { ok: true; filePath: string } | { ok: false; reply: FastifyReply };
+  | { ok: true; filePath: string; moderation: ImageModerationResult }
+  | { ok: false; reply: FastifyReply };
 
 /**
  * Writes `file` under `<uploadDir>/<subdirectory>/` and returns the path
@@ -44,12 +51,18 @@ export type PhotoUploadResult =
  * return it - the shape keeps the "which status, which code" decision here
  * instead of re-deciding it per route.
  */
+export interface PhotoUploadModeration {
+  provider: ImageModerationProvider | undefined;
+  log?: (message: string) => void;
+}
+
 export async function savePhotoUpload(
   file: MultipartFile | undefined,
   reply: FastifyReply,
   uploadDir: string,
   subdirectory: string,
-  allowedMimeTypes?: readonly string[]
+  allowedMimeTypes?: readonly string[],
+  moderation?: PhotoUploadModeration
 ): Promise<PhotoUploadResult> {
   if (!file) {
     return {
@@ -97,10 +110,36 @@ export async function savePhotoUpload(
     };
   }
 
+  // DEC-0021: screened before anything is written, so a refused image never
+  // touches the disk at all. Every upload surface goes through here, which
+  // is why the rule holds without each route remembering it.
+  const verdict = await moderateImage(
+    buffer,
+    file.mimetype,
+    moderation?.provider,
+    moderation?.log
+  );
+  if (verdict.decision === 'rejected') {
+    return {
+      ok: false,
+      reply: await reply.status(422).send({
+        error: {
+          code: 'IMAGE_REJECTED',
+          message:
+            'This image cannot be published because it does not follow the Pulso rules.'
+        }
+      })
+    };
+  }
+
   const directory = join(uploadDir, subdirectory);
   await mkdir(directory, { recursive: true });
   const filename = `${randomUUID()}.${extension}`;
   await writeFile(join(directory, filename), buffer);
   // Posix separators regardless of platform: this becomes part of a URL.
-  return { ok: true, filePath: `${subdirectory}/${filename}` };
+  return {
+    ok: true,
+    filePath: `${subdirectory}/${filename}`,
+    moderation: verdict
+  };
 }

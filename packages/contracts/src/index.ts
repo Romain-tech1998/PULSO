@@ -1473,6 +1473,61 @@ export const eventPhotosResponseSchema = z.object({
 export const eventPhotoResponseSchema = z.object({
   data: eventPhotoSchema
 });
+// DEC-0021 - the image moderation queue and the report that feeds it.
+// `scores` is passed through verbatim from whichever provider produced it,
+// so the console can show why an image is here without this contract having
+// to enumerate a vocabulary that belongs to the provider.
+export const IMAGE_SURFACES = [
+  'profile_photo',
+  'user_photo',
+  'event_photo',
+  'group_photo',
+  'event_cover'
+] as const;
+
+export const imageModerationStatusSchema = z.enum([
+  'approved',
+  'flagged',
+  'rejected'
+]);
+
+export const imageModerationEntrySchema = z.object({
+  id: z.uuid(),
+  url: z.url(),
+  surface: z.enum(IMAGE_SURFACES),
+  status: imageModerationStatusSchema,
+  ownerDisplayName: z.string().optional(),
+  provider: z.string().optional(),
+  reason: z.string().optional(),
+  scores: z.record(z.string(), z.number()).optional(),
+  reportCount: z.number().int().min(0),
+  reportReasons: z.array(z.string()),
+  moderatedAt: z.iso.datetime()
+});
+
+export const imageModerationQueueResponseSchema = z.object({
+  data: z.array(imageModerationEntrySchema)
+});
+
+export const resolveImageModerationRequestSchema = z.object({
+  decision: z.enum(['approved', 'rejected'])
+});
+
+// A short, fixed vocabulary rather than free text: it is what a reporter can
+// answer quickly, and it keeps the queue readable at a glance.
+export const IMAGE_REPORT_REASONS = [
+  'sexual',
+  'violence',
+  'hate',
+  'spam',
+  'inappropriate',
+  'other'
+] as const;
+
+export const reportImageRequestSchema = z.object({
+  reason: z.enum(IMAGE_REPORT_REASONS).optional()
+});
+
 // DEC-0020 - the personal photo gallery. A gallery, not a feed: a photo is
 // only ever read as part of one account's own grid, which is why there is
 // no author field (the owner is the profile being viewed) and no like or
@@ -1482,6 +1537,10 @@ export const eventPhotoResponseSchema = z.object({
 export const userPhotoSchema = z.object({
   id: z.uuid(),
   url: z.url(),
+  // DEC-0021. Present on the response to an upload so the interface can say
+  // "being checked" without guessing; absent from a listed photo, because a
+  // listed photo is by definition one that passed.
+  moderationStatus: imageModerationStatusSchema.optional(),
   caption: z.string().max(280).optional(),
   eventId: z.uuid().optional(),
   venueId: z.uuid().optional(),
@@ -1507,6 +1566,11 @@ export type ForumMembersResponse = z.infer<typeof forumMembersResponseSchema>;
 export type ForumFollowResponse = z.infer<typeof forumFollowResponseSchema>;
 export type EventPhoto = z.infer<typeof eventPhotoSchema>;
 export type EventPhotosResponse = z.infer<typeof eventPhotosResponseSchema>;
+export type ImageModerationStatus = z.infer<typeof imageModerationStatusSchema>;
+export type ImageModerationEntry = z.infer<typeof imageModerationEntrySchema>;
+export type ImageModerationQueueResponse = z.infer<
+  typeof imageModerationQueueResponseSchema
+>;
 export type UserPhoto = z.infer<typeof userPhotoSchema>;
 export type UserPhotosResponse = z.infer<typeof userPhotosResponseSchema>;
 export type UserPhotoResponse = z.infer<typeof userPhotoResponseSchema>;

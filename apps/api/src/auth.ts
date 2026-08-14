@@ -44,6 +44,18 @@ export async function resolveBearerUser(
   return authRepository.findUserBySessionToken(token);
 }
 
+// The admin refusal, beside the authentication one. It lived privately in
+// organizer.ts until a second module needed the same 403 (DEC-0021's
+// moderation queue), and two copies of a guard is how they drift apart.
+export function sendForbidden(reply: FastifyReply) {
+  return reply.status(403).send({
+    error: {
+      code: 'FORBIDDEN',
+      message: 'This action requires an administrator account.'
+    }
+  });
+}
+
 export function sendUnauthenticated(reply: FastifyReply) {
   return reply.status(401).send({
     error: {

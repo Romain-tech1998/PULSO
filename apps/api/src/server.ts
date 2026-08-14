@@ -3,6 +3,7 @@ import {
   PostgresAttendanceRepository,
   PostgresAuthRepository,
   PostgresEventPhotosRepository,
+  PostgresImageModerationRepository,
   PostgresUserPhotosRepository,
   PostgresEventRepository,
   PostgresFavoritesRepository,
@@ -19,6 +20,7 @@ import {
 } from '@pulso/database';
 import { lookupVenueByName } from '@pulso/ingestion';
 import { buildApp } from './app.js';
+import { createOpenAiModerationProvider } from './image-moderation-openai.js';
 import { resolveApiConfig } from './config.js';
 
 // Throws before anything else happens if the deployment configuration is
@@ -64,6 +66,17 @@ const app = buildApp(new PostgresEventRepository(pool), {
         profileRepository: new PostgresProfileRepository(pool),
         eventPhotosRepository: new PostgresEventPhotosRepository(pool),
         userPhotosRepository: new PostgresUserPhotosRepository(pool),
+        imageModerationRepository: new PostgresImageModerationRepository(pool),
+        // DEC-0021: absent means every upload is flagged for review rather
+        // than published unscreened, which is the correct default for an
+        // instance that has not been given a key.
+        ...(process.env.OPENAI_API_KEY
+          ? {
+              imageModerationProvider: createOpenAiModerationProvider(
+                process.env.OPENAI_API_KEY
+              )
+            }
+          : {}),
         ratingsRepository: new PostgresRatingsRepository(pool),
         notificationsRepository: new PostgresNotificationsRepository(pool),
         organizerRepository: new PostgresOrganizerRepository(pool),
