@@ -170,19 +170,22 @@ test('completes transparent deterministic UJ-0002 and keeps map and filters', as
 
   const query = page.getByPlaceholder(/Search for an event/i);
   await expect(query).toBeVisible();
-  await query.fill('free music this week');
+  await query.fill('free music tonight');
   await query.press('Enter');
 
   const search = page.getByLabel('Optional intelligent search');
   // Stage 2: only what was actually expressed is presented as certain, and
-  // each derived constraint stays releasable.
+  // each derived constraint stays releasable. The wording matters - the
+  // interpreter's date vocabulary is not the filter panel's option list:
+  // "tonight", "tomorrow" and "this weekend" are derived, "today" and "this
+  // week" are not, and asking for one of those leaves it as search text.
   // The interpretation is a network round trip, and the first one after a
   // cold route can outlast the 5s default - patience here, not a weaker claim.
   await expect(
     search.getByRole('heading', { name: 'Pulso understood' })
   ).toBeVisible({ timeout: 20_000 });
   await expect(
-    search.getByRole('button', { name: 'Clear derived constraint This week' })
+    search.getByRole('button', { name: 'Clear derived constraint Tonight' })
   ).toBeVisible();
   await expect(
     search.getByRole('button', {
@@ -249,7 +252,7 @@ test('switches, persists, and preserves bilingual map, search and details contex
   ).toBeVisible();
 
   const query = page.getByPlaceholder(/Rechercher un événement/i);
-  await query.fill('musique gratuite cette semaine');
+  await query.fill('musique gratuite ce soir');
   await query.press('Enter');
 
   const search = page.getByLabel('Recherche intelligente facultative');
