@@ -8,7 +8,8 @@ import type {
   DateFilterValue,
   DiscoveryFilters,
   EventCategory,
-  PriceFilterValue
+  PriceFilterValue,
+  VenueCategory
 } from '@pulso/domain';
 import type { SupportedLocale } from '@pulso/domain/localization';
 
@@ -23,9 +24,56 @@ export interface DeterministicInterpretation {
   constraints: SearchExplanation[];
   rankingSignals: SearchExplanation[];
   language: SupportedLocale;
+  engine: 'deterministic' | 'intelligent';
   clarification?: SearchMessage;
   message?: SearchMessage;
+  suggestedLocation?: { longitude: number; latitude: number };
+  suggestedNearMe?: boolean;
+  /**
+   * A name the visitor typed - a show, an artist, a venue - to be matched
+   * against the directory's own text. Absent when the query only described a
+   * kind of evening, which the filters already express.
+   */
+  searchText?: string;
+  /**
+   * A *kind* of place, as opposed to a named one. "bar", "club", "théâtre"
+   * name no venue in particular but are the most natural thing to type, and
+   * nothing in the search understood them: "bar" could only ever match a
+   * venue whose name happened to contain the word.
+   */
+  venueCategories?: VenueCategory[];
 }
+
+const VENUE_CATEGORY_PATTERNS: ReadonlyArray<{
+  category: VenueCategory;
+  pattern: RegExp;
+}> = [
+  { category: 'bar', pattern: /\b(bars?|pubs?|tavernes?|brasseries?)\b/ },
+  {
+    category: 'nightclub',
+    pattern:
+      /\b(nightclubs?|night clubs?|clubs?|boites?( de nuit)?|discotheques?)\b/
+  },
+  {
+    category: 'concert_hall',
+    pattern: /\b(salles? de (concert|spectacle)|concert halls?|venues?)\b/
+  },
+  { category: 'theater', pattern: /\b(theatres?|theaters?)\b/ },
+  {
+    category: 'brewery_with_stage',
+    pattern: /\b(microbrasseries?|breweries|brewery|brasseries? artisanales?)\b/
+  },
+  { category: 'cafe_concert', pattern: /\b(cafes?[ -]?concerts?|cafes?)\b/ },
+  {
+    category: 'gallery_museum',
+    pattern: /\b(galeries?|galleries|gallery|musees?|museums?)\b/
+  },
+  {
+    category: 'community_space',
+    pattern:
+      /\b(espaces? communautaires?|community (spaces?|centres?|centers?)|maisons? de la culture)\b/
+  }
+];
 
 const CATEGORY_PATTERNS: ReadonlyArray<{
   category: EventCategory;
@@ -46,7 +94,12 @@ const CATEGORY_PATTERNS: ReadonlyArray<{
   },
   {
     category: 'comedy',
-    pattern: /\b(comedy|comedian|stand[ -]?up|humour|humoristes?)\b/
+    // Matches the adjective forms too. `humour` alone missed "humoristique"
+    // and "humouristique" - \b requires a boundary right after "humour", so
+    // the word carried on and nothing matched. "un evenement humouristique"
+    // then fell through as a name to look up and found nothing.
+    pattern:
+      /\b(comedy|comedian|stand[ -]?up|humou?r(?:istiques?|isues?|istes?)?|comiques?)\b/
   },
   {
     category: 'show',
@@ -109,6 +162,186 @@ const rankingSignalDefinitions: ReadonlyArray<{
   }
 ];
 
+/**
+ * Words that carry no search intent on their own. Stripped so what is left
+ * of a query, once every recognised filter phrase is removed, is the name
+ * the visitor typed - "je veux voir le lion king ce soir" leaves "lion king".
+ *
+ * The AI engine does this far better. This exists so the fallback is still a
+ * search engine rather than a filter builder when the provider is down or
+ * unconfigured: without it, naming an event returns nothing at all.
+ */
+// The words that turn a category into an exclusion. Shared by the
+// detector below and by the residual-text extraction, which has to strip
+// the whole phrase: consuming "comedy" but leaving "not" behind turned a
+// pure exclusion into a name search for the negation particle. Against a
+// small database nothing was named "not", so the query dead-ended and
+// answered "alternative"; against a large one the text matched something
+// and the query took a named-search path it had no business being on.
+const EXCLUSION_PREFIXES = 'not|no|exclude|without|pas de|sans|exclure';
+
+/**
+ * "<negation> <category label>", built once so the detector and the
+ * residual-text extraction cannot drift apart - they have to agree on what
+ * an exclusion phrase is, or one of them strips something the other kept.
+ */
+function exclusionPattern(labelPattern: string, flags: string): RegExp {
+  return new RegExp(
+    `\\b(?:${EXCLUSION_PREFIXES})\\s+(?:${labelPattern})`,
+    flags
+  );
+}
+
+const SEARCH_TEXT_STOPWORDS = new Set([
+  'a',
+  'au',
+  'aux',
+  'ce',
+  'ces',
+  'cet',
+  'cette',
+  'chercher',
+  'dans',
+  'de',
+  'des',
+  'du',
+  'en',
+  'envie',
+  'et',
+  'faire',
+  'fait',
+  'je',
+  'la',
+  'le',
+  'les',
+  'lieu',
+  'moi',
+  'ou',
+  'par',
+  'pour',
+  'quoi',
+  'sortir',
+  'sur',
+  'trouver',
+  'un',
+  'une',
+  'veux',
+  'voir',
+  'y',
+  'aller',
+  'assister',
+  'evenement',
+  'evenements',
+  'truc',
+  'chose',
+  'quelque',
+  // Words that describe an outing without naming anything. Left in, they
+  // became search terms that match no record - "soirée comique" searched for
+  // "soiree" and found nothing.
+  'soiree',
+  'soirees',
+  'soir',
+  'nuit',
+  'ambiance',
+  'sympa',
+  'cool',
+  'bon',
+  'bonne',
+  'petit',
+  'petite',
+  'gros',
+  'grosse',
+  'super',
+  'meilleur',
+  'meilleure',
+  'night',
+  'nice',
+  'good',
+  'great',
+  'best',
+  'fun',
+  'cheap',
+  'and',
+  'any',
+  'at',
+  'attend',
+  'event',
+  'events',
+  'find',
+  'for',
+  'go',
+  'going',
+  'i',
+  'in',
+  'me',
+  'of',
+  'on',
+  'out',
+  'search',
+  'see',
+  'show',
+  'something',
+  'the',
+  'to',
+  'want',
+  'wanna',
+  'what',
+  'where',
+  'with'
+]);
+
+/**
+ * Strips a free-text term down to what is worth matching against the
+ * directory's own text.
+ *
+ * The AI engine needs this as much as the deterministic one. Asked for "bar",
+ * the model returns both `venueCategories: ['bar']` and `searchText: 'bar'` -
+ * and that second half then substring-matches "**Bar**batuques",
+ * "**BAR**BRA Streisand" and "Stereo**Bar**", which sort *above* the real
+ * bars because a title match outranks a venue kind. A word already expressed
+ * as a kind of place is not also a name.
+ */
+export function refineSearchText(text: string): string | undefined {
+  return extractResidualSearchText(normalizeQuery(text));
+}
+
+/**
+ * Whatever the visitor typed that was not a date, a price, an event
+ * category, a kind of place, a ranking hint or a stopword. Matched against
+ * event titles, organizers and venue names.
+ */
+function extractResidualSearchText(normalized: string): string | undefined {
+  let residual = normalized;
+  // Exclusion phrases first, and whole: "not comedy" has to leave nothing
+  // behind, where stripping the bare category below would leave "not".
+  for (const { pattern } of CATEGORY_PATTERNS) {
+    residual = residual.replace(exclusionPattern(pattern.source, 'gi'), ' ');
+  }
+  for (const { pattern } of [
+    ...CATEGORY_PATTERNS,
+    ...VENUE_CATEGORY_PATTERNS,
+    ...DATE_PATTERNS,
+    ...PRICE_PATTERNS,
+    ...rankingSignalDefinitions
+  ]) {
+    residual = residual.replace(new RegExp(pattern.source, 'gi'), ' ');
+  }
+  residual = residual
+    .replace(
+      /\b(near me|close to me|around me|nearby|pres de moi|proche de moi|autour de moi)\b/g,
+      ' '
+    )
+    .replace(/[^a-z0-9' ]+/g, ' ');
+
+  const kept = residual
+    .split(' ')
+    .map((word) => word.trim())
+    .filter((word) => word.length > 1 && !SEARCH_TEXT_STOPWORDS.has(word));
+
+  const text = kept.join(' ').trim();
+  return text.length >= 2 ? text : undefined;
+}
+
 function normalizeQuery(query: string): string {
   return query
     .normalize('NFKD')
@@ -130,22 +363,6 @@ export function interpretDeterministicSearch(
   const constraints: SearchExplanation[] = [];
   const derivedFilters: DeterministicInterpretation['derivedFilters'] = {};
 
-  if (
-    /\b(near me|close to me|pres de moi|proche de moi|within\s+\d+\s*(km|kilomet(?:er|re)s?|miles?)|a moins de\s+\d+\s*(km|kilometres?))\b/.test(
-      normalized
-    )
-  ) {
-    return {
-      resolution: 'clarification',
-      derivedFilters,
-      excludedCategories: [],
-      constraints,
-      rankingSignals: [],
-      language,
-      clarification: { code: 'search.clarification.location' }
-    };
-  }
-
   if (/\b\d+\s*minutes?\b/.test(normalized)) {
     return {
       resolution: 'no_reliable_result',
@@ -154,7 +371,42 @@ export function interpretDeterministicSearch(
       constraints,
       rankingSignals: [],
       language,
+      engine: 'deterministic',
       message: { code: 'search.message.routingUnsupported' }
+    };
+  }
+
+  // Two different questions hide behind distance phrasing, and they cannot
+  // share one answer.
+  //
+  // "near me" only asks to centre the search on the visitor. Explore now has
+  // a real geolocated Distance filter, so the honest answer is to hand the
+  // caller `suggestedNearMe` and let it apply that filter - not to stop and
+  // ask a question the product can already answer. (This used to return a
+  // clarification, which predates the Distance filter.)
+  //
+  // "within 5 km" also names a radius, and DeterministicInterpretation has
+  // nowhere to put one. Answering `ready` would search whatever radius the
+  // client happens to have set and present that as an exact match, which is
+  // the one thing UX-0001 forbids - so this case still asks.
+  const asksNearMe =
+    /\b(near me|close to me|around me|nearby|pres de moi|proche de moi|autour de moi)\b/.test(
+      normalized
+    );
+  const namesRadius =
+    /\b(?:within|under|less than|a moins de|moins de|dans un rayon de)\s*\d+\s*(?:km|kms|kilomet(?:er|re)s?|miles?|mi)\b/.test(
+      normalized
+    );
+  if (namesRadius) {
+    return {
+      resolution: 'clarification',
+      derivedFilters,
+      excludedCategories: [],
+      constraints,
+      rankingSignals: [],
+      language,
+      engine: 'deterministic',
+      clarification: { code: 'search.clarification.location' }
     };
   }
 
@@ -178,6 +430,7 @@ export function interpretDeterministicSearch(
       constraints,
       rankingSignals: [],
       language,
+      engine: 'deterministic',
       message: { code: 'search.message.maximumPriceUnavailable' }
     };
   }
@@ -193,6 +446,7 @@ export function interpretDeterministicSearch(
       constraints,
       rankingSignals: [],
       language,
+      engine: 'deterministic',
       clarification: { code: 'search.clarification.date' }
     };
   }
@@ -206,13 +460,9 @@ export function interpretDeterministicSearch(
     });
   }
 
-  const excludedCategories = CATEGORY_PATTERNS.filter(({ pattern }) => {
-    const labelPattern = pattern.source;
-    return new RegExp(
-      `\\b(?:not|no|exclude|without|pas de|sans|exclure)\\s+(?:${labelPattern})`,
-      'i'
-    ).test(normalized);
-  }).map(({ category }) => category);
+  const excludedCategories = CATEGORY_PATTERNS.filter(({ pattern }) =>
+    exclusionPattern(pattern.source, 'i').test(normalized)
+  ).map(({ category }) => category);
 
   const categories = CATEGORY_PATTERNS.filter(
     ({ category, pattern }) =>
@@ -263,6 +513,7 @@ export function interpretDeterministicSearch(
       constraints,
       rankingSignals: [],
       language,
+      engine: 'deterministic',
       clarification: { code: 'search.clarification.price' }
     };
   }
@@ -295,10 +546,19 @@ export function interpretDeterministicSearch(
       message
     }));
 
+  const venueCategories = VENUE_CATEGORY_PATTERNS.filter(({ pattern }) =>
+    pattern.test(normalized)
+  ).map(({ category }) => category);
+  const searchText = extractResidualSearchText(normalized);
   const hasExpressedCriterion =
+    venueCategories.length > 0 ||
     Object.keys(derivedFilters).length > 0 ||
     activeExclusions.length > 0 ||
-    rankingSignals.length > 0;
+    rankingSignals.length > 0 ||
+    // A bare "lion king" expresses no filter at all, but it is the clearest
+    // request Pulso can receive. Before this it fell through to
+    // "unsupported", which is why naming an event returned nothing.
+    searchText !== undefined;
   if (!hasExpressedCriterion) {
     return {
       resolution: 'no_reliable_result',
@@ -309,6 +569,7 @@ export function interpretDeterministicSearch(
       ),
       rankingSignals,
       language,
+      engine: 'deterministic',
       message: { code: 'search.message.unsupported' }
     };
   }
@@ -319,14 +580,29 @@ export function interpretDeterministicSearch(
     excludedCategories: activeExclusions,
     constraints,
     rankingSignals,
-    language
+    language,
+    engine: 'deterministic',
+    ...(asksNearMe ? { suggestedNearMe: true } : {}),
+    ...(searchText ? { searchText } : {}),
+    ...(venueCategories.length > 0
+      ? { venueCategories: [...new Set(venueCategories)] }
+      : {})
   };
 }
 
-function detectQueryLanguage(
-  normalized: string,
+/**
+ * Exported so the AI engine answers in the same language the deterministic
+ * one would: DEC-0003 makes the query's own language win over the UI locale,
+ * and two engines disagreeing on that would be visible to the visitor.
+ */
+export function detectQueryLanguage(
+  query: string,
   preferredLocale: SupportedLocale
 ): SupportedLocale {
+  // Normalizing here rather than trusting the caller: normalizeQuery is
+  // idempotent, so the deterministic path passing an already-normalized
+  // string costs nothing, and the AI path can pass a raw query.
+  const normalized = normalizeQuery(query);
   const french = (
     normalized.match(
       /\b(ce soir|demain|cette fin de semaine|prochains jours|musique|vie nocturne|boite|soiree|evenement|spectacle|humour|gratuit|payant|bientot|abordable|fiable|sans|pres de moi|proche de moi|moins de|jusqu'a)\b/g
@@ -340,7 +616,7 @@ function detectQueryLanguage(
   return french > english ? 'fr' : english > french ? 'en' : preferredLocale;
 }
 
-const trustScore: Record<PublicEvent['trust']['label'], number> = {
+const trustScore: Record<NonNullable<PublicEvent['trust']>['label'], number> = {
   confirmed: 3,
   probable: 2,
   to_verify: 1,
@@ -387,6 +663,42 @@ export function rankAndExplainEvents(
           params: { date: interpretation.derivedFilters.date }
         });
       }
+      // Relevance to what was actually asked for, scored far above the
+      // preference signals below. Without this every result scored 0 and the
+      // only tiebreak was "soonest first" - so searching "bar" put whatever
+      // started next at the top, even when it was held on a festival site
+      // that merely has a bar on it, above every real bar in the city.
+      const askedKinds = interpretation.venueCategories ?? [];
+      if (askedKinds.length > 0) {
+        const venueKind = event.venue.category;
+        const secondary = event.venue.secondaryCategories ?? [];
+        if (venueKind && askedKinds.includes(venueKind)) {
+          score += 1_000_000;
+          reasons.push({
+            code: 'search.reason.venueKind',
+            params: { venue: venueKind }
+          });
+        } else {
+          const alsoIs = secondary.find((kind) => askedKinds.includes(kind));
+          if (alsoIs) {
+            score += 100_000;
+            reasons.push({
+              code: 'search.reason.venueKindSecondary',
+              params: { venue: alsoIs }
+            });
+          }
+        }
+      }
+      if (interpretation.searchText) {
+        const needle = normalizeQuery(interpretation.searchText);
+        if (normalizeQuery(event.title).includes(needle)) {
+          score += 10_000_000;
+          reasons.push({
+            code: 'search.reason.nameMatch',
+            params: { text: interpretation.searchText }
+          });
+        }
+      }
       if (signals.has('soon')) {
         score +=
           Math.max(0, 10_000_000_000_000 - new Date(event.startsAt).getTime()) /
@@ -404,11 +716,15 @@ export function rankAndExplainEvents(
                 : 'search.reason.lowerPriceUnknown'
         });
       }
-      if (signals.has('higher_trust')) {
-        score += trustScore[event.trust.label] * 10;
+      // Account-created events carry no trust label (DEC-0017), so the
+      // trust signal simply does not apply to them rather than scoring them
+      // as if they were a poorly-corroborated sourced record.
+      const eventTrust = event.trust;
+      if (signals.has('higher_trust') && eventTrust) {
+        score += trustScore[eventTrust.label] * 10;
         reasons.push({
           code: 'search.reason.trust',
-          params: { trust: event.trust.label }
+          params: { trust: eventTrust.label }
         });
       }
       if (reasons.length === 0) {
@@ -436,3 +752,5 @@ export function rankAndExplainEvents(
       differences
     }));
 }
+
+export * from './ai.js';

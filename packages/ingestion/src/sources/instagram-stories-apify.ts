@@ -138,7 +138,8 @@ export async function fetchInstagramStoriesSignals(
     } catch (error) {
       if (timeoutController.signal.aborted) {
         throw new Error(
-          `Apify Instagram Stories actor request timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`
+          `Apify Instagram Stories actor request timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`,
+          { cause: error }
         );
       }
       throw error;

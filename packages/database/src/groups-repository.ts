@@ -1,9 +1,18 @@
 import type { PublicUser } from '@pulso/contracts';
-import type { EventCategory } from '@pulso/domain';
+import {
+  defaultModulesForGroupType,
+  normalizeGroupModules
+} from '@pulso/domain';
+import type { EventCategory, GroupModuleConfig } from '@pulso/domain';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
 import { EventNotFoundError } from './attendance-repository.js';
+import {
+  publicUserColumns,
+  toPublicUser,
+  type PublicUserRow
+} from './public-user.js';
 
 const FOREIGN_KEY_VIOLATION = '23503';
 
@@ -37,9 +46,26 @@ export class NotGroupModeratorError extends Error {
   }
 }
 
-export type GroupVisibility = 'open' | 'restricted';
+export type GroupVisibility = 'open' | 'restricted' | 'private_invite';
+export type GroupType = 'community' | 'event' | 'private_crew';
 export type GroupMembershipStatus = 'member' | 'pending';
+export type GroupPostKind = 'message' | 'outing';
+
+/** The outing carried by an outing post, with its live attendance. */
+export interface GroupPostOuting {
+  id: string;
+  title: string;
+  place: string | undefined;
+  startsAt: string | undefined;
+  eventId: string | undefined;
+  yes: number;
+  maybe: number;
+  no: number;
+  myResponse: AttendanceResponse | undefined;
+}
 export type AttendanceResponse = 'yes' | 'maybe' | 'no';
+export type GroupVerificationStatus =
+  'none' | 'pending' | 'verified' | 'declined';
 
 export interface GroupMeetupVenue {
   name: string;
@@ -60,7 +86,9 @@ export interface Group {
   // per event (Phase 4.8's "Rencontrer avant l'événement") - undefined for
   // every group created the normal way (DEC-0013, no event tie-in).
   eventId: string | undefined;
+  type: GroupType;
   visibility: GroupVisibility;
+  modulesConfig: GroupModuleConfig[];
   // The creator (Phase 4.10, DEC-0013 v1.2) - not a new account concept,
   // just groups.created_by exposed as a real, narrow moderator flag.
   isModerator: boolean;
@@ -83,11 +111,93 @@ export interface Group {
   // joined, since pinning is a per-membership preference, not a group
   // property.
   pinned: boolean;
+  // The group's own uploaded photo. Absent until a moderator sets one.
+  imageUrl?: string;
+  // Requested by the moderator, granted by a Pulso administrator - the same
+  // request/approve shape DEC-0018 uses for organizer accounts.
+  verificationStatus: GroupVerificationStatus;
+}
+
+export interface GroupChannel {
+  id: string;
+  groupId: string;
+  name: string;
+  position: number;
+  /** Only the group's moderator may post here; everyone reads it. */
+  staffOnly: boolean;
+  postCount: number;
+}
+
+export class NotChannelWriterError extends Error {
+  constructor() {
+    super("Only this group's moderator can post in this channel.");
+  }
+}
+
+/**
+ * One outing a group is organising. The programme, the attendance poll and
+ * the checklist describe an outing, not a group, so they hang off this: a
+ * community that goes out weekly starts each week clean instead of finding
+ * last week's plan waiting for it.
+ */
+export interface GroupOuting {
+  id: string;
+  groupId: string;
+  eventId: string | undefined;
+  title: string;
+  startsAt: string | undefined;
+  place: string | undefined;
+  createdAt: string;
+  archivedAt: string | undefined;
+}
+
+export interface GroupSponsoredPlacement {
+  id: string;
+  groupId: string;
+  sponsorName: string;
+  message: string | undefined;
+  createdAt: string;
+  endsAt: string | undefined;
+  event: {
+    id: string;
+    title: string;
+    startsAt: string;
+    category: EventCategory;
+    imageUrl: string | undefined;
+    venueName: string | undefined;
+  };
+}
+
+export interface AdminGroupPlacement {
+  placement: GroupSponsoredPlacement;
+  groupName: string;
+  groupMemberCount: number;
+  dismissedAt: string | undefined;
+}
+
+export interface AdminGroupSummary {
+  id: string;
+  name: string;
+  memberCount: number;
+  verified: boolean;
+}
+
+export interface GroupVerificationRequest {
+  group: Group;
+  requester: PublicUser;
+  requestedAt: string;
+  justification: string;
 }
 
 export interface GroupPost {
   id: string;
   groupId: string;
+  channelId: string;
+  /** A message someone wrote, or an outing they proposed (migration 0042). */
+  kind: GroupPostKind;
+  outingId: string | undefined;
+  /** Present on an outing post: what the card renders, votes included. */
+  outing?: GroupPostOuting;
   author: PublicUser;
   body: string;
   createdAt: string;
@@ -142,10 +252,18 @@ export interface GroupsRepository {
     creatorId: string,
     name: string,
     description: string | undefined,
-    visibility: GroupVisibility
+    type: GroupType,
+    visibility: GroupVisibility,
+    modulesConfig: GroupModuleConfig[]
   ): Promise<Group>;
   listMyGroups(userId: string): Promise<Group[]>;
   getGroup(groupId: string, viewerId: string): Promise<Group | undefined>;
+  /** Moderator-only: reshaping the workspace is a group-lifecycle action. */
+  updateGroupModules(
+    groupId: string,
+    modulesConfig: GroupModuleConfig[],
+    userId: string
+  ): Promise<void>;
   // Returns the resulting membership status - 'member' if the group is
   // open (joined immediately, same as before) or 'pending' if restricted
   // (a join request was recorded, awaiting the moderator).
@@ -160,7 +278,7 @@ export interface GroupsRepository {
   ): Promise<void>;
   // Real accepted members (Phase 4.10's avatar stack) - never a fabricated
   // count, always the actual people who joined.
-  getMembers(groupId: string): Promise<PublicUser[]>;
+  getMembers(groupId: string, viewerId: string): Promise<PublicUser[]>;
   getJoinRequests(groupId: string, moderatorId: string): Promise<PublicUser[]>;
   respondToJoinRequest(
     groupId: string,
@@ -184,48 +302,146 @@ export interface GroupsRepository {
     eventTitle: string,
     userId: string
   ): Promise<Group>;
-  getPosts(groupId: string, viewerId: string): Promise<GroupPost[]>;
+  /** The outing the modules currently describe. Every group has exactly one. */
+  getCurrentOuting(groupId: string): Promise<GroupOuting | undefined>;
+  /** Current first, then archived ones - a group's history stays readable. */
+  listOutings(groupId: string, viewerId: string): Promise<GroupOuting[]>;
+  /**
+   * Publishes an outing into the group feed. Any member may do this, and
+   * several outings coexist: two proposals are not a conflict.
+   */
+  startOuting(
+    groupId: string,
+    userId: string,
+    input: {
+      title: string;
+      eventId?: string;
+      startsAt?: string;
+      place?: string;
+    }
+  ): Promise<GroupOuting>;
+  listChannels(groupId: string, viewerId: string): Promise<GroupChannel[]>;
+  /** Moderator-only: threads are part of how a group is organised. */
+  createChannel(
+    groupId: string,
+    userId: string,
+    name: string,
+    staffOnly: boolean
+  ): Promise<GroupChannel>;
+  /** Moderator-only. A group always keeps at least one channel. */
+  deleteChannel(
+    groupId: string,
+    channelId: string,
+    userId: string
+  ): Promise<void>;
+  getPosts(
+    groupId: string,
+    viewerId: string,
+    channelId?: string
+  ): Promise<GroupPost[]>;
   createPost(
     groupId: string,
     authorId: string,
     body: string,
-    parentId: string | undefined
+    parentId: string | undefined,
+    channelId?: string
   ): Promise<GroupPost>;
   deletePost(postId: string, authorId: string): Promise<void>;
   likePost(postId: string, userId: string): Promise<void>;
   unlikePost(postId: string, userId: string): Promise<void>;
-  getScheduleItems(groupId: string): Promise<GroupScheduleItem[]>;
+  getScheduleItems(
+    groupId: string,
+    viewerId: string,
+    outingId?: string
+  ): Promise<GroupScheduleItem[]>;
   addScheduleItem(
     groupId: string,
     authorId: string,
     label: string,
-    scheduledAt: string
+    scheduledAt: string,
+    outingId?: string
   ): Promise<void>;
   deleteScheduleItem(itemId: string, authorId: string): Promise<void>;
   getAttendanceSummary(
     groupId: string,
-    viewerId: string
+    viewerId: string,
+    outingId?: string
   ): Promise<GroupAttendanceSummary>;
   setAttendanceResponse(
     groupId: string,
     userId: string,
-    response: AttendanceResponse
+    response: AttendanceResponse,
+    outingId?: string
   ): Promise<void>;
   getChecklistItems(
     groupId: string,
-    viewerId: string
+    viewerId: string,
+    outingId?: string
   ): Promise<GroupChecklistItem[]>;
   addChecklistItem(
     groupId: string,
     authorId: string,
-    label: string
+    label: string,
+    outingId?: string
   ): Promise<void>;
   toggleChecklistCheck(
     itemId: string,
     userId: string,
     checked: boolean
   ): Promise<void>;
+  /**
+   * Paid placements (DEC-0015). Created by a Pulso administrator only -
+   * there is deliberately no self-serve path, since the sale happens
+   * outside the product.
+   */
+  createPlacement(input: {
+    groupId: string;
+    eventId: string;
+    sponsorName: string;
+    message: string | undefined;
+    endsAt: string | undefined;
+    placedBy: string;
+  }): Promise<void>;
+  /** What a group should show right now: live, in-window, not dismissed. */
+  listGroupPlacements(
+    groupId: string,
+    viewerId: string
+  ): Promise<GroupSponsoredPlacement[]>;
+  /** Moderator-only: the group keeps the last word on what it displays. */
+  dismissPlacement(
+    groupId: string,
+    placementId: string,
+    userId: string
+  ): Promise<void>;
+  /** Administration console: every placement and whether it still shows. */
+  listAllPlacements(): Promise<AdminGroupPlacement[]>;
+  /** Administration console: find a group by name to place into it. */
+  searchGroups(query: string): Promise<AdminGroupSummary[]>;
   deleteChecklistItem(itemId: string, authorId: string): Promise<void>;
+  /**
+   * Moderator-only. Returns the on-disk path of the photo being replaced,
+   * so the caller can delete the file it just orphaned.
+   */
+  setGroupPhoto(
+    groupId: string,
+    userId: string,
+    imageUrl: string,
+    imagePath: string
+  ): Promise<string | undefined>;
+  clearGroupPhoto(groupId: string, userId: string): Promise<string | undefined>;
+  /** Moderator-only: asks a Pulso administrator to verify this group. */
+  requestVerification(
+    groupId: string,
+    userId: string,
+    justification: string
+  ): Promise<void>;
+  /** Administration queue (DEC-0018's is_admin gate, checked by the route). */
+  listPendingVerifications(): Promise<GroupVerificationRequest[]>;
+  resolveVerification(
+    adminUserId: string,
+    groupId: string,
+    approve: boolean
+  ): Promise<{ groupId: string; requesterId: string } | undefined>;
 }
 
 interface GroupRow {
@@ -235,7 +451,9 @@ interface GroupRow {
   created_by: string;
   created_at: string;
   event_id: string | null;
+  type: GroupType;
   visibility: GroupVisibility;
+  modules_config: GroupModuleConfig[];
   member_count: string;
   my_status: GroupMembershipStatus | null;
   is_moderator: boolean;
@@ -247,6 +465,8 @@ interface GroupRow {
   event_title: string | null;
   event_starts_at: string | null;
   pinned: boolean;
+  image_url: string | null;
+  verification_status: GroupVerificationStatus;
 }
 
 function toGroup(row: GroupRow): Group {
@@ -257,7 +477,12 @@ function toGroup(row: GroupRow): Group {
     createdBy: row.created_by,
     createdAt: new Date(row.created_at).toISOString(),
     eventId: row.event_id ?? undefined,
+    type: row.type,
     visibility: row.visibility,
+    // modules_config is jsonb and predates the current registry, so a
+    // stored row can name a module that no longer exists. Normalizing here
+    // means no caller ever has to cope with that.
+    modulesConfig: normalizeGroupModules(row.modules_config),
     memberCount: Number(row.member_count),
     isMember: row.my_status === 'member',
     myStatus: row.my_status ?? undefined,
@@ -279,6 +504,8 @@ function toGroup(row: GroupRow): Group {
           }
         }
       : {}),
+    ...(row.image_url !== null ? { imageUrl: row.image_url } : {}),
+    verificationStatus: row.verification_status,
     ...(row.event_title !== null ? { eventTitle: row.event_title } : {}),
     ...(row.event_starts_at !== null
       ? { eventStartsAt: new Date(row.event_starts_at).toISOString() }
@@ -288,7 +515,8 @@ function toGroup(row: GroupRow): Group {
 }
 
 const GROUP_SELECT_FIELDS = `
-  g.id, g.name, g.description, g.created_by, g.created_at, g.event_id, g.visibility,
+  g.id, g.name, g.description, g.created_by, g.created_at, g.event_id, g.type, g.visibility, g.modules_config,
+  g.image_url, g.verification_status,
   (SELECT COUNT(*) FROM group_memberships gm2 WHERE gm2.group_id = g.id AND gm2.status = 'member') AS member_count,
   (SELECT gm3.status FROM group_memberships gm3 WHERE gm3.group_id = g.id AND gm3.user_id = $VIEWER) AS my_status,
   (g.created_by = $VIEWER) AS is_moderator,
@@ -302,15 +530,26 @@ const GROUP_SELECT_FIELDS = `
   COALESCE((SELECT gm5.pinned FROM group_memberships gm5 WHERE gm5.group_id = g.id AND gm5.user_id = $VIEWER), false) AS pinned
 `;
 
-interface PostRow {
+// The author's columns arrive beside the post's own, and the post owns
+// `id` - hence Omit<..., 'id'> plus the reshape in toGroupPost.
+interface PostRow extends Omit<PublicUserRow, 'id'> {
   id: string;
   group_id: string;
+  channel_id: string;
+  kind: GroupPostKind;
+  outing_id: string | null;
+  outing_title?: string | null;
+  outing_place?: string | null;
+  outing_starts_at?: string | null;
+  outing_event_id?: string | null;
+  outing_yes?: string | null;
+  outing_maybe?: string | null;
+  outing_no?: string | null;
+  outing_my_response?: AttendanceResponse | null;
   body: string;
   created_at: string;
   parent_id: string | null;
   author_id: string;
-  display_name: string;
-  avatar_url: string | null;
   like_count: string;
   reply_count: string;
   liked_by_me: boolean;
@@ -320,17 +559,102 @@ function toGroupPost(row: PostRow): GroupPost {
   return {
     id: row.id,
     groupId: row.group_id,
+    channelId: row.channel_id,
+    kind: row.kind,
+    outingId: row.outing_id ?? undefined,
+    ...(row.outing_id && row.outing_title
+      ? {
+          outing: {
+            id: row.outing_id,
+            title: row.outing_title,
+            place: row.outing_place ?? undefined,
+            startsAt: row.outing_starts_at
+              ? new Date(row.outing_starts_at).toISOString()
+              : undefined,
+            eventId: row.outing_event_id ?? undefined,
+            yes: Number(row.outing_yes ?? 0),
+            maybe: Number(row.outing_maybe ?? 0),
+            no: Number(row.outing_no ?? 0),
+            myResponse: row.outing_my_response ?? undefined
+          }
+        }
+      : {}),
     body: row.body,
     createdAt: new Date(row.created_at).toISOString(),
     parentId: row.parent_id ?? undefined,
     likeCount: Number(row.like_count),
     likedByMe: row.liked_by_me,
     replyCount: Number(row.reply_count),
-    author: {
-      id: row.author_id,
-      displayName: row.display_name,
-      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
+    author: toPublicUser({ ...row, id: row.author_id })
+  };
+}
+
+const PLACEMENT_SELECT = `
+  p.id, p.group_id, p.sponsor_name, p.message, p.created_at, p.ends_at,
+  p.dismissed_at,
+  e.id AS event_id, e.title AS event_title, e.starts_at AS event_starts_at,
+  e.category AS event_category, e.image_url AS event_image_url,
+  v.name AS venue_name
+`;
+
+interface PlacementRow {
+  id: string;
+  group_id: string;
+  sponsor_name: string;
+  message: string | null;
+  created_at: string;
+  ends_at: string | null;
+  dismissed_at: string | null;
+  event_id: string;
+  event_title: string;
+  event_starts_at: string;
+  event_category: EventCategory;
+  event_image_url: string | null;
+  venue_name: string | null;
+}
+
+function toPlacement(row: PlacementRow): GroupSponsoredPlacement {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    sponsorName: row.sponsor_name,
+    message: row.message ?? undefined,
+    createdAt: new Date(row.created_at).toISOString(),
+    endsAt: row.ends_at ? new Date(row.ends_at).toISOString() : undefined,
+    event: {
+      id: row.event_id,
+      title: row.event_title,
+      startsAt: new Date(row.event_starts_at).toISOString(),
+      category: row.event_category,
+      imageUrl: row.event_image_url ?? undefined,
+      venueName: row.venue_name ?? undefined
     }
+  };
+}
+
+interface OutingRow {
+  id: string;
+  group_id: string;
+  event_id: string | null;
+  title: string;
+  starts_at: string | null;
+  place: string | null;
+  created_at: string;
+  archived_at: string | null;
+}
+
+function toOuting(row: OutingRow): GroupOuting {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    eventId: row.event_id ?? undefined,
+    title: row.title,
+    startsAt: row.starts_at ? new Date(row.starts_at).toISOString() : undefined,
+    place: row.place ?? undefined,
+    createdAt: new Date(row.created_at).toISOString(),
+    archivedAt: row.archived_at
+      ? new Date(row.archived_at).toISOString()
+      : undefined
   };
 }
 
@@ -341,7 +665,9 @@ export class PostgresGroupsRepository implements GroupsRepository {
     creatorId: string,
     name: string,
     description: string | undefined,
-    visibility: GroupVisibility
+    type: GroupType,
+    visibility: GroupVisibility,
+    modulesConfig: GroupModuleConfig[]
   ): Promise<Group> {
     const client = await this.pool.connect();
     try {
@@ -354,17 +680,48 @@ export class PostgresGroupsRepository implements GroupsRepository {
         created_by: string;
         created_at: string;
         event_id: string | null;
+        type: GroupType;
         visibility: GroupVisibility;
+        modules_config: GroupModuleConfig[];
       }>(
-        `INSERT INTO groups (id, name, description, created_by, visibility)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, name, description, created_by, created_at, event_id, visibility`,
-        [id, name, description ?? null, creatorId, visibility]
+        `INSERT INTO groups (id, name, description, created_by, type, visibility, modules_config)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, name, description, created_by, created_at, event_id, type, visibility, modules_config`,
+        [
+          id,
+          name,
+          description ?? null,
+          creatorId,
+          type,
+          visibility,
+          JSON.stringify(modulesConfig)
+        ]
       );
       await client.query(
         `INSERT INTO group_memberships (group_id, user_id, status) VALUES ($1, $2, 'member')`,
         [id, creatorId]
       );
+      await client.query(
+        `INSERT INTO group_roles (group_id, user_id, role) VALUES ($1, $2, 'owner')`,
+        [id, creatorId]
+      );
+      await client.query(
+        `INSERT INTO group_channels (id, group_id, name, position, staff_only, created_by)
+         VALUES ($1, $2, 'Général', 0, false, $3)`,
+        [randomUUID(), id, creatorId]
+      );
+      await client.query(
+        `INSERT INTO group_outings (id, group_id, title, created_by)
+         VALUES ($1, $2, 'Prochaine sortie', $3)`,
+        [randomUUID(), id, creatorId]
+      );
+      if (type === 'community') {
+        await client.query(
+          `INSERT INTO group_channels (id, group_id, name, position, staff_only, created_by)
+           VALUES ($1, $2, 'Annonces', 1, true, $3)`,
+          [randomUUID(), id, creatorId]
+        );
+      }
       await client.query('COMMIT');
       const row = inserted.rows[0]!;
       return toGroup({
@@ -377,6 +734,8 @@ export class PostgresGroupsRepository implements GroupsRepository {
         venue_address: null,
         venue_longitude: null,
         venue_latitude: null,
+        image_url: null,
+        verification_status: 'none' as const,
         event_title: null,
         event_starts_at: null,
         pinned: false
@@ -411,10 +770,29 @@ export class PostgresGroupsRepository implements GroupsRepository {
        FROM groups g
        LEFT JOIN events e ON e.id = g.event_id
        LEFT JOIN venues v ON v.id = e.venue_id
-       WHERE g.id = $1`,
+       WHERE g.id = $1
+         AND (
+           g.visibility <> 'private_invite'
+           OR EXISTS (
+             SELECT 1 FROM group_memberships gm
+             WHERE gm.group_id = g.id AND gm.user_id = $2
+           )
+         )`,
       [groupId, viewerId]
     );
     return result.rows[0] ? toGroup(result.rows[0]) : undefined;
+  }
+
+  async updateGroupModules(
+    groupId: string,
+    modulesConfig: GroupModuleConfig[],
+    userId: string
+  ): Promise<void> {
+    await this.requireModerator(groupId, userId);
+    await this.pool.query(
+      `UPDATE groups SET modules_config = $1 WHERE id = $2`,
+      [JSON.stringify(modulesConfig), groupId]
+    );
   }
 
   async findOrCreateEventGroup(
@@ -430,10 +808,20 @@ export class PostgresGroupsRepository implements GroupsRepository {
       // created the group for this event (concurrent first click) - either
       // way, the SELECT below then finds the single row that actually won.
       await client.query(
-        `INSERT INTO groups (id, name, description, created_by, event_id, visibility)
-         VALUES ($1, $2, $3, $4, $5, 'open')
+        `INSERT INTO groups (id, name, description, created_by, event_id, type, visibility, modules_config)
+         VALUES ($1, $2, $3, $4, $5, 'event', 'open', $6::jsonb)
          ON CONFLICT (event_id) WHERE event_id IS NOT NULL DO NOTHING`,
-        [randomUUID(), `Rencontre – ${eventTitle}`, null, userId, eventId]
+        [
+          randomUUID(),
+          `Rencontre – ${eventTitle}`,
+          null,
+          userId,
+          eventId,
+          // '[]' gave the meetup group a workspace with no modules at all,
+          // not even discussion - unlike every group created the normal way,
+          // which starts from its type's template.
+          JSON.stringify(defaultModulesForGroupType('event'))
+        ]
       );
       const existing = await client.query<{ id: string }>(
         `SELECT id FROM groups WHERE event_id = $1`,
@@ -444,6 +832,31 @@ export class PostgresGroupsRepository implements GroupsRepository {
         `INSERT INTO group_memberships (group_id, user_id, status) VALUES ($1, $2, 'member')
          ON CONFLICT (group_id, user_id) DO NOTHING`,
         [groupId, userId]
+      );
+      await client.query(
+        `INSERT INTO group_roles (group_id, user_id, role) VALUES ($1, $2, 'owner')
+         ON CONFLICT (group_id, user_id) DO NOTHING`,
+        [groupId, userId]
+      );
+      await client.query(
+        `INSERT INTO group_outings (id, group_id, event_id, title, starts_at, created_by)
+         SELECT $1, $2, e.id, e.title, e.starts_at, $3
+         FROM events e
+         WHERE e.id = $4
+           AND NOT EXISTS (
+             SELECT 1 FROM group_outings WHERE group_id = $2
+           )`,
+        [randomUUID(), groupId, userId, eventId]
+      );
+      // Find-or-create runs on every click, so the channel is guarded on
+      // absence rather than on a conflict target it has no key for.
+      await client.query(
+        `INSERT INTO group_channels (id, group_id, name, position, staff_only, created_by)
+         SELECT $1, $2, 'Général', 0, false, $3
+         WHERE NOT EXISTS (
+           SELECT 1 FROM group_channels WHERE group_id = $2
+         )`,
+        [randomUUID(), groupId, userId]
       );
       await client.query('COMMIT');
     } catch (error) {
@@ -467,6 +880,17 @@ export class PostgresGroupsRepository implements GroupsRepository {
     );
     const group = groupResult.rows[0];
     if (!group) throw new GroupNotFoundError();
+    if (group.visibility === 'private_invite') {
+      // Invitation-only: no self-service path in. Reported as "not found"
+      // rather than "forbidden" so the route never confirms a private crew
+      // exists to someone who was never invited.
+      const invited = await this.pool.query(
+        `SELECT 1 FROM group_memberships WHERE group_id = $1 AND user_id = $2`,
+        [groupId, userId]
+      );
+      if (invited.rows.length === 0) throw new GroupNotFoundError();
+      return 'member';
+    }
     const status: GroupMembershipStatus =
       group.visibility === 'restricted' ? 'pending' : 'member';
     await this.pool.query(
@@ -496,24 +920,17 @@ export class PostgresGroupsRepository implements GroupsRepository {
     );
   }
 
-  async getMembers(groupId: string): Promise<PublicUser[]> {
-    const result = await this.pool.query<{
-      id: string;
-      display_name: string;
-      avatar_url: string | null;
-    }>(
-      `SELECT u.id, u.display_name, u.avatar_url
+  async getMembers(groupId: string, viewerId: string): Promise<PublicUser[]> {
+    await this.requireVisibility(groupId, viewerId);
+    const result = await this.pool.query<PublicUserRow>(
+      `SELECT ${publicUserColumns('u')}
        FROM group_memberships gm
        JOIN users u ON u.id = gm.user_id
        WHERE gm.group_id = $1 AND gm.status = 'member'
        ORDER BY gm.joined_at ASC`,
       [groupId]
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      displayName: row.display_name,
-      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-    }));
+    return result.rows.map(toPublicUser);
   }
 
   async getJoinRequests(
@@ -521,23 +938,15 @@ export class PostgresGroupsRepository implements GroupsRepository {
     moderatorId: string
   ): Promise<PublicUser[]> {
     await this.requireModerator(groupId, moderatorId);
-    const result = await this.pool.query<{
-      id: string;
-      display_name: string;
-      avatar_url: string | null;
-    }>(
-      `SELECT u.id, u.display_name, u.avatar_url
+    const result = await this.pool.query<PublicUserRow>(
+      `SELECT ${publicUserColumns('u')}
        FROM group_memberships gm
        JOIN users u ON u.id = gm.user_id
        WHERE gm.group_id = $1 AND gm.status = 'pending'
        ORDER BY gm.joined_at ASC`,
       [groupId]
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      displayName: row.display_name,
-      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-    }));
+    return result.rows.map(toPublicUser);
   }
 
   async respondToJoinRequest(
@@ -572,6 +981,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
          LEFT JOIN events e ON e.id = g.event_id
          LEFT JOIN venues v ON v.id = e.venue_id
          WHERE g.event_id IS NULL
+           AND g.visibility <> 'private_invite'
            AND NOT EXISTS (
              SELECT 1 FROM group_memberships gm
              WHERE gm.group_id = g.id AND gm.user_id = $1 AND gm.status = 'member'
@@ -599,6 +1009,7 @@ export class PostgresGroupsRepository implements GroupsRepository {
        JOIN events e ON e.id = g.event_id
        LEFT JOIN venues v ON v.id = e.venue_id
        WHERE g.event_id IS NOT NULL
+         AND g.visibility <> 'private_invite'
        ORDER BY e.starts_at ASC
        LIMIT 50`,
       [viewerId]
@@ -612,6 +1023,27 @@ export class PostgresGroupsRepository implements GroupsRepository {
         category: row.ev_category
       }
     }));
+  }
+
+  /**
+   * A `private_invite` group (DEC-0015's "private crew") must be invisible
+   * to anyone not already in it: never in discovery, and not readable by id
+   * either - otherwise knowing the id alone defeats the privacy. `open` and
+   * `restricted` groups stay readable, which is what DEC-0013 v1.2 intends
+   * ("restriction only gates participation, not visibility").
+   */
+  private async requireVisibility(
+    groupId: string,
+    userId: string
+  ): Promise<void> {
+    const result = await this.pool.query<{ visibility: GroupVisibility }>(
+      `SELECT visibility FROM groups WHERE id = $1`,
+      [groupId]
+    );
+    const group = result.rows[0];
+    if (!group) throw new GroupNotFoundError();
+    if (group.visibility !== 'private_invite') return;
+    await this.requireMembership(groupId, userId);
   }
 
   private async requireMembership(
@@ -645,22 +1077,44 @@ export class PostgresGroupsRepository implements GroupsRepository {
     if (group.created_by !== userId) throw new NotGroupModeratorError();
   }
 
-  async getPosts(groupId: string, viewerId: string): Promise<GroupPost[]> {
+  async getPosts(
+    groupId: string,
+    viewerId: string,
+    channelId?: string
+  ): Promise<GroupPost[]> {
     await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<PostRow>(
-      `SELECT p.id, p.group_id, p.body, p.created_at, p.parent_id,
+      `SELECT p.id, p.group_id, p.channel_id, p.kind, p.outing_id, p.body, p.created_at, p.parent_id,
               u.id AS author_id, u.display_name, u.avatar_url,
+              u.photo_url, u.avatar_style,
               COALESCE(likes.like_count, 0) AS like_count,
               COALESCE(replies.reply_count, 0) AS reply_count,
-              (my_like.user_id IS NOT NULL) AS liked_by_me
+              (my_like.user_id IS NOT NULL) AS liked_by_me,
+              o.title AS outing_title, o.place AS outing_place,
+              o.starts_at AS outing_starts_at, o.event_id AS outing_event_id,
+              COALESCE(att.yes, 0) AS outing_yes,
+              COALESCE(att.maybe, 0) AS outing_maybe,
+              COALESCE(att.no, 0) AS outing_no,
+              my_att.response AS outing_my_response
        FROM group_posts p
        JOIN users u ON u.id = p.author_id
+       LEFT JOIN group_outings o ON o.id = p.outing_id
+       LEFT JOIN (
+         SELECT outing_id,
+                COUNT(*) FILTER (WHERE response = 'yes') AS yes,
+                COUNT(*) FILTER (WHERE response = 'maybe') AS maybe,
+                COUNT(*) FILTER (WHERE response = 'no') AS no
+         FROM group_attendance_responses GROUP BY outing_id
+       ) att ON att.outing_id = p.outing_id
+       LEFT JOIN group_attendance_responses my_att
+         ON my_att.outing_id = p.outing_id AND my_att.user_id = $2
        LEFT JOIN (SELECT post_id, COUNT(*) AS like_count FROM group_post_likes GROUP BY post_id) likes ON likes.post_id = p.id
        LEFT JOIN (SELECT parent_id, COUNT(*) AS reply_count FROM group_posts WHERE parent_id IS NOT NULL GROUP BY parent_id) replies ON replies.parent_id = p.id
        LEFT JOIN group_post_likes my_like ON my_like.post_id = p.id AND my_like.user_id = $2
        WHERE p.group_id = $1
-       ORDER BY p.created_at ASC`,
-      [groupId, viewerId]
+         AND ($3::uuid IS NULL OR p.channel_id = $3)
+       ORDER BY p.created_at DESC`,
+      [groupId, viewerId, channelId ?? null]
     );
     return result.rows.map(toGroupPost);
   }
@@ -669,20 +1123,36 @@ export class PostgresGroupsRepository implements GroupsRepository {
     groupId: string,
     authorId: string,
     body: string,
-    parentId: string | undefined
+    parentId: string | undefined,
+    channelId?: string
   ): Promise<GroupPost> {
     await this.requireMembership(groupId, authorId);
+    // A reply always lands in its parent's channel: letting the caller name
+    // a different one would split a conversation across two threads.
+    const target = parentId
+      ? await this.channelOfPost(parentId)
+      : await this.resolveChannel(groupId, channelId);
+    if (!target) throw new GroupNotFoundError();
+    if (target.staffOnly) {
+      const moderator = await this.pool.query(
+        `SELECT 1 FROM groups WHERE id = $1 AND created_by = $2`,
+        [groupId, authorId]
+      );
+      if (moderator.rows.length === 0) throw new NotChannelWriterError();
+    }
     const id = randomUUID();
     try {
       const result = await this.pool.query<PostRow>(
         `WITH inserted AS (
-           INSERT INTO group_posts (id, group_id, author_id, body, parent_id)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, group_id, body, created_at, author_id, parent_id
+           INSERT INTO group_posts (id, group_id, author_id, body, parent_id, channel_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, group_id, channel_id, kind, outing_id, body, created_at, author_id, parent_id
          )
-         SELECT inserted.*, u.display_name, u.avatar_url, 0 AS like_count, 0 AS reply_count, false AS liked_by_me
+         SELECT inserted.*, u.display_name, u.avatar_url,
+                u.photo_url, u.avatar_style,
+                0 AS like_count, 0 AS reply_count, false AS liked_by_me
          FROM inserted JOIN users u ON u.id = inserted.author_id`,
-        [id, groupId, authorId, body, parentId ?? null]
+        [id, groupId, authorId, body, parentId ?? null, target.id]
       );
       return toGroupPost(result.rows[0]!);
     } catch (error) {
@@ -717,7 +1187,12 @@ export class PostgresGroupsRepository implements GroupsRepository {
     );
   }
 
-  async getScheduleItems(groupId: string): Promise<GroupScheduleItem[]> {
+  async getScheduleItems(
+    groupId: string,
+    viewerId: string,
+    outingId?: string
+  ): Promise<GroupScheduleItem[]> {
+    await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<{
       id: string;
       group_id: string;
@@ -727,8 +1202,18 @@ export class PostgresGroupsRepository implements GroupsRepository {
       created_at: string;
     }>(
       `SELECT id, group_id, label, scheduled_at, created_by, created_at
-       FROM group_schedule_items WHERE group_id = $1 ORDER BY scheduled_at ASC`,
-      [groupId]
+       FROM group_schedule_items
+       WHERE outing_id = COALESCE(
+         $2::uuid,
+         (
+           SELECT id FROM group_outings
+           WHERE group_id = $1 AND archived_at IS NULL
+           ORDER BY created_at DESC
+           LIMIT 1
+         )
+       )
+       ORDER BY scheduled_at ASC`,
+      [groupId, outingId ?? null]
     );
     return result.rows.map((row) => ({
       id: row.id,
@@ -744,13 +1229,22 @@ export class PostgresGroupsRepository implements GroupsRepository {
     groupId: string,
     authorId: string,
     label: string,
-    scheduledAt: string
+    scheduledAt: string,
+    outingId?: string
   ): Promise<void> {
     await this.requireMembership(groupId, authorId);
     await this.pool.query(
-      `INSERT INTO group_schedule_items (id, group_id, label, scheduled_at, created_by)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [randomUUID(), groupId, label, scheduledAt, authorId]
+      `INSERT INTO group_schedule_items
+         (id, group_id, label, scheduled_at, created_by, outing_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        randomUUID(),
+        groupId,
+        label,
+        scheduledAt,
+        authorId,
+        await this.resolveOuting(groupId, outingId)
+      ]
     );
   }
 
@@ -763,19 +1257,39 @@ export class PostgresGroupsRepository implements GroupsRepository {
 
   async getAttendanceSummary(
     groupId: string,
-    viewerId: string
+    viewerId: string,
+    outingId?: string
   ): Promise<GroupAttendanceSummary> {
+    await this.requireMembership(groupId, viewerId);
     const counts = await this.pool.query<{
       response: AttendanceResponse;
       count: string;
     }>(
       `SELECT response, COUNT(*) AS count FROM group_attendance_responses
-       WHERE group_id = $1 GROUP BY response`,
-      [groupId]
+       WHERE outing_id = COALESCE(
+         $2::uuid,
+         (
+           SELECT id FROM group_outings
+           WHERE group_id = $1 AND archived_at IS NULL
+           ORDER BY created_at DESC
+           LIMIT 1
+         )
+       )
+       GROUP BY response`,
+      [groupId, outingId ?? null]
     );
     const mine = await this.pool.query<{ response: AttendanceResponse }>(
-      `SELECT response FROM group_attendance_responses WHERE group_id = $1 AND user_id = $2`,
-      [groupId, viewerId]
+      `SELECT response FROM group_attendance_responses
+       WHERE user_id = $2 AND outing_id = COALESCE(
+         $3::uuid,
+         (
+           SELECT id FROM group_outings
+           WHERE group_id = $1 AND archived_at IS NULL
+           ORDER BY created_at DESC
+           LIMIT 1
+         )
+       )`,
+      [groupId, viewerId, outingId ?? null]
     );
     const summary = { yes: 0, maybe: 0, no: 0 };
     for (const row of counts.rows) summary[row.response] = Number(row.count);
@@ -785,20 +1299,26 @@ export class PostgresGroupsRepository implements GroupsRepository {
   async setAttendanceResponse(
     groupId: string,
     userId: string,
-    response: AttendanceResponse
+    response: AttendanceResponse,
+    outingId?: string
   ): Promise<void> {
     await this.requireMembership(groupId, userId);
+    const outing = await this.resolveOuting(groupId, outingId);
     await this.pool.query(
-      `INSERT INTO group_attendance_responses (group_id, user_id, response) VALUES ($1, $2, $3)
-       ON CONFLICT (group_id, user_id) DO UPDATE SET response = EXCLUDED.response, created_at = now()`,
-      [groupId, userId, response]
+      `INSERT INTO group_attendance_responses (group_id, user_id, response, outing_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (outing_id, user_id)
+       DO UPDATE SET response = EXCLUDED.response, created_at = now()`,
+      [groupId, userId, response, outing]
     );
   }
 
   async getChecklistItems(
     groupId: string,
-    viewerId: string
+    viewerId: string,
+    outingId?: string
   ): Promise<GroupChecklistItem[]> {
+    await this.requireMembership(groupId, viewerId);
     const result = await this.pool.query<{
       id: string;
       group_id: string;
@@ -816,9 +1336,17 @@ export class PostgresGroupsRepository implements GroupsRepository {
        FROM group_checklist_items ci
        LEFT JOIN (SELECT item_id, COUNT(*) AS checked_count FROM group_checklist_checks GROUP BY item_id) checks ON checks.item_id = ci.id
        LEFT JOIN group_checklist_checks my_check ON my_check.item_id = ci.id AND my_check.user_id = $2
-       WHERE ci.group_id = $1
+       WHERE ci.outing_id = COALESCE(
+         $3::uuid,
+         (
+           SELECT id FROM group_outings
+           WHERE group_id = $1 AND archived_at IS NULL
+           ORDER BY created_at DESC
+           LIMIT 1
+         )
+       )
        ORDER BY ci.created_at ASC`,
-      [groupId, viewerId]
+      [groupId, viewerId, outingId ?? null]
     );
     return result.rows.map((row) => ({
       id: row.id,
@@ -835,12 +1363,20 @@ export class PostgresGroupsRepository implements GroupsRepository {
   async addChecklistItem(
     groupId: string,
     authorId: string,
-    label: string
+    label: string,
+    outingId?: string
   ): Promise<void> {
     await this.requireMembership(groupId, authorId);
     await this.pool.query(
-      `INSERT INTO group_checklist_items (id, group_id, label, created_by) VALUES ($1, $2, $3, $4)`,
-      [randomUUID(), groupId, label, authorId]
+      `INSERT INTO group_checklist_items (id, group_id, label, created_by, outing_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        randomUUID(),
+        groupId,
+        label,
+        authorId,
+        await this.resolveOuting(groupId, outingId)
+      ]
     );
   }
 
@@ -849,6 +1385,15 @@ export class PostgresGroupsRepository implements GroupsRepository {
     userId: string,
     checked: boolean
   ): Promise<void> {
+    // checkedCount/totalMembers is a claim about the group's own members,
+    // so a non-member checking an item off made it state something untrue.
+    const owner = await this.pool.query<{ group_id: string }>(
+      `SELECT group_id FROM group_checklist_items WHERE id = $1`,
+      [itemId]
+    );
+    const item = owner.rows[0];
+    if (!item) throw new GroupNotFoundError();
+    await this.requireMembership(item.group_id, userId);
     if (checked) {
       await this.pool.query(
         `INSERT INTO group_checklist_checks (item_id, user_id) VALUES ($1, $2) ON CONFLICT (item_id, user_id) DO NOTHING`,
@@ -867,5 +1412,466 @@ export class PostgresGroupsRepository implements GroupsRepository {
       `DELETE FROM group_checklist_items WHERE id = $1 AND created_by = $2`,
       [itemId, authorId]
     );
+  }
+
+  async setGroupPhoto(
+    groupId: string,
+    userId: string,
+    imageUrl: string,
+    imagePath: string
+  ): Promise<string | undefined> {
+    await this.requireModerator(groupId, userId);
+    const previous = await this.pool.query<{ image_path: string | null }>(
+      `SELECT image_path FROM groups WHERE id = $1`,
+      [groupId]
+    );
+    await this.pool.query(
+      `UPDATE groups SET image_url = $2, image_path = $3 WHERE id = $1`,
+      [groupId, imageUrl, imagePath]
+    );
+    return previous.rows[0]?.image_path ?? undefined;
+  }
+
+  async clearGroupPhoto(
+    groupId: string,
+    userId: string
+  ): Promise<string | undefined> {
+    await this.requireModerator(groupId, userId);
+    const previous = await this.pool.query<{ image_path: string | null }>(
+      `SELECT image_path FROM groups WHERE id = $1`,
+      [groupId]
+    );
+    await this.pool.query(
+      `UPDATE groups SET image_url = NULL, image_path = NULL WHERE id = $1`,
+      [groupId]
+    );
+    return previous.rows[0]?.image_path ?? undefined;
+  }
+
+  async requestVerification(
+    groupId: string,
+    userId: string,
+    justification: string
+  ): Promise<void> {
+    await this.requireModerator(groupId, userId);
+    // Re-requesting an already-pending group is a no-op rather than an
+    // error: the moderator's intent ("please look at this") is already
+    // recorded, and a 409 here would only be noise.
+    await this.pool.query(
+      `UPDATE groups
+       SET verification_status = 'pending',
+           verification_requested_at = now(),
+           verification_justification = $2
+       WHERE id = $1 AND verification_status <> 'verified'`,
+      [groupId, justification]
+    );
+  }
+
+  async listPendingVerifications(): Promise<GroupVerificationRequest[]> {
+    const result = await this.pool.query<
+      GroupRow & {
+        requested_at: string;
+        justification: string;
+        requester_id: string;
+        requester_display_name: string;
+        requester_avatar_url: string | null;
+        requester_photo_url: string | null;
+        requester_avatar_style: string | null;
+      }
+    >(
+      `SELECT ${GROUP_SELECT_FIELDS.replaceAll('$VIEWER', 'g.created_by')},
+              g.verification_requested_at AS requested_at,
+              g.verification_justification AS justification,
+              u.id AS requester_id, u.display_name AS requester_display_name,
+              u.avatar_url AS requester_avatar_url,
+              u.photo_url AS requester_photo_url,
+              u.avatar_style AS requester_avatar_style
+       FROM groups g
+       JOIN users u ON u.id = g.created_by
+       LEFT JOIN events e ON e.id = g.event_id
+       LEFT JOIN venues v ON v.id = e.venue_id
+       WHERE g.verification_status = 'pending'
+       ORDER BY g.verification_requested_at ASC`
+    );
+    return result.rows.map((row) => ({
+      group: toGroup(row),
+      requester: toPublicUser({
+        id: row.requester_id,
+        display_name: row.requester_display_name,
+        avatar_url: row.requester_avatar_url,
+        photo_url: row.requester_photo_url,
+        avatar_style: row.requester_avatar_style
+      }),
+      requestedAt: new Date(row.requested_at).toISOString(),
+      justification: row.justification
+    }));
+  }
+
+  async resolveVerification(
+    adminUserId: string,
+    groupId: string,
+    approve: boolean
+  ): Promise<{ groupId: string; requesterId: string } | undefined> {
+    const result = await this.pool.query<{ created_by: string }>(
+      `UPDATE groups
+       SET verification_status = $3,
+           verified_at = CASE WHEN $3 = 'verified' THEN now() ELSE NULL END,
+           verified_by = CASE WHEN $3 = 'verified' THEN $2::uuid ELSE NULL END
+       WHERE id = $1 AND verification_status = 'pending'
+       RETURNING created_by`,
+      [groupId, adminUserId, approve ? 'verified' : 'declined']
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return { groupId, requesterId: row.created_by };
+  }
+
+  private async resolveChannel(
+    groupId: string,
+    channelId: string | undefined
+  ): Promise<{ id: string; staffOnly: boolean } | undefined> {
+    const result = await this.pool.query<{ id: string; staff_only: boolean }>(
+      channelId
+        ? `SELECT id, staff_only FROM group_channels WHERE id = $1 AND group_id = $2`
+        : `SELECT id, staff_only FROM group_channels WHERE group_id = $2
+           ORDER BY position ASC LIMIT 1`,
+      channelId ? [channelId, groupId] : [null, groupId]
+    );
+    const row = result.rows[0];
+    return row ? { id: row.id, staffOnly: row.staff_only } : undefined;
+  }
+
+  private async channelOfPost(
+    postId: string
+  ): Promise<{ id: string; staffOnly: boolean } | undefined> {
+    const result = await this.pool.query<{ id: string; staff_only: boolean }>(
+      `SELECT c.id, c.staff_only FROM group_posts p
+       JOIN group_channels c ON c.id = p.channel_id
+       WHERE p.id = $1`,
+      [postId]
+    );
+    const row = result.rows[0];
+    return row ? { id: row.id, staffOnly: row.staff_only } : undefined;
+  }
+
+  async listChannels(
+    groupId: string,
+    viewerId: string
+  ): Promise<GroupChannel[]> {
+    await this.requireMembership(groupId, viewerId);
+    const result = await this.pool.query<{
+      id: string;
+      group_id: string;
+      name: string;
+      position: number;
+      staff_only: boolean;
+      post_count: string;
+    }>(
+      `SELECT c.id, c.group_id, c.name, c.position, c.staff_only,
+              COALESCE(counts.post_count, 0) AS post_count
+       FROM group_channels c
+       LEFT JOIN (
+         SELECT channel_id, COUNT(*) AS post_count
+         FROM group_posts GROUP BY channel_id
+       ) counts ON counts.channel_id = c.id
+       WHERE c.group_id = $1
+       ORDER BY c.position ASC, c.created_at ASC`,
+      [groupId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      groupId: row.group_id,
+      name: row.name,
+      position: row.position,
+      staffOnly: row.staff_only,
+      postCount: Number(row.post_count)
+    }));
+  }
+
+  async createChannel(
+    groupId: string,
+    userId: string,
+    name: string,
+    staffOnly: boolean
+  ): Promise<GroupChannel> {
+    await this.requireModerator(groupId, userId);
+    const id = randomUUID();
+    const result = await this.pool.query<{ position: number }>(
+      `INSERT INTO group_channels (id, group_id, name, position, staff_only, created_by)
+       VALUES (
+         $1, $2, $3,
+         (SELECT COALESCE(MAX(position) + 1, 0) FROM group_channels WHERE group_id = $2),
+         $4, $5
+       )
+       RETURNING position`,
+      [id, groupId, name, staffOnly, userId]
+    );
+    return {
+      id,
+      groupId,
+      name,
+      position: result.rows[0]!.position,
+      staffOnly,
+      postCount: 0
+    };
+  }
+
+  async deleteChannel(
+    groupId: string,
+    channelId: string,
+    userId: string
+  ): Promise<void> {
+    await this.requireModerator(groupId, userId);
+    // A group always keeps a thread to talk in. Deleting the last one would
+    // leave the discussion module with nowhere to write.
+    const remaining = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM group_channels WHERE group_id = $1`,
+      [groupId]
+    );
+    if (Number(remaining.rows[0]!.count) <= 1) return;
+    await this.pool.query(
+      `DELETE FROM group_channels WHERE id = $1 AND group_id = $2`,
+      [channelId, groupId]
+    );
+  }
+
+  async createPlacement(input: {
+    groupId: string;
+    eventId: string;
+    sponsorName: string;
+    message: string | undefined;
+    endsAt: string | undefined;
+    placedBy: string;
+  }): Promise<void> {
+    try {
+      await this.pool.query(
+        `INSERT INTO group_sponsored_placements
+           (id, group_id, event_id, sponsor_name, message, ends_at, placed_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT DO NOTHING`,
+        [
+          randomUUID(),
+          input.groupId,
+          input.eventId,
+          input.sponsorName,
+          input.message ?? null,
+          input.endsAt ?? null,
+          input.placedBy
+        ]
+      );
+    } catch (error) {
+      // Either the group or the event does not exist.
+      if (isForeignKeyViolation(error)) throw new GroupNotFoundError();
+      throw error;
+    }
+  }
+
+  async listGroupPlacements(
+    groupId: string,
+    viewerId: string
+  ): Promise<GroupSponsoredPlacement[]> {
+    await this.requireMembership(groupId, viewerId);
+    const result = await this.pool.query<PlacementRow>(
+      `SELECT ${PLACEMENT_SELECT}
+       FROM group_sponsored_placements p
+       JOIN events e ON e.id = p.event_id
+       LEFT JOIN venues v ON v.id = e.venue_id
+       WHERE p.group_id = $1
+         AND p.dismissed_at IS NULL
+         -- A banner for a party that already happened is worse than none,
+         -- so an absent ends_at means "until the event starts".
+         AND COALESCE(p.ends_at, e.starts_at) > now()
+       ORDER BY e.starts_at ASC`,
+      [groupId]
+    );
+    return result.rows.map(toPlacement);
+  }
+
+  async dismissPlacement(
+    groupId: string,
+    placementId: string,
+    userId: string
+  ): Promise<void> {
+    await this.requireModerator(groupId, userId);
+    await this.pool.query(
+      `UPDATE group_sponsored_placements
+       SET dismissed_at = now(), dismissed_by = $3
+       WHERE id = $1 AND group_id = $2 AND dismissed_at IS NULL`,
+      [placementId, groupId, userId]
+    );
+  }
+
+  async listAllPlacements(): Promise<AdminGroupPlacement[]> {
+    const result = await this.pool.query<
+      PlacementRow & { group_name: string; group_member_count: string }
+    >(
+      `SELECT ${PLACEMENT_SELECT},
+              g.name AS group_name,
+              (SELECT COUNT(*) FROM group_memberships gm
+               WHERE gm.group_id = g.id AND gm.status = 'member') AS group_member_count
+       FROM group_sponsored_placements p
+       JOIN groups g ON g.id = p.group_id
+       JOIN events e ON e.id = p.event_id
+       LEFT JOIN venues v ON v.id = e.venue_id
+       ORDER BY p.created_at DESC
+       LIMIT 100`
+    );
+    return result.rows.map((row) => ({
+      placement: toPlacement(row),
+      groupName: row.group_name,
+      groupMemberCount: Number(row.group_member_count),
+      dismissedAt: row.dismissed_at
+        ? new Date(row.dismissed_at).toISOString()
+        : undefined
+    }));
+  }
+
+  async searchGroups(query: string): Promise<AdminGroupSummary[]> {
+    const result = await this.pool.query<{
+      id: string;
+      name: string;
+      member_count: string;
+      verification_status: GroupVerificationStatus;
+    }>(
+      `SELECT g.id, g.name, g.verification_status,
+              (SELECT COUNT(*) FROM group_memberships gm
+               WHERE gm.group_id = g.id AND gm.status = 'member') AS member_count
+       FROM groups g
+       WHERE ($1 = '' OR g.name ILIKE '%' || $1 || '%')
+         -- A private crew is not inventory. Placing a paid banner in one
+         -- would expose a group that is invisible by design.
+         AND g.visibility <> 'private_invite'
+       ORDER BY member_count DESC
+       LIMIT 25`,
+      [query]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      memberCount: Number(row.member_count),
+      verified: row.verification_status === 'verified'
+    }));
+  }
+
+  /**
+   * The outing the un-scoped module routes still act on: the most recently
+   * published live one.
+   *
+   * Migration 0042 let several outings coexist, which made "the current
+   * outing" ambiguous - two rows could satisfy `archived_at IS NULL` and
+   * `rows[0]` would then be whatever the planner returned. Ordering makes it
+   * deterministic. These routes move to an explicit outing id when the feed
+   * interface lands and each outing card owns its own programme, attendance
+   * and checklist; until then they act on the newest, which is the one a
+   * member is looking at.
+   */
+  private async resolveOuting(
+    groupId: string,
+    outingId: string | undefined
+  ): Promise<string> {
+    if (!outingId) return this.requireCurrentOuting(groupId);
+    const result = await this.pool.query(
+      `SELECT 1 FROM group_outings WHERE id = $1 AND group_id = $2`,
+      [outingId, groupId]
+    );
+    // An outing from another group is not a permission error, it is a
+    // reference to something that does not exist here.
+    if (result.rows.length === 0) throw new GroupNotFoundError();
+    return outingId;
+  }
+
+  private async requireCurrentOuting(groupId: string): Promise<string> {
+    const result = await this.pool.query<{ id: string }>(
+      `SELECT id FROM group_outings
+       WHERE group_id = $1 AND archived_at IS NULL
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [groupId]
+    );
+    const outing = result.rows[0];
+    if (!outing) throw new GroupNotFoundError();
+    return outing.id;
+  }
+
+  async getCurrentOuting(groupId: string): Promise<GroupOuting | undefined> {
+    const result = await this.pool.query<OutingRow>(
+      `SELECT id, group_id, event_id, title, starts_at, place, created_at, archived_at
+       FROM group_outings
+       WHERE group_id = $1 AND archived_at IS NULL
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [groupId]
+    );
+    return result.rows[0] ? toOuting(result.rows[0]) : undefined;
+  }
+
+  async listOutings(groupId: string, viewerId: string): Promise<GroupOuting[]> {
+    await this.requireMembership(groupId, viewerId);
+    const result = await this.pool.query<OutingRow>(
+      `SELECT id, group_id, event_id, title, starts_at, place, created_at, archived_at
+       FROM group_outings
+       WHERE group_id = $1
+       ORDER BY archived_at NULLS FIRST, created_at DESC`,
+      [groupId]
+    );
+    return result.rows.map(toOuting);
+  }
+
+  async startOuting(
+    groupId: string,
+    userId: string,
+    input: {
+      title: string;
+      eventId?: string;
+      startsAt?: string;
+      place?: string;
+    }
+  ): Promise<GroupOuting> {
+    // Any member publishes an outing - that is what makes the feed
+    // participatory. It no longer archives anything: several proposals
+    // coexist, and a past one simply falls down the stream.
+    await this.requireMembership(groupId, userId);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query<OutingRow>(
+        `INSERT INTO group_outings
+           (id, group_id, event_id, title, starts_at, created_by, place)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, group_id, event_id, title, starts_at, place, created_at, archived_at`,
+        [
+          randomUUID(),
+          groupId,
+          input.eventId ?? null,
+          input.title,
+          input.startsAt ?? null,
+          userId,
+          input.place ?? null
+        ]
+      );
+      // An outing is a post: it appears in the feed like anything else, and
+      // inherits its replies, likes and reporting rather than needing its
+      // own copy of each.
+      await client.query(
+        `INSERT INTO group_posts
+           (id, group_id, author_id, body, channel_id, kind, outing_id)
+         VALUES (
+           $1, $2, $3, $4,
+           (SELECT c.id FROM group_channels c
+            WHERE c.group_id = $2
+            ORDER BY c.position ASC, c.created_at ASC LIMIT 1),
+           'outing', $5
+         )`,
+        [randomUUID(), groupId, userId, input.title, inserted.rows[0]!.id]
+      );
+      await client.query('COMMIT');
+      return toOuting(inserted.rows[0]!);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (isForeignKeyViolation(error)) throw new GroupNotFoundError();
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

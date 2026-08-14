@@ -48,8 +48,11 @@ export {
 } from './forum-repository.js';
 export {
   PostgresMessagesRepository,
+  MessageRequestDeclinedError,
+  MessageRequestPendingError,
   NotFriendsError,
   type Message,
+  type MessageRequest,
   type MessagesRepository
 } from './messages-repository.js';
 export {
@@ -60,17 +63,22 @@ export {
 export {
   PostgresGroupsRepository,
   GroupNotFoundError,
+  NotChannelWriterError,
   NotGroupMemberError,
   NotGroupModeratorError,
   type AttendanceResponse,
   type DiscoverGroupEntry,
   type Group,
   type GroupAttendanceSummary,
+  type GroupChannel,
+  type GroupOuting,
   type GroupChecklistItem,
   type GroupMembershipStatus,
   type GroupMeetupVenue,
   type GroupPost,
   type GroupScheduleItem,
+  type GroupVerificationRequest,
+  type GroupVerificationStatus,
   type GroupVisibility,
   type GroupsRepository
 } from './groups-repository.js';
@@ -85,7 +93,29 @@ export {
   type EventPhotosRepository
 } from './event-photos-repository.js';
 export {
+  PostgresUserPhotosRepository,
+  type CreateUserPhotoInput,
+  type UserPhoto,
+  type UserPhotosRepository
+} from './user-photos-repository.js';
+export {
+  OrganizerRequestExistsError,
+  PostgresOrganizerRepository,
+  type OrganizerRepository,
+  type OrganizerStatus
+} from './organizer-repository.js';
+export {
+  PostgresNotificationsRepository,
+  type NotificationsRepository,
+  type StoredNotificationKind
+} from './notifications-repository.js';
+export {
   createSyntheticFilterFixtureTimes,
   createSyntheticFixtureTimes
 } from './synthetic-fixture.js';
+export {
+  publicUserColumns,
+  toPublicUser,
+  type PublicUserRow
+} from './public-user.js';
 export * as schema from './schema.js';

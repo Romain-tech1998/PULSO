@@ -1,0 +1,43 @@
+# Without this file the build context is the whole repo, and `COPY packages/`
+# / `COPY apps/api/` in apps/api/Dockerfile would copy the HOST's node_modules
+# into the image - on top of the ones pnpm just installed for linux. Those
+# trees hold Windows/macOS native binaries (sharp, esbuild) and pnpm symlinks
+# that point outside the container, so the image would build and then fail at
+# runtime for reasons invisible in the Dockerfile itself.
+node_modules
+**/node_modules
+.pnpm-store
+
+# Build output. The API runs its TypeScript sources through tsx (see the
+# `start` script), so no dist/ is needed in the image.
+dist
+**/dist
+.next
+**/.next
+out
+*.tsbuildinfo
+
+# Not referenced by the API image at all.
+apps/web
+apps/mobile
+Brand
+docs
+tests
+test-results
+playwright-report
+output
+tmp
+.git
+.github
+.claude
+.agents
+
+# Secrets and local artifacts.
+.env
+.env.*
+!.env.example
+*.pem
+*.traineddata
+packages/database/ingestion-output
+packages/ingestion/scratch
+apps/api/uploads

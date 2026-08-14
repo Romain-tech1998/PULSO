@@ -88,9 +88,9 @@ describe('mapRawEventToPublicEvent', () => {
     if (!('event' in result)) throw new Error('expected event');
 
     expect(result.event.title).toBe('Charlotte Cardin');
-    expect(result.event.trust.label).toBe('probable');
-    expect(result.event.trust.freshness).toBe('fresh');
-    expect(result.event.trust.locationConfidence).toBe('confirmed');
+    expect(result.event.trust?.label).toBe('probable');
+    expect(result.event.trust?.freshness).toBe('fresh');
+    expect(result.event.trust?.locationConfidence).toBe('confirmed');
     expect(result.event.venue.point).toEqual({
       longitude: -73.5605,
       latitude: 45.5106
@@ -120,7 +120,7 @@ describe('mapRawEventToPublicEvent', () => {
       { now }
     );
     if (!('event' in result)) throw new Error('expected event');
-    expect(result.event.trust.label).toBe('confirmed');
+    expect(result.event.trust?.label).toBe('confirmed');
   });
 
   it('marks geocoded points as lower location confidence', () => {
@@ -129,7 +129,7 @@ describe('mapRawEventToPublicEvent', () => {
       { now }
     );
     if (!('event' in result)) throw new Error('expected event');
-    expect(result.event.trust.locationConfidence).toBe('uncertain');
+    expect(result.event.trust?.locationConfidence).toBe('uncertain');
   });
 
   it('marks stale freshness when observedAt is old', () => {
@@ -138,7 +138,7 @@ describe('mapRawEventToPublicEvent', () => {
       { now }
     );
     if (!('event' in result)) throw new Error('expected event');
-    expect(result.event.trust.freshness).toBe('stale');
+    expect(result.event.trust?.freshness).toBe('stale');
   });
 
   it('skips events with an unmapped category rather than guessing', () => {
@@ -242,9 +242,91 @@ describe('mapAndDeduplicateRawEvents', () => {
 
     expect(result.events).toHaveLength(1);
     expect(result.events[0]?.event.source.name).toBe('Ville de Montréal');
-    expect(result.events[0]?.event.trust.label).toBe('confirmed');
+    expect(result.events[0]?.event.trust?.label).toBe('confirmed');
     expect(result.events[0]?.additionalSources).toHaveLength(1);
     expect(result.events[0]?.additionalSources[0]?.name).toBe('Ticketmaster');
+  });
+
+  it('gives the surviving copy the ticket link and photo the other one had', () => {
+    // The real asymmetry between these two sources: the civic listing is
+    // authoritative about what and when, and routinely carries neither a
+    // poster nor a way to buy a ticket, while the ticketing platform's copy
+    // carries both. Keeping the authoritative record and discarding the
+    // other left a visitor looking at an event they could not book.
+    const fromTicketmaster = ticketmasterEvent({
+      imageUrl: 'https://cdn.example/charlotte-cardin.jpg',
+      ticketingUrl: 'https://www.ticketmaster.ca/event/abc',
+      description:
+        'Charlotte Cardin présente son nouvel album sur la scène du Centre Bell.'
+    });
+    const fromOfficial = ticketmasterEvent({
+      sourceId: 'ville-de-montreal-evenements-publics',
+      sourceName: 'Ville de Montréal',
+      sourceUrl: 'https://montreal.ca/evenements/charlotte-cardin',
+      imageUrl: undefined,
+      ticketingUrl: undefined,
+      description: undefined
+    });
+
+    const result = mapAndDeduplicateRawEvents(
+      [fromTicketmaster, fromOfficial],
+      { now }
+    );
+
+    expect(result.events).toHaveLength(1);
+    const merged = result.events[0]?.event;
+    // The authoritative source still owns the record...
+    expect(merged?.source.name).toBe('Ville de Montréal');
+    // ...but nothing the other copy knew was thrown away.
+    expect(merged?.imageUrl).toBe('https://cdn.example/charlotte-cardin.jpg');
+    expect(merged?.externalDestination?.status).toBe('available');
+    expect(merged?.description).toContain('Charlotte Cardin');
+  });
+
+  it('does not let the lower-authority copy overwrite a fact already stated', () => {
+    // Filling gaps is not the same as resolving disagreements. When both
+    // sources state a title, the primary's version stands - that is what
+    // source authority is for.
+    const fromTicketmaster = ticketmasterEvent({
+      description: 'Description de la billetterie.'
+    });
+    const fromOfficial = ticketmasterEvent({
+      sourceId: 'ville-de-montreal-evenements-publics',
+      sourceName: 'Ville de Montréal',
+      sourceUrl: 'https://montreal.ca/evenements/charlotte-cardin',
+      description: 'Description officielle.'
+    });
+
+    const result = mapAndDeduplicateRawEvents(
+      [fromTicketmaster, fromOfficial],
+      { now }
+    );
+
+    expect(result.events[0]?.event.description).toBe('Description officielle.');
+  });
+
+  it('fills the winner from the loser regardless of which arrived first', () => {
+    // Order of arrival is an accident of connector scheduling, not a fact
+    // about the event.
+    const rich = ticketmasterEvent({
+      imageUrl: 'https://cdn.example/charlotte-cardin.jpg'
+    });
+    const bare = ticketmasterEvent({
+      sourceId: 'ville-de-montreal-evenements-publics',
+      sourceName: 'Ville de Montréal',
+      sourceUrl: 'https://montreal.ca/evenements/charlotte-cardin',
+      imageUrl: undefined
+    });
+
+    const officialFirst = mapAndDeduplicateRawEvents([bare, rich], { now });
+    const ticketingFirst = mapAndDeduplicateRawEvents([rich, bare], { now });
+
+    expect(officialFirst.events[0]?.event.imageUrl).toBe(
+      'https://cdn.example/charlotte-cardin.jpg'
+    );
+    expect(ticketingFirst.events[0]?.event.imageUrl).toBe(
+      'https://cdn.example/charlotte-cardin.jpg'
+    );
   });
 
   it('keeps distinct events separate and reports skipped ones', () => {

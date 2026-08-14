@@ -3,5 +3,6 @@ Brand/production/candidates/
 coverage
 dist
 docs/**/*.md
+graphify-out
 node_modules
 pnpm-lock.yaml

@@ -7,6 +7,7 @@ import {
   CATEGORY_FILTER_OPTIONS,
   conversationResponseSchema,
   conversationsResponseSchema,
+  messageResponseSchema,
   DATE_FILTER_OPTIONS,
   discoverForumsResponseSchema,
   discoverGroupsResponseSchema,
@@ -28,17 +29,20 @@ import {
   friendsMapResponseSchema,
   friendsResponseSchema,
   friendSuggestionsResponseSchema,
-  groupAttendanceSummarySchema,
-  groupChecklistItemsResponseSchema,
-  groupJoinRequestsResponseSchema,
-  groupMembersResponseSchema,
-  groupPostsResponseSchema,
   groupResponseSchema,
-  groupScheduleItemsResponseSchema,
+  adminGroupPlacementsResponseSchema,
+  adminGroupSummariesResponseSchema,
+  groupVerificationRequestsResponseSchema,
   groupsResponseSchema,
   intelligentSearchResponseSchema,
   meResponseSchema,
   createdEventResponseSchema,
+  createOrganizerRequestSchema,
+  geocodeResponseSchema,
+  myOrganizerStatusResponseSchema,
+  adminVenuePhotosResponseSchema,
+  organizerRequestsResponseSchema,
+  myEventsResponseSchema,
   mutualEventIdsResponseSchema,
   myAttendanceResponseSchema,
   notificationsResponseSchema,
@@ -55,7 +59,6 @@ import {
   myVenueRatingResponseSchema,
   type ActiveForum,
   type ActivityEntry,
-  type AttendanceResponse,
   type DiscoverForumEntry,
   type DiscoverGroupEntry,
   type MyVenueRating,
@@ -70,23 +73,26 @@ import {
   type FriendsMapEntry,
   type FriendSuggestion,
   type Group,
-  type GroupAttendanceSummary,
-  type GroupChecklistItem,
-  type GroupMeetupVenue,
-  type GroupPost,
-  type GroupScheduleItem,
-  type GroupVisibility,
+  type AdminGroupPlacement,
+  type AdminGroupSummary,
+  type GroupVerificationRequest,
   type IntelligentSearchResponse,
   type SearchConstraintKey,
   type Message,
   type Notification as PulsoNotification,
+  type OrganizerRequest,
   type PublicEvent,
   type PublicUser,
   type PublicVenue,
   type ProfileStatsResponse,
-  type ReportTargetType,
+  type AdminVenuePhoto,
   type TrendsResponse,
-  type User
+  type MessageRequest,
+  messageRequestsResponseSchema,
+  type User,
+  type UserPhoto,
+  userPhotoResponseSchema,
+  userPhotosResponseSchema
 } from '@pulso/contracts';
 import {
   AFTER_WINDOW_END_HOUR,
@@ -94,7 +100,6 @@ import {
   DEFAULT_DISCOVERY_FILTERS,
   EVENT_CATEGORIES,
   FORUM_CATEGORIES,
-  FORUM_CATEGORY_LABELS,
   getMontrealCalendarDate,
   CATEGORY_COLORS,
   VENUE_CATEGORY_COLORS,
@@ -104,14 +109,22 @@ import {
   type VenueCategory
 } from '@pulso/domain';
 import {
+  formatMontrealDateTime,
   getCategoryLabel,
   getDateFilterLabel,
   getPriceLabel,
   localizeSearchMessage,
   LOCALE_COOKIE_NAME,
   translate,
+  translatePlural,
+  type MessageKey,
   type SupportedLocale
 } from '@pulso/domain/localization';
+import {
+  describeOpeningSchedule,
+  parseOpeningHours,
+  resolveOpeningState
+} from '@pulso/domain/opening-hours';
 import maplibregl from 'maplibre-gl';
 import {
   Fragment,
@@ -126,7 +139,25 @@ import {
 } from 'react';
 
 import { eventDetailsFields, eventPreviewFields } from './event-view-model';
+import {
+  GroupDetailContent,
+  GroupModal,
+  GroupsBlock,
+  GroupsPage,
+  MessagesGroupsTab
+} from './groups';
 import { persistBrowserLocale, resolveBrowserLocale } from './locale-client';
+import {
+  API_BASE_URL,
+  DEFAULT_PROFILE_COVER,
+  formatRelativeTime,
+  HeartIcon,
+  MAP_STYLE_URL,
+  PROFILE_AVATAR_PRESETS,
+  PROFILE_COVER_GRADIENTS,
+  renderAvatarContent,
+  reportContent
+} from './shared';
 import { deriveVenuePriceTier, type VenuePriceTier } from './venue-price-tier';
 import {
   getVenueDiscoveryDateRange,
@@ -139,42 +170,23 @@ const MONTREAL_CENTER: [number, number] = [-73.5673, 45.5017];
 // VENUE_CATEGORIES's comment), so color-coding by type would overstate a
 // confidence the data doesn't have.
 const VENUE_PIN_COLOR = '#8b7ff0';
+
+/**
+ * How old an opening-hours record may be and still support an "open now"
+ * claim (DEC-0019).
+ *
+ * Ninety days. The hours themselves stay useful far longer - they are the
+ * best answer Pulso has either way - but stating that a bar is open *right
+ * now* from a record that predates a possible closure is the kind of error a
+ * visitor standing outside a dark door does not forgive.
+ */
+const OPENING_STATE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 const INITIAL_BOUNDS = {
   west: -73.75,
   south: 45.4,
   east: -73.4,
   north: 45.7
 };
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
-// Style dark garanti sans clé - MapLibre démo dark
-const MAP_STYLE_DARK: maplibregl.StyleSpecification = {
-  version: 8,
-  name: 'Pulso Dark',
-  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-  sources: {
-    carto: {
-      type: 'raster',
-      tiles: [
-        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
-      ],
-      tileSize: 256,
-      attribution: '&copy; OpenStreetMap &copy; CartoDB'
-    }
-  },
-  layers: [
-    {
-      id: 'carto-dark',
-      type: 'raster',
-      source: 'carto'
-    }
-  ]
-};
-const MAP_STYLE_URL: string | maplibregl.StyleSpecification =
-  process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? MAP_STYLE_DARK;
-
 const PIN_WIDTH = 38;
 const PIN_HEIGHT = 44;
 // Pins are rasterized once at load time, not re-drawn per zoom level -
@@ -299,6 +311,57 @@ interface ActiveSearch {
   query: string;
   manualFilters: DiscoveryFilters;
   disabledDerivedKeys: SearchConstraintKey[];
+}
+
+// DEC-0017: the API only returns account-created events - and only honours
+// the After filter - for an authenticated caller. Every event fetch in this
+// file therefore has to carry the bearer token, or a signed-in user's own
+// event silently vanishes from the map they just published it to.
+// Deliberately outside the category palette so it cannot be mistaken for
+// one - the same violet the After filter uses, since afters are the main
+// thing organizers create.
+const CREATED_EVENT_PIN_COLOR = '#7c3aed';
+
+// A native <select> for a two-option choice renders the OS dropdown, which
+// is unstyleable and looked pasted-on next to the brand controls beside it.
+// Two options is a toggle, not a menu.
+function AttendanceVisibilityToggle({
+  value,
+  onChange
+}: {
+  value: AttendanceVisibility;
+  onChange: (next: AttendanceVisibility) => void;
+}) {
+  return (
+    <div
+      className="attendance-visibility-toggle"
+      role="group"
+      aria-label="Visibilité de votre participation"
+    >
+      {(
+        [
+          ['private', 'Vous seul'],
+          ['friends', 'Vos amis']
+        ] as Array<[AttendanceVisibility, string]>
+      ).map(([option, label]) => (
+        <button
+          type="button"
+          key={option}
+          className={value === option ? 'active' : ''}
+          aria-pressed={value === option}
+          onClick={() => onChange(option)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function authHeaders(
+  authToken: string | undefined
+): Record<string, string> | undefined {
+  return authToken ? { authorization: `Bearer ${authToken}` } : undefined;
 }
 
 function boundsUrl(
@@ -696,40 +759,6 @@ function useActiveForums(authToken: string | undefined) {
   return { forums, state };
 }
 
-// Minimal safety net (DEC-0012): captures the report only, no moderation
-// queue or automated action exists yet - the acknowledgment says exactly
-// that rather than implying a review will happen.
-function reportContent(
-  authToken: string | undefined,
-  targetType: ReportTargetType,
-  targetId: string
-) {
-  if (!authToken) return;
-  // Cancelling the prompt aborts the report entirely; confirming with an
-  // empty reason still sends it (the target/reporter/timestamp alone are
-  // useful even with no reason given).
-  const input = window.prompt(
-    'Pourquoi signalez-vous ce contenu ? (optionnel)'
-  );
-  if (input === null) return;
-  fetch(`${API_BASE_URL}/reports`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${authToken}`
-    },
-    body: JSON.stringify({
-      targetType,
-      targetId,
-      ...(input.trim() ? { reason: input.trim() } : {})
-    })
-  })
-    .then((response) => {
-      if (response.ok) alert('Signalement envoyé.');
-    })
-    .catch(() => {});
-}
-
 const AUTH_TOKEN_KEY = 'pulso-auth-token';
 
 // Compte facultatif (DEC-0007/MVP-0001) : rien ici ne bloque le reste de
@@ -901,10 +930,25 @@ export function ExploreMap({
   const [mobileCommunityOpen, setMobileCommunityOpen] = useState(false);
   const [queryInput, setQueryInput] = useState('');
   const [searchResult, setSearchResult] = useState<IntelligentSearchResponse>();
+  /**
+   * Whether the results panel is on screen.
+   *
+   * Owned here rather than inside the panel, because the panel used to derive
+   * it from "has a result and has not been dismissed" - and `loadEvents`
+   * re-issues the search on every map move while a search is active, so each
+   * pan produced a new result object, cleared the dismissal and popped the
+   * panel back open over whatever the visitor had just opened. Only an
+   * explicit submit opens it now; acting on a result closes it.
+   */
+  const [searchPanelOpen, setSearchPanelOpen] = useState(false);
   const [searchProcessing, setSearchProcessing] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [locale, setLocale] = useState(initialLocale);
   const { user, setUser, authToken, login, logout } = useAuth();
+  // Read inside long-lived map callbacks that must not be re-created (and
+  // re-subscribe their MapLibre handlers) every time the token resolves.
+  const authTokenRef = useRef(authToken);
+  authTokenRef.current = authToken;
   const { favorites, toggleFavorite } = useFavorites(authToken);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const { favoriteVenues, toggleFavoriteVenue } = useFavoriteVenues(authToken);
@@ -990,6 +1034,20 @@ export function ExploreMap({
   const [section, setSection] = useState<ConnectedSection | 'compte'>(
     'evenement'
   );
+  // DEC-0020: the Communauté entry has no page of its own - it reopens the
+  // sub-section the user was last on, so returning to it does not throw
+  // away where they were. Tracked rather than derived, because `section`
+  // has usually moved on to something else by the time they come back.
+  const [lastCommunitySection, setLastCommunitySection] =
+    useState<CommunitySection>(DEFAULT_COMMUNITY_SECTION);
+  // DEC-0020 - "message this person", from wherever an account is shown.
+  // Held here rather than inside MessagingDock because the surfaces that
+  // trigger it (a participant list, a friends list) are siblings of the
+  // dock, not children of it.
+  const [messageTarget, setMessageTarget] = useState<PublicUser>();
+  useEffect(() => {
+    if (isCommunitySection(section)) setLastCommunitySection(section);
+  }, [section]);
   // One-time redirect: an anonymous session always starts on 'evenement'
   // (the map), but once a session resolves to a signed-in user it should
   // land on the connected dashboard instead - only while the visitor
@@ -1003,7 +1061,64 @@ export function ExploreMap({
   }, [user, section]);
   const unreadMessagesCount = useUnreadMessagesCount(authToken, section);
   const afterEventCount = events.filter(isAfterEvent).length;
+
+  // MapLibre mounts its compact attribution already expanded
+  // (`maplibregl-compact-show`), so every map opened with a full credit
+  // strip across its bottom edge. Collapsing it back leaves the ODbL credit
+  // one click away - which is what compact mode is for - without removing
+  // it, since dropping the credit would breach the OpenStreetMap licence.
+  // Re-runs on section changes because each surface mounts its own map.
+  useEffect(() => {
+    const collapse = () => {
+      for (const element of document.querySelectorAll(
+        '.maplibregl-ctrl-attrib.maplibregl-compact-show'
+      )) {
+        element.classList.remove('maplibregl-compact-show');
+      }
+    };
+    collapse();
+    const timer = window.setTimeout(collapse, 1200);
+    return () => window.clearTimeout(timer);
+  }, [section]);
+
+  // The anonymous tree only renders these four sections. Losing the account
+  // while standing anywhere else - signing out, or a session expiring into
+  // a 401 - otherwise left the navbar up with an empty content area, since
+  // every connected branch is guarded by `user &&` and none of the
+  // anonymous ones match.
+  useEffect(() => {
+    if (user) return;
+    const anonymous = ['evenement', 'lieu', 'explorer', 'favoris'];
+    if (!anonymous.includes(section)) setSection('evenement');
+  }, [user, section]);
+
+  // Badge on Explorer's floating "Filtres" button: how many constraints are
+  // actually narrowing the map, so the button says whether it is worth
+  // opening without having to open it.
+  const activeFilterCount =
+    filters.categories.length +
+    (filters.price !== 'all' ? 1 : 0) +
+    (filters.date !== DEFAULT_DISCOVERY_FILTERS.date ? 1 : 0) +
+    (distanceFilterActive ? 1 : 0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  // DEC-0018. Held here rather than inside Sidebar so the Administration
+  // route can be gated on it too - hiding the nav item is a UI courtesy,
+  // not an access control.
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!authToken) {
+      setIsAdmin(false);
+      return;
+    }
+    fetch(`${API_BASE_URL}/me/organizer`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setIsAdmin(myOrganizerStatusResponseSchema.parse(json).data.isAdmin)
+      )
+      .catch(() => setIsAdmin(false));
+  }, [authToken]);
   const notifications = useNotifications(authToken, section);
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'calendar'>('map');
   const [lieuTab, setLieuTab] = useState<'map' | 'list' | 'calendar'>('list');
@@ -1138,6 +1253,33 @@ export function ExploreMap({
     document.documentElement.lang = resolved;
   }, [initialLocale]);
 
+  /**
+   * Publishes the header's real height as `--pulso-header-height`.
+   *
+   * The phone map fills what the header and the bottom nav leave, and that
+   * subtraction used to hardcode 60px. The header is closer to 121px there -
+   * it wraps onto a second row for the search field - so the map ran under
+   * the fixed nav and dragged the pin-kind toggle with it. The number is not
+   * stable enough to hardcode either: it moves with the locale, with the
+   * search panel, and with whatever the browser does to the safe area.
+   *
+   * Measured rather than assumed, and re-measured whenever it changes.
+   */
+  useEffect(() => {
+    const header = document.querySelector('.top-navbar');
+    if (!header) return;
+    const publish = () => {
+      document.documentElement.style.setProperty(
+        '--pulso-header-height',
+        `${Math.round(header.getBoundingClientRect().height)}px`
+      );
+    };
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [user]);
+
   // Deep linking initial
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -1186,6 +1328,14 @@ export function ExploreMap({
               query: activeSearch.current.query,
               locale: localeRef.current,
               bounds,
+              near:
+                userLocationRef.current && distanceFilterActiveRef.current
+                  ? {
+                      longitude: userLocationRef.current.longitude,
+                      latitude: userLocationRef.current.latitude,
+                      radiusMeters: distanceKmRef.current * 1000
+                    }
+                  : undefined,
               manualFilters: activeSearch.current.manualFilters,
               disabledDerivedKeys: activeSearch.current.disabledDerivedKeys
             })
@@ -1200,19 +1350,70 @@ export function ExploreMap({
           );
           filtersRef.current = effectiveFilters;
           setFilters(effectiveFilters);
-          const foundEvents = result.data.map(({ event }) => event);
-          setEvents(foundEvents);
+          let finalEvents = result.data.map(({ event }) => event);
+
+          if (
+            result.suggestedNearMe &&
+            userLocationRef.current &&
+            !distanceFilterActiveRef.current
+          ) {
+            distanceFilterActiveRef.current = true;
+            setDistanceFilterActive(true);
+            try {
+              const headers = authHeaders(authTokenRef.current);
+              const near = {
+                longitude: userLocationRef.current.longitude,
+                latitude: userLocationRef.current.latitude,
+                radiusMeters: distanceKmRef.current * 1000
+              };
+              const response = await fetch(
+                boundsUrl(bounds, effectiveFilters, near),
+                headers ? { headers } : {}
+              );
+              if (response.ok) {
+                const eventResult = eventListResponseSchema.parse(
+                  await response.json()
+                );
+                finalEvents = eventResult.data;
+              }
+            } catch (err) {
+              console.warn(
+                'Failed to fetch near events for AI suggestion',
+                err
+              );
+            }
+          }
+
+          setEvents(finalEvents);
           setEventsLoadState('success');
           localStorage.setItem(
             'pulso-offline-events',
-            JSON.stringify(foundEvents)
+            JSON.stringify(finalEvents)
           );
           setSelected((current) =>
-            current && foundEvents.some(({ id }) => id === current.id)
+            current && finalEvents.some(({ id }) => id === current.id)
               ? current
               : undefined
           );
           setSearchProcessing(false);
+          if (result.suggestedLocation && map.current) {
+            const currentCenter = map.current.getCenter();
+            const dLng = Math.abs(
+              currentCenter.lng - result.suggestedLocation.longitude
+            );
+            const dLat = Math.abs(
+              currentCenter.lat - result.suggestedLocation.latitude
+            );
+            if (dLng > 0.01 || dLat > 0.01) {
+              map.current.easeTo({
+                center: [
+                  result.suggestedLocation.longitude,
+                  result.suggestedLocation.latitude
+                ],
+                zoom: 14
+              });
+            }
+          }
           return;
         }
         const userLoc = userLocationRef.current;
@@ -1224,7 +1425,11 @@ export function ExploreMap({
                 radiusMeters: distanceKmRef.current * 1000
               }
             : undefined;
-        const response = await fetch(boundsUrl(bounds, activeFilters, near));
+        const headers = authHeaders(authTokenRef.current);
+        const response = await fetch(
+          boundsUrl(bounds, activeFilters, near),
+          headers ? { headers } : {}
+        );
         if (!response.ok) throw new Error('Event API unavailable');
         const result = eventListResponseSchema.parse(await response.json());
         setEvents(result.data);
@@ -1257,9 +1462,15 @@ export function ExploreMap({
     }
     filtersRef.current = nextFilters;
     setFilters(nextFilters);
-    if (selected) {
-      setSelected(undefined);
-    }
+    // Changing a filter can remove the very thing an open panel describes,
+    // so everything anchored to the previous result set closes with it -
+    // only `selected` did, which left a full event or venue sheet sitting
+    // beside a map that no longer contained it.
+    if (selected) setSelected(undefined);
+    setDetails({ kind: 'closed' });
+    setVenueDetailsGroup(undefined);
+    setPickerList(undefined);
+    setVenuePickerList(undefined);
     void loadEvents(currentBounds.current, nextFilters);
   }
 
@@ -1283,6 +1494,7 @@ export function ExploreMap({
     };
     setSearchResult(undefined);
     setSearchProcessing(true);
+    setSearchPanelOpen(true);
     void loadEvents(currentBounds.current, manualFilters);
   }
 
@@ -1292,9 +1504,139 @@ export function ExploreMap({
     setQueryInput('');
     setSearchResult(undefined);
     setSearchError(false);
+    setSearchPanelOpen(false);
     filtersRef.current = restored;
     setFilters(restored);
     void loadEvents(currentBounds.current, restored);
+  }
+
+  /**
+   * "Voir sur la carte" on a search result. A named search deliberately looks
+   * beyond the visible map (see the API's /search route), so a result is
+   * routinely off-screen - without this the visitor reads a title and has no
+   * way to reach it.
+   */
+  /**
+   * Every result action has to bring the map on screen first.
+   *
+   * A signed-in visitor searches from any section - Découvrir, Forums,
+   * Groupes - and the map only exists inside 'evenement'. Setting `selected`
+   * or `viewMode` from Découvrir changed state nobody could see, so the
+   * buttons looked dead: the click fired and the page did not move.
+   */
+  /**
+   * Reveals the map the result actually lives on, and returns that map.
+   *
+   * Which one that is depends on both the kind of result and whether anyone
+   * is signed in, because the two experiences are laid out differently: the
+   * anonymous one keeps a map per destination (Événements, Lieux, Explorer),
+   * while a signed-in account has a single map, under Explorer - there,
+   * `section: 'evenement'` is a list page with no map on it at all.
+   *
+   * Hard-coding 'evenement' here got both cases wrong. A venue was shown on
+   * the events map, where the place the visitor had just asked for is not a
+   * pin; and for a signed-in visitor "Montrer sur la carte" landed on the
+   * events list, having revealed no map whatsoever.
+   */
+  function revealMapFor(kind: 'event' | 'venue') {
+    // Acting on a result is done with every layer that was covering the map.
+    // Leaving any of them open drops the record behind it, which is what made
+    // "Ouvrir la fiche" look like it had done nothing until the search panel
+    // *and* the point list were both closed by hand.
+    setSearchPanelOpen(false);
+    setPickerList(undefined);
+    setVenuePickerList(undefined);
+    setFiltersOpen(false);
+    setAboutOpen(false);
+
+    if (user) {
+      setSection('explorer');
+      // Explorer carries both kinds of pin, but only shows the venues when
+      // asked - a venue result has to turn them on or it arrives at a map
+      // that cannot draw it.
+      if (kind === 'venue') setExplorerPinKind('all');
+      return connectedMap;
+    }
+    if (kind === 'venue') {
+      setSection('lieu');
+      setLieuTab('map');
+      return lieuMap;
+    }
+    setSection('evenement');
+    setViewMode('map');
+    return map;
+  }
+
+  /**
+   * Centres the newly revealed map on a point.
+   *
+   * Deferred a frame because the target map may have been display:none until
+   * the state change above: MapLibre reads a zero-sized container as a
+   * zero-sized viewport, and an easeTo issued in that state lands nowhere
+   * useful.
+   */
+  function centreOn(
+    instance: RefObject<maplibregl.Map | null>,
+    point: { longitude: number; latitude: number }
+  ) {
+    requestAnimationFrame(() => {
+      instance.current?.resize();
+      instance.current?.easeTo({
+        center: [point.longitude, point.latitude],
+        zoom: 15
+      });
+    });
+  }
+
+  function showOnMap(
+    point: { longitude: number; latitude: number },
+    kind: 'event' | 'venue' = 'event'
+  ) {
+    const instance = revealMapFor(kind);
+    setVenueDetailsGroup(undefined);
+    centreOn(instance, point);
+  }
+
+  /** "Ouvrir la fiche" on an event result. */
+  function openEventRecord(event: PublicEvent) {
+    const instance = revealMapFor('event');
+    setVenueDetailsGroup(undefined);
+    setSelected(event);
+    centreOn(instance, event.venue.point);
+  }
+
+  /**
+   * "Ouvrir la fiche" on a venue result. Any event already returned for that
+   * venue is attached, so the record opens with its real programming rather
+   * than the "no listing" summary a bare venue would show.
+   */
+  function openVenueRecord(venue: PublicVenue) {
+    const venueEvents = (searchResult?.data ?? [])
+      .map(({ event }) => event)
+      .filter((event) => event.venue.id === venue.id);
+    setSelected(undefined);
+    const instance = revealMapFor('venue');
+    setVenueDetailsGroup({
+      id: venue.id,
+      name: venue.name,
+      address: venue.address,
+      point: venue.point,
+      events: venueEvents,
+      categories: [...new Set(venueEvents.map(({ category }) => category))],
+      ...(venue.category ? { venueCategory: venue.category } : {}),
+      ...(venue.secondaryCategories
+        ? { venueSecondaryCategories: venue.secondaryCategories }
+        : {}),
+      ...(venue.imageUrl ? { imageUrl: venue.imageUrl } : {}),
+      ...(venue.imageAttribution
+        ? { imageAttribution: venue.imageAttribution }
+        : {}),
+      ...(venue.openingHours ? { openingHours: venue.openingHours } : {}),
+      ...(venue.openingHoursObservedAt
+        ? { openingHoursObservedAt: venue.openingHoursObservedAt }
+        : {})
+    });
+    centreOn(instance, venue.point);
   }
 
   function clearAll() {
@@ -1303,6 +1645,7 @@ export function ExploreMap({
     setQueryInput('');
     setSearchResult(undefined);
     setSearchError(false);
+    setSearchPanelOpen(false);
     filtersRef.current = defaults;
     setFilters(defaults);
     setSelected(undefined);
@@ -1336,13 +1679,27 @@ export function ExploreMap({
     void loadEvents(currentBounds.current);
   }
 
+  // The token resolves after the first map load, so without this a user's
+  // own created events stay missing from the map until something else
+  // happens to trigger a refetch (DEC-0017).
+  useEffect(() => {
+    if (!authToken) return;
+    void loadEvents(currentBounds.current);
+    void loadVenueMapData(currentBounds.current);
+  }, [authToken, loadEvents, loadVenueMapData]);
+
   useEffect(() => {
     if (!container.current) return;
     const instance = new maplibregl.Map({
       container: container.current,
       center: MONTREAL_CENTER,
       zoom: 11,
-      style: MAP_STYLE_URL
+      // OpenStreetMap data is ODbL: the credit is a licence obligation, so
+      // it cannot be removed - but MapLibre's own `compact` mode collapses
+      // it to a small (i) that expands on click, which is the intended way
+      // to keep it discreet while still shipping it.
+      style: MAP_STYLE_URL,
+      attributionControl: { compact: true }
     });
 
     instance.on('load', () => {
@@ -1506,7 +1863,9 @@ export function ExploreMap({
         // details panel was open - it should not silently swallow this.
         setDetails({ kind: 'closed' });
         setPickerList({
-          title: `${matched.length} événements à cet endroit`,
+          title: translate(localeRef.current, 'map.eventsHere', {
+            count: matched.length
+          }),
           events: matched
         });
       });
@@ -1549,7 +1908,11 @@ export function ExploreMap({
             // details panel rather than leaving it stuck in front.
             setDetails({ kind: 'closed' });
             setPickerList({
-              title: `${matched.length} événements ${samePlace ? 'à cet endroit' : 'dans cette zone'}`,
+              title: translate(
+                localeRef.current,
+                samePlace ? 'map.eventsHere' : 'map.eventCountPlural',
+                { count: matched.length }
+              ),
               events: matched
             });
             return;
@@ -1625,8 +1988,11 @@ export function ExploreMap({
     if (!map.current || !userLocation) return;
     const el = document.createElement('div');
     el.className = 'user-location-marker';
-    el.title = 'Vous êtes ici';
-    el.setAttribute('aria-label', 'Vous êtes ici');
+    el.title = translate(localeRef.current, 'map.youAreHere');
+    el.setAttribute(
+      'aria-label',
+      translate(localeRef.current, 'map.youAreHere')
+    );
     // A plain dot read as just another marker at a glance - a small glyph
     // inside makes "this one is you" unambiguous rather than relying on
     // color alone to distinguish it from event pins.
@@ -1657,8 +2023,11 @@ export function ExploreMap({
       if (!target.map) continue;
       const element = document.createElement('div');
       element.className = 'user-location-marker';
-      element.title = 'Vous êtes ici';
-      element.setAttribute('aria-label', 'Vous êtes ici');
+      element.title = translate(localeRef.current, 'map.youAreHere');
+      element.setAttribute(
+        'aria-label',
+        translate(localeRef.current, 'map.youAreHere')
+      );
       element.innerHTML =
         '<span class="user-location-marker-pulse"></span>' +
         '<span class="user-location-marker-icon" aria-hidden="true"></span>';
@@ -1878,7 +2247,16 @@ export function ExploreMap({
       ...(venue.secondaryCategories !== undefined
         ? { venueSecondaryCategories: venue.secondaryCategories }
         : {}),
-      ...(venue.imageUrl !== undefined ? { imageUrl: venue.imageUrl } : {})
+      ...(venue.imageUrl !== undefined ? { imageUrl: venue.imageUrl } : {}),
+      ...(venue.imageAttribution !== undefined
+        ? { imageAttribution: venue.imageAttribution }
+        : {}),
+      ...(venue.openingHours !== undefined
+        ? { openingHours: venue.openingHours }
+        : {}),
+      ...(venue.openingHoursObservedAt !== undefined
+        ? { openingHoursObservedAt: venue.openingHoursObservedAt }
+        : {})
     }));
     const byId = new Map<string, VenueGroup>();
     for (const group of [...recurringVenueGroups, ...programmedVenueGroups]) {
@@ -1970,7 +2348,13 @@ export function ExploreMap({
           type: 'Point',
           coordinates: [group.point.longitude, group.point.latitude]
         },
-        properties: { id: group.id }
+        // 'other' rather than nothing: a venue whose kind was never set
+        // still needs *a* pin image, and a missing icon-image renders an
+        // invisible marker rather than a default one.
+        properties: {
+          id: group.id,
+          category: group.venueCategory ?? 'other'
+        }
       }))
     });
   }, []);
@@ -1981,13 +2365,23 @@ export function ExploreMap({
       container: lieuMapContainer.current,
       center: MONTREAL_CENTER,
       zoom: 11,
-      style: MAP_STYLE_URL
+      // OpenStreetMap data is ODbL: the credit is a licence obligation, so
+      // it cannot be removed - but MapLibre's own `compact` mode collapses
+      // it to a small (i) that expands on click, which is the intended way
+      // to keep it discreet while still shipping it.
+      style: MAP_STYLE_URL,
+      attributionControl: { compact: true }
     });
 
     instance.on('load', () => {
-      instance.addImage('pin-venue', buildPinImageData(VENUE_PIN_COLOR), {
-        pixelRatio: PIN_SCALE
-      });
+      // One pin per kind of place, same pattern the event layer already
+      // uses. A single colour for every venue made a museum and a nightclub
+      // indistinguishable on a map whose whole job is telling them apart.
+      for (const [category, color] of Object.entries(VENUE_CATEGORY_COLORS)) {
+        instance.addImage(`pin-venue-${category}`, buildPinImageData(color), {
+          pixelRatio: PIN_SCALE
+        });
+      }
       instance.addImage('venue-cluster-badge', buildClusterBadgeImageData(), {
         pixelRatio: PIN_SCALE
       });
@@ -2045,7 +2439,7 @@ export function ExploreMap({
         source: 'venues-source',
         filter: ['!', ['has', 'point_count']],
         layout: {
-          'icon-image': 'pin-venue',
+          'icon-image': ['concat', 'pin-venue-', ['get', 'category']],
           'icon-size': [
             'interpolate',
             ['linear'],
@@ -2083,7 +2477,9 @@ export function ExploreMap({
         setVenueDetailsGroup(undefined);
         setPickerList(undefined);
         setVenuePickerList({
-          title: `${matched.length} lieux à cet endroit`,
+          title: translate(localeRef.current, 'map.venuesHere', {
+            count: matched.length
+          }),
           groups: matched
         });
       });
@@ -2106,7 +2502,9 @@ export function ExploreMap({
             setDetails({ kind: 'closed' });
             setPickerList(undefined);
             setVenuePickerList({
-              title: `${matched.length} lieux dans cette zone`,
+              title: translate(localeRef.current, 'map.venuesInArea', {
+                count: matched.length
+              }),
               groups: matched
             });
             return;
@@ -2164,18 +2562,23 @@ export function ExploreMap({
   }, [filteredVenueGroups, pushVenuesToMap]);
 
   // Initial view for the Événement/Lieu maps (not Explorer, which is
-  // deliberately a wider, global view): centered on the visitor's own
-  // location once geolocation resolves, falling back to the Montréal
-  // center if it's denied/unavailable - a tight ~1km-radius view either
-  // way rather than the default city-wide zoom. Fires at most once so it
-  // never fights a pan/zoom the visitor makes themselves afterwards.
+  // deliberately a wider, city-wide view). Zooming to a ~1km radius only
+  // makes sense around the visitor's *own* position: with geolocation
+  // denied or unavailable - the default for a first anonymous visit - the
+  // same jump landed on downtown Montréal at street level, where a visitor
+  // saw "1 événement dans cette zone" instead of the city. Without a real
+  // location there is nothing to zoom to, so the map keeps its city-wide
+  // starting zoom. Fires at most once so it never fights a pan/zoom the
+  // visitor makes themselves afterwards.
   const hasAppliedInitialCenter = useRef(false);
   useEffect(() => {
     if (geoStatus === 'pending' || hasAppliedInitialCenter.current) return;
     hasAppliedInitialCenter.current = true;
-    const center: [number, number] = userLocation
-      ? [userLocation.longitude, userLocation.latitude]
-      : MONTREAL_CENTER;
+    if (!userLocation) return;
+    const center: [number, number] = [
+      userLocation.longitude,
+      userLocation.latitude
+    ];
     map.current?.jumpTo({ center, zoom: 14 });
     lieuMap.current?.jumpTo({ center, zoom: 14 });
   }, [geoStatus, userLocation]);
@@ -2240,10 +2643,13 @@ export function ExploreMap({
   }, [section]);
 
   const explorerPinKindRef = useRef(explorerPinKind);
+  // Filtered, not raw: the Explorer and connected maps offer a venue-type
+  // filter and were drawing every venue regardless of it, so choosing "bar"
+  // changed the chip and nothing on the map.
   const explorerVenueGroupsRef = useRef<VenueGroup[]>([]);
   useEffect(() => {
-    explorerVenueGroupsRef.current = venueGroups;
-  }, [venueGroups]);
+    explorerVenueGroupsRef.current = filteredVenueGroups;
+  }, [filteredVenueGroups]);
 
   const pushExplorerDataToMap = useCallback((instance: maplibregl.Map) => {
     const eventSource = instance.getSource('explorer-events-source') as
@@ -2270,8 +2676,16 @@ export function ExploreMap({
             },
             properties: {
               id: event.id,
+              // An account-created event gets its own colour rather than
+              // its category's: on a map of sourced programming, "who put
+              // this here" is the distinction that matters most, and
+              // DEC-0017 requires the origin to be visible wherever a
+              // created event is shown.
               color:
-                CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
+                event.origin && event.origin !== 'directory'
+                  ? CREATED_EVENT_PIN_COLOR
+                  : (CATEGORY_COLORS[event.category] ??
+                    CATEGORY_COLORS['other']),
               category: event.category
             }
           }))
@@ -2288,7 +2702,13 @@ export function ExploreMap({
             type: 'Point',
             coordinates: [group.point.longitude, group.point.latitude]
           },
-          properties: { id: group.id }
+          // 'other' rather than nothing: a venue whose kind was never set
+          // still needs *a* pin image, and a missing icon-image renders an
+          // invisible marker rather than a default one.
+          properties: {
+            id: group.id,
+            category: group.venueCategory ?? 'other'
+          }
         }))
       });
     }
@@ -2300,7 +2720,12 @@ export function ExploreMap({
       container: explorerMapContainer.current,
       center: MONTREAL_CENTER,
       zoom: 11,
-      style: MAP_STYLE_URL
+      // OpenStreetMap data is ODbL: the credit is a licence obligation, so
+      // it cannot be removed - but MapLibre's own `compact` mode collapses
+      // it to a small (i) that expands on click, which is the intended way
+      // to keep it discreet while still shipping it.
+      style: MAP_STYLE_URL,
+      attributionControl: { compact: true }
     });
 
     instance.on('load', () => {
@@ -2320,6 +2745,13 @@ export function ExploreMap({
           pixelRatio: PIN_SCALE
         }
       );
+      for (const [category, color] of Object.entries(VENUE_CATEGORY_COLORS)) {
+        instance.addImage(
+          `explorer-pin-venue-${category}`,
+          buildPinImageData(color),
+          { pixelRatio: PIN_SCALE }
+        );
+      }
       instance.addImage(
         'explorer-pin-venue',
         buildPinImageData(VENUE_PIN_COLOR),
@@ -2437,7 +2869,7 @@ export function ExploreMap({
         filter: ['!', ['has', 'point_count']],
         layout: {
           visibility: venueVisible,
-          'icon-image': 'explorer-pin-venue',
+          'icon-image': ['concat', 'explorer-pin-venue-', ['get', 'category']],
           'icon-size': [
             'interpolate',
             ['linear'],
@@ -2474,7 +2906,9 @@ export function ExploreMap({
         }
         setSelected(undefined);
         setPickerList({
-          title: `${matched.length} événements à cet endroit`,
+          title: translate(localeRef.current, 'map.eventsHere', {
+            count: matched.length
+          }),
           events: matched
         });
       });
@@ -2500,7 +2934,9 @@ export function ExploreMap({
         setVenueDetailsGroup(undefined);
         setPickerList(undefined);
         setVenuePickerList({
-          title: `${matched.length} lieux à cet endroit`,
+          title: translate(localeRef.current, 'map.venuesHere', {
+            count: matched.length
+          }),
           groups: matched
         });
       });
@@ -2525,7 +2961,9 @@ export function ExploreMap({
             setDetails({ kind: 'closed' });
             setPickerList(undefined);
             setVenuePickerList({
-              title: `${matched.length} lieux dans cette zone`,
+              title: translate(localeRef.current, 'map.venuesInArea', {
+                count: matched.length
+              }),
               groups: matched
             });
             return;
@@ -2595,7 +3033,7 @@ export function ExploreMap({
 
   useEffect(() => {
     if (explorerMap.current) pushExplorerDataToMap(explorerMap.current);
-  }, [events, venueGroups, pushExplorerDataToMap]);
+  }, [events, filteredVenueGroups, pushExplorerDataToMap]);
 
   // Phase 4.13 "Carte" page - same bounds-driven events/venueGroups data as
   // every other map instance in this file, its own source/layer names so it
@@ -2627,8 +3065,16 @@ export function ExploreMap({
             },
             properties: {
               id: event.id,
+              // An account-created event gets its own colour rather than
+              // its category's: on a map of sourced programming, "who put
+              // this here" is the distinction that matters most, and
+              // DEC-0017 requires the origin to be visible wherever a
+              // created event is shown.
               color:
-                CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS['other'],
+                event.origin && event.origin !== 'directory'
+                  ? CREATED_EVENT_PIN_COLOR
+                  : (CATEGORY_COLORS[event.category] ??
+                    CATEGORY_COLORS['other']),
               category: event.category
             }
           }))
@@ -2645,7 +3091,13 @@ export function ExploreMap({
             type: 'Point',
             coordinates: [group.point.longitude, group.point.latitude]
           },
-          properties: { id: group.id }
+          // 'other' rather than nothing: a venue whose kind was never set
+          // still needs *a* pin image, and a missing icon-image renders an
+          // invisible marker rather than a default one.
+          properties: {
+            id: group.id,
+            category: group.venueCategory ?? 'other'
+          }
         }))
       });
     }
@@ -2666,7 +3118,9 @@ export function ExploreMap({
         container,
         center: MONTREAL_CENTER,
         zoom: 11,
-        style: MAP_STYLE_URL
+        // Same ODbL obligation as the other maps - compacted, not removed.
+        style: MAP_STYLE_URL,
+        attributionControl: { compact: true }
       });
 
       instance.on('load', () => {
@@ -2682,6 +3136,13 @@ export function ExploreMap({
           buildClusterBadgeImageData(),
           { pixelRatio: PIN_SCALE }
         );
+        for (const [category, color] of Object.entries(VENUE_CATEGORY_COLORS)) {
+          instance.addImage(
+            `connected-pin-venue-${category}`,
+            buildPinImageData(color),
+            { pixelRatio: PIN_SCALE }
+          );
+        }
         instance.addImage(
           'connected-pin-venue',
           buildPinImageData(VENUE_PIN_COLOR),
@@ -2853,7 +3314,11 @@ export function ExploreMap({
           filter: ['!', ['has', 'point_count']],
           layout: {
             visibility: venueVisible(),
-            'icon-image': 'connected-pin-venue',
+            'icon-image': [
+              'concat',
+              'connected-pin-venue-',
+              ['get', 'category']
+            ],
             'icon-size': [
               'interpolate',
               ['linear'],
@@ -2997,7 +3462,7 @@ export function ExploreMap({
 
   useEffect(() => {
     if (connectedMap.current) pushConnectedDataToMap(connectedMap.current);
-  }, [events, venueGroups, pushConnectedDataToMap]);
+  }, [events, filteredVenueGroups, pushConnectedDataToMap]);
 
   // Toggling event/venue pins re-applies layer visibility on the already-
   // built map (layers are created once in the 'load' handler above).
@@ -3090,6 +3555,7 @@ export function ExploreMap({
     <div className={`app-container${user ? ' app-container-connected' : ''}`}>
       {user && (
         <Sidebar
+          locale={locale}
           activeSection={
             (section === 'compte' ? 'decouvrir' : section) as ConnectedSection
           }
@@ -3102,13 +3568,42 @@ export function ExploreMap({
             setForumPanelMode(false);
             setSection(nextSection);
           }}
+          lastCommunitySection={lastCommunitySection}
           authToken={authToken}
           user={user}
           unreadMessagesCount={unreadMessagesCount}
+          isAdmin={isAdmin}
           onOpenAccount={() => {
             setAboutOpen(false);
             setForumPanelMode(false);
             setSection('compte');
+          }}
+          onOpenEvent={(eventId) =>
+            void openDetails(eventId, {
+              asForumPanel: true,
+              forumEventFirst: true
+            })
+          }
+        />
+      )}
+
+      {/* DEC-0020 - mounted beside the sidebar rather than inside any one
+          section, which is the whole point: the inbox is reachable from the
+          map, from an event, from a group, without leaving them. Hidden
+          while the Messages section itself is open, where it would be a
+          second, smaller copy of the page behind it. */}
+      {user && !isCommunitySection(section) && (
+        <MessagingDock
+          authToken={authToken}
+          user={user}
+          locale={locale}
+          unreadMessagesCount={unreadMessagesCount}
+          openWith={messageTarget}
+          onOpened={() => setMessageTarget(undefined)}
+          onOpenFullInbox={() => {
+            setAboutOpen(false);
+            setForumPanelMode(false);
+            setSection('messages');
           }}
         />
       )}
@@ -3121,18 +3616,6 @@ export function ExploreMap({
           their own slot. */}
       {user && (
         <nav className="mobile-bottom-nav" aria-label="Navigation principale">
-          <button
-            type="button"
-            className={!aboutOpen && section === 'decouvrir' ? 'active' : ''}
-            onClick={() => {
-              setAboutOpen(false);
-              setForumPanelMode(false);
-              setSection('decouvrir');
-            }}
-          >
-            <span aria-hidden="true">✨</span>
-            Découvrir
-          </button>
           <button
             type="button"
             className={!aboutOpen && section === 'explorer' ? 'active' : ''}
@@ -3155,22 +3638,36 @@ export function ExploreMap({
             }}
           >
             <span aria-hidden="true">🎟️</span>
-            Événements
+            {translate(locale, 'nav.events')}
+          </button>
+          <button
+            type="button"
+            className={!aboutOpen && section === 'messages' ? 'active' : ''}
+            onClick={() => {
+              setAboutOpen(false);
+              setForumPanelMode(false);
+              setSection('messages');
+            }}
+          >
+            <span aria-hidden="true">✉️</span>
+            Messages
+            {/* The badge follows what it counts. It used to sit on
+                "Communauté", which bundled messages with forums, groups and
+                friends - so an unread message lit up a tab that was mostly
+                about something else. */}
+            {unreadMessagesCount > 0 && (
+              <span className="mobile-bottom-nav-badge" aria-hidden="true" />
+            )}
           </button>
           <button
             type="button"
             className={
-              ['forums', 'groupes', 'messages', 'amis'].includes(section)
-                ? 'active'
-                : ''
+              ['forums', 'groupes', 'amis'].includes(section) ? 'active' : ''
             }
             onClick={() => setMobileCommunityOpen(true)}
           >
             <span aria-hidden="true">👥</span>
-            Communauté
-            {unreadMessagesCount > 0 && (
-              <span className="mobile-bottom-nav-badge" aria-hidden="true" />
-            )}
+            {translate(locale, 'nav.community')}
           </button>
           <button
             type="button"
@@ -3195,7 +3692,7 @@ export function ExploreMap({
           />
           <div className="mobile-community-sheet">
             <div className="sidebar-mobile-header">
-              <h2>Communauté</h2>
+              <h2>{translate(locale, 'nav.community')}</h2>
               <button
                 type="button"
                 className="sidebar-mobile-close"
@@ -3214,17 +3711,27 @@ export function ExploreMap({
                 </svg>
               </button>
             </div>
+            {/* Messages moved out to its own bottom-nav slot and is not
+                repeated here: two entry points to one inbox, one of them
+                behind a sheet, is a way of making the shortcut look
+                unreliable rather than a second convenience. */}
             {(
               [
-                { section: 'forums', label: 'Forums', icon: '💬' },
-                { section: 'groupes', label: 'Groupes', icon: '👥' },
                 {
-                  section: 'messages',
-                  label: 'Messages',
-                  icon: '✉️',
-                  badge: unreadMessagesCount
+                  section: 'forums',
+                  label: translate(locale, 'nav.forums'),
+                  icon: '💬'
                 },
-                { section: 'amis', label: 'Amis', icon: '🧑‍🤝‍🧑' }
+                {
+                  section: 'groupes',
+                  label: translate(locale, 'nav.groups'),
+                  icon: '👥'
+                },
+                {
+                  section: 'amis',
+                  label: translate(locale, 'nav.friends'),
+                  icon: '🧑‍🤝‍🧑'
+                }
               ] as const
             ).map((item) => (
               <button
@@ -3240,11 +3747,6 @@ export function ExploreMap({
               >
                 <span aria-hidden="true">{item.icon}</span>
                 {item.label}
-                {'badge' in item && item.badge > 0 && (
-                  <span className="primary-sidebar-nav-badge">
-                    {item.badge}
-                  </span>
-                )}
               </button>
             ))}
           </div>
@@ -3265,7 +3767,11 @@ export function ExploreMap({
               onSubmit={submitSearch}
               onClear={clearSearch}
               onClearConstraint={clearDerivedConstraint}
-              onPreview={setSelected}
+              onPreview={openEventRecord}
+              onShowOnMap={showOnMap}
+              onOpenVenue={openVenueRecord}
+              open={searchPanelOpen}
+              onClose={() => setSearchPanelOpen(false)}
               locale={locale}
               user={user}
               unreadMessagesCount={unreadMessagesCount}
@@ -3303,6 +3809,7 @@ export function ExploreMap({
                     <NotificationsPanel
                       notifications={notifications.notifications}
                       state={notifications.state}
+                      locale={locale}
                       onClose={() => setNotificationsOpen(false)}
                       onOpenEvent={(eventId) =>
                         void openDetails(eventId, {
@@ -3343,7 +3850,7 @@ export function ExploreMap({
                     setSection('evenement');
                   }}
                 >
-                  Événements
+                  {translate(locale, 'nav.events')}
                 </button>
                 <button
                   type="button"
@@ -3379,7 +3886,11 @@ export function ExploreMap({
                 onSubmit={submitSearch}
                 onClear={clearSearch}
                 onClearConstraint={clearDerivedConstraint}
-                onPreview={setSelected}
+                onPreview={openEventRecord}
+                onShowOnMap={showOnMap}
+                onOpenVenue={openVenueRecord}
+                open={searchPanelOpen}
+                onClose={() => setSearchPanelOpen(false)}
                 locale={locale}
               />
             </div>
@@ -3401,8 +3912,8 @@ export function ExploreMap({
                 data-about-toggle
                 className={`nav-icon-btn ${aboutOpen ? 'active' : ''}`}
                 onClick={() => setAboutOpen((prev) => !prev)}
-                aria-label="À propos"
-                title="À propos"
+                aria-label={translate(locale, 'nav.about')}
+                title={translate(locale, 'nav.about')}
               >
                 <InfoIcon />
               </button>
@@ -3410,8 +3921,8 @@ export function ExploreMap({
                 type="button"
                 className="nav-icon-btn nav-icon-btn-notifications"
                 disabled
-                aria-label="Notifications (bientôt disponible)"
-                title="Bientôt disponible"
+                aria-label={translate(locale, 'nav.notificationsSoon')}
+                title={translate(locale, 'nav.comingSoon')}
               >
                 <BellIcon />
               </button>
@@ -3447,7 +3958,7 @@ export function ExploreMap({
               }}
             >
               <ViewModeIcon kind="map" />
-              Événements
+              {translate(locale, 'nav.events')}
             </button>
             <button
               type="button"
@@ -3540,7 +4051,7 @@ export function ExploreMap({
                   }
                   style={{ marginTop: '1rem' }}
                 >
-                  Réessayer
+                  {translate(locale, 'common.retry')}
                 </button>
               </div>
             )}
@@ -3563,48 +4074,75 @@ export function ExploreMap({
             authToken={authToken}
             onNavigate={setSection}
           />
-        ) : user && section === 'forums' ? (
-          <ActiveForumsPage
-            authToken={authToken}
-            onOpenDetails={(eventId, knownEvent) =>
-              openDetails(eventId, { asForumPanel: true, knownEvent })
-            }
+        ) : user && isCommunitySection(section) ? (
+          <CommunityHub
+            section={section}
+            onSelect={(next) => {
+              setForumPanelMode(false);
+              setSection(next);
+            }}
+            unreadMessagesCount={unreadMessagesCount}
             locale={locale}
-          />
-        ) : user && section === 'groupes' ? (
-          <GroupsPage
+          >
+            {section === 'forums' ? (
+              <ActiveForumsPage
+                authToken={authToken}
+                onOpenDetails={(eventId, knownEvent) =>
+                  openDetails(eventId, { asForumPanel: true, knownEvent })
+                }
+                locale={locale}
+              />
+            ) : section === 'groupes' ? (
+              <GroupsPage
+                authToken={authToken}
+                userId={user.id}
+                locale={locale}
+                onOpenEventForum={(eventId) =>
+                  void openDetails(eventId, {
+                    asForumPanel: true,
+                    forumEventFirst: true
+                  })
+                }
+              />
+            ) : section === 'messages' ? (
+              <MessagesPage
+                authToken={authToken}
+                user={user}
+                locale={locale}
+                onOpenEventForum={(eventId) =>
+                  void openDetails(eventId, {
+                    asForumPanel: true,
+                    forumEventFirst: true
+                  })
+                }
+              />
+            ) : (
+              <AmisPage
+                authToken={authToken}
+                attendance={attendance}
+                locale={locale}
+                onOpenEventForum={(eventId) =>
+                  void openDetails(eventId, {
+                    asForumPanel: true,
+                    forumEventFirst: true
+                  })
+                }
+                onNavigate={setSection}
+              />
+            )}
+          </CommunityHub>
+        ) : user && isAdmin && section === 'administration' ? (
+          <AdministrationPage authToken={authToken} locale={locale} />
+        ) : user && section === 'organisateur' ? (
+          <OrganisateurPage
             authToken={authToken}
-            userId={user.id}
-            onOpenEventForum={(eventId) =>
-              void openDetails(eventId, {
-                asForumPanel: true,
-                forumEventFirst: true
-              })
-            }
-          />
-        ) : user && section === 'messages' ? (
-          <MessagesPage
-            authToken={authToken}
-            user={user}
-            onOpenEventForum={(eventId) =>
-              void openDetails(eventId, {
-                asForumPanel: true,
-                forumEventFirst: true
-              })
-            }
-          />
-        ) : user && section === 'amis' ? (
-          <AmisPage
-            authToken={authToken}
-            attendance={attendance}
             locale={locale}
-            onOpenEventForum={(eventId) =>
+            onOpenEvent={(eventId) =>
               void openDetails(eventId, {
                 asForumPanel: true,
                 forumEventFirst: true
               })
             }
-            onNavigate={setSection}
           />
         ) : user && section === 'evenement' ? (
           <EventsPage
@@ -3618,6 +4156,7 @@ export function ExploreMap({
               })
             }
             onNavigateToMap={() => setSection('explorer')}
+            onNavigateToOrganisateur={() => setSection('organisateur')}
             locale={locale}
           />
         ) : user && section === 'lieu' ? (
@@ -3648,7 +4187,9 @@ export function ExploreMap({
                 >
                   <div className="sidebar-mobile-header">
                     <h1 className="sidebar-section-title">
-                      {section === 'evenement' ? 'Événements' : 'Lieux'}
+                      {section === 'evenement'
+                        ? translate(locale, 'nav.events')
+                        : translate(locale, 'nav.venues')}
                     </h1>
                     <button
                       type="button"
@@ -3670,15 +4211,22 @@ export function ExploreMap({
                   </div>
                   <p className="sidebar-results-count">
                     {section === 'evenement'
-                      ? (() => {
-                          const count = showFavoritesOnly
+                      ? translatePlural(
+                          locale,
+                          showFavoritesOnly
                             ? events.filter((event) =>
                                 favorites.includes(event.id)
                               ).length
-                            : events.length;
-                          return `${count} événement${count !== 1 ? 's' : ''} dans cette zone`;
-                        })()
-                      : `${filteredVenueGroups.length} lieu${filteredVenueGroups.length !== 1 ? 's' : ''} dans cette zone`}
+                            : events.length,
+                          'map.eventCount',
+                          'map.eventCountPlural'
+                        )
+                      : translatePlural(
+                          locale,
+                          filteredVenueGroups.length,
+                          'map.venueCount',
+                          'map.venueCountPlural'
+                        )}
                   </p>
 
                   <div className="view-toggles">
@@ -3690,7 +4238,8 @@ export function ExploreMap({
                             className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
                             onClick={() => setViewMode('map')}
                           >
-                            <ViewModeIcon kind="map" /> Carte
+                            <ViewModeIcon kind="map" />{' '}
+                            {translate(locale, 'view.map')}
                           </button>
                           <button
                             type="button"
@@ -3700,14 +4249,16 @@ export function ExploreMap({
                               setViewMode('list');
                             }}
                           >
-                            <ViewModeIcon kind="list" /> Liste
+                            <ViewModeIcon kind="list" />{' '}
+                            {translate(locale, 'view.list')}
                           </button>
                           <button
                             type="button"
                             className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
                             onClick={() => setViewMode('calendar')}
                           >
-                            <ViewModeIcon kind="calendar" /> Calendrier
+                            <ViewModeIcon kind="calendar" />{' '}
+                            {translate(locale, 'view.calendar')}
                           </button>
                         </>
                       ) : (
@@ -3717,21 +4268,24 @@ export function ExploreMap({
                             className={`view-toggle-btn ${lieuTab === 'map' ? 'active' : ''}`}
                             onClick={() => setLieuTab('map')}
                           >
-                            <ViewModeIcon kind="map" /> Carte
+                            <ViewModeIcon kind="map" />{' '}
+                            {translate(locale, 'view.map')}
                           </button>
                           <button
                             type="button"
                             className={`view-toggle-btn ${lieuTab === 'list' ? 'active' : ''}`}
                             onClick={() => setLieuTab('list')}
                           >
-                            <ViewModeIcon kind="list" /> Liste
+                            <ViewModeIcon kind="list" />{' '}
+                            {translate(locale, 'view.list')}
                           </button>
                           <button
                             type="button"
                             className={`view-toggle-btn ${lieuTab === 'calendar' ? 'active' : ''}`}
                             onClick={() => setLieuTab('calendar')}
                           >
-                            <ViewModeIcon kind="calendar" /> Calendrier
+                            <ViewModeIcon kind="calendar" />{' '}
+                            {translate(locale, 'view.calendar')}
                           </button>
                         </>
                       )}
@@ -3742,8 +4296,8 @@ export function ExploreMap({
                         className={`view-toggle-fav ${showFavoritesOnly ? 'active' : ''}`}
                         aria-label={
                           showFavoritesOnly
-                            ? 'Afficher tous les événements'
-                            : 'Afficher uniquement mes favoris'
+                            ? translate(locale, 'filters.showAllEvents')
+                            : translate(locale, 'filters.showFavoritesOnly')
                         }
                         aria-pressed={showFavoritesOnly}
                         onClick={() => setShowFavoritesOnly((prev) => !prev)}
@@ -3757,13 +4311,16 @@ export function ExploreMap({
                         className={`view-toggle-fav ${showFavoriteVenuesOnly ? 'active' : ''}`}
                         aria-label={
                           showFavoriteVenuesOnly
-                            ? 'Afficher tous les lieux'
-                            : 'Afficher uniquement mes lieux suivis'
+                            ? translate(locale, 'filters.showAllVenues')
+                            : translate(
+                                locale,
+                                'filters.showFollowedVenuesOnly'
+                              )
                         }
                         title={
                           showFavoriteVenuesOnly
-                            ? 'Afficher tous les lieux'
-                            : 'Lieux suivis'
+                            ? translate(locale, 'filters.showAllVenues')
+                            : translate(locale, 'filters.followedVenues')
                         }
                         aria-pressed={showFavoriteVenuesOnly}
                         onClick={() =>
@@ -3778,20 +4335,19 @@ export function ExploreMap({
                   {section === 'evenement' && (
                     <>
                       <div className="filter-group-title-row">
-                        <h3>Filtres</h3>
+                        <h3>{translate(locale, 'filters.title')}</h3>
                         <button className="filter-reset" onClick={clearAll}>
-                          Réinitialiser
+                          {translate(locale, 'filters.reset')}
                         </button>
                       </div>
 
                       <CollapsibleFilterGroup
-                        title="Catégories"
+                        title={translate(locale, 'filters.categories')}
                         collapsed={collapsedSections.has('categories')}
                         onToggle={() => toggleSection('categories')}
                       >
                         <p className="category-legend-hint">
-                          La couleur de chaque catégorie correspond à celle des
-                          pins sur la carte.
+                          {translate(locale, 'filters.categoryLegendHint')}
                         </p>
                         <div className="category-grid">
                           {CATEGORY_FILTER_OPTIONS.map((option) => (
@@ -3865,7 +4421,7 @@ export function ExploreMap({
                       </CollapsibleFilterGroup>
 
                       <CollapsibleFilterGroup
-                        title="Date"
+                        title={translate(locale, 'filters.date')}
                         collapsed={collapsedSections.has('date')}
                         onToggle={() => toggleSection('date')}
                       >
@@ -3914,13 +4470,18 @@ export function ExploreMap({
                           </div>
                           <p className="distance-value">
                             {distanceFilterActive
-                              ? `Rayon actif : ${distanceKm} km`
-                              : `Rayon max (${distanceKm} km) — non appliqué`}
-                            {geoStatus === 'pending' && ' · localisation…'}
+                              ? translate(locale, 'filters.radiusActive', {
+                                  km: distanceKm
+                                })
+                              : translate(locale, 'filters.radiusMax', {
+                                  km: distanceKm
+                                })}
+                            {geoStatus === 'pending' &&
+                              ` · ${translate(locale, 'filters.geoPending')}`}
                             {geoStatus === 'denied' &&
-                              ' · position non partagée'}
+                              ` · ${translate(locale, 'filters.geoDenied')}`}
                             {geoStatus === 'unsupported' &&
-                              ' · non disponible sur cet appareil'}
+                              ` · ${translate(locale, 'filters.geoUnsupported')}`}
                           </p>
                         </div>
                       </CollapsibleFilterGroup>
@@ -3938,12 +4499,12 @@ export function ExploreMap({
                             applyFilters(withoutCustomDates(filters, 'next7'));
                           }}
                         >
-                          Réinitialiser
+                          {translate(locale, 'filters.reset')}
                         </button>
                       </div>
 
                       <CollapsibleFilterGroup
-                        title="Catégorie de lieu"
+                        title={translate(locale, 'filters.venueCategory')}
                         collapsed={collapsedSections.has('lieu-categorie')}
                         onToggle={() => toggleSection('lieu-categorie')}
                       >
@@ -3997,13 +4558,12 @@ export function ExploreMap({
                       </CollapsibleFilterGroup>
 
                       <CollapsibleFilterGroup
-                        title="Date"
+                        title={translate(locale, 'filters.date')}
                         collapsed={collapsedSections.has('lieu-date')}
                         onToggle={() => toggleSection('lieu-date')}
                       >
                         <p className="category-legend-hint">
-                          Affiche les lieux ayant un événement dans cette
-                          période.
+                          {translate(locale, 'filters.venueDateHint')}
                         </p>
                         <div className="pill-list">
                           {DATE_FILTER_OPTIONS.map((option) => (
@@ -4050,13 +4610,18 @@ export function ExploreMap({
                           </div>
                           <p className="distance-value">
                             {distanceFilterActive
-                              ? `Rayon actif : ${distanceKm} km`
-                              : `Rayon max (${distanceKm} km) — non appliqué`}
-                            {geoStatus === 'pending' && ' · localisation…'}
+                              ? translate(locale, 'filters.radiusActive', {
+                                  km: distanceKm
+                                })
+                              : translate(locale, 'filters.radiusMax', {
+                                  km: distanceKm
+                                })}
+                            {geoStatus === 'pending' &&
+                              ` · ${translate(locale, 'filters.geoPending')}`}
                             {geoStatus === 'denied' &&
-                              ' · position non partagée'}
+                              ` · ${translate(locale, 'filters.geoDenied')}`}
                             {geoStatus === 'unsupported' &&
-                              ' · non disponible sur cet appareil'}
+                              ` · ${translate(locale, 'filters.geoUnsupported')}`}
                           </p>
                         </div>
                       </CollapsibleFilterGroup>
@@ -4065,8 +4630,8 @@ export function ExploreMap({
 
                   <div className="promo-card">
                     <div className="promo-content">
-                      <h4>Téléchargez Pulso</h4>
-                      <p>Emportez la ville dans votre poche.</p>
+                      <h4>{translate(locale, 'promo.downloadTitle')}</h4>
+                      <p>{translate(locale, 'promo.downloadBody')}</p>
                     </div>
                     <div className="promo-store-badges">
                       <button
@@ -4081,7 +4646,9 @@ export function ExploreMap({
                           🍎
                         </span>
                         <span>
-                          <small>Bientôt sur</small>
+                          <small>
+                            {translate(locale, 'promo.comingSoonOn')}
+                          </small>
                           <strong>App Store</strong>
                         </span>
                       </button>
@@ -4097,7 +4664,9 @@ export function ExploreMap({
                           ▶️
                         </span>
                         <span>
-                          <small>Bientôt sur</small>
+                          <small>
+                            {translate(locale, 'promo.comingSoonOn')}
+                          </small>
                           <strong>Google Play</strong>
                         </span>
                       </button>
@@ -4174,7 +4743,7 @@ export function ExploreMap({
                       <line x1="2" y1="12" x2="5" y2="12" />
                       <line x1="19" y1="12" x2="22" y2="12" />
                     </svg>
-                    Recentrer
+                    {translate(locale, 'map.recenterShort')}
                   </button>
 
                   <MapFilterBar
@@ -4182,6 +4751,9 @@ export function ExploreMap({
                     onChange={applyFilters}
                     onOpenMore={() => setFiltersOpen((prev) => !prev)}
                     locale={locale}
+                    pinKind={explorerPinKind}
+                    venueCategories={venueCategoryFilter}
+                    onVenueCategoriesChange={setVenueCategoryFilter}
                   />
 
                   <div className="map-zoom-controls">
@@ -4223,7 +4795,7 @@ export function ExploreMap({
                     <button
                       type="button"
                       className="map-zoom-btn"
-                      aria-label="Recentrer sur Montréal"
+                      aria-label={translate(locale, 'map.recenterMontreal')}
                       title="Montréal"
                       onClick={() =>
                         connectedMap.current?.flyTo({
@@ -4511,47 +5083,6 @@ export function ExploreMap({
                 }}
               >
                 <div className="map-shell explorer-map-shell">
-                  <MapFilterBar
-                    filters={filters}
-                    onChange={applyFilters}
-                    onOpenMore={() => setFiltersOpen((prev) => !prev)}
-                    locale={locale}
-                  />
-
-                  <div
-                    className="explorer-date-shortcuts"
-                    aria-label="Période d'exploration"
-                  >
-                    <button
-                      type="button"
-                      className={filters.date === 'today' ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('today')}
-                    >
-                      Aujourd'hui
-                    </button>
-                    <button
-                      type="button"
-                      className={filters.date === 'tonight' ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('tonight')}
-                    >
-                      Ce soir
-                    </button>
-                    <button
-                      type="button"
-                      className={filters.date === 'weekend' ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('weekend')}
-                    >
-                      Ce week-end
-                    </button>
-                    <button
-                      type="button"
-                      className={explorerTwoWeeksActive ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('two-weeks')}
-                    >
-                      14 jours
-                    </button>
-                  </div>
-
                   <div ref={explorerMapContainer} className="map" />
                   <div className="map-floating-pin-toggle">
                     <button
@@ -4559,29 +5090,69 @@ export function ExploreMap({
                       className={explorerPinKind === 'all' ? 'active' : ''}
                       onClick={() => setExplorerPinKind('all')}
                     >
-                      Tout <span>{events.length + venueGroups.length}</span>
+                      {translate(locale, 'map.pinAll')}{' '}
+                      <span>{events.length + venueGroups.length}</span>
                     </button>
                     <button
                       type="button"
                       className={explorerPinKind === 'event' ? 'active' : ''}
                       onClick={() => setExplorerPinKind('event')}
                     >
-                      Événements <span>{events.length}</span>
+                      {translate(locale, 'nav.events')}{' '}
+                      <span>{events.length}</span>
                     </button>
                     <button
                       type="button"
                       className={explorerPinKind === 'venue' ? 'active' : ''}
                       onClick={() => setExplorerPinKind('venue')}
                     >
-                      Lieux <span>{venueGroups.length}</span>
+                      {translate(locale, 'nav.venues')}{' '}
+                      <span>{venueGroups.length}</span>
+                    </button>
+                    {/* Explorer's floating chrome is one cluster now. The
+                        old top-left bar duplicated its own date filter - an
+                        "Aujourd'hui" dropdown sitting above an "Aujourd'hui"
+                        chip - and took a bite out of the map from a second
+                        corner. The three buttons on the left choose what is
+                        pinned; this one narrows which of them. */}
+                    <span className="map-floating-divider" aria-hidden="true" />
+                    <button
+                      type="button"
+                      className={`map-floating-filters ${filtersOpen ? 'active' : ''}`}
+                      aria-expanded={filtersOpen}
+                      onClick={() => setFiltersOpen((open) => !open)}
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M3 5h18M6 12h12M10 19h4" />
+                      </svg>
+                      Filtres
+                      {activeFilterCount > 0 && (
+                        <span className="map-floating-filters-count">
+                          {activeFilterCount}
+                        </span>
+                      )}
                     </button>
                   </div>
-                  <div className="explorer-map-legend" aria-label="Légende">
+                  <div
+                    className="explorer-map-legend"
+                    aria-label={translate(locale, 'map.legend')}
+                  >
                     <span>
-                      <i className="legend-event-dot" /> Événement programmé
+                      <i className="legend-event-dot" />{' '}
+                      {translate(locale, 'map.legendEvent')}
                     </span>
                     <span>
-                      <i className="legend-venue-dot" /> Lieu récurrent
+                      <i className="legend-venue-dot" />{' '}
+                      {translate(locale, 'map.legendVenue')}
                     </span>
                   </div>
                   <div className="explorer-location-controls">
@@ -4632,9 +5203,14 @@ export function ExploreMap({
               >
                 <div className="map-shell connected-map-shell">
                   <div className="connected-map-context">
-                    <span>Explorer Montréal</span>
+                    <span>{translate(locale, 'map.exploreMontreal')}</span>
                     <strong>
-                      {events.length + venueGroups.length} repères
+                      {translatePlural(
+                        locale,
+                        events.length + venueGroups.length,
+                        'map.markerCount',
+                        'map.markerCountPlural'
+                      )}
                     </strong>
                   </div>
 
@@ -4643,11 +5219,14 @@ export function ExploreMap({
                     onChange={applyFilters}
                     onOpenMore={() => setFiltersOpen((prev) => !prev)}
                     locale={locale}
+                    pinKind={explorerPinKind}
+                    venueCategories={venueCategoryFilter}
+                    onVenueCategoriesChange={setVenueCategoryFilter}
                   />
 
                   <div
                     className="explorer-date-shortcuts"
-                    aria-label="Période d'exploration"
+                    aria-label={translate(locale, 'map.explorePeriod')}
                   >
                     <button
                       type="button"
@@ -4688,7 +5267,8 @@ export function ExploreMap({
                       onClick={() => setExplorerPinKind('all')}
                     >
                       <i className="map-toggle-dot map-toggle-dot-all" />
-                      Tout <span>{events.length + venueGroups.length}</span>
+                      {translate(locale, 'map.pinAll')}{' '}
+                      <span>{events.length + venueGroups.length}</span>
                     </button>
                     <button
                       type="button"
@@ -4696,7 +5276,8 @@ export function ExploreMap({
                       onClick={() => setExplorerPinKind('event')}
                     >
                       <i className="map-toggle-dot map-toggle-dot-event" />
-                      Événements <span>{events.length}</span>
+                      {translate(locale, 'nav.events')}{' '}
+                      <span>{events.length}</span>
                     </button>
                     <button
                       type="button"
@@ -4704,7 +5285,8 @@ export function ExploreMap({
                       onClick={() => setExplorerPinKind('venue')}
                     >
                       <i className="map-toggle-dot map-toggle-dot-venue" />
-                      Lieux <span>{venueGroups.length}</span>
+                      {translate(locale, 'nav.venues')}{' '}
+                      <span>{venueGroups.length}</span>
                     </button>
                     {/* Connected map only (DEC-0017) - the anonymous
                         Explorer's identical toggle above deliberately has no
@@ -4720,13 +5302,18 @@ export function ExploreMap({
                     </button>
                   </div>
 
-                  <div className="explorer-map-legend" aria-label="Légende">
-                    <strong>Repères</strong>
+                  <div
+                    className="explorer-map-legend"
+                    aria-label={translate(locale, 'map.legend')}
+                  >
+                    <strong>{translate(locale, 'map.legendMarkers')}</strong>
                     <span>
-                      <i className="legend-event-dot" /> Événement programmé
+                      <i className="legend-event-dot" />{' '}
+                      {translate(locale, 'map.legendEvent')}
                     </span>
                     <span>
-                      <i className="legend-venue-dot" /> Lieu récurrent
+                      <i className="legend-venue-dot" />{' '}
+                      {translate(locale, 'map.legendVenue')}
                     </span>
                   </div>
 
@@ -4769,7 +5356,7 @@ export function ExploreMap({
                     <button
                       type="button"
                       className="map-zoom-btn"
-                      aria-label="Recentrer sur Montréal"
+                      aria-label={translate(locale, 'map.recenterMontreal')}
                       title="Montréal"
                       onClick={() =>
                         connectedMap.current?.flyTo({
@@ -4871,7 +5458,17 @@ export function ExploreMap({
                   user={user}
                   authToken={authToken}
                   onUserUpdated={setUser}
-                  onLogout={logout}
+                  onLogout={() => {
+                    // Signing out from a connected-only destination left
+                    // `section` on something the anonymous tree has no
+                    // branch for, so the navbar rendered and the content
+                    // area came up empty. Land back on the anonymous
+                    // default rather than nowhere.
+                    setSection('evenement');
+                    setForumPanelMode(false);
+                    setAboutOpen(false);
+                    logout();
+                  }}
                   locale={locale}
                   onChangeLocale={selectLocale}
                   attendance={attendance}
@@ -4930,6 +5527,7 @@ export function ExploreMap({
                           }
                           initialTab={detailsInitialTab}
                           onOpenForumPanel={() => setForumPanelMode(true)}
+                          onMessageUser={setMessageTarget}
                         />
                       );
                     })()}
@@ -4954,7 +5552,7 @@ export function ExploreMap({
                             }
                             style={{ marginTop: '1rem' }}
                           >
-                            Réessayer
+                            {translate(locale, 'common.retry')}
                           </button>
                         </div>
                       );
@@ -5047,19 +5645,19 @@ export function ExploreMap({
 
             <div className="bottom-section">
               <div className="section-header">
-                <h2>Événements autour de vous</h2>
+                <h2>{translate(locale, 'landing.nearbyTitle')}</h2>
                 <button
                   type="button"
                   className="view-all"
                   onClick={() => {
                     setListOverride({
-                      title: 'Événements les plus proches de vous',
+                      title: translate(locale, 'landing.nearbyListTitle'),
                       events: carouselEvents.slice(0, 15)
                     });
                     setViewMode('list');
                   }}
                 >
-                  Voir tous les événements{' '}
+                  {translate(locale, 'landing.seeAllEvents')}{' '}
                   <svg
                     width="16"
                     height="16"
@@ -5129,48 +5727,42 @@ export function ExploreMap({
                     </div>
                   </div>
                 ))}
-                {carouselEmpty && <p>Aucun événement trouvé.</p>}
+                {carouselEmpty && (
+                  <p>{translate(locale, 'landing.noEvents')}</p>
+                )}
               </div>
 
               <div className="feature-footer">
                 <div className="feature-item">
                   <div className="feature-icon">⚡</div>
                   <div className="feature-text">
-                    <h4>Carte intelligente</h4>
-                    <p>
-                      Explorez votre ville et découvrez des événements autour de
-                      vous en temps réel.
-                    </p>
+                    <h4>{translate(locale, 'landing.featureMapTitle')}</h4>
+                    <p>{translate(locale, 'landing.featureMapBody')}</p>
                   </div>
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">🔍</div>
                   <div className="feature-text">
-                    <h4>Recherche puissante</h4>
-                    <p>
-                      Trouvez exactement ce que vous cherchez grâce à la
-                      recherche et à nos suggestions.
-                    </p>
+                    <h4>{translate(locale, 'landing.featureSearchTitle')}</h4>
+                    <p>{translate(locale, 'landing.featureSearchBody')}</p>
                   </div>
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">❤️</div>
                   <div className="feature-text">
-                    <h4>Vos favoris</h4>
-                    <p>
-                      Sauvegardez vos événements préférés et ne manquez jamais
-                      une sortie.
-                    </p>
+                    <h4>
+                      {translate(locale, 'landing.featureFavoritesTitle')}
+                    </h4>
+                    <p>{translate(locale, 'landing.featureFavoritesBody')}</p>
                   </div>
                 </div>
                 <div className="feature-item">
                   <div className="feature-icon">👥</div>
                   <div className="feature-text">
-                    <h4>Communauté</h4>
-                    <p>
-                      Rejoignez des milliers de passionnés et partagez vos
-                      meilleures découvertes.
-                    </p>
+                    <h4>
+                      {translate(locale, 'landing.featureCommunityTitle')}
+                    </h4>
+                    <p>{translate(locale, 'landing.featureCommunityBody')}</p>
                   </div>
                 </div>
               </div>
@@ -5278,24 +5870,6 @@ const CATEGORY_ICON_PATHS: Record<EventCategory, ReactNode> = {
     <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V7z" />
   )
 };
-
-function HeartIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill={filled ? 'currentColor' : 'none'}
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-    </svg>
-  );
-}
 
 function InfoIcon() {
   return (
@@ -5506,7 +6080,9 @@ type SidebarIconKind =
   | 'groupes'
   | 'messages'
   | 'amis'
-  | 'favoris';
+  | 'favoris'
+  | 'organisateur'
+  | 'administration';
 
 function SidebarNavIcon({ kind }: { kind: SidebarIconKind }) {
   const paths: Record<SidebarIconKind, ReactNode> = {
@@ -5562,6 +6138,19 @@ function SidebarNavIcon({ kind }: { kind: SidebarIconKind }) {
     ),
     favoris: (
       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    ),
+    organisateur: (
+      <>
+        <rect x="3" y="4" width="18" height="17" rx="2" />
+        <path d="M16 2v4M8 2v4M3 10h18" />
+        <path d="M12 14v4M10 16h4" />
+      </>
+    ),
+    administration: (
+      <>
+        <path d="M12 3l7.5 3.3v5c0 4.6-3.2 8.9-7.5 10-4.3-1.1-7.5-5.4-7.5-10v-5z" />
+        <path d="M9.2 12.2l1.9 1.9 3.7-3.8" />
+      </>
     )
   };
   return (
@@ -5590,7 +6179,10 @@ function SidebarNavIcon({ kind }: { kind: SidebarIconKind }) {
 // plain space after `</strong>` is silently dropped at compile time (it
 // rendered as "Camille Royt'a envoyé…"), and Prettier rewrites an explicit
 // {' '} straight back into that bare space. A string literal survives both.
-function describeNotification(entry: PulsoNotification): {
+function describeNotification(
+  entry: PulsoNotification,
+  locale: SupportedLocale
+): {
   icon: SidebarIconKind;
   text: ReactNode;
   detail: string;
@@ -5601,8 +6193,8 @@ function describeNotification(entry: PulsoNotification): {
         icon: 'lieux',
         text: (
           <>
-            <strong>{entry.venueName}</strong>
-            {" vient d'ajouter "}
+            <strong>{entry.venueName}</strong>{' '}
+            {translate(locale, 'notif.venueAdded')}{' '}
             <strong>{entry.eventTitle}</strong>
           </>
         ),
@@ -5613,53 +6205,134 @@ function describeNotification(entry: PulsoNotification): {
         icon: 'amis',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {" t'a envoyé une demande d'ami"}
+            <strong>{entry.actorDisplayName}</strong>{' '}
+            {translate(locale, 'notif.friendRequest')}{' '}
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'friend_request_accepted':
       return {
         icon: 'amis',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {" a accepté ta demande d'ami"}
+            <strong>{entry.actorDisplayName}</strong>{' '}
+            {translate(locale, 'notif.friendAccepted')}{' '}
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'message_received':
       return {
         icon: 'messages',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {" t'a envoyé un message"}
+            <strong>{entry.actorDisplayName}</strong>{' '}
+            {translate(locale, 'notif.messageReceived')}{' '}
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'forum_reply':
       return {
         icon: 'forums',
         text: (
           <>
-            <strong>{entry.actorDisplayName}</strong>
-            {' a écrit dans le forum de '}
+            <strong>{entry.actorDisplayName}</strong>{' '}
+            {translate(locale, 'notif.forumReply')}{' '}
             <strong>{entry.eventTitle}</strong>
           </>
         ),
-        detail: formatRelativeTime(entry.createdAt)
+        detail: formatRelativeTime(entry.createdAt, locale)
+      };
+    case 'organizer_request_received':
+      return {
+        icon: 'administration',
+        text: (
+          <>
+            <strong>{entry.actorDisplayName}</strong>{' '}
+            {translate(locale, 'notif.organizerRequest')}{' '}
+            <strong>{entry.venueName}</strong>
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt, locale)
+      };
+    case 'organizer_request_resolved':
+      return {
+        icon: 'organisateur',
+        text: entry.approved ? (
+          <>
+            {translate(locale, 'notif.organizerApproved')}{' '}
+            <strong>{entry.venueName}</strong>
+          </>
+        ) : (
+          <>
+            {translate(locale, 'notif.requestFor')}{' '}
+            <strong>{entry.venueName}</strong>{' '}
+            {translate(locale, 'notif.declined')}
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt, locale)
+      };
+    case 'group_verification_received':
+      return {
+        icon: 'administration',
+        text: (
+          <>
+            <strong>{entry.actorDisplayName}</strong>{' '}
+            {translate(locale, 'notif.groupVerificationRequest')}{' '}
+            <strong>{entry.groupName}</strong>
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt, locale)
+      };
+    case 'group_verification_resolved':
+      return {
+        icon: 'groupes',
+        text: entry.approved ? (
+          <>
+            <strong>{entry.groupName}</strong>{' '}
+            {translate(locale, 'notif.groupVerified')}{' '}
+          </>
+        ) : (
+          <>
+            {translate(locale, 'notif.groupVerificationOf')}{' '}
+            <strong>{entry.groupName}</strong>{' '}
+            {translate(locale, 'notif.declined')}
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt, locale)
+      };
+    case 'group_join_request_received':
+      return {
+        icon: 'groupes',
+        text: (
+          <>
+            <strong>{entry.actorDisplayName}</strong>{' '}
+            {translate(locale, 'notif.groupJoinRequest')}{' '}
+            <strong>{entry.groupName}</strong>
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt, locale)
+      };
+    case 'group_join_request_accepted':
+      return {
+        icon: 'groupes',
+        text: (
+          <>
+            {translate(locale, 'notif.groupJoined')}{' '}
+            <strong>{entry.groupName}</strong>
+          </>
+        ),
+        detail: formatRelativeTime(entry.createdAt, locale)
       };
     case 'upcoming_event':
       return {
         icon: 'evenements',
         text: (
           <>
-            <strong>{entry.eventTitle}</strong>
-            {' commence bientôt à '}
+            <strong>{entry.eventTitle}</strong>{' '}
+            {translate(locale, 'notif.eventStartsSoon')}{' '}
             <strong>{entry.venueName}</strong>
           </>
         ),
@@ -5671,12 +6344,14 @@ function describeNotification(entry: PulsoNotification): {
 function NotificationsPanel({
   notifications,
   state,
+  locale,
   onClose,
   onOpenEvent,
   onOpenSection
 }: {
   notifications: PulsoNotification[];
   state: 'loading' | 'success' | 'error';
+  locale: SupportedLocale;
   onClose: () => void;
   onOpenEvent: (eventId: string) => void;
   onOpenSection: (section: ConnectedSection) => void;
@@ -5685,15 +6360,15 @@ function NotificationsPanel({
     <div
       className="notifications-panel"
       role="dialog"
-      aria-label="Notifications"
+      aria-label={translate(locale, 'notif.title')}
     >
       <div className="notifications-panel-header">
-        <h3>Notifications</h3>
+        <h3>{translate(locale, 'notif.title')}</h3>
         <button
           type="button"
           className="close-button"
           onClick={onClose}
-          aria-label="Fermer"
+          aria-label={translate(locale, 'notif.close')}
         >
           <svg
             width="16"
@@ -5708,10 +6383,12 @@ function NotificationsPanel({
         </button>
       </div>
 
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger tes notifications.
+          {translate(locale, 'notif.loadError')}
         </p>
       )}
       {state === 'success' && notifications.length === 0 && (
@@ -5719,17 +6396,14 @@ function NotificationsPanel({
           <span className="empty-state-icon" aria-hidden="true">
             <BellIcon />
           </span>
-          <p>Rien de neuf</p>
-          <p>
-            Suis un lieu pour être prévenu·e dès qu&apos;il programme quelque
-            chose.
-          </p>
+          <p>{translate(locale, 'notif.emptyTitle')}</p>
+          <p>{translate(locale, 'notif.emptyBody')}</p>
         </div>
       )}
 
       <div className="notifications-list">
         {notifications.map((entry) => {
-          const described = describeNotification(entry);
+          const described = describeNotification(entry, locale);
           const unread = 'readAt' in entry && entry.readAt === null;
           const key = 'id' in entry ? entry.id : `upcoming-${entry.eventId}`;
           const openTarget = () => {
@@ -5761,7 +6435,10 @@ function NotificationsPanel({
                 </span>
               </span>
               {unread && (
-                <span className="notifications-row-dot" aria-label="Non lu" />
+                <span
+                  className="notifications-row-dot"
+                  aria-label={translate(locale, 'notif.unread')}
+                />
               )}
             </button>
           );
@@ -5811,7 +6488,7 @@ function PickerList({
       <div className="picker-list-rows">
         {events.length === 0 && (
           <p className="list-view-empty">
-            Aucun événement prévu pour le moment.
+            {translate(locale, 'event.noUpcoming')}
           </p>
         )}
         {events.map((event) => {
@@ -6270,6 +6947,12 @@ interface VenueGroup {
   venueSecondaryCategories?: VenueCategory[];
   priceTier?: VenuePriceTier;
   imageUrl?: string;
+  // The credit the photo's licence requires. Carried alongside the URL, not
+  // derived from it: a Commons image is only legally usable *with* its
+  // credit, so the two have to arrive and be rendered together.
+  imageAttribution?: string;
+  openingHours?: string;
+  openingHoursObservedAt?: string;
 }
 
 function getVenueSummary(group: VenueGroup, locale: SupportedLocale): string {
@@ -6502,8 +7185,13 @@ function VenueListView({
               </div>
               <span className="venue-card-count">
                 {group.events.length > 0
-                  ? `${group.events.length} événement${group.events.length > 1 ? 's' : ''} à venir`
-                  : 'Aucun événement prévu pour le moment'}
+                  ? translatePlural(
+                      locale,
+                      group.events.length,
+                      'event.upcomingCount',
+                      'event.upcomingCountPlural'
+                    )
+                  : translate(locale, 'event.noUpcoming')}
               </span>
             </div>
           </div>
@@ -6935,7 +7623,30 @@ function VenueDetailContent({
   onClose?: () => void;
 }) {
   const isFavorite = favoriteVenues.includes(group.id);
-  const eventBuckets = partitionVenueEvents(group.events, new Date());
+  // DEC-0019: the venue's own programming and what other people organize
+  // there are two different claims, and merging them lets a member's party
+  // read as the bar's own night. Ingested and verified-organizer events are
+  // the venue speaking; `community` is somebody hosting *at* the venue.
+  const venueProgramming = group.events.filter(
+    (event) => event.origin !== 'community'
+  );
+  const hostedEvents = group.events.filter(
+    (event) => event.origin === 'community'
+  );
+  const eventBuckets = partitionVenueEvents(venueProgramming, new Date());
+  const schedule = group.openingHours
+    ? parseOpeningHours(group.openingHours)
+    : undefined;
+  // A record old enough to have outlived a closure cannot support a claim
+  // about right now. The hours are still shown - they are the best Pulso has
+  // - but the open/closed pill is withheld rather than guessed.
+  const hoursFresh = group.openingHoursObservedAt
+    ? Date.now() - new Date(group.openingHoursObservedAt).getTime() <
+      OPENING_STATE_MAX_AGE_MS
+    : false;
+  const openingState = hoursFresh
+    ? resolveOpeningState(schedule, new Date())
+    : 'unknown';
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${group.point.latitude},${group.point.longitude}`;
 
   return (
@@ -6945,6 +7656,12 @@ function VenueDetailContent({
           imageUrl={group.imageUrl}
           category={group.categories[0] ?? 'other'}
         />
+        {/* Shown only when the licence actually requires a credit, which is
+            why it is read from the record rather than assumed: a venue's own
+            preview photo of itself carries none. */}
+        {group.imageUrl && group.imageAttribution && (
+          <p className="venue-detail-photo-credit">{group.imageAttribution}</p>
+        )}
         {onClose && (
           <button
             type="button"
@@ -7037,6 +7754,38 @@ function VenueDetailContent({
             ↗
           </span>
         </a>
+        {schedule && (
+          <div className="venue-detail-info-row venue-detail-hours">
+            <span className="venue-detail-info-icon" aria-hidden="true">
+              ◷
+            </span>
+            <span>
+              <small>
+                Horaires
+                {openingState !== 'unknown' && (
+                  <span
+                    className={`venue-open-pill venue-open-${openingState}`}
+                  >
+                    {openingState === 'open' ? 'Ouvert' : 'Fermé'}
+                  </span>
+                )}
+              </small>
+              <ul className="venue-hours-list">
+                {describeOpeningSchedule(schedule, locale).map((row) => (
+                  <li key={row.day}>
+                    <span>{row.day}</span>
+                    <span>{row.hours ?? 'Fermé'}</span>
+                  </li>
+                ))}
+              </ul>
+              <span className="venue-detail-info-hint">
+                {group.imageAttribution || group.openingHours
+                  ? 'Horaires publiés par la source du lieu, pas par Pulso.'
+                  : ''}
+              </span>
+            </span>
+          </div>
+        )}
         {group.priceTier && (
           <div className="venue-detail-info-row">
             <span className="venue-detail-info-icon" aria-hidden="true">
@@ -7106,6 +7855,42 @@ function VenueDetailContent({
             ))
           )}
         </div>
+
+        {/* DEC-0019. Kept below the venue's own programming and visibly
+            distinct, because the two are different claims: above is what the
+            venue itself has on, here is what other people are organizing in
+            it. Folding them into one list would let a member's party read as
+            the bar's own night, which is precisely the confusion a verified
+            organizer link exists to prevent. Rendered only when there is
+            something in it - an empty "nobody has organized anything here"
+            block on 975 venues would be noise. */}
+        {hostedEvents.length > 0 && (
+          <div className="venue-detail-programming-block venue-detail-programming-hosted">
+            <div className="venue-detail-programming-heading">
+              <div>
+                <span className="venue-detail-programming-kicker">
+                  Par la communauté
+                </span>
+                <h3>Événements organisés ici</h3>
+              </div>
+              <span className="venue-detail-programming-count">
+                {hostedEvents.length}
+              </span>
+            </div>
+            <p className="venue-detail-programming-note">
+              Organisés par des membres dans ce lieu. Ce n&apos;est pas la
+              programmation du lieu lui-même.
+            </p>
+            {hostedEvents.map((event) => (
+              <VenueDetailEventRow
+                key={event.id}
+                event={event}
+                locale={locale}
+                onSelect={() => onOpenEventForum(event.id)}
+              />
+            ))}
+          </div>
+        )}
 
         <VenueRatingWidget venueId={group.id} authToken={authToken} />
       </div>
@@ -7605,6 +8390,337 @@ function AccountMenu({
   );
 }
 
+// DEC-0020 - messaging, docked.
+//
+// The Messages page still exists and is still the full experience; this is
+// the part that had to change to keep conversations on Pulso. A message
+// used to cost a navigation: leave the map, leave the event you were
+// reading, go to a section, come back. That friction is why people trade
+// Instagram handles and never come back to the inbox here.
+//
+// Deliberately shows only data Pulso has - no presence dot, no typing
+// indicator, no call button - the same rule the Messages page follows.
+function MessagingDock({
+  authToken,
+  user,
+  locale,
+  unreadMessagesCount,
+  openWith,
+  onOpened,
+  onOpenFullInbox
+}: {
+  authToken: string | undefined;
+  user: User;
+  locale: SupportedLocale;
+  unreadMessagesCount: number;
+  // Set by a surface elsewhere in the app asking the dock to open straight
+  // onto a conversation - "Écrire" on a participant, say. Cleared through
+  // onOpened so the same person can be picked twice in a row.
+  openWith: PublicUser | undefined;
+  onOpened: () => void;
+  onOpenFullInbox: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<'conversations' | 'requests'>('conversations');
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [requests, setRequests] = useState<MessageRequest[]>([]);
+  const [selected, setSelected] = useState<PublicUser>();
+  const [thread, setThread] = useState<Message[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendFailed, setSendFailed] = useState(false);
+
+  const authHeaders = useMemo(
+    () => (authToken ? { authorization: `Bearer ${authToken}` } : undefined),
+    [authToken]
+  );
+
+  const refresh = useCallback(() => {
+    if (!authHeaders) return;
+    fetch(`${API_BASE_URL}/me/conversations`, { headers: authHeaders })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setConversations(conversationsResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+    fetch(`${API_BASE_URL}/me/message-requests`, { headers: authHeaders })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setRequests(messageRequestsResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+  }, [authHeaders]);
+
+  // Only fetches while the dock is open. It is mounted on every connected
+  // screen, so loading an inbox nobody is looking at would make the whole
+  // app pay for a panel that is closed most of the time.
+  useEffect(() => {
+    if (open) refresh();
+  }, [open, refresh]);
+
+  const openConversation = useCallback(
+    (friend: PublicUser) => {
+      if (!authHeaders) return;
+      setSelected(friend);
+      setThread([]);
+      setSendFailed(false);
+      fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages`, {
+        headers: authHeaders
+      })
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => setThread(conversationResponseSchema.parse(json).data))
+        .catch(() => {});
+      // Opening it is what clears it, same as the full page.
+      fetch(`${API_BASE_URL}/me/friends/${friend.id}/messages/read`, {
+        method: 'PUT',
+        headers: authHeaders
+      })
+        .then(refresh)
+        .catch(() => {});
+    },
+    [authHeaders, refresh]
+  );
+
+  useEffect(() => {
+    if (!openWith) return;
+    setOpen(true);
+    openConversation(openWith);
+    onOpened();
+  }, [openWith, openConversation, onOpened]);
+
+  const send = () => {
+    const body = draft.trim();
+    if (!authHeaders || !selected || body.length === 0) return;
+    setSending(true);
+    setSendFailed(false);
+    fetch(`${API_BASE_URL}/me/friends/${selected.id}/messages`, {
+      method: 'POST',
+      headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ body })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setThread((current) => [
+          ...current,
+          messageResponseSchema.parse(json).data
+        ]);
+        setDraft('');
+        refresh();
+      })
+      .catch(() => setSendFailed(true))
+      .finally(() => setSending(false));
+  };
+
+  const respond = (senderId: string, action: 'accept' | 'decline') => {
+    if (!authHeaders) return;
+    fetch(`${API_BASE_URL}/me/message-requests/${senderId}`, {
+      method: 'PUT',
+      headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ action })
+    })
+      .then(refresh)
+      .catch(() => {});
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="messaging-dock-launcher"
+        aria-label={translate(locale, 'dock.open')}
+        onClick={() => setOpen(true)}
+      >
+        <SidebarNavIcon kind="messages" />
+        {unreadMessagesCount > 0 && (
+          <span className="messaging-dock-launcher-badge">
+            {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+          </span>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <section
+      className="messaging-dock"
+      aria-label={translate(locale, 'dock.title')}
+    >
+      <header className="messaging-dock-header">
+        {selected ? (
+          <button
+            type="button"
+            className="messaging-dock-back"
+            aria-label={translate(locale, 'dock.back')}
+            onClick={() => setSelected(undefined)}
+          >
+            &lsaquo;
+          </button>
+        ) : null}
+        <h2>
+          {selected ? selected.displayName : translate(locale, 'dock.title')}
+        </h2>
+        <button
+          type="button"
+          className="messaging-dock-close"
+          aria-label={translate(locale, 'dock.close')}
+          onClick={() => {
+            setOpen(false);
+            setSelected(undefined);
+          }}
+        >
+          &times;
+        </button>
+      </header>
+
+      {selected ? (
+        <>
+          <ol className="messaging-dock-thread">
+            {thread.map((message) => (
+              <li
+                key={message.id}
+                className={
+                  message.senderId === user.id ? 'is-mine' : 'is-theirs'
+                }
+              >
+                <span>{message.body}</span>
+                <time dateTime={message.createdAt}>
+                  {formatMessageTimestamp(message.createdAt)}
+                </time>
+              </li>
+            ))}
+          </ol>
+          {sendFailed && (
+            <p className="messaging-dock-error" role="alert">
+              {translate(locale, 'dock.sendFailed')}
+            </p>
+          )}
+          <form
+            className="messaging-dock-composer"
+            onSubmit={(submitEvent) => {
+              submitEvent.preventDefault();
+              send();
+            }}
+          >
+            <input
+              value={draft}
+              onChange={(changeEvent) => setDraft(changeEvent.target.value)}
+              placeholder={translate(locale, 'dock.compose')}
+              aria-label={translate(locale, 'dock.compose')}
+            />
+            <button
+              type="submit"
+              disabled={sending || draft.trim().length === 0}
+            >
+              {translate(locale, 'dock.send')}
+            </button>
+          </form>
+        </>
+      ) : (
+        <>
+          <nav className="messaging-dock-tabs">
+            <button
+              type="button"
+              className={tab === 'conversations' ? 'active' : ''}
+              onClick={() => setTab('conversations')}
+            >
+              {translate(locale, 'dock.conversations')}
+            </button>
+            <button
+              type="button"
+              className={tab === 'requests' ? 'active' : ''}
+              onClick={() => setTab('requests')}
+            >
+              {translate(locale, 'dock.requests')}
+              {requests.length > 0 && (
+                <span className="messaging-dock-tab-badge">
+                  {requests.length}
+                </span>
+              )}
+            </button>
+          </nav>
+
+          {tab === 'conversations' ? (
+            conversations.length === 0 ? (
+              <p className="messaging-dock-empty">
+                {translate(locale, 'dock.empty')}
+              </p>
+            ) : (
+              <ul className="messaging-dock-list">
+                {conversations.map((conversation) => (
+                  <li key={conversation.friend.id}>
+                    <button
+                      type="button"
+                      className="messaging-dock-row"
+                      onClick={() => openConversation(conversation.friend)}
+                    >
+                      <span className="messaging-dock-avatar">
+                        {renderAvatarContent(conversation.friend)}
+                      </span>
+                      <span className="messaging-dock-entry">
+                        <strong>{conversation.friend.displayName}</strong>
+                        <span>{conversation.lastMessage?.body ?? ''}</span>
+                      </span>
+                      {conversation.unreadCount > 0 && (
+                        <span className="messaging-dock-unread">
+                          {conversation.unreadCount}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : requests.length === 0 ? (
+            <p className="messaging-dock-empty">
+              {translate(locale, 'dock.requestsEmpty')}
+            </p>
+          ) : (
+            <ul className="messaging-dock-list">
+              {requests.map((request) => (
+                <li key={request.sender.id} className="messaging-dock-request">
+                  <span className="messaging-dock-avatar">
+                    {renderAvatarContent(request.sender)}
+                  </span>
+                  <span className="messaging-dock-entry">
+                    <strong>{request.sender.displayName}</strong>
+                    <span>{request.message?.body ?? ''}</span>
+                  </span>
+                  <span className="messaging-dock-request-actions">
+                    <button
+                      type="button"
+                      onClick={() => respond(request.sender.id, 'accept')}
+                    >
+                      {translate(locale, 'dock.accept')}
+                    </button>
+                    <button
+                      type="button"
+                      className="is-secondary"
+                      onClick={() => respond(request.sender.id, 'decline')}
+                    >
+                      {translate(locale, 'dock.decline')}
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            type="button"
+            className="messaging-dock-see-all"
+            onClick={() => {
+              setOpen(false);
+              onOpenFullInbox();
+            }}
+          >
+            {translate(locale, 'dock.seeAll')}
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+
 type ConnectedSection =
   | 'decouvrir'
   | 'evenement'
@@ -7614,23 +8730,127 @@ type ConnectedSection =
   | 'forums'
   | 'groupes'
   | 'messages'
-  | 'amis';
+  | 'amis'
+  | 'organisateur'
+  | 'administration';
 
-const SIDEBAR_NAV_ITEMS: Array<{
-  section: ConnectedSection;
-  label: string;
+// DEC-0020: Forums, Groupes, Messages and Amis are the same thing from the
+// user's point of view - other people - and listing them as four peers made
+// the sidebar read as a feature list. They become sub-sections of one
+// "Communauté" entry. They stay real ConnectedSection values rather than
+// collapsing into one, so every existing deep link into them (a
+// notification, an event forum, a group invitation) still lands where it
+// always did; only the navigation chrome changed.
+const COMMUNITY_SECTIONS = [
+  'messages',
+  'amis',
+  'forums',
+  'groupes'
+] as const satisfies readonly ConnectedSection[];
+
+type CommunitySection = (typeof COMMUNITY_SECTIONS)[number];
+
+function isCommunitySection(
+  section: ConnectedSection | 'compte'
+): section is CommunitySection {
+  return (COMMUNITY_SECTIONS as readonly string[]).includes(section);
+}
+
+// Messages leads: it is the sub-section a user returns to, and the one the
+// product depends on to keep conversations here instead of on Instagram.
+const DEFAULT_COMMUNITY_SECTION: CommunitySection = 'messages';
+
+const COMMUNITY_SUB_NAV: Array<{
+  section: CommunitySection;
+  labelKey: MessageKey;
   icon: SidebarIconKind;
 }> = [
-  { section: 'decouvrir', label: 'Découvrir', icon: 'decouvrir' },
-  { section: 'explorer', label: 'Carte', icon: 'carte' },
-  { section: 'evenement', label: 'Événements', icon: 'evenements' },
-  { section: 'lieu', label: 'Lieux', icon: 'lieux' },
-  { section: 'forums', label: 'Forums', icon: 'forums' },
-  { section: 'groupes', label: 'Groupes', icon: 'groupes' },
-  { section: 'messages', label: 'Messages', icon: 'messages' },
-  { section: 'amis', label: 'Amis', icon: 'amis' },
-  { section: 'favoris', label: 'Favoris', icon: 'favoris' }
+  { section: 'messages', labelKey: 'nav.messages', icon: 'messages' },
+  { section: 'amis', labelKey: 'nav.friends', icon: 'amis' },
+  { section: 'forums', labelKey: 'nav.forums', icon: 'forums' },
+  { section: 'groupes', labelKey: 'nav.groups', icon: 'groupes' }
 ];
+
+// 'communaute' is a hub, never an active section: clicking it resolves to
+// one of COMMUNITY_SECTIONS, so it is typed here and nowhere else.
+type SidebarDestination = ConnectedSection | 'communaute';
+
+// DEC-0020: the four community sub-sections share one header, so moving
+// between them costs a click and never a trip back through the sidebar.
+// Purely chrome - each sub-page below is the same component it always was.
+function CommunityHub({
+  section,
+  onSelect,
+  unreadMessagesCount,
+  locale,
+  children
+}: {
+  section: CommunitySection;
+  onSelect: (section: CommunitySection) => void;
+  unreadMessagesCount: number;
+  locale: SupportedLocale;
+  children: ReactNode;
+}) {
+  return (
+    <div className="community-hub">
+      <nav
+        className="community-hub-nav"
+        aria-label={translate(locale, 'nav.community')}
+      >
+        {COMMUNITY_SUB_NAV.map((item) => (
+          <button
+            type="button"
+            key={item.section}
+            className={`community-hub-tab ${section === item.section ? 'active' : ''}`}
+            aria-current={section === item.section ? 'page' : undefined}
+            onClick={() => onSelect(item.section)}
+          >
+            <span className="community-hub-tab-icon">
+              <SidebarNavIcon kind={item.icon} />
+            </span>
+            {translate(locale, item.labelKey)}
+            {item.section === 'messages' && unreadMessagesCount > 0 && (
+              <span className="community-hub-tab-badge">
+                {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </nav>
+      {children}
+    </div>
+  );
+}
+
+const SIDEBAR_NAV_ITEMS: Array<{
+  section: SidebarDestination;
+  labelKey: MessageKey;
+  icon: SidebarIconKind;
+}> = [
+  { section: 'decouvrir', labelKey: 'sidebar.discover', icon: 'decouvrir' },
+  { section: 'explorer', labelKey: 'sidebar.map', icon: 'carte' },
+  { section: 'evenement', labelKey: 'nav.events', icon: 'evenements' },
+  { section: 'lieu', labelKey: 'nav.venues', icon: 'lieux' },
+  { section: 'communaute', labelKey: 'nav.community', icon: 'amis' },
+  { section: 'favoris', labelKey: 'sidebar.favorites', icon: 'favoris' },
+  {
+    section: 'organisateur',
+    labelKey: 'sidebar.organizer',
+    icon: 'organisateur'
+  }
+];
+
+// DEC-0018: appended only for an administrator. A non-admin never sees the
+// destination, and every /admin route answers 403 regardless.
+const ADMIN_NAV_ITEM: {
+  section: SidebarDestination;
+  labelKey: MessageKey;
+  icon: SidebarIconKind;
+} = {
+  section: 'administration',
+  labelKey: 'sidebar.administration',
+  icon: 'administration'
+};
 
 // Primary navigation rail for the connected experience (Phase 4). Only
 // rendered when signed in - the anonymous map/explore experience keeps its
@@ -7639,16 +8859,24 @@ const SIDEBAR_NAV_ITEMS: Array<{
 function Sidebar({
   activeSection,
   onNavigate,
+  lastCommunitySection,
   authToken,
   user,
+  locale,
   unreadMessagesCount,
-  onOpenAccount
+  isAdmin,
+  onOpenAccount,
+  onOpenEvent
 }: {
   activeSection: ConnectedSection;
   onNavigate: (section: ConnectedSection) => void;
+  lastCommunitySection: CommunitySection;
   authToken: string | undefined;
+  locale: SupportedLocale;
   user: User;
   unreadMessagesCount: number;
+  isAdmin: boolean;
+  onOpenEvent: (eventId: string) => void;
   onOpenAccount: () => void;
 }) {
   const [friendCode, setFriendCode] = useState<string>();
@@ -7684,6 +8912,25 @@ function Sidebar({
 
   const pinnedGroups = myGroups.filter((group) => group.pinned);
 
+  // DEC-0017 v1.2: the organizer's own pinned events sit in Raccourcis
+  // beside pinned groups - the two things a user actually returns to.
+  const [pinnedEvents, setPinnedEvents] = useState<PublicEvent[]>([]);
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/events`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setPinnedEvents(
+          myEventsResponseSchema
+            .parse(json)
+            .data.filter((event) => event.pinned)
+        )
+      )
+      .catch(() => {});
+  }, [authToken, activeSection]);
+
   return (
     <aside className="primary-sidebar">
       <button
@@ -7696,18 +8943,39 @@ function Sidebar({
       </button>
 
       <nav className="primary-sidebar-nav">
-        {SIDEBAR_NAV_ITEMS.map((item) => (
+        {(isAdmin
+          ? [...SIDEBAR_NAV_ITEMS, ADMIN_NAV_ITEM]
+          : SIDEBAR_NAV_ITEMS
+        ).map((item) => (
           <button
             type="button"
             key={item.section}
-            className={`primary-sidebar-nav-item ${activeSection === item.section ? 'active' : ''}`}
-            onClick={() => onNavigate(item.section)}
+            className={`primary-sidebar-nav-item ${
+              (
+                item.section === 'communaute'
+                  ? isCommunitySection(activeSection)
+                  : activeSection === item.section
+              )
+                ? 'active'
+                : ''
+            }`}
+            onClick={() =>
+              onNavigate(
+                item.section === 'communaute'
+                  ? lastCommunitySection
+                  : item.section
+              )
+            }
           >
             <span className="primary-sidebar-nav-icon">
               <SidebarNavIcon kind={item.icon} />
             </span>
-            {item.label}
-            {item.section === 'messages' && unreadMessagesCount > 0 && (
+            {translate(locale, item.labelKey)}
+            {/* The badge follows Messages up to its new parent: Messages is
+                no longer a primary entry, so without this an unread message
+                would light up nothing at all. It is repeated on the
+                Messages sub-tab below, which is what it actually counts. */}
+            {item.section === 'communaute' && unreadMessagesCount > 0 && (
               <span className="primary-sidebar-nav-badge">
                 {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
               </span>
@@ -7726,7 +8994,7 @@ function Sidebar({
           4.14) - "Groupes" above is the real entry point to the full panel
           (and its own create-group form), not a "Créer un groupe" shortcut
           duplicated down here. */}
-      {pinnedGroups.length > 0 && (
+      {(pinnedGroups.length > 0 || pinnedEvents.length > 0) && (
         <div className="primary-sidebar-group">
           <h3 className="primary-sidebar-group-title">Raccourcis</h3>
           {pinnedGroups.map((group) => (
@@ -7742,11 +9010,28 @@ function Sidebar({
               {group.name}
             </button>
           ))}
+          {pinnedEvents.map((event) => (
+            <button
+              type="button"
+              key={event.id}
+              className="primary-sidebar-nav-item"
+              onClick={() => onOpenEvent(event.id)}
+            >
+              <span
+                className="primary-sidebar-group-avatar primary-sidebar-event-avatar"
+                aria-hidden="true"
+              >
+                <CategoryIcon category={event.category} size={14} />
+              </span>
+              {event.title}
+            </button>
+          ))}
         </div>
       )}
 
       {openGroup && (
         <GroupModal
+          locale={locale}
           group={openGroup}
           authToken={authToken}
           userId={user.id}
@@ -7858,6 +9143,10 @@ function TopBar({
   onClear,
   onClearConstraint,
   onPreview,
+  onShowOnMap,
+  onOpenVenue,
+  open,
+  onClose,
   locale,
   user,
   unreadMessagesCount,
@@ -7879,6 +9168,13 @@ function TopBar({
   onClear: () => void;
   onClearConstraint: (key: SearchConstraintKey) => void;
   onPreview: (event: PublicEvent) => void;
+  onShowOnMap: (
+    point: { longitude: number; latitude: number },
+    kind?: 'event' | 'venue'
+  ) => void;
+  onOpenVenue: (venue: PublicVenue) => void;
+  open: boolean;
+  onClose: () => void;
   locale: SupportedLocale;
   user: User;
   unreadMessagesCount: number;
@@ -7907,6 +9203,10 @@ function TopBar({
           onClear={onClear}
           onClearConstraint={onClearConstraint}
           onPreview={onPreview}
+          onShowOnMap={onShowOnMap}
+          onOpenVenue={onOpenVenue}
+          open={open}
+          onClose={onClose}
           locale={locale}
         />
       </div>
@@ -8006,6 +9306,7 @@ function EventsPage({
   onToggleFavorite,
   onOpenEventForum,
   onNavigateToMap,
+  onNavigateToOrganisateur,
   locale
 }: {
   authToken: string | undefined;
@@ -8013,6 +9314,7 @@ function EventsPage({
   onToggleFavorite: (eventId: string) => void;
   onOpenEventForum: (eventId: string) => void;
   onNavigateToMap: () => void;
+  onNavigateToOrganisateur: () => void;
   locale: SupportedLocale;
 }) {
   const [period, setPeriod] = useState<EventsPeriod>('today');
@@ -8022,7 +9324,6 @@ function EventsPage({
   const [query, setQuery] = useState('');
   // DEC-0017. Connected-only, like the created events it surfaces.
   const [afterOnly, setAfterOnly] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
@@ -8166,10 +9467,12 @@ function EventsPage({
             </div>
           </div>
           <div className="events-hero-actions">
+            {/* Creation lives in Organisateur now (DEC-0017 v1.2) - this
+                stays as a shortcut rather than a second implementation. */}
             <button
               type="button"
               className="btn-primary events-hero-create-btn"
-              onClick={() => setCreateOpen(true)}
+              onClick={onNavigateToOrganisateur}
             >
               Créer un événement
             </button>
@@ -8183,18 +9486,6 @@ function EventsPage({
             </button>
           </div>
         </div>
-
-        {createOpen && (
-          <CreateEventModal
-            authToken={authToken}
-            venues={groupEventsByVenue(events)}
-            locale={locale}
-            onClose={() => setCreateOpen(false)}
-            onCreated={(created) =>
-              setEvents((current) => [created, ...current])
-            }
-          />
-        )}
 
         <div className="events-discovery-controls">
           <div className="details-tabs events-period-tabs">
@@ -8416,11 +9707,7 @@ function EventsPage({
                       key={person.id}
                       title={person.displayName}
                     >
-                      {person.avatarUrl ? (
-                        <img src={person.avatarUrl} alt="" />
-                      ) : (
-                        person.displayName.slice(0, 1).toUpperCase()
-                      )}
+                      {renderAvatarContent(person)}
                     </span>
                   ))}
                 </div>
@@ -8466,124 +9753,331 @@ function EventsPage({
 }
 
 /**
- * DEC-0017 event organizer. Connected-experience only, and it says so: a
- * created event never appears on the anonymous map, and hiding that would
- * leave an organizer expecting reach the feature does not give them.
+ * DEC-0017 v1.2 event editor - a full page inside Organisateur, not a modal.
+ * Creating an event is a composed task with a dozen fields; a scrolling
+ * dialog over a dimmed page was the wrong container for it.
  *
- * The venue is picked from venues Pulso already knows rather than typed as
- * free text - there is no geocoder in the client, and deriving coordinates
- * from a typed address is exactly the guess EVENT-002 forbids.
+ * Connected-experience only, and it says so: a created event never appears
+ * on the anonymous map, and hiding that would leave an organizer expecting
+ * reach the feature does not give them.
+ *
+ * The address is typed and resolved to coordinates server-side. Resolution
+ * failure blocks publication rather than falling back to an approximate pin
+ * - a pin Pulso cannot place is worse than no pin, and guessing is exactly
+ * what EVENT-002 forbids. The organizer may still withhold the street line
+ * from the public (a "select" after) - the coordinates stay, the text does
+ * not.
+ *
+ * Native ticketing is absent by decision (DEC-0017 v1.1): the ticketing
+ * field is an external link, handled by the same redirect an ingested
+ * Ticketmaster event uses.
  */
-function CreateEventModal({
+/**
+ * Picks a venue Pulso already knows, by name.
+ *
+ * Shared by the two surfaces that need to name a place - claiming one as its
+ * organizer, and hosting an event in one - because both used to be built on
+ * the events already loaded for the fourteen-day window. That worked while
+ * the directory only held venues an event had put there; with 1412 venues,
+ * most of which have no programming at all, it meant the Clébard could not be
+ * claimed by its own owner and no event could be attached to it.
+ */
+function VenueSearchPicker({
+  selected,
+  onSelect,
+  placeholder,
+  label
+}: {
+  selected: PublicVenue | undefined;
+  onSelect: (venue: PublicVenue | undefined) => void;
+  placeholder: string;
+  label: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<PublicVenue[]>([]);
+  const [state, setState] = useState<'idle' | 'searching' | 'empty'>('idle');
+
+  useEffect(() => {
+    const text = query.trim();
+    if (text.length < 3) {
+      setResults([]);
+      setState('idle');
+      return;
+    }
+    // Debounced: the picker searches as the visitor types, and a request per
+    // keystroke would be a request per keystroke.
+    const timer = setTimeout(() => {
+      setState('searching');
+      fetch(`${API_BASE_URL}/venues/search?query=${encodeURIComponent(text)}`)
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => {
+          const data = venueListResponseSchema.parse(json).data;
+          setResults(data);
+          setState(data.length === 0 ? 'empty' : 'idle');
+        })
+        .catch(() => {
+          setResults([]);
+          setState('empty');
+        });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  if (selected) {
+    return (
+      <div className="create-event-field">
+        <span>{label}</span>
+        <div className="venue-picker-selected">
+          <span>
+            <strong>{selected.name}</strong>
+            <small>{selected.address}</small>
+          </span>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              onSelect(undefined);
+              setQuery('');
+            }}
+          >
+            Changer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="create-event-field">
+      <span>{label}</span>
+      <input
+        type="search"
+        value={query}
+        placeholder={placeholder}
+        onChange={(changeEvent) => setQuery(changeEvent.target.value)}
+      />
+      {state === 'searching' && (
+        <small className="create-event-hint">Recherche…</small>
+      )}
+      {state === 'empty' && (
+        <small className="create-event-hint">
+          Aucun lieu de ce nom dans Pulso.
+        </small>
+      )}
+      {results.length > 0 && (
+        <ul className="venue-picker-results">
+          {results.map((venue) => (
+            <li key={venue.id}>
+              <button type="button" onClick={() => onSelect(venue)}>
+                <strong>{venue.name}</strong>
+                <small>{venue.address}</small>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function EventEditor({
   authToken,
-  venues,
   locale,
-  onClose,
-  onCreated
+  existing,
+  onCancel,
+  onSaved
 }: {
   authToken: string | undefined;
-  venues: VenueGroup[];
   locale: SupportedLocale;
-  onClose: () => void;
-  onCreated: (event: PublicEvent) => void;
+  existing?: PublicEvent | undefined;
+  onCancel: () => void;
+  onSaved: (event: PublicEvent) => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<EventCategory>('nightlife');
-  const [venueId, setVenueId] = useState('');
-  const [startsAt, setStartsAt] = useState('');
-  const [endsAt, setEndsAt] = useState('');
-  const [accessInformation, setAccessInformation] = useState('');
-  const [description, setDescription] = useState('');
-  const [priceKind, setPriceKind] = useState<'free' | 'paid' | 'unknown'>(
-    'free'
+  const toLocalInput = (iso: string | undefined) =>
+    iso ? new Date(iso).toISOString().slice(0, 16) : '';
+
+  const [title, setTitle] = useState(existing?.title ?? '');
+  const [category, setCategory] = useState<EventCategory>(
+    existing?.category ?? 'nightlife'
   );
-  const [isAfter, setIsAfter] = useState(false);
+  const [address, setAddress] = useState(
+    existing?.addressHidden ? '' : (existing?.venue.address ?? '')
+  );
+  const [venueName, setVenueName] = useState(existing?.venue.name ?? '');
+  // Attaching to a place Pulso already knows is the default, and creating a
+  // new one the exception. The form used to do the opposite - it always sent
+  // `kind: 'new'` - so every created event minted a fresh venue row, which
+  // both scattered an organizer's nights across duplicate places and was a
+  // steady source of the duplicates db:merge-duplicate-venues exists to undo.
+  const [selectedVenue, setSelectedVenue] = useState<PublicVenue>();
+  const [newVenueOpen, setNewVenueOpen] = useState(false);
+  const [addressHidden, setAddressHidden] = useState(
+    existing?.addressHidden ?? false
+  );
+  const [resolved, setResolved] = useState<{
+    longitude: number;
+    latitude: number;
+    label: string;
+  }>();
+  const [geocodeState, setGeocodeState] = useState<
+    'idle' | 'checking' | 'notFound' | 'unavailable'
+  >('idle');
+  const [startsAt, setStartsAt] = useState(toLocalInput(existing?.startsAt));
+  const [endsAt, setEndsAt] = useState(toLocalInput(existing?.endsAt));
+  const [accessInformation, setAccessInformation] = useState(
+    existing?.accessInformation ?? ''
+  );
+  const [description, setDescription] = useState(existing?.description ?? '');
+  const [ticketingUrl, setTicketingUrl] = useState('');
+  const [priceKind, setPriceKind] = useState<'free' | 'paid' | 'unknown'>(
+    existing?.price.kind ?? 'free'
+  );
+  const [isAfter, setIsAfter] = useState(existing?.isAfter ?? false);
+  const [cover, setCover] = useState<File>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+
+  const isEdit = Boolean(existing);
+  // Editing keeps the event at its existing venue, so no lookup is needed;
+  // creating one needs a resolved point before it can be pinned.
+  const addressReady = isEdit || Boolean(selectedVenue) || Boolean(resolved);
 
   const canSubmit =
     Boolean(authToken) &&
     title.trim().length > 0 &&
-    venueId.length > 0 &&
     startsAt.length > 0 &&
     accessInformation.trim().length > 0 &&
+    addressReady &&
     !saving;
+
+  const checkAddress = () => {
+    if (!authToken || address.trim().length < 4) return;
+    setGeocodeState('checking');
+    setResolved(undefined);
+    fetch(
+      `${API_BASE_URL}/me/events/geocode?address=${encodeURIComponent(address.trim())}`,
+      { headers: { authorization: `Bearer ${authToken}` } }
+    )
+      .then((response) =>
+        response.ok ? response.json() : Promise.reject(response)
+      )
+      .then((json) => {
+        const data = geocodeResponseSchema.parse(json).data;
+        if (!data) {
+          setGeocodeState('notFound');
+          return;
+        }
+        setResolved(data);
+        setGeocodeState('idle');
+      })
+      .catch(() => setGeocodeState('unavailable'));
+  };
+
+  const uploadCover = async (eventId: string) => {
+    if (!cover || !authToken) return;
+    const body = new FormData();
+    body.append('file', cover);
+    await fetch(`${API_BASE_URL}/me/events/${eventId}/cover`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` },
+      body
+    }).catch(() => {});
+  };
 
   const submit = () => {
     if (!authToken || !canSubmit) return;
     setSaving(true);
     setError(undefined);
-    fetch(`${API_BASE_URL}/me/events`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        title: title.trim(),
-        category,
-        startsAt: new Date(startsAt).toISOString(),
-        ...(endsAt ? { endsAt: new Date(endsAt).toISOString() } : {}),
-        accessInformation: accessInformation.trim(),
-        ...(description.trim() ? { description: description.trim() } : {}),
-        isAfter,
-        price: { kind: priceKind },
-        venue: { kind: 'existing', venueId }
-      })
-    })
+    const payload = {
+      title: title.trim(),
+      category,
+      startsAt: new Date(startsAt).toISOString(),
+      ...(endsAt ? { endsAt: new Date(endsAt).toISOString() } : {}),
+      accessInformation: accessInformation.trim(),
+      ...(description.trim() ? { description: description.trim() } : {}),
+      ...(ticketingUrl.trim() ? { ticketingUrl: ticketingUrl.trim() } : {}),
+      addressHidden,
+      isAfter,
+      price: { kind: priceKind }
+    };
+    const request = existing
+      ? fetch(`${API_BASE_URL}/me/events/${existing.id}`, {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${authToken}`
+          },
+          body: JSON.stringify(payload)
+        })
+      : fetch(`${API_BASE_URL}/me/events`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            ...payload,
+            venue: selectedVenue
+              ? { kind: 'existing', venueId: selectedVenue.id }
+              : {
+                  kind: 'new',
+                  name: venueName.trim() || address.trim(),
+                  address: address.trim(),
+                  point: {
+                    longitude: resolved!.longitude,
+                    latitude: resolved!.latitude
+                  }
+                }
+          })
+        });
+
+    request
       .then((response) =>
         response.ok ? response.json() : Promise.reject(response)
       )
-      .then((json) => {
-        onCreated(createdEventResponseSchema.parse(json).data);
-        onClose();
+      .then(async (json) => {
+        const saved = createdEventResponseSchema.parse(json).data;
+        await uploadCover(saved.id);
+        onSaved(saved);
       })
       .catch(() => {
         setError(
-          "L'événement n'a pas pu être publié. Vérifie la date et réessaie."
+          "L'événement n'a pas pu être enregistré. Vérifie la date et réessaie."
         );
       })
       .finally(() => setSaving(false));
   };
 
   return (
-    <div className="create-event-backdrop" onClick={onClose}>
-      <div
-        className="create-event-modal"
-        role="dialog"
-        aria-label="Créer un événement"
-        onClick={(clickEvent) => clickEvent.stopPropagation()}
-      >
-        <div className="create-event-header">
-          <div>
-            <span className="create-event-kicker">Organisateur</span>
-            <h2>Créer un événement</h2>
-          </div>
-          <button
-            type="button"
-            className="close-button"
-            onClick={onClose}
-            aria-label="Fermer"
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+    <div className="event-editor">
+      <button type="button" className="event-editor-back" onClick={onCancel}>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
+        Retour à mes événements
+      </button>
 
+      <div className="event-editor-head">
+        <span className="create-event-kicker">Organisateur</span>
+        <h1>{isEdit ? 'Modifier un événement' : 'Créer un événement'}</h1>
         <p className="create-event-notice">
           {
             "Ton événement sera visible uniquement dans l'espace connecté de Pulso, pas sur la carte publique. Il portera la mention « Communauté », ou « Organisateur vérifié » si ton compte est rattaché à ce lieu."
           }
         </p>
+      </div>
 
+      <section className="event-editor-section">
+        <h2>L&apos;essentiel</h2>
         <label className="create-event-field">
           <span>Titre</span>
           <input
@@ -8593,7 +10087,6 @@ function CreateEventModal({
             maxLength={200}
           />
         </label>
-
         <div className="create-event-row">
           <label className="create-event-field">
             <span>Catégorie</span>
@@ -8626,22 +10119,25 @@ function CreateEventModal({
             </select>
           </label>
         </div>
-
-        <label className="create-event-field">
-          <span>Lieu</span>
-          <select
-            value={venueId}
-            onChange={(changeEvent) => setVenueId(changeEvent.target.value)}
-          >
-            <option value="">Choisis un lieu…</option>
-            {venues.map((venue) => (
-              <option key={venue.id} value={venue.id}>
-                {venue.name}
-              </option>
-            ))}
-          </select>
+        <label className="create-event-after">
+          <input
+            type="checkbox"
+            checked={isAfter}
+            onChange={(changeEvent) => setIsAfter(changeEvent.target.checked)}
+          />
+          <span>
+            <strong>{"C'est un after"}</strong>
+            <small>
+              {
+                'Il apparaîtra dans le filtre After. Un événement qui commence entre 2 h et 6 h y apparaît de toute façon.'
+              }
+            </small>
+          </span>
         </label>
+      </section>
 
+      <section className="event-editor-section">
+        <h2>Quand</h2>
         <div className="create-event-row">
           <label className="create-event-field">
             <span>Début</span>
@@ -8660,7 +10156,140 @@ function CreateEventModal({
             />
           </label>
         </div>
+      </section>
 
+      <section className="event-editor-section">
+        <h2>Où</h2>
+        {isEdit ? (
+          <label className="create-event-field">
+            <span>Lieu</span>
+            <input value={existing?.venue.name ?? ''} disabled />
+            <small className="create-event-hint">
+              Déplacer un événement ailleurs, c&apos;est un autre événement —
+              crée-en un nouveau.
+            </small>
+          </label>
+        ) : (
+          <>
+            <VenueSearchPicker
+              selected={selectedVenue}
+              onSelect={(venue) => {
+                setSelectedVenue(venue);
+                if (venue) setNewVenueOpen(false);
+              }}
+              label="Lieu"
+              placeholder="Clébard, Quai des brumes, Foufounes…"
+            />
+            {selectedVenue ? (
+              <small className="create-event-hint">
+                L&apos;événement sera rattaché à ce lieu et apparaîtra sur sa
+                fiche. S&apos;il n&apos;est pas le tien, il y figurera comme
+                événement organisé par un membre, pas comme la programmation du
+                lieu.
+              </small>
+            ) : newVenueOpen ? null : (
+              <button
+                type="button"
+                className="btn-secondary create-event-new-venue"
+                onClick={() => setNewVenueOpen(true)}
+              >
+                Ce lieu n&apos;est pas dans Pulso — saisir une adresse
+              </button>
+            )}
+          </>
+        )}
+        {!isEdit && !selectedVenue && newVenueOpen && (
+          <>
+            <label className="create-event-field">
+              <span>Nom du lieu (optionnel)</span>
+              <input
+                value={venueName}
+                onChange={(changeEvent) =>
+                  setVenueName(changeEvent.target.value)
+                }
+                placeholder="Loft Saint-Henri"
+                maxLength={200}
+              />
+            </label>
+            <label className="create-event-field">
+              <span>Adresse précise</span>
+              <div className="create-event-address">
+                <input
+                  value={address}
+                  onChange={(changeEvent) => {
+                    setAddress(changeEvent.target.value);
+                    setResolved(undefined);
+                    setGeocodeState('idle');
+                  }}
+                  placeholder="1 rue Notre-Dame Ouest, Montréal"
+                  maxLength={300}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={checkAddress}
+                  disabled={address.trim().length < 4}
+                >
+                  Vérifier
+                </button>
+              </div>
+              {geocodeState === 'checking' && (
+                <small className="create-event-hint">Vérification…</small>
+              )}
+              {geocodeState === 'notFound' && (
+                <small className="create-event-hint create-event-hint-error">
+                  Adresse introuvable. Pulso ne place pas un repère au hasard —
+                  précise l&apos;adresse.
+                </small>
+              )}
+              {geocodeState === 'unavailable' && (
+                <small className="create-event-hint create-event-hint-error">
+                  Vérification indisponible pour le moment. Réessaie.
+                </small>
+              )}
+              {resolved && (
+                <small className="create-event-hint create-event-hint-ok">
+                  ✓ {resolved.label}
+                </small>
+              )}
+            </label>
+          </>
+        )}
+
+        {/* The address is still resolved and the event still gets a real
+            pin - only the street line is withheld. An event Pulso cannot
+            place at all is not something it will publish. */}
+        <label className="create-event-after">
+          <input
+            type="checkbox"
+            checked={addressHidden}
+            onChange={(changeEvent) =>
+              setAddressHidden(changeEvent.target.checked)
+            }
+          />
+          <span>
+            <strong>Ne pas afficher l&apos;adresse publiquement</strong>
+            <small>
+              Pour un after plus select. Le repère reste sur la carte au bon
+              endroit, mais l&apos;adresse exacte n&apos;est pas affichée —
+              donne le nécessaire dans «&nbsp;Comment y accéder&nbsp;».
+            </small>
+          </span>
+        </label>
+      </section>
+
+      <section className="event-editor-section">
+        <h2>Détails</h2>
+        <label className="create-event-field">
+          <span>Photo de couverture (optionnel)</span>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(changeEvent) =>
+              setCover(changeEvent.target.files?.[0] ?? undefined)
+            }
+          />
+        </label>
         <label className="create-event-field">
           <span>Comment y accéder</span>
           <textarea
@@ -8672,48 +10301,1233 @@ function CreateEventModal({
             rows={2}
           />
         </label>
-
         <label className="create-event-field">
           <span>Description (optionnel)</span>
           <textarea
             value={description}
             onChange={(changeEvent) => setDescription(changeEvent.target.value)}
-            rows={3}
+            rows={4}
+          />
+        </label>
+      </section>
+
+      <section className="event-editor-section">
+        <h2>Billetterie</h2>
+        <label className="create-event-field">
+          <span>Lien billetterie (optionnel)</span>
+          <input
+            value={ticketingUrl}
+            onChange={(changeEvent) =>
+              setTicketingUrl(changeEvent.target.value)
+            }
+            placeholder="https://…"
+          />
+          <small className="create-event-hint">
+            Pulso ne vend pas de billets : ce lien redirige vers ta billetterie,
+            comme pour un événement Ticketmaster.
+          </small>
+        </label>
+      </section>
+
+      {error && <p className="create-event-error">{error}</p>}
+
+      <div className="event-editor-actions">
+        <button type="button" className="btn-secondary" onClick={onCancel}>
+          Annuler
+        </button>
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={!canSubmit}
+          onClick={submit}
+        >
+          {saving ? 'Enregistrement…' : isEdit ? 'Enregistrer' : 'Publier'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * DEC-0017 v1.1 organizer workspace. The account's own created events, with
+ * real management: edit, cover photo, geocoded address, external ticketing
+ * link. Native ticketing is deliberately absent - see DEC-0017 v1.1.
+ */
+/**
+ * DEC-0018 administration console. Currently one queue: pending organizer
+ * requests. Gated on `users.is_admin`, which is set directly in the
+ * database - the destination is hidden for everyone else, and every /admin
+ * route answers 403 regardless of what the interface shows.
+ */
+/**
+ * DEC-0018: where an account asks to become the verified organizer of a
+ * venue, and where it sees the venues it already manages.
+ *
+ * The venue is searched, not chosen from a dropdown. The dropdown was built
+ * from the events already loaded for the fourteen-day window, which meant a
+ * venue could only be claimed once somebody had programmed something there -
+ * so the Clébard, with no events, could not be claimed by its own owner.
+ * With 1412 venues and most of them unprogrammed, that excluded almost the
+ * entire directory.
+ */
+function OrganizerStatusBlock({
+  authToken
+}: {
+  authToken: string | undefined;
+}) {
+  const [status, setStatus] = useState<{
+    isAdmin: boolean;
+    verifiedVenues: Array<{ venueId: string; venueName: string }>;
+    pendingRequests: OrganizerRequest[];
+  }>();
+  const [selectedVenue, setSelectedVenue] = useState<PublicVenue>();
+  const [justification, setJustification] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  const [open, setOpen] = useState(false);
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/organizer`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setStatus(myOrganizerStatusResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const submit = () => {
+    if (!authToken) return;
+    const parsed = createOrganizerRequestSchema.safeParse({
+      venueId: selectedVenue?.id ?? '',
+      justification: justification.trim()
+    });
+    if (!parsed.success) {
+      setError(
+        'Choisis un lieu et explique ton lien avec lui (10 caractères minimum).'
+      );
+      return;
+    }
+    setSaving(true);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/me/organizer/requests`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify(parsed.data)
+    })
+      .then((response) => {
+        if (response.status === 409) {
+          throw new Error('Une demande est déjà en attente pour ce lieu.');
+        }
+        if (!response.ok) throw new Error('failed');
+        setJustification('');
+        setSelectedVenue(undefined);
+        setOpen(false);
+        reload();
+      })
+      .catch((caught: Error) =>
+        setError(
+          caught.message === 'failed'
+            ? "La demande n'a pas pu être envoyée."
+            : caught.message
+        )
+      )
+      .finally(() => setSaving(false));
+  };
+
+  if (!status) return null;
+
+  return (
+    <section className="organizer-status">
+      <div className="organizer-status-head">
+        <div>
+          <h2 className="organisateur-group-title">Statut organisateur</h2>
+          {status.verifiedVenues.length > 0 ? (
+            <p className="organizer-status-line">
+              Tu es organisateur vérifié de{' '}
+              <strong>
+                {status.verifiedVenues.map((v) => v.venueName).join(', ')}
+              </strong>
+              .
+            </p>
+          ) : (
+            <p className="organizer-status-line">
+              {
+                'Tes événements sont publiés en « Communauté ». Demande à gérer un lieu pour publier en son nom.'
+              }
+            </p>
+          )}
+          {status.pendingRequests.length > 0 && (
+            <p className="organizer-status-line organizer-status-pending">
+              Demande en attente pour{' '}
+              {status.pendingRequests.map((r) => r.venueName).join(', ')}.
+            </p>
+          )}
+        </div>
+        {status.pendingRequests.length === 0 && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setOpen((current) => !current)}
+          >
+            {open ? 'Annuler' : 'Demander un lieu'}
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="organizer-status-form">
+          <VenueSearchPicker
+            selected={selectedVenue}
+            onSelect={setSelectedVenue}
+            label="Lieu"
+            placeholder="Cherche ton lieu par son nom…"
+          />
+          <label className="create-event-field">
+            <span>Ton lien avec ce lieu</span>
+            <textarea
+              rows={3}
+              value={justification}
+              onChange={(changeEvent) =>
+                setJustification(changeEvent.target.value)
+              }
+              placeholder="Je programme les soirées de ce bar depuis 2024…"
+            />
+            <small className="create-event-hint">
+              Une personne lit chaque demande. Pulso ne vérifie rien
+              automatiquement.
+            </small>
+          </label>
+          {error && <p className="create-event-error">{error}</p>}
+          <div className="create-event-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={saving}
+              onClick={submit}
+            >
+              {saving ? 'Envoi…' : 'Envoyer la demande'}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * DEC-0019. The venue photos Pulso currently shows, and the one control that
+ * matters for them: take it down.
+ *
+ * Most of these are borrowed - the preview image a business publishes about
+ * itself, hotlinked rather than copied. Borrowing only stays defensible if
+ * "please stop" can be honoured immediately by whoever reads the request,
+ * which is why this sits in the console next to the organizer queue rather
+ * than in a shell command someone else has to be found to run.
+ *
+ * Removal is permanent by design: it writes a suppression the importer reads,
+ * so the next import cannot quietly restore what was taken down.
+ */
+function AdminVenuePhotosBlock({
+  authToken
+}: {
+  authToken: string | undefined;
+}) {
+  const [photos, setPhotos] = useState<AdminVenuePhoto[]>([]);
+  const [query, setQuery] = useState('');
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState<string>();
+
+  const reload = useCallback(
+    (search: string) => {
+      if (!authToken) return;
+      const url = new URL(`${API_BASE_URL}/admin/venue-photos`);
+      if (search.trim()) url.searchParams.set('query', search.trim());
+      fetch(url.toString(), {
+        headers: { authorization: `Bearer ${authToken}` }
+      })
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => {
+          setPhotos(adminVenuePhotosResponseSchema.parse(json).data);
+          setState('success');
+        })
+        .catch(() => setState('error'));
+    },
+    [authToken]
+  );
+
+  useEffect(() => {
+    reload('');
+  }, [reload]);
+
+  const act = (venueId: string, suppress: boolean, reason?: string) => {
+    if (!authToken) return;
+    setBusy(venueId);
+    setError(undefined);
+    const url = `${API_BASE_URL}/admin/venue-photos/${venueId}/suppress`;
+    fetch(url, {
+      method: suppress ? 'POST' : 'DELETE',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      ...(suppress ? { body: JSON.stringify({ reason }) } : {})
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        reload(query);
+      })
+      .catch(() =>
+        setError(
+          suppress
+            ? "La photo n'a pas pu être retirée."
+            : "La photo n'a pas pu être réactivée."
+        )
+      )
+      .finally(() => setBusy(undefined));
+  };
+
+  const borrowed = photos.filter(
+    (photo) => photo.imageSource === 'website_og'
+  ).length;
+
+  return (
+    <section className="admin-photos">
+      <div className="admin-photos-header">
+        <h2>Photos des lieux</h2>
+        <p>
+          {borrowed} photo{borrowed > 1 ? 's' : ''} empruntée
+          {borrowed > 1 ? 's' : ''} au site officiel du lieu. Retirer est
+          définitif : l&apos;import ne la reprendra pas.
+        </p>
+        <form
+          className="admin-photos-search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            reload(query);
+          }}
+        >
+          <input
+            type="search"
+            value={query}
+            placeholder="Chercher un lieu…"
+            aria-label="Chercher un lieu par nom"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <button type="submit" className="btn-secondary">
+            Chercher
+          </button>
+        </form>
+      </div>
+
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">
+          Impossible de charger les photos pour le moment.
+        </p>
+      )}
+      {error && <p className="create-event-error">{error}</p>}
+
+      {state === 'success' && photos.length === 0 && (
+        <p className="list-view-empty">Aucune photo de lieu enregistrée.</p>
+      )}
+
+      <div className="admin-photos-list">
+        {photos.map((photo) => (
+          <div className="admin-photo-row" key={photo.venueId}>
+            {photo.imageUrl ? (
+              <img src={photo.imageUrl} alt="" className="admin-photo-thumb" />
+            ) : (
+              <span className="admin-photo-thumb admin-photo-thumb-empty" />
+            )}
+            <div className="admin-photo-main">
+              <strong>{photo.venueName}</strong>
+              <span className="admin-photo-source">
+                {photo.imageSource === 'website_og'
+                  ? 'Site officiel du lieu (empruntée)'
+                  : photo.imageSource === 'wikimedia_commons'
+                    ? 'Wikimedia Commons (licence libre)'
+                    : photo.imageSource === 'osm_image_tag'
+                      ? 'Tag image OpenStreetMap'
+                      : photo.suppressed
+                        ? 'Retirée'
+                        : 'Source inconnue'}
+              </span>
+              {photo.imageAttribution && (
+                <span className="admin-photo-credit">
+                  {photo.imageAttribution}
+                </span>
+              )}
+              {photo.pageUrl && (
+                <a
+                  className="admin-photo-link"
+                  href={photo.pageUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  Voir la source
+                </a>
+              )}
+            </div>
+            <div className="admin-request-actions">
+              {photo.suppressed ? (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={busy === photo.venueId}
+                  onClick={() => act(photo.venueId, false)}
+                >
+                  Réautoriser
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={busy === photo.venueId}
+                  onClick={() => act(photo.venueId, true, 'Retiré via console')}
+                >
+                  Retirer
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AdministrationPage({
+  authToken,
+  locale
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+}) {
+  const [requests, setRequests] = useState<OrganizerRequest[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState<string>();
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/admin/organizer-requests`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setRequests(organizerRequestsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const resolve = (id: string, approve: boolean) => {
+    if (!authToken) return;
+    setBusy(id);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/admin/organizer-requests/${id}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ approve })
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        reload();
+      })
+      .catch(() => setError("La décision n'a pas pu être enregistrée."))
+      .finally(() => setBusy(undefined));
+  };
+
+  return (
+    <div className="map-container-wrapper organisateur-page">
+      <div className="events-hero organisateur-hero">
+        <div className="events-hero-text">
+          <p className="events-hero-kicker">Administration</p>
+          <h1>Demandes d&apos;organisateur.</h1>
+          <p className="events-hero-eyebrow">
+            Chaque demande t&apos;est notifiée dans Pulso. Approuver rattache le
+            compte au lieu ; refuser ne crée aucun lien.
+          </p>
+          <div className="events-hero-stats">
+            <span className="events-hero-stat">
+              <strong>{requests.length}</strong> en attente
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">
+          Impossible de charger les demandes pour le moment.
+        </p>
+      )}
+      {error && <p className="create-event-error">{error}</p>}
+
+      {state === 'success' && requests.length === 0 && (
+        <div className="empty-state-card organisateur-empty">
+          <span className="empty-state-icon" aria-hidden="true">
+            <SidebarNavIcon kind="administration" />
+          </span>
+          <p>Aucune demande en attente</p>
+          <p>Tu seras notifié dès qu&apos;un compte demande à gérer un lieu.</p>
+        </div>
+      )}
+
+      <div className="organisateur-list">
+        {requests.map((entry) => (
+          <div className="admin-request" key={entry.id}>
+            <div className="admin-request-main">
+              <strong>{entry.venueName}</strong>
+              <span className="admin-request-venue">{entry.venueAddress}</span>
+              <span className="admin-request-who">
+                Demandé par {entry.requester.displayName} ·{' '}
+                {entry.requester.email}
+              </span>
+              <p className="admin-request-justification">
+                {entry.justification}
+              </p>
+              <span className="admin-request-when">
+                {formatRelativeTime(entry.createdAt, locale)}
+              </span>
+            </div>
+            <div className="admin-request-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy === entry.id}
+                onClick={() => resolve(entry.id, false)}
+              >
+                Refuser
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={busy === entry.id}
+                onClick={() => resolve(entry.id, true)}
+              >
+                Approuver
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <AdminGroupPlacementsBlock authToken={authToken} locale={locale} />
+      <AdminGroupVerificationsBlock authToken={authToken} locale={locale} />
+      <AdminVenuePhotosBlock authToken={authToken} />
+    </div>
+  );
+}
+/**
+ * The group-verification queue, in the same console and behind the same
+ * is_admin gate as the organizer requests above. A verified badge is what
+ * makes a community legible to people who have never heard of it, so it is
+ * granted here rather than being something a group can award itself.
+ *
+ * Reuses the .admin-request markup of the organizer queue verbatim - it is
+ * the same shape of decision, and a second visual language for it would
+ * only make the console harder to read.
+ */
+/**
+ * Placing a bought event into a group (DEC-0015 §Future monetization).
+ *
+ * The sale happens outside Pulso - a venue buys a package - and this is
+ * where it is delivered: pick the group, pick the event, name who paid,
+ * and the banner appears at the top of that group's "Organiser" tab.
+ *
+ * The list below the form is the delivery report the decision asks for in
+ * its simplest honest form: which groups received the placement, how many
+ * members they have, and whether the group's own administrator has since
+ * taken it down. No impression or click counting exists yet, so none is
+ * shown rather than implied.
+ */
+function AdminGroupPlacementsBlock({
+  authToken,
+  locale
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+}) {
+  const [placements, setPlacements] = useState<AdminGroupPlacement[]>([]);
+  const [groupQuery, setGroupQuery] = useState('');
+  const [groups, setGroups] = useState<AdminGroupSummary[]>([]);
+  const [group, setGroup] = useState<AdminGroupSummary>();
+  const [eventQuery, setEventQuery] = useState('');
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+  const [event, setEvent] = useState<PublicEvent>();
+  const [sponsorName, setSponsorName] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  type PickerState = 'idle' | 'loading' | 'done' | 'error';
+  const [groupState, setGroupState] = useState<PickerState>('idle');
+  const [eventState, setEventState] = useState<PickerState>('idle');
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/admin/group-placements`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setPlacements(adminGroupPlacementsResponseSchema.parse(json).data)
+      )
+      .catch(() => {});
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  // Both pickers search as the administrator types. The first version put
+  // the query behind a "Chercher" button, which turned out to be the whole
+  // failure: the button sat in a flex row next to an input styled
+  // width:100%, so it was squeezed to nothing and the request never fired.
+  // A picker that searches on input has no button left to miss.
+  useEffect(() => {
+    if (!authToken || group) return;
+    const handle = setTimeout(() => {
+      setGroupState('loading');
+      fetch(
+        `${API_BASE_URL}/admin/groups?query=${encodeURIComponent(groupQuery.trim())}`,
+        { headers: { authorization: `Bearer ${authToken}` } }
+      )
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => {
+          setGroups(adminGroupSummariesResponseSchema.parse(json).data);
+          setGroupState('done');
+        })
+        .catch(() => setGroupState('error'));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [authToken, groupQuery, group]);
+
+  useEffect(() => {
+    if (!authToken || event) return;
+    if (!eventQuery.trim()) {
+      setEvents([]);
+      setEventState('idle');
+      return;
+    }
+    const handle = setTimeout(() => {
+      setEventState('loading');
+      fetch(
+        `${API_BASE_URL}/admin/events/search?query=${encodeURIComponent(eventQuery.trim())}`,
+        { headers: { authorization: `Bearer ${authToken}` } }
+      )
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) => {
+          setEvents(eventListResponseSchema.parse(json).data);
+          setEventState('done');
+        })
+        .catch(() => setEventState('error'));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [authToken, eventQuery, event]);
+
+  const place = () => {
+    if (!authToken || !group || !event || !sponsorName.trim() || busy) return;
+    setBusy(true);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/admin/group-placements`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        groupId: group.id,
+        eventId: event.id,
+        sponsorName: sponsorName.trim(),
+        ...(message.trim() ? { message: message.trim() } : {})
+      })
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        setGroup(undefined);
+        setEvent(undefined);
+        setSponsorName('');
+        setMessage('');
+        setGroupQuery('');
+        setEventQuery('');
+        setGroups([]);
+        setEvents([]);
+        reload();
+      })
+      .catch(() => setError("Le placement n'a pas pu être créé."))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <section className="organisateur-section">
+      <div className="events-hero-text">
+        <p className="events-hero-kicker">Placements dans les groupes</p>
+        <p className="events-hero-eyebrow">
+          Place un événement acheté en haut de l&apos;onglet Organiser d&apos;un
+          groupe. La bannière est toujours affichée comme sponsorisée, et
+          l&apos;administrateur du groupe peut la retirer.
+        </p>
+      </div>
+
+      <div className="admin-placement-form">
+        <div className="admin-placement-picker">
+          <label>
+            <span>1. Le groupe</span>
+            <input
+              value={groupQuery}
+              onChange={(changeEvent) =>
+                setGroupQuery(changeEvent.target.value)
+              }
+              placeholder="Ex. Français à Montréal — laisse vide pour tout voir"
+            />
+          </label>
+          {!group && groupState === 'loading' && (
+            <p className="admin-placement-hint">Recherche…</p>
+          )}
+          {!group && groupState === 'error' && (
+            <p className="create-event-error">
+              La recherche de groupes a échoué.
+            </p>
+          )}
+          {!group && groupState === 'done' && groups.length === 0 && (
+            <p className="admin-placement-hint">Aucun groupe ne correspond.</p>
+          )}
+          {groups.length > 0 && !group && (
+            <ul className="admin-placement-results">
+              {groups.map((candidate) => (
+                <li key={candidate.id}>
+                  <button type="button" onClick={() => setGroup(candidate)}>
+                    <strong>{candidate.name}</strong>
+                    <small>
+                      {candidate.memberCount} membre
+                      {candidate.memberCount > 1 ? 's' : ''}
+                      {candidate.verified ? ' · vérifié' : ''}
+                    </small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {group && (
+            <p className="admin-placement-chosen">
+              <strong>{group.name}</strong> · {group.memberCount} membre
+              {group.memberCount > 1 ? 's' : ''}
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => setGroup(undefined)}
+              >
+                Changer
+              </button>
+            </p>
+          )}
+        </div>
+
+        <div className="admin-placement-picker">
+          <label>
+            <span>2. L&apos;événement</span>
+            <input
+              value={eventQuery}
+              onChange={(changeEvent) =>
+                setEventQuery(changeEvent.target.value)
+              }
+              placeholder="Titre, organisateur ou lieu"
+            />
+          </label>
+          {!event && eventState === 'loading' && (
+            <p className="admin-placement-hint">Recherche…</p>
+          )}
+          {!event && eventState === 'error' && (
+            <p className="create-event-error">
+              La recherche d&apos;événements a échoué.
+            </p>
+          )}
+          {!event && eventState === 'done' && events.length === 0 && (
+            <p className="admin-placement-hint">
+              Aucun événement à venir ne correspond.
+            </p>
+          )}
+          {events.length > 0 && !event && (
+            <ul className="admin-placement-results">
+              {events.map((candidate) => (
+                <li key={candidate.id}>
+                  <button type="button" onClick={() => setEvent(candidate)}>
+                    <strong>{candidate.title}</strong>
+                    <small>
+                      {new Date(candidate.startsAt).toLocaleDateString(
+                        'fr-CA',
+                        {
+                          day: 'numeric',
+                          month: 'short'
+                        }
+                      )}
+                      {candidate.venue?.name
+                        ? ` · ${candidate.venue.name}`
+                        : ''}
+                    </small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {event && (
+            <p className="admin-placement-chosen">
+              <strong>{event.title}</strong>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => setEvent(undefined)}
+              >
+                Changer
+              </button>
+            </p>
+          )}
+        </div>
+
+        <label className="admin-placement-field">
+          <span>3. Qui a payé (affiché sur la bannière)</span>
+          <input
+            value={sponsorName}
+            onChange={(changeEvent) => setSponsorName(changeEvent.target.value)}
+            placeholder="Ex. Clébard"
+            maxLength={80}
           />
         </label>
 
-        <label className="create-event-after">
+        <label className="admin-placement-field">
+          <span>Message (optionnel)</span>
           <input
-            type="checkbox"
-            checked={isAfter}
-            onChange={(changeEvent) => setIsAfter(changeEvent.target.checked)}
+            value={message}
+            onChange={(changeEvent) => setMessage(changeEvent.target.value)}
+            placeholder="Ex. Soirée techno, entrée gratuite avant 23h."
+            maxLength={280}
           />
-          <span>
-            <strong>{"C'est un after"}</strong>
-            <small>
-              {
-                'Il apparaîtra dans le filtre After. Un événement qui commence entre 2 h et 6 h y apparaît de toute façon.'
-              }
-            </small>
-          </span>
         </label>
 
         {error && <p className="create-event-error">{error}</p>}
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={busy || !group || !event || !sponsorName.trim()}
+          onClick={place}
+        >
+          {busy ? 'Placement…' : 'Placer dans le groupe'}
+        </button>
+      </div>
 
-        <div className="create-event-actions">
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            Annuler
-          </button>
+      <div className="organisateur-list">
+        {placements.length === 0 && (
+          <p className="list-view-empty">Aucun placement pour le moment.</p>
+        )}
+        {placements.map((entry) => (
+          <div className="admin-request" key={entry.placement.id}>
+            <div className="admin-request-main">
+              <strong>{entry.placement.event.title}</strong>
+              <span className="admin-request-venue">
+                Dans {entry.groupName} · {entry.groupMemberCount} membre
+                {entry.groupMemberCount > 1 ? 's' : ''}
+              </span>
+              <span className="admin-request-who">
+                Payé par {entry.placement.sponsorName}
+              </span>
+              <span className="admin-request-when">
+                {entry.dismissedAt
+                  ? `Retiré par le groupe ${formatRelativeTime(entry.dismissedAt, locale)}`
+                  : `Actif depuis ${formatRelativeTime(entry.placement.createdAt, locale)}`}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AdminGroupVerificationsBlock({
+  authToken,
+  locale
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+}) {
+  const [requests, setRequests] = useState<GroupVerificationRequest[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState<string>();
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/admin/group-verifications`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setRequests(groupVerificationRequestsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const resolve = (groupId: string, approve: boolean) => {
+    if (!authToken) return;
+    setBusy(groupId);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/admin/group-verifications/${groupId}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ approve })
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        reload();
+      })
+      .catch(() => setError("La décision n'a pas pu être enregistrée."))
+      .finally(() => setBusy(undefined));
+  };
+
+  return (
+    <section className="organisateur-section">
+      <div className="events-hero-text">
+        <p className="events-hero-kicker">Vérification de groupes</p>
+        <p className="events-hero-eyebrow">
+          Approuver pose le badge vérifié partout où le groupe apparaît. Refuser
+          ne change rien et laisse le groupe libre de redemander.
+        </p>
+      </div>
+
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">
+          Impossible de charger les demandes de vérification.
+        </p>
+      )}
+      {error && <p className="create-event-error">{error}</p>}
+
+      {state === 'success' && requests.length === 0 && (
+        <div className="empty-state-card organisateur-empty">
+          <span className="empty-state-icon" aria-hidden="true">
+            <SidebarNavIcon kind="groupes" />
+          </span>
+          <p>Aucune demande de vérification</p>
+          <p>Tu seras notifié dès qu&apos;un groupe demande à être vérifié.</p>
+        </div>
+      )}
+
+      <div className="organisateur-list">
+        {requests.map((entry) => (
+          <div className="admin-request" key={entry.group.id}>
+            <div className="admin-request-main">
+              <strong>{entry.group.name}</strong>
+              <span className="admin-request-venue">
+                {entry.group.memberCount} membre
+                {entry.group.memberCount > 1 ? 's' : ''} ·{' '}
+                {entry.group.visibility === 'restricted'
+                  ? 'Sur demande'
+                  : 'Accès libre'}
+              </span>
+              <span className="admin-request-who">
+                Demandé par {entry.requester.displayName}
+              </span>
+              <p className="admin-request-justification">
+                {entry.justification}
+              </p>
+              <span className="admin-request-when">
+                {formatRelativeTime(entry.requestedAt, locale)}
+              </span>
+            </div>
+            <div className="admin-request-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy === entry.group.id}
+                onClick={() => resolve(entry.group.id, false)}
+              >
+                Refuser
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={busy === entry.group.id}
+                onClick={() => resolve(entry.group.id, true)}
+              >
+                Vérifier
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OrganisateurPage({
+  authToken,
+  locale,
+  onOpenEvent
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+  onOpenEvent: (eventId: string) => void;
+}) {
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [editing, setEditing] = useState<PublicEvent | 'new'>();
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/events`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setEvents(myEventsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const [actionError, setActionError] = useState<string>();
+
+  // fetch only rejects on a network failure, so the previous `.then(reload)`
+  // swallowed every server error and re-rendered the unchanged list - the
+  // button looked dead rather than failed.
+  const remove = (eventId: string) => {
+    if (!authToken) return;
+    setActionError(undefined);
+    fetch(`${API_BASE_URL}/me/events/${eventId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        reload();
+      })
+      .catch(() =>
+        setActionError("L'événement n'a pas pu être supprimé. Réessaie.")
+      );
+  };
+
+  const togglePin = (event: PublicEvent) => {
+    if (!authToken) return;
+    setActionError(undefined);
+    fetch(`${API_BASE_URL}/me/events/${event.id}/pin`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ pinned: !event.pinned })
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        reload();
+      })
+      .catch(() => setActionError("L'épinglage n'a pas pu être enregistré."));
+  };
+
+  const now = Date.now();
+  const upcoming = events.filter(
+    (event) => new Date(event.startsAt).getTime() >= now
+  );
+  const past = events.filter(
+    (event) => new Date(event.startsAt).getTime() < now
+  );
+
+  if (editing) {
+    return (
+      <div className="map-container-wrapper organisateur-page">
+        <EventEditor
+          authToken={authToken}
+          locale={locale}
+          existing={editing === 'new' ? undefined : editing}
+          onCancel={() => setEditing(undefined)}
+          onSaved={() => {
+            setEditing(undefined);
+            reload();
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="map-container-wrapper organisateur-page">
+      <div className="events-hero organisateur-hero">
+        <div className="events-hero-text">
+          <p className="events-hero-kicker">Organisateur</p>
+          <h1>Tes événements.</h1>
+          <p className="events-hero-eyebrow">
+            Crée et gère tes soirées. Elles sont visibles dans l&apos;espace
+            connecté de Pulso, pas sur la carte publique.
+          </p>
+          <div className="events-hero-stats">
+            <span className="events-hero-stat">
+              <strong>{upcoming.length}</strong> à venir
+            </span>
+            <span className="events-hero-stat">
+              <strong>{past.length}</strong> passé{past.length > 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => setEditing('new')}
+        >
+          Créer un événement
+        </button>
+      </div>
+
+      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'error' && (
+        <p className="list-view-empty">
+          Impossible de charger tes événements pour le moment.
+        </p>
+      )}
+      {actionError && <p className="create-event-error">{actionError}</p>}
+
+      <OrganizerStatusBlock authToken={authToken} />
+
+      {state === 'success' && events.length === 0 && (
+        <div className="empty-state-card organisateur-empty">
+          <span className="empty-state-icon" aria-hidden="true">
+            <SidebarNavIcon kind="organisateur" />
+          </span>
+          <p>Aucun événement publié</p>
+          <p>
+            Crée ta première soirée : elle apparaîtra dans Événements et sur la
+            carte connectée, avec le filtre After si c&apos;en est un.
+          </p>
           <button
             type="button"
             className="btn-primary"
-            disabled={!canSubmit}
-            onClick={submit}
+            onClick={() => setEditing('new')}
           >
-            {saving ? 'Publication…' : 'Publier'}
+            Créer un événement
           </button>
         </div>
-      </div>
+      )}
+
+      {[
+        { label: 'À venir', list: upcoming },
+        { label: 'Passés', list: past }
+      ]
+        .filter((group) => group.list.length > 0)
+        .map((group) => (
+          <section className="organisateur-group" key={group.label}>
+            <h2 className="organisateur-group-title">{group.label}</h2>
+            <div className="organisateur-list">
+              {group.list.map((event) => (
+                <div className="organisateur-row" key={event.id}>
+                  <span
+                    className="organisateur-row-cover"
+                    style={
+                      event.imageUrl
+                        ? { backgroundImage: `url(${event.imageUrl})` }
+                        : undefined
+                    }
+                  >
+                    {!event.imageUrl && (
+                      <CategoryIcon category={event.category} size={18} />
+                    )}
+                  </span>
+                  <span className="organisateur-row-main">
+                    <strong>{event.title}</strong>
+                    <span>
+                      {event.venue.name} · {formatEventDateTime(event.startsAt)}
+                    </span>
+                    <span className="organisateur-row-tags">
+                      <span
+                        className={`organisateur-origin origin-${event.origin ?? 'directory'}`}
+                      >
+                        {event.origin === 'verified_organizer'
+                          ? 'Organisateur vérifié'
+                          : 'Communauté'}
+                      </span>
+                      {event.isAfter && (
+                        <span className="organisateur-after">After</span>
+                      )}
+                      {event.externalDestination?.kind === 'ticketing' && (
+                        <span className="organisateur-ticketing">
+                          Billetterie externe
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                  <span className="organisateur-row-actions">
+                    <button
+                      type="button"
+                      className="text-btn"
+                      onClick={() => onOpenEvent(event.id)}
+                    >
+                      Voir
+                    </button>
+                    <button
+                      type="button"
+                      className={`text-btn ${event.pinned ? 'organisateur-pinned' : ''}`}
+                      aria-pressed={event.pinned === true}
+                      onClick={() => togglePin(event)}
+                    >
+                      {event.pinned ? 'Épinglé' : 'Épingler'}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-btn"
+                      onClick={() => setEditing(event)}
+                    >
+                      Modifier
+                    </button>
+                    <button
+                      type="button"
+                      className="text-btn organisateur-delete"
+                      onClick={() => remove(event.id)}
+                    >
+                      Supprimer
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
     </div>
   );
 }
@@ -8810,11 +11624,7 @@ function EventGridCard({
                   key={person.id}
                   title={person.displayName}
                 >
-                  {person.avatarUrl ? (
-                    <img src={person.avatarUrl} alt="" />
-                  ) : (
-                    person.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(person)}
                 </span>
               ))}
               {friendsAttending.length > 3 && (
@@ -9427,9 +12237,17 @@ function DashboardHome({
                   {forum.lastPostExcerpt}
                 </span>
                 <span className="active-forum-row-meta">
-                  {FORUM_CATEGORY_LABELS[forum.category]} · {forum.postCount}{' '}
-                  message
-                  {forum.postCount !== 1 ? 's' : ''}
+                  {translate(
+                    locale,
+                    FORUM_ROOM_PRESENTATION[forum.category].label
+                  )}{' '}
+                  ·{' '}
+                  {translatePlural(
+                    locale,
+                    forum.postCount,
+                    'forum.messageCount',
+                    'forum.messageCountPlural'
+                  )}
                 </span>
               </button>
             ))}
@@ -9775,7 +12593,9 @@ function ForumDiscoverCard({
           className={`forum-discover-activity ${postCount > 0 ? 'active' : ''}`}
         >
           <span aria-hidden="true" />
-          {postCount > 0 ? 'Discussion active' : 'À lancer'}
+          {postCount > 0
+            ? translate(locale, 'forum.discoverActive')
+            : translate(locale, 'forum.discoverToStart')}
         </span>
       </div>
       <div className="forum-discover-card-body">
@@ -9790,10 +12610,20 @@ function ForumDiscoverCard({
         </span>
         <span className="forum-discover-card-members">
           <span>
-            {postCount} message{postCount !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              postCount,
+              'forum.messageCount',
+              'forum.messageCountPlural'
+            )}
           </span>
           <span>
-            {memberCount} participant{memberCount !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              memberCount,
+              'forum.participantCount',
+              'forum.participantCountPlural'
+            )}
           </span>
         </span>
         {lastPostExcerpt ? (
@@ -9804,13 +12634,13 @@ function ForumDiscoverCard({
             <span>
               {lastPostExcerpt}
               {lastPostAt ? (
-                <small>{formatRelativeTime(lastPostAt)}</small>
+                <small>{formatRelativeTime(lastPostAt, locale)}</small>
               ) : null}
             </span>
           </span>
         ) : (
           <span className="forum-discover-card-last forum-discover-card-empty">
-            Lance la première discussion pour cet événement.
+            {translate(locale, 'forum.discoverStartFirst')}
           </span>
         )}
         <span className="forum-discover-card-cta">
@@ -9836,7 +12666,9 @@ function ForumDiscoverSpotlight({
       type="button"
       className="forum-discover-spotlight"
       onClick={onOpen}
-      aria-label={`Ouvrir la discussion mise en avant pour ${event.title}`}
+      aria-label={translate(locale, 'forum.openSpotlight', {
+        title: event.title
+      })}
     >
       <span
         className="forum-discover-spotlight-cover"
@@ -9866,7 +12698,7 @@ function ForumDiscoverSpotlight({
       </span>
       <span className="forum-discover-spotlight-content">
         <span className="forum-discover-section-eyebrow">
-          Discussion à découvrir
+          {translate(locale, 'forum.discoverTitle')}
         </span>
         <strong>{event.title}</strong>
         <span className="forum-discover-spotlight-meta">
@@ -9875,19 +12707,31 @@ function ForumDiscoverSpotlight({
           {event.venue.name}
         </span>
         <span className="forum-discover-spotlight-excerpt">
-          {lastPostExcerpt ??
-            'La conversation est ouverte. Sois la première personne à lancer le sujet.'}
+          {lastPostExcerpt ?? translate(locale, 'forum.discoverOpen')}
         </span>
         <span className="forum-discover-spotlight-footer">
           <span>
-            <b>{postCount}</b> message{postCount !== 1 ? 's' : ''}
+            <b>{postCount}</b>{' '}
+            {translatePlural(
+              locale,
+              postCount,
+              'forum.messageWord',
+              'forum.messageWordPlural'
+            )}
           </span>
           <span>
-            <b>{memberCount}</b> participant{memberCount !== 1 ? 's' : ''}
+            <b>{memberCount}</b>{' '}
+            {translatePlural(
+              locale,
+              memberCount,
+              'forum.participantWord',
+              'forum.participantWordPlural'
+            )}
           </span>
-          {lastPostAt && <span>{formatRelativeTime(lastPostAt)}</span>}
+          {lastPostAt && <span>{formatRelativeTime(lastPostAt, locale)}</span>}
           <span className="forum-discover-spotlight-cta">
-            Entrer dans la discussion <span aria-hidden="true">→</span>
+            {translate(locale, 'forum.enterDiscussion')}{' '}
+            <span aria-hidden="true">→</span>
           </span>
         </span>
       </span>
@@ -9921,44 +12765,48 @@ function ActiveForumsPage({
       <section className="forum-discover-hero">
         <div className="forum-discover-hero-copy">
           <span className="forum-discover-hero-eyebrow">
-            La communauté Pulso · Montréal
+            {translate(locale, 'forum.communityTitle')}
           </span>
-          <h1>Les discussions qui donnent envie de sortir.</h1>
-          <p>
-            Trouve avec qui y aller, échange les bons plans et retrouve les
-            personnes qui font vivre chaque événement.
-          </p>
+          <h1>{translate(locale, 'forum.heroTitle')}</h1>
+          <p>{translate(locale, 'forum.communityBody')}</p>
           <a href="#forum-list" className="forum-discover-hero-cta">
-            Explorer les discussions <span aria-hidden="true">↓</span>
+            {translate(locale, 'forum.heroCta')}{' '}
+            <span aria-hidden="true">↓</span>
           </a>
         </div>
         <div
           className="forum-discover-hero-community"
-          aria-label="Salons disponibles"
+          aria-label={translate(locale, 'forum.roomsAvailable')}
         >
           <span className="forum-discover-orbit forum-discover-orbit-main">
-            <b>Forum</b>
-            <small>par événement</small>
+            <b>{translate(locale, 'forum.orbitForum')}</b>
+            <small>{translate(locale, 'forum.perEvent')}</small>
           </span>
-          <span className="forum-discover-orbit room-general">Discussion</span>
+          <span className="forum-discover-orbit room-general">
+            {translate(locale, 'forum.orbitDiscussion')}
+          </span>
           <span className="forum-discover-orbit room-partners">
-            Sortir ensemble
+            {translate(locale, 'forum.orbitTogether')}
           </span>
-          <span className="forum-discover-orbit room-tickets">Billets</span>
-          <span className="forum-discover-orbit room-find">Se retrouver</span>
+          <span className="forum-discover-orbit room-tickets">
+            {translate(locale, 'forum.orbitTickets')}
+          </span>
+          <span className="forum-discover-orbit room-find">
+            {translate(locale, 'forum.orbitFindEachOther')}
+          </span>
         </div>
         <div className="forum-discover-hero-stats">
           <span>
             <b>{entries.length}</b>
-            événements
+            {translate(locale, 'forum.statEvents')}
           </span>
           <span>
             <b>{totalMessages}</b>
-            messages
+            {translate(locale, 'forum.statMessages')}
           </span>
           <span>
             <b>{activeForumCount}</b>
-            forums actifs
+            {translate(locale, 'forum.statActive')}
           </span>
         </div>
       </section>
@@ -9967,20 +12815,23 @@ function ActiveForumsPage({
         <div className="forum-discover-browser-heading">
           <div>
             <span className="forum-discover-section-eyebrow">
-              À toi de choisir
+              {translate(locale, 'forum.yourChoice')}
             </span>
-            <h2>Explore les forums</h2>
+            <h2>{translate(locale, 'forum.browseTitle')}</h2>
           </div>
-          <p>Une discussion dédiée à chaque événement à venir.</p>
+          <p>{translate(locale, 'forum.oneDiscussionPerEvent')}</p>
         </div>
-        <div className="forum-discover-filters" aria-label="Filtrer les forums">
+        <div
+          className="forum-discover-filters"
+          aria-label={translate(locale, 'forum.filterLabel')}
+        >
           <button
             type="button"
             className={filter === 'mine' ? 'active' : ''}
             onClick={() => setFilter('mine')}
             aria-pressed={filter === 'mine'}
           >
-            Mes forums
+            {translate(locale, 'forum.filterMine')}
           </button>
           <button
             type="button"
@@ -9988,7 +12839,7 @@ function ActiveForumsPage({
             onClick={() => setFilter('popular')}
             aria-pressed={filter === 'popular'}
           >
-            Les plus actifs
+            {translate(locale, 'forum.filterPopular')}
           </button>
           {EVENT_CATEGORIES.filter((category) => category !== 'other').map(
             (category) => (
@@ -10005,21 +12856,22 @@ function ActiveForumsPage({
           )}
         </div>
       </section>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger les forums pour le moment.
+          {translate(locale, 'forum.loadError')}
         </p>
       )}
       {state === 'success' && entries.length === 0 && filter === 'mine' && (
         <p className="list-view-empty">
-          Aucun forum pour l'instant. Ajoute des favoris ou marque ta
-          participation à un événement pour en voir apparaître ici.
+          {translate(locale, 'forum.emptyMine')}
         </p>
       )}
       {state === 'success' && entries.length === 0 && filter !== 'mine' && (
         <p className="list-view-empty">
-          Aucun événement à venir pour le moment.
+          {translate(locale, 'forum.noUpcomingEvents')}
         </p>
       )}
       {state === 'success' && featuredEntry && (
@@ -10045,221 +12897,6 @@ function ActiveForumsPage({
   );
 }
 
-// Full-page home for "Groupes" (Sidebar nav item), redesigned (Phase 4.10
-// follow-up) as a real split view instead of a list that pops a modal:
-// the same list+sub-tabs already built for Messages' Groupes tab on the
-// left, GroupDetailContent as a genuine inline panel on the right - no
-// GroupModal here. GroupsBlock (still a modal) stays as-is for the
-// narrower contexts that still use it (sidebar mini-list, Profil tab).
-function GroupsPage({
-  authToken,
-  userId,
-  onOpenEventForum
-}: {
-  authToken: string | undefined;
-  userId: string;
-  onOpenEventForum: (eventId: string) => void;
-}) {
-  const [selectedGroup, setSelectedGroup] = useState<Group>();
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [visibility, setVisibility] = useState<GroupVisibility>('open');
-  const [creating, setCreating] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [listVersion, setListVersion] = useState(0);
-
-  const createGroup = () => {
-    if (!authToken || !name.trim() || creating) return;
-    setCreating(true);
-    fetch(`${API_BASE_URL}/me/groups`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        name: name.trim(),
-        visibility,
-        ...(description.trim() ? { description: description.trim() } : {})
-      })
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setName('');
-        setDescription('');
-        setVisibility('open');
-        setCreateOpen(false);
-        setListVersion((version) => version + 1);
-        setSelectedGroup(groupResponseSchema.parse(json).data);
-      })
-      .catch(() => {})
-      .finally(() => setCreating(false));
-  };
-
-  return (
-    <div className="messages-page groups-page">
-      <div className="messages-list-column groups-directory-column">
-        <header className="groups-page-header">
-          <div>
-            <span className="groups-page-eyebrow">Communautés Pulso</span>
-            <h1>Groupes</h1>
-            <p>Des espaces conçus pour passer de l’idée à la sortie.</p>
-          </div>
-          <button
-            type="button"
-            className={`groups-create-trigger ${createOpen ? 'active' : ''}`}
-            onClick={() => setCreateOpen((open) => !open)}
-            aria-expanded={createOpen}
-          >
-            <span aria-hidden="true">+</span>
-            Créer
-          </button>
-        </header>
-        {createOpen && (
-          <form
-            className="groups-create-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              createGroup();
-            }}
-          >
-            <div className="groups-create-form-heading">
-              <div>
-                <span className="groups-page-eyebrow">Nouveau groupe</span>
-                <strong>Crée ton espace d’organisation</strong>
-              </div>
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() => setCreateOpen(false)}
-              >
-                Fermer
-              </button>
-            </div>
-            <label className="groups-create-field">
-              <span>Nom du groupe</span>
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Ex. Français à Montréal"
-                maxLength={80}
-                autoFocus
-              />
-            </label>
-            <label className="groups-create-field">
-              <span>Mission du groupe</span>
-              <textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="À qui s’adresse le groupe et comment souhaitez-vous organiser les sorties ?"
-                maxLength={500}
-                rows={3}
-              />
-              <small>{description.length}/500</small>
-            </label>
-            <fieldset className="groups-visibility-choice">
-              <legend>Comment peut-on rejoindre ?</legend>
-              <label className={visibility === 'open' ? 'active' : ''}>
-                <input
-                  type="radio"
-                  name="group-visibility"
-                  checked={visibility === 'open'}
-                  onChange={() => setVisibility('open')}
-                />
-                <span className="groups-visibility-icon" aria-hidden="true">
-                  ◎
-                </span>
-                <span>
-                  <strong>Accès libre</strong>
-                  <small>Visible et accessible immédiatement.</small>
-                </span>
-              </label>
-              <label className={visibility === 'restricted' ? 'active' : ''}>
-                <input
-                  type="radio"
-                  name="group-visibility"
-                  checked={visibility === 'restricted'}
-                  onChange={() => setVisibility('restricted')}
-                />
-                <span className="groups-visibility-icon" aria-hidden="true">
-                  ◇
-                </span>
-                <span>
-                  <strong>Sur demande</strong>
-                  <small>
-                    Visible, mais chaque entrée doit être approuvée.
-                  </small>
-                </span>
-              </label>
-            </fieldset>
-            <button
-              type="submit"
-              className="groups-create-submit"
-              disabled={creating || !name.trim()}
-            >
-              {creating ? 'Création…' : 'Créer le groupe'}
-            </button>
-          </form>
-        )}
-        <MessagesGroupsTab
-          key={listVersion}
-          authToken={authToken}
-          selectedGroupId={selectedGroup?.id}
-          onSelectGroup={setSelectedGroup}
-        />
-      </div>
-
-      <div className="messages-conversation-column groups-workspace-column">
-        {selectedGroup ? (
-          <GroupDetailContent
-            group={selectedGroup}
-            authToken={authToken}
-            userId={userId}
-            onGroupUpdated={setSelectedGroup}
-            onLeave={() => setSelectedGroup(undefined)}
-            onOpenEventForum={onOpenEventForum}
-          />
-        ) : (
-          <div className="groups-workspace-empty">
-            <div className="groups-workspace-empty-copy">
-              <span className="groups-page-eyebrow">Ton espace collectif</span>
-              <h2>Organiser une sortie ne devrait jamais être compliqué.</h2>
-              <p>
-                Ouvre un groupe pour retrouver au même endroit les décisions, le
-                programme, les présences, les tâches et la discussion.
-              </p>
-              <button
-                type="button"
-                className="groups-create-submit"
-                onClick={() => setCreateOpen(true)}
-              >
-                Créer mon premier groupe
-              </button>
-            </div>
-            <div
-              className="groups-workspace-modules"
-              aria-label="Modules disponibles"
-            >
-              <span>
-                <b>01</b> Programme partagé
-              </span>
-              <span>
-                <b>02</b> Présences réelles
-              </span>
-              <span>
-                <b>03</b> Checklist collective
-              </span>
-              <span>
-                <b>04</b> Discussion du groupe
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // Full-page conversations list (Phase 4.5) - one row per accepted friend
 // (GET /me/conversations), opening the same ConversationModal built for
 // the per-friend "Message" button in FriendsBlock, unmodified.
@@ -10277,10 +12914,12 @@ type MessagesTab = 'discussions' | 'demandes' | 'groupes';
 function MessagesPage({
   authToken,
   user,
+  locale,
   onOpenEventForum
 }: {
   authToken: string | undefined;
   user: User;
+  locale: SupportedLocale;
   onOpenEventForum: (eventId: string) => void;
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -10341,29 +12980,41 @@ function MessagesPage({
       <div className="messages-list-column messaging-inbox-column">
         <header className="messages-list-header messaging-inbox-header">
           <div>
-            <span className="messages-page-eyebrow">Ton cercle Pulso</span>
-            <h1>Messages</h1>
-            <p>Prépare vos prochaines sorties, simplement.</p>
+            <span className="messages-page-eyebrow">
+              {translate(locale, 'messages.eyebrow')}
+            </span>
+            <h1>{translate(locale, 'messages.title')}</h1>
+            <p>{translate(locale, 'messages.tagline')}</p>
           </div>
           <button
             type="button"
             className="messages-compose-btn"
-            aria-label="Nouveau message"
-            title="Nouveau message"
+            aria-label={translate(locale, 'messages.compose')}
+            title={translate(locale, 'messages.compose')}
             onClick={() => setComposeOpen(true)}
           >
             <span aria-hidden="true">+</span>
-            <small>Écrire</small>
+            <small>{translate(locale, 'messages.write')}</small>
           </button>
         </header>
         <div className="messages-inbox-stats">
           <span>
             <b>{conversations.length}</b>
-            conversation{conversations.length !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              conversations.length,
+              'messages.conversationWord',
+              'messages.conversationWordPlural'
+            )}
           </span>
           <span className={unreadTotal > 0 ? 'active' : ''}>
             <b>{unreadTotal}</b>
-            non lu{unreadTotal !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              unreadTotal,
+              'messages.unreadWord',
+              'messages.unreadWordPlural'
+            )}
           </span>
         </div>
         <div className="details-tabs messages-main-tabs">
@@ -10372,7 +13023,7 @@ function MessagesPage({
             className={tab === 'discussions' ? 'active' : ''}
             onClick={() => setTab('discussions')}
           >
-            Discussions
+            {translate(locale, 'messages.tabDiscussions')}
             {unreadTotal > 0 && <small>{unreadTotal}</small>}
           </button>
           <button
@@ -10380,7 +13031,7 @@ function MessagesPage({
             className={tab === 'demandes' ? 'active' : ''}
             onClick={() => setTab('demandes')}
           >
-            Demandes
+            {translate(locale, 'messages.tabRequests')}
             {pendingCount > 0 && <small>{pendingCount}</small>}
           </button>
           <button
@@ -10388,7 +13039,7 @@ function MessagesPage({
             className={tab === 'groupes' ? 'active' : ''}
             onClick={() => setTab('groupes')}
           >
-            Groupes
+            {translate(locale, 'messages.tabGroups')}
           </button>
         </div>
 
@@ -10399,8 +13050,8 @@ function MessagesPage({
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Rechercher une conversation"
-                aria-label="Rechercher une conversation"
+                placeholder={translate(locale, 'messages.search')}
+                aria-label={translate(locale, 'messages.search')}
               />
             </label>
             {state === 'loading' && (
@@ -10408,27 +13059,29 @@ function MessagesPage({
             )}
             {state === 'error' && (
               <p className="list-view-empty">
-                Impossible de charger vos messages pour le moment.
+                {translate(locale, 'messages.loadError')}
               </p>
             )}
             {state === 'success' && conversations.length === 0 && (
               <div className="messages-inbox-empty">
                 <span aria-hidden="true">◌</span>
-                <strong>Ton espace de discussion est prêt.</strong>
-                <p>Ajoute des amis, puis lance la première conversation.</p>
+                <strong>{translate(locale, 'messages.readyTitle')}</strong>
+                <p>{translate(locale, 'messages.readyBody')}</p>
                 <button
                   type="button"
                   className="messages-empty-cta"
                   onClick={() => setComposeOpen(true)}
                 >
-                  Nouveau message
+                  {translate(locale, 'messages.compose')}
                 </button>
               </div>
             )}
             {state === 'success' &&
               conversations.length > 0 &&
               filtered.length === 0 && (
-                <p className="list-view-empty">Aucun résultat.</p>
+                <p className="list-view-empty">
+                  {translate(locale, 'messages.noResult')}
+                </p>
               )}
             <div className="conversation-list">
               {filtered.map((conversation) => (
@@ -10442,11 +13095,7 @@ function MessagesPage({
                   }}
                 >
                   <span className="friends-row-avatar friends-row-avatar-lg">
-                    {conversation.friend.avatarUrl ? (
-                      <img src={conversation.friend.avatarUrl} alt="" />
-                    ) : (
-                      conversation.friend.displayName.slice(0, 1).toUpperCase()
-                    )}
+                    {renderAvatarContent(conversation.friend)}
                   </span>
                   <span className="conversation-list-info">
                     <span className="conversation-list-row-top">
@@ -10479,6 +13128,7 @@ function MessagesPage({
         {tab === 'demandes' && (
           <MessagesRequestsTab
             authToken={authToken}
+            locale={locale}
             onPendingCount={setPendingCount}
           />
         )}
@@ -10487,6 +13137,7 @@ function MessagesPage({
           <MessagesGroupsTab
             authToken={authToken}
             selectedGroupId={selectedGroup?.id}
+            locale={locale}
             onSelectGroup={(group) => {
               setSelectedFriend(undefined);
               setSelectedGroup(group);
@@ -10500,10 +13151,12 @@ function MessagesPage({
           <ConversationPane
             friend={selectedFriend}
             authToken={authToken}
+            locale={locale}
             onActivity={refresh}
           />
         ) : selectedGroup ? (
           <GroupDetailContent
+            locale={locale}
             group={selectedGroup}
             authToken={authToken}
             userId={user.id}
@@ -10518,18 +13171,17 @@ function MessagesPage({
               <span>●</span>
               <b>◌</b>
             </div>
-            <span className="messages-page-eyebrow">Conversations privées</span>
-            <h2>Les meilleures sorties commencent souvent par un message.</h2>
-            <p>
-              Choisis un ami ou un groupe pour planifier, partager un événement
-              et décider ensemble.
-            </p>
+            <span className="messages-page-eyebrow">
+              {translate(locale, 'messages.privateEyebrow')}
+            </span>
+            <h2>{translate(locale, 'messages.privateTitle')}</h2>
+            <p>{translate(locale, 'messages.privateBody')}</p>
             <button
               type="button"
               className="messages-empty-cta"
               onClick={() => setComposeOpen(true)}
             >
-              Écrire à un ami
+              {translate(locale, 'messages.writeToFriend')}
             </button>
           </div>
         )}
@@ -10539,6 +13191,7 @@ function MessagesPage({
         <ComposeMessageModal
           authToken={authToken}
           existingFriendIds={existingFriendIds}
+          locale={locale}
           onSelect={(friend) => {
             setSelectedGroup(undefined);
             setSelectedFriend(friend);
@@ -10557,10 +13210,12 @@ function MessagesPage({
 function ConversationPane({
   friend,
   authToken,
+  locale,
   onActivity
 }: {
   friend: PublicUser;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onActivity: () => void;
 }) {
   return (
@@ -10568,23 +13223,24 @@ function ConversationPane({
       <div className="conversation-pane-header">
         <span className="conversation-modal-friend">
           <span className="friends-row-avatar friends-row-avatar-lg conversation-pane-avatar">
-            {friend.avatarUrl ? (
-              <img src={friend.avatarUrl} alt="" />
-            ) : (
-              friend.displayName.slice(0, 1).toUpperCase()
-            )}
+            {renderAvatarContent(friend)}
           </span>
           <span className="conversation-pane-identity">
-            <span className="messages-page-eyebrow">Conversation privée</span>
+            <span className="messages-page-eyebrow">
+              {translate(locale, 'messages.privateConversation')}
+            </span>
             <strong>{friend.displayName}</strong>
-            <small>Vous pouvez échanger car vous êtes amis sur Pulso.</small>
+            <small>{translate(locale, 'messages.canExchange')}</small>
           </span>
         </span>
-        <span className="conversation-pane-trust">Entre amis</span>
+        <span className="conversation-pane-trust">
+          {translate(locale, 'messages.betweenFriends')}
+        </span>
       </div>
       <ConversationThread
         friend={friend}
         authToken={authToken}
+        locale={locale}
         onActivity={onActivity}
       />
     </div>
@@ -10598,9 +13254,11 @@ function ConversationPane({
 // request from a stranger" concept, which doesn't exist in Pulso.
 function MessagesRequestsTab({
   authToken,
+  locale,
   onPendingCount
 }: {
   authToken: string | undefined;
+  locale: SupportedLocale;
   onPendingCount: (count: number) => void;
 }) {
   const [requests, setRequests] = useState<FriendRequestEntry[]>([]);
@@ -10652,40 +13310,40 @@ function MessagesRequestsTab({
   return (
     <div className="messages-tab-panel messages-requests-panel">
       <div className="messages-request-heading">
-        <span className="messages-page-eyebrow">Nouvelles connexions</span>
-        <strong>Demandes d’amis</strong>
-        <p>Une fois acceptée, une conversation privée peut commencer.</p>
+        <span className="messages-page-eyebrow">
+          {translate(locale, 'messages.newConnections')}
+        </span>
+        <strong>{translate(locale, 'messages.friendRequests')}</strong>
+        <p>{translate(locale, 'messages.requestsHint')}</p>
       </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger vos demandes pour le moment.
+          {translate(locale, 'messages.requestsLoadError')}
         </p>
       )}
       {state === 'success' && requests.length === 0 && (
         <div className="messages-request-empty">
           <span aria-hidden="true">✓</span>
           <div>
-            <strong>Tout est à jour.</strong>
-            <p>Aucune demande en attente pour le moment.</p>
+            <strong>{translate(locale, 'messages.allUpToDate')}</strong>
+            <p>{translate(locale, 'messages.noPendingRequests')}</p>
           </div>
         </div>
       )}
       {incoming.length > 0 && (
         <section className="messages-request-section">
           <div className="messages-request-section-title">
-            <strong>À confirmer</strong>
+            <strong>{translate(locale, 'messages.toConfirm')}</strong>
             <span>{incoming.length}</span>
           </div>
           <div className="amis-list messages-request-list">
             {incoming.map((request) => (
               <div className="amis-row" key={request.id}>
                 <span className="friends-row-avatar friends-row-avatar-lg">
-                  {request.user.avatarUrl ? (
-                    <img src={request.user.avatarUrl} alt="" />
-                  ) : (
-                    request.user.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(request.user)}
                 </span>
                 <span className="amis-row-name">
                   {request.user.displayName}
@@ -10696,14 +13354,14 @@ function MessagesRequestsTab({
                     className="amis-btn-accept"
                     onClick={() => respond(request.id, 'accept')}
                   >
-                    Accepter
+                    {translate(locale, 'messages.accept')}
                   </button>
                   <button
                     type="button"
                     className="amis-btn-ghost"
                     onClick={() => respond(request.id, 'decline')}
                   >
-                    Refuser
+                    {translate(locale, 'messages.decline')}
                   </button>
                 </div>
               </div>
@@ -10714,18 +13372,14 @@ function MessagesRequestsTab({
       {outgoing.length > 0 && (
         <section className="messages-request-section">
           <div className="messages-request-section-title">
-            <strong>Envoyées</strong>
+            <strong>{translate(locale, 'messages.sent')}</strong>
             <span>{outgoing.length}</span>
           </div>
           <div className="amis-list messages-request-list">
             {outgoing.map((request) => (
               <div className="amis-row" key={request.id}>
                 <span className="friends-row-avatar friends-row-avatar-lg">
-                  {request.user.avatarUrl ? (
-                    <img src={request.user.avatarUrl} alt="" />
-                  ) : (
-                    request.user.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(request.user)}
                 </span>
                 <span className="amis-row-name">
                   {request.user.displayName}
@@ -10740,218 +13394,6 @@ function MessagesRequestsTab({
   );
 }
 
-// "Groupes" tab - same real data as GroupsBlock (GET /me/groups), just a
-// second, convenient entry point into the same GroupModal rather than a
-// separate group-messaging concept.
-type GroupsSubTab = 'mine' | 'event' | 'discover';
-
-// Groupes tab inside Messages (Phase 4.10) - three sub-tabs matching the
-// mockup: "Mes groupes" (already-joined), "Groupes de l'événement" (every
-// event-linked group, joined or not) and "Découvrir" (the permanent-group
-// directory DEC-0013 v1.1 pre-authorized). Selecting a row opens the real
-// group inline in the right column via onSelectGroup, same pattern as
-// picking a conversation.
-function MessagesGroupsTab({
-  authToken,
-  selectedGroupId,
-  onSelectGroup
-}: {
-  authToken: string | undefined;
-  selectedGroupId: string | undefined;
-  onSelectGroup: (group: Group) => void;
-}) {
-  const [subTab, setSubTab] = useState<GroupsSubTab>('mine');
-  const [myGroups, setMyGroups] = useState<Group[]>([]);
-  const [eventGroups, setEventGroups] = useState<DiscoverGroupEntry[]>([]);
-  const [discoverGroups, setDiscoverGroups] = useState<DiscoverGroupEntry[]>(
-    []
-  );
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [query, setQuery] = useState('');
-
-  useEffect(() => {
-    if (!authToken) return;
-    setState('loading');
-    const request =
-      subTab === 'mine'
-        ? fetch(`${API_BASE_URL}/me/groups`, {
-            headers: { authorization: `Bearer ${authToken}` }
-          })
-            .then((response) =>
-              response.ok ? response.json() : Promise.reject()
-            )
-            .then((json) => setMyGroups(groupsResponseSchema.parse(json).data))
-        : fetch(
-            `${API_BASE_URL}/groups/discover?scope=${subTab === 'event' ? 'event' : 'permanent'}`,
-            { headers: { authorization: `Bearer ${authToken}` } }
-          )
-            .then((response) =>
-              response.ok ? response.json() : Promise.reject()
-            )
-            .then((json) => {
-              const data = discoverGroupsResponseSchema.parse(json).data;
-              if (subTab === 'event') setEventGroups(data);
-              else setDiscoverGroups(data);
-            });
-    request.then(() => setState('success')).catch(() => setState('error'));
-  }, [authToken, subTab]);
-
-  const openGroup = useCallback(
-    (groupId: string) => {
-      if (!authToken) return;
-      fetch(`${API_BASE_URL}/groups/${groupId}`, {
-        headers: { authorization: `Bearer ${authToken}` }
-      })
-        .then((response) => (response.ok ? response.json() : Promise.reject()))
-        .then((json) => onSelectGroup(groupResponseSchema.parse(json).data))
-        .catch(() => undefined);
-    },
-    [authToken, onSelectGroup]
-  );
-
-  const rows: DiscoverGroupEntry[] =
-    subTab === 'mine'
-      ? myGroups.map((group) => ({ group }))
-      : subTab === 'event'
-        ? eventGroups
-        : discoverGroups;
-  const visibleRows = query.trim()
-    ? rows.filter(({ group, event }) => {
-        const haystack = `${group.name} ${group.description ?? ''} ${event?.title ?? ''}`;
-        return haystack.toLowerCase().includes(query.trim().toLowerCase());
-      })
-    : rows;
-
-  return (
-    <div className="messages-tab-panel groups-directory-panel">
-      <div className="details-tabs groups-sub-tabs">
-        <button
-          type="button"
-          className={subTab === 'mine' ? 'active' : ''}
-          onClick={() => setSubTab('mine')}
-        >
-          Mes groupes
-        </button>
-        <button
-          type="button"
-          className={subTab === 'event' ? 'active' : ''}
-          onClick={() => setSubTab('event')}
-        >
-          Événements
-        </button>
-        <button
-          type="button"
-          className={subTab === 'discover' ? 'active' : ''}
-          onClick={() => setSubTab('discover')}
-        >
-          Découvrir
-        </button>
-      </div>
-
-      <div className="groups-directory-context">
-        <div>
-          <strong>
-            {subTab === 'mine'
-              ? 'Tes espaces'
-              : subTab === 'event'
-                ? 'Autour des événements'
-                : 'Communautés à découvrir'}
-          </strong>
-          <span>
-            {subTab === 'mine'
-              ? 'Tous les groupes que tu as rejoints.'
-              : subTab === 'event'
-                ? 'Des groupes créés pour préparer une sortie précise.'
-                : 'Des communautés montréalaises ouvertes ou sur demande.'}
-          </span>
-        </div>
-        <span className="groups-directory-count">{rows.length}</span>
-      </div>
-      <label className="groups-directory-search">
-        <span aria-hidden="true">⌕</span>
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Rechercher un groupe"
-          aria-label="Rechercher un groupe"
-        />
-      </label>
-
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'error' && (
-        <p className="list-view-empty">
-          Impossible de charger les groupes pour le moment.
-        </p>
-      )}
-      {state === 'success' && rows.length === 0 && (
-        <p className="list-view-empty">
-          {subTab === 'mine'
-            ? 'Aucun groupe pour le moment. Découvre-en un dans l\'onglet Découvrir, ou rejoins-en un depuis "Rencontrer avant l\'événement" sur un forum.'
-            : subTab === 'event'
-              ? "Aucun groupe d'événement pour le moment."
-              : 'Aucun groupe permanent pour le moment.'}
-        </p>
-      )}
-      {state === 'success' && rows.length > 0 && visibleRows.length === 0 && (
-        <p className="list-view-empty">
-          Aucun groupe ne correspond à ta recherche.
-        </p>
-      )}
-      <div className="friends-list groups-directory-list">
-        {visibleRows.map(({ group, event }) => (
-          <button
-            type="button"
-            key={group.id}
-            className={`conversation-list-row ${selectedGroupId === group.id ? 'selected' : ''}`}
-            onClick={() => openGroup(group.id)}
-          >
-            <span className="friends-row-avatar friends-row-avatar-lg group-directory-avatar">
-              {group.name.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="conversation-list-info">
-              <span className="conversation-list-row-top">
-                <strong>{group.name}</strong>
-                <span className="group-directory-access">
-                  {group.visibility === 'restricted' ? 'Sur demande' : 'Libre'}
-                </span>
-              </span>
-              {group.description && (
-                <span className="group-directory-description">
-                  {group.description}
-                </span>
-              )}
-              <span className="group-directory-meta">
-                <span>
-                  {group.memberCount} membre{group.memberCount > 1 ? 's' : ''}
-                </span>
-                <span>{event ? 'Groupe événement' : 'Communauté'}</span>
-              </span>
-              {event && (
-                <span className="group-directory-event">
-                  {event.title} ·{' '}
-                  {new Date(event.startsAt).toLocaleDateString('fr-CA', {
-                    day: 'numeric',
-                    month: 'short'
-                  })}
-                </span>
-              )}
-            </span>
-            {group.isModerator &&
-              group.pendingRequestCount !== undefined &&
-              group.pendingRequestCount > 0 && (
-                <span className="conversation-list-badge">
-                  {group.pendingRequestCount}
-                </span>
-              )}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // Compose picker (Phase 4.9) - starting a new conversation is just
 // picking an existing friend (DEC-0012: messaging is friends-only, no
 // stranger inbox). Reuses the same friends-fetch pattern as
@@ -10959,11 +13401,13 @@ function MessagesGroupsTab({
 function ComposeMessageModal({
   authToken,
   existingFriendIds,
+  locale,
   onSelect,
   onClose
 }: {
   authToken: string | undefined;
   existingFriendIds: Set<string>;
+  locale: SupportedLocale;
   onSelect: (friend: PublicUser) => void;
   onClose: () => void;
 }) {
@@ -10994,11 +13438,11 @@ function ComposeMessageModal({
       >
         <div className="conversation-modal-header">
           <div className="messages-compose-modal-title">
-            <span className="messages-page-eyebrow">Conversation privée</span>
-            <strong>Nouveau message</strong>
-            <small>
-              Choisis un ami pour commencer ou reprendre un échange.
-            </small>
+            <span className="messages-page-eyebrow">
+              {translate(locale, 'messages.privateConversation')}
+            </span>
+            <strong>{translate(locale, 'messages.compose')}</strong>
+            <small>{translate(locale, 'messages.composeHint')}</small>
           </div>
           <button type="button" className="text-btn" onClick={onClose}>
             ✕
@@ -11006,16 +13450,18 @@ function ComposeMessageModal({
         </div>
         <div className="share-friend-list">
           {state === 'loading' && (
-            <p className="list-view-empty">Chargement…</p>
+            <p className="list-view-empty">
+              {translate(locale, 'common.loading')}
+            </p>
           )}
           {state === 'error' && (
             <p className="list-view-empty">
-              Impossible de charger vos amis pour le moment.
+              {translate(locale, 'messages.friendsLoadError')}
             </p>
           )}
           {state === 'success' && friends.length === 0 && (
             <p className="list-view-empty">
-              Ajoute des amis pour pouvoir leur écrire.
+              {translate(locale, 'messages.noFriendsToWrite')}
             </p>
           )}
           {state === 'success' &&
@@ -11025,11 +13471,7 @@ function ComposeMessageModal({
                 key={friend.id}
               >
                 <span className="friends-row-avatar">
-                  {friend.avatarUrl ? (
-                    <img src={friend.avatarUrl} alt="" />
-                  ) : (
-                    friend.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(friend)}
                 </span>
                 <span className="friends-row-name">{friend.displayName}</span>
                 <button
@@ -11200,7 +13642,7 @@ function AmisPage({
 
   const removeFriendAction = (friendUserId: string) => {
     if (!authToken) return;
-    if (!window.confirm('Retirer cette personne de tes amis ?')) return;
+    if (!window.confirm(translate(locale, 'friends.confirmRemove'))) return;
     void fetch(`${API_BASE_URL}/me/friends/${friendUserId}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${authToken}` }
@@ -11246,10 +13688,18 @@ function AmisPage({
       (entry) => entry.friend.id === friendUserId
     );
     const upcomingEvent = upcoming && upcomingEventsById.get(upcoming.eventId);
-    if (upcomingEvent) return `Va à ${upcomingEvent.title}`;
+    if (upcomingEvent)
+      return translate(locale, 'friends.goingTo', {
+        title: upcomingEvent.title
+      });
     const mutual = mutualCounts.get(friendUserId) ?? 0;
     return mutual > 0
-      ? `${mutual} ami${mutual > 1 ? 's' : ''} en commun`
+      ? translatePlural(
+          locale,
+          mutual,
+          'friends.mutualCount',
+          'friends.mutualCountPlural'
+        )
       : undefined;
   };
 
@@ -11259,35 +13709,44 @@ function AmisPage({
     >
       <div className="amis-list-column">
         <div className="amis-list-header">
-          <span className="amis-page-kicker">Ton cercle Pulso</span>
+          <span className="amis-page-kicker">
+            {translate(locale, 'friends.eyebrow')}
+          </span>
           <div className="amis-title-row">
             <div>
-              <h1>Mes amis</h1>
-              <p>Retrouve les personnes avec qui vivre Montréal.</p>
+              <h1>{translate(locale, 'friends.title')}</h1>
+              <p>{translate(locale, 'friends.tagline')}</p>
             </div>
             <button
               type="button"
               className="amis-invite-icon"
               onClick={() => setInviteOpen(true)}
-              aria-label="Inviter un ami"
-              title="Inviter un ami"
+              aria-label={translate(locale, 'friends.invite')}
+              title={translate(locale, 'friends.invite')}
             >
               +
             </button>
           </div>
           <div
             className="amis-overview-stats"
-            aria-label="Résumé de ton cercle"
+            aria-label={translate(locale, 'friends.circleSummary')}
           >
             <span>
-              <strong>{friends.length}</strong> amis
+              <strong>{friends.length}</strong>{' '}
+              {translate(locale, 'friends.friendsWord')}
             </span>
             <span>
-              <strong>{friendsWithPlansCount}</strong> ont une sortie visible
+              <strong>{friendsWithPlansCount}</strong>{' '}
+              {translate(locale, 'friends.havePlans')}
             </span>
             <span>
-              <strong>{incoming.length}</strong> demande
-              {incoming.length !== 1 ? 's' : ''}
+              <strong>{incoming.length}</strong>{' '}
+              {translatePlural(
+                locale,
+                incoming.length,
+                'friends.requestWord',
+                'friends.requestWordPlural'
+              )}
             </span>
           </div>
         </div>
@@ -11297,7 +13756,7 @@ function AmisPage({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Rechercher un ami"
+              placeholder={translate(locale, 'friends.search')}
             />
           </div>
         </div>
@@ -11308,30 +13767,35 @@ function AmisPage({
             className={tab === 'tous' ? 'active' : ''}
             onClick={() => setTab('tous')}
           >
-            Mon cercle <span>{friends.length}</span>
+            {translate(locale, 'friends.tabCircle')}{' '}
+            <span>{friends.length}</span>
           </button>
           <button
             type="button"
             className={tab === 'demandes' ? 'active' : ''}
             onClick={() => setTab('demandes')}
           >
-            Demandes {incoming.length > 0 && <span>{incoming.length}</span>}
+            {translate(locale, 'friends.tabRequests')}{' '}
+            {incoming.length > 0 && <span>{incoming.length}</span>}
           </button>
           <button
             type="button"
             className={tab === 'suggestions' ? 'active' : ''}
             onClick={() => setTab('suggestions')}
           >
-            À découvrir <span>{suggestions.length}</span>
+            {translate(locale, 'friends.tabDiscover')}{' '}
+            <span>{suggestions.length}</span>
           </button>
         </div>
 
         {loadState === 'loading' && (
-          <p className="list-view-empty">Chargement…</p>
+          <p className="list-view-empty">
+            {translate(locale, 'common.loading')}
+          </p>
         )}
         {loadState === 'error' && (
           <p className="list-view-empty">
-            Impossible de charger vos amis pour le moment.
+            {translate(locale, 'friends.loadError')}
           </p>
         )}
 
@@ -11342,8 +13806,8 @@ function AmisPage({
                 <span className="empty-state-icon" aria-hidden="true">
                   🧑‍🤝‍🧑
                 </span>
-                <p>Aucun ami pour le moment</p>
-                <p>Partage ton code pour commencer à te connecter.</p>
+                <p>{translate(locale, 'friends.noFriendsYet')}</p>
+                <p>{translate(locale, 'friends.shareCodeHint')}</p>
               </div>
             )}
             {filteredFriends.map((friendUser) => (
@@ -11357,24 +13821,21 @@ function AmisPage({
                   onClick={() => setSelectedFriend(friendUser)}
                 >
                   <span className="friends-row-avatar friends-row-avatar-lg">
-                    {friendUser.avatarUrl ? (
-                      <img src={friendUser.avatarUrl} alt="" />
-                    ) : (
-                      friendUser.displayName.slice(0, 1).toUpperCase()
-                    )}
+                    {renderAvatarContent(friendUser)}
                   </span>
                   <span className="conversation-list-info">
                     <strong>{friendUser.displayName}</strong>
                     <span>
-                      {friendRowSubtitle(friendUser.id) ?? 'Dans ton cercle'}
+                      {friendRowSubtitle(friendUser.id) ??
+                        translate(locale, 'friends.inCircle')}
                     </span>
                   </span>
                 </button>
                 <button
                   type="button"
                   className="amis-row-icon-btn"
-                  aria-label="Envoyer un message"
-                  title="Message"
+                  aria-label={translate(locale, 'friends.sendMessage')}
+                  title={translate(locale, 'friends.messageShort')}
                   onClick={() => {
                     setConversationWith(friendUser);
                   }}
@@ -11384,8 +13845,8 @@ function AmisPage({
                 <button
                   type="button"
                   className="amis-row-icon-btn"
-                  aria-label="Retirer cet ami"
-                  title="Retirer"
+                  aria-label={translate(locale, 'friends.removeFriend')}
+                  title={translate(locale, 'friends.removeShort')}
                   onClick={() => {
                     removeFriendAction(friendUser.id);
                   }}
@@ -11401,7 +13862,7 @@ function AmisPage({
           <div className="messages-tab-panel">
             {incoming.length === 0 && outgoing.length === 0 && (
               <p className="list-view-empty">
-                Aucune demande d'ami pour le moment.
+                {translate(locale, 'friends.noRequests')}
               </p>
             )}
             {incoming.length > 0 && (
@@ -11411,11 +13872,7 @@ function AmisPage({
                   {incoming.map((request) => (
                     <div className="amis-row" key={request.id}>
                       <span className="friends-row-avatar friends-row-avatar-lg">
-                        {request.user.avatarUrl ? (
-                          <img src={request.user.avatarUrl} alt="" />
-                        ) : (
-                          request.user.displayName.slice(0, 1).toUpperCase()
-                        )}
+                        {renderAvatarContent(request.user)}
                       </span>
                       <span className="amis-row-name">
                         {request.user.displayName}
@@ -11452,21 +13909,21 @@ function AmisPage({
             )}
             {outgoing.length > 0 && (
               <div className="amis-section">
-                <h3 className="amis-section-title">Demandes envoyées</h3>
+                <h3 className="amis-section-title">
+                  {translate(locale, 'friends.requestsSent')}
+                </h3>
                 <div className="amis-list">
                   {outgoing.map((request) => (
                     <div className="amis-row" key={request.id}>
                       <span className="friends-row-avatar friends-row-avatar-lg">
-                        {request.user.avatarUrl ? (
-                          <img src={request.user.avatarUrl} alt="" />
-                        ) : (
-                          request.user.displayName.slice(0, 1).toUpperCase()
-                        )}
+                        {renderAvatarContent(request.user)}
                       </span>
                       <span className="amis-row-name">
                         {request.user.displayName}
                       </span>
-                      <span className="amis-row-pending">En attente</span>
+                      <span className="amis-row-pending">
+                        {translate(locale, 'friends.pending')}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -11479,25 +13936,24 @@ function AmisPage({
           <div className="messages-tab-panel">
             {suggestions.length === 0 ? (
               <p className="list-view-empty">
-                Pas de suggestion pour l'instant - ajoute des amis pour en
-                découvrir de nouveaux via vos connexions en commun.
+                {translate(locale, 'friends.noSuggestions')}
               </p>
             ) : (
               <div className="amis-list">
                 {suggestions.map((suggestion) => (
                   <div className="amis-row" key={suggestion.user.id}>
                     <span className="friends-row-avatar friends-row-avatar-lg">
-                      {suggestion.user.avatarUrl ? (
-                        <img src={suggestion.user.avatarUrl} alt="" />
-                      ) : (
-                        suggestion.user.displayName.slice(0, 1).toUpperCase()
-                      )}
+                      {renderAvatarContent(suggestion.user)}
                     </span>
                     <span className="amis-row-name">
                       {suggestion.user.displayName}
                       <span className="amis-row-mutual">
-                        {suggestion.mutualFriendCount} ami
-                        {suggestion.mutualFriendCount > 1 ? 's' : ''} en commun
+                        {translatePlural(
+                          locale,
+                          suggestion.mutualFriendCount,
+                          'friends.mutualCount',
+                          'friends.mutualCountPlural'
+                        )}
                       </span>
                     </span>
                     <button
@@ -11505,7 +13961,7 @@ function AmisPage({
                       className="amis-btn-accept"
                       onClick={() => addSuggestion(suggestion.user.id)}
                     >
-                      + Ajouter
+                      {translate(locale, 'friends.add')}
                     </button>
                   </div>
                 ))}
@@ -11534,14 +13990,13 @@ function AmisPage({
               <span>✦</span>
               <span>☺</span>
             </div>
-            <span className="amis-page-kicker">Ton cercle t’attend</span>
-            <h2>Choisis un ami</h2>
-            <p>
-              Consulte ses sorties partagées, vos événements en commun et
-              démarre l’organisation de votre prochaine soirée.
-            </p>
+            <span className="amis-page-kicker">
+              {translate(locale, 'friends.circleWaiting')}
+            </span>
+            <h2>{translate(locale, 'friends.pickAFriend')}</h2>
+            <p>{translate(locale, 'friends.panelHint')}</p>
             <button type="button" onClick={() => setInviteOpen(true)}>
-              Inviter une nouvelle personne
+              {translate(locale, 'friends.inviteNewPerson')}
             </button>
           </div>
         )}
@@ -11549,27 +14004,34 @@ function AmisPage({
 
       <aside className="amis-rail">
         <div className="amis-rail-hero">
-          <span className="amis-page-kicker">Ton cercle bouge</span>
+          <span className="amis-page-kicker">
+            {translate(locale, 'friends.circleMoving')}
+          </span>
           <strong>{friendsWithPlansCount}</strong>
           <p>
-            ami{friendsWithPlansCount !== 1 ? 's ont' : ' a'} partagé une sortie
-            à venir avec leur cercle.
+            {translatePlural(
+              locale,
+              friendsWithPlansCount,
+              'friends.sharedOutingOne',
+              'friends.sharedOutingMany'
+            )}
           </p>
           <button type="button" onClick={() => setMapOpen(true)}>
-            <span aria-hidden="true">⌖</span> Voir sur la carte
+            <span aria-hidden="true">⌖</span>{' '}
+            {translate(locale, 'friends.seeOnMap')}
           </button>
         </div>
 
         <div className="amis-rail-section amis-circle-outings">
           <div className="amis-rail-header">
             <div>
-              <span>À venir</span>
-              <h3>Sorties du cercle</h3>
+              <span>{translate(locale, 'friends.upcoming')}</span>
+              <h3>{translate(locale, 'friends.circleOutings')}</h3>
             </div>
           </div>
           {circleOutings.length === 0 ? (
             <p className="list-view-empty">
-              Les sorties que tes amis partagent apparaîtront ici.
+              {translate(locale, 'friends.sharedOutingsHint')}
             </p>
           ) : (
             <div className="amis-circle-list">
@@ -11581,11 +14043,7 @@ function AmisPage({
                   onClick={() => onOpenEventForum(event.id)}
                 >
                   <span className="friends-row-avatar">
-                    {entry.friend.avatarUrl ? (
-                      <img src={entry.friend.avatarUrl} alt="" />
-                    ) : (
-                      entry.friend.displayName.slice(0, 1).toUpperCase()
-                    )}
+                    {renderAvatarContent(entry.friend)}
                   </span>
                   <span>
                     <strong>{entry.friend.displayName}</strong>
@@ -11652,6 +14110,7 @@ function AmisPage({
         <ConversationModal
           friend={conversationWith}
           authToken={authToken}
+          locale={locale}
           onClose={() => setConversationWith(undefined)}
         />
       )}
@@ -11780,78 +14239,41 @@ function EventCarouselRow({
 }
 
 type ProfilTab =
-  'apercu' | 'mes-evenements' | 'favoris' | 'groupes' | 'activite';
+  | 'apercu'
+  | 'photos'
+  | 'mes-evenements'
+  | 'favoris'
+  | 'amis'
+  | 'lieux'
+  | 'groupes'
+  | 'activite';
 
-const PROFIL_TABS: Array<{ id: ProfilTab; label: string; icon: string }> = [
+// `label` is a translation key where DEC-0020 added the tab, and literal
+// French where it predates the i18n work - the ratchet in
+// i18n-coverage.test.ts is what will eventually force the rest across.
+const PROFIL_TABS: Array<{
+  id: ProfilTab;
+  label: string;
+  labelKey?: MessageKey;
+  icon: string;
+}> = [
   { id: 'apercu', label: 'Vue d’ensemble', icon: '✦' },
+  { id: 'photos', label: 'Photos', labelKey: 'profile.tabPhotos', icon: '❑' },
   { id: 'mes-evenements', label: 'Mes sorties', icon: '◫' },
   { id: 'favoris', label: 'Favoris', icon: '♡' },
+  { id: 'amis', label: 'Amis', labelKey: 'profile.tabFriends', icon: '🧑‍🤝‍🧑' },
+  {
+    id: 'lieux',
+    label: 'Lieux suivis',
+    labelKey: 'profile.tabFollowedVenues',
+    icon: '⌖'
+  },
   { id: 'groupes', label: 'Groupes', icon: '♟' },
   { id: 'activite', label: 'Activité', icon: '↗' }
 ];
 
-// Brand-gradient banner presets (Phase 4.7) - never a photo upload, Pulso
-// stores no user images beyond the Google avatar. Keys match
-// PROFILE_COVER_STYLES in @pulso/contracts.
-const PROFILE_COVER_GRADIENTS: Record<string, string> = {
-  aurora: 'linear-gradient(135deg, #a73ee8, #ff2a7a)',
-  sunset: 'linear-gradient(135deg, #ff8a3d, #ff2a7a)',
-  midnight: 'linear-gradient(135deg, #1c192b, #5b3fe0)',
-  nebula: 'linear-gradient(135deg, #5b3fe0, #00c2a8)'
-};
-const DEFAULT_PROFILE_COVER = 'aurora';
-
-// Preset avatars (Phase 4.7) - picking one overrides the Google avatar photo
-// everywhere the user's own avatar appears (Sidebar profile card, TopBar
-// account menu, profile header), same "no upload" rationale as the cover
-// presets. Reuses the same brand gradients rather than inventing a second
-// palette.
-const PROFILE_AVATAR_PRESETS: Record<
-  string,
-  { emoji: string; gradient: string }
-> = {
-  note: { emoji: '🎧', gradient: PROFILE_COVER_GRADIENTS['aurora']! },
-  disco: { emoji: '🪩', gradient: PROFILE_COVER_GRADIENTS['midnight']! },
-  moon: { emoji: '🌙', gradient: PROFILE_COVER_GRADIENTS['nebula']! },
-  star: { emoji: '⭐', gradient: PROFILE_COVER_GRADIENTS['sunset']! },
-  flame: { emoji: '🔥', gradient: PROFILE_COVER_GRADIENTS['aurora']! },
-  heart: { emoji: '💜', gradient: PROFILE_COVER_GRADIENTS['midnight']! }
-};
-
-// Shared by every spot the user's own avatar appears (AccountMenu, Sidebar
-// profile card, ProfilHeader) - a chosen preset always wins over the Google
-// photo; falls back to the initial only when neither exists.
 function renderUserAvatarContent(user: User): ReactNode {
-  const preset = user.avatarStyle
-    ? PROFILE_AVATAR_PRESETS[user.avatarStyle]
-    : undefined;
-  if (preset) {
-    return (
-      <span
-        className="user-avatar-preset"
-        style={{ background: preset.gradient }}
-        aria-hidden="true"
-      >
-        {preset.emoji}
-      </span>
-    );
-  }
-  if (user.avatarUrl) {
-    return <img src={user.avatarUrl} alt="" />;
-  }
-  return user.displayName.slice(0, 1).toUpperCase();
-}
-
-function formatRelativeTime(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return "à l'instant";
-  if (minutes < 60) return `il y a ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `il y a ${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `il y a ${days}j`;
-  return new Date(iso).toLocaleDateString('fr-CA');
+  return renderAvatarContent(user);
 }
 
 // Messaging's own timestamp convention (clock time / "Hier" / weekday),
@@ -12089,10 +14511,12 @@ function useActivity(authToken: string | undefined, limit: number) {
 
 function ActivityList({
   entries,
-  emptyMessage
+  emptyMessage,
+  locale
 }: {
   entries: ActivityEntry[];
   emptyMessage: string;
+  locale: SupportedLocale;
 }) {
   if (entries.length === 0) {
     return <p className="list-view-empty">{emptyMessage}</p>;
@@ -12108,7 +14532,7 @@ function ActivityList({
             </span>
             <span className="profil-activity-text">{text}</span>
             <span className="profil-activity-time">
-              {formatRelativeTime(entry.occurredAt)}
+              {formatRelativeTime(entry.occurredAt, locale)}
             </span>
           </li>
         );
@@ -12192,11 +14616,7 @@ function EditProfileModal({
               aria-label="Photo Google"
               title="Photo Google"
             >
-              {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt="" />
-              ) : (
-                user.displayName.slice(0, 1).toUpperCase()
-              )}
+              {renderAvatarContent(user)}
             </button>
             {PROFILE_AVATAR_STYLES.map((style) => (
               <button
@@ -12242,24 +14662,356 @@ function EditProfileModal({
   );
 }
 
+// DEC-0020 - the personal photo gallery. A grid on a profile, deliberately
+// not a feed: it only ever renders one account's own photos, and carries no
+// like, comment or share affordance, because none of those exist.
+//
+// `ownerId` undefined means "the signed-in user's own gallery", which is
+// the only case that can upload or delete. A friend's gallery is read-only
+// here; a stranger's comes back empty from the API and shows the same
+// empty state a friend with no photos would, which is what keeps this from
+// being a way to detect whether someone has photos at all.
+function ProfilPhotosTab({
+  authToken,
+  ownerId,
+  locale
+}: {
+  authToken: string | undefined;
+  ownerId?: string | undefined;
+  locale: SupportedLocale;
+}) {
+  const [photos, setPhotos] = useState<UserPhoto[]>([]);
+  const [state, setState] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  );
+  const [uploading, setUploading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const isOwn = ownerId === undefined;
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    const url = isOwn
+      ? `${API_BASE_URL}/me/photos`
+      : `${API_BASE_URL}/users/${ownerId}/photos`;
+    setState('loading');
+    fetch(url, { headers: { authorization: `Bearer ${authToken}` } })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setPhotos(userPhotosResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken, isOwn, ownerId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const upload = (file: File) => {
+    if (!authToken) return;
+    setUploading(true);
+    setFailed(false);
+    const body = new FormData();
+    body.append('file', file);
+    fetch(`${API_BASE_URL}/me/photos`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` },
+      body
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) =>
+        setPhotos((current) => [
+          userPhotoResponseSchema.parse(json).data,
+          ...current
+        ])
+      )
+      .catch(() => setFailed(true))
+      .finally(() => setUploading(false));
+  };
+
+  const remove = (photoId: string) => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/photos/${photoId}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then(() =>
+        setPhotos((current) => current.filter((photo) => photo.id !== photoId))
+      )
+      .catch(() => {});
+  };
+
+  return (
+    <div className="profil-tab-content profil-photos">
+      {isOwn && (
+        <div className="profil-photos-actions">
+          <button
+            type="button"
+            className="profil-photos-add"
+            disabled={uploading}
+            onClick={() => fileInput.current?.click()}
+          >
+            <span aria-hidden="true">＋</span>
+            {uploading
+              ? translate(locale, 'profile.photoUploading')
+              : translate(locale, 'profile.galleryAdd')}
+          </button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) upload(file);
+              // Clear it, so picking the same file twice in a row still
+              // fires a change event.
+              event.target.value = '';
+            }}
+          />
+          <span className="profil-photos-note">
+            {translate(locale, 'profile.galleryPrivate')}
+          </span>
+        </div>
+      )}
+
+      {failed && (
+        <p className="profil-photos-error">
+          {translate(locale, 'profile.photoFailed')}
+        </p>
+      )}
+
+      {state === 'success' && photos.length === 0 && (
+        <p className="profil-photos-empty">
+          {isOwn
+            ? translate(locale, 'profile.galleryEmpty')
+            : translate(locale, 'profile.galleryEmptyOther')}
+        </p>
+      )}
+
+      {photos.length > 0 && (
+        <ul className="profil-photos-grid">
+          {photos.map((photo) => (
+            <li key={photo.id} className="profil-photo">
+              <img src={photo.url} alt={photo.caption ?? ''} />
+              {photo.caption && (
+                <span className="profil-photo-caption">{photo.caption}</span>
+              )}
+              {isOwn && (
+                <button
+                  type="button"
+                  className="profil-photo-delete"
+                  aria-label={translate(locale, 'profile.galleryDelete')}
+                  onClick={() => remove(photo.id)}
+                >
+                  ×
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// DEC-0020 - "Lieux suivis". These are the account's server-side venue
+// favourites (`user_favorite_venues`), which is the same set DEC-0016's
+// "new event at a followed venue" notification fans out from - hence the
+// bell wording rather than a second, parallel "follow" idea. Anonymous,
+// browser-local favourites (DEC-0007) are deliberately not here: they
+// belong to a device, not to a person.
+function ProfilLieuxTab({
+  groups,
+  locale,
+  onSelectVenue
+}: {
+  groups: VenueGroup[];
+  locale: SupportedLocale;
+  onSelectVenue: (group: VenueGroup) => void;
+}) {
+  if (groups.length === 0) {
+    return (
+      <div className="profil-tab-content">
+        <p className="profil-photos-empty">
+          {translate(locale, 'profile.followedVenuesEmpty')}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="profil-tab-content">
+      <ul className="profil-venues-grid">
+        {groups.map((group) => (
+          <li key={group.id}>
+            <button
+              type="button"
+              className="profil-venue-card"
+              onClick={() => onSelectVenue(group)}
+            >
+              <span
+                className="profil-venue-dot"
+                style={{
+                  background: CATEGORY_COLORS[group.categories[0] ?? 'other']
+                }}
+                aria-hidden="true"
+              />
+              <span className="profil-venue-copy">
+                <strong>{group.name}</strong>
+                <span>
+                  {group.venueCategory
+                    ? VENUE_CATEGORY_LABELS[locale][group.venueCategory]
+                    : group.address}
+                </span>
+              </span>
+              <span className="profil-venue-count">{group.events.length}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// The friend graph has existed since DEC-0011 and had never appeared on a
+// profile - only as a count in the header and a side card. DEC-0020 gives
+// it a tab of its own.
+function ProfilAmisTab({
+  friends,
+  locale,
+  onOpenAmis
+}: {
+  friends: PublicUser[];
+  locale: SupportedLocale;
+  onOpenAmis: () => void;
+}) {
+  if (friends.length === 0) {
+    return (
+      <div className="profil-tab-content">
+        <p className="profil-photos-empty">
+          {translate(locale, 'profile.friendsEmpty')}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="profil-tab-content">
+      <ul className="profil-friends-grid">
+        {friends.map((friend) => (
+          <li key={friend.id}>
+            <button
+              type="button"
+              className="profil-friend-card"
+              onClick={onOpenAmis}
+            >
+              <span className="profil-friend-avatar">
+                {renderAvatarContent(friend)}
+              </span>
+              <span className="profil-friend-name">{friend.displayName}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ProfilHeader({
   user,
   friendsCount,
-  onEdit
+  authToken,
+  locale,
+  onEdit,
+  onUserChange
 }: {
   user: User;
   friendsCount: number;
+  authToken: string | undefined;
+  locale: SupportedLocale;
   onEdit: () => void;
+  onUserChange: (user: User) => void;
 }) {
   const coverGradient =
     PROFILE_COVER_GRADIENTS[user.coverStyle ?? DEFAULT_PROFILE_COVER] ??
     PROFILE_COVER_GRADIENTS[DEFAULT_PROFILE_COVER];
+
+  // DEC-0020 - the profile photo. Uploading answers with the whole updated
+  // account, so the new avatar propagates everywhere at once (top bar,
+  // sidebar card, this header) instead of each surface refetching.
+  const photoInput = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const send = (method: 'PUT' | 'DELETE', body?: FormData) => {
+    if (!authToken) return;
+    setBusy(true);
+    setFailed(false);
+    fetch(`${API_BASE_URL}/me/photo`, {
+      method,
+      headers: { authorization: `Bearer ${authToken}` },
+      ...(body ? { body } : {})
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => onUserChange(meResponseSchema.parse(json).data))
+      .catch(() => setFailed(true))
+      .finally(() => setBusy(false));
+  };
+
   return (
     <div className="profil-header">
       <div className="profil-cover" style={{ background: coverGradient }} />
       <div className="profil-header-content">
         <div className="profil-identity">
-          <span className="profil-avatar">{renderUserAvatarContent(user)}</span>
+          <div className="profil-avatar-slot">
+            <span className="profil-avatar">
+              {renderUserAvatarContent(user)}
+            </span>
+            <button
+              type="button"
+              className="profil-avatar-edit"
+              disabled={busy}
+              aria-label={
+                user.photoUrl
+                  ? translate(locale, 'profile.photoChange')
+                  : translate(locale, 'profile.photoAdd')
+              }
+              onClick={() => photoInput.current?.click()}
+            >
+              <span aria-hidden="true">📷</span>
+            </button>
+            {user.photoUrl && (
+              <button
+                type="button"
+                className="profil-avatar-remove"
+                disabled={busy}
+                aria-label={translate(locale, 'profile.photoRemove')}
+                onClick={() => send('DELETE')}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            )}
+            <input
+              ref={photoInput}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  const body = new FormData();
+                  body.append('file', file);
+                  send('PUT', body);
+                }
+                event.target.value = '';
+              }}
+            />
+            {failed && (
+              <span className="profil-avatar-error" role="alert">
+                {translate(locale, 'profile.photoFailed')}
+              </span>
+            )}
+          </div>
           <div className="profil-identity-copy">
             <span className="profil-eyebrow">Mon espace Pulso</span>
             <div className="profil-name-row">
@@ -12450,11 +15202,7 @@ function ProfilAmisCard({
               key={friend.id}
               title={friend.displayName}
             >
-              {friend.avatarUrl ? (
-                <img src={friend.avatarUrl} alt="" />
-              ) : (
-                friend.displayName.slice(0, 1).toUpperCase()
-              )}
+              {renderAvatarContent(friend)}
             </span>
           ))}
           {friends.length > 6 && (
@@ -12468,9 +15216,11 @@ function ProfilAmisCard({
 
 function ProfilActivityRecentCard({
   authToken,
+  locale,
   onSeeAll
 }: {
   authToken: string | undefined;
+  locale: SupportedLocale;
   onSeeAll: () => void;
 }) {
   const { activity, state } = useActivity(authToken, 4);
@@ -12489,6 +15239,7 @@ function ProfilActivityRecentCard({
         <ActivityList
           entries={activity}
           emptyMessage="Aucune activité pour le moment."
+          locale={locale}
         />
       )}
       <button type="button" className="profil-card-link" onClick={onSeeAll}>
@@ -12627,7 +15378,13 @@ function MesEvenementsTab({
   );
 }
 
-function ActiviteTab({ authToken }: { authToken: string | undefined }) {
+function ActiviteTab({
+  authToken,
+  locale
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+}) {
   const { activity, state } = useActivity(authToken, 50);
   return (
     <div className="profil-tab-content">
@@ -12639,6 +15396,7 @@ function ActiviteTab({ authToken }: { authToken: string | undefined }) {
         <ActivityList
           entries={activity}
           emptyMessage="Aucune activité pour le moment."
+          locale={locale}
         />
       )}
     </div>
@@ -12697,7 +15455,10 @@ function CompteSection({
       <ProfilHeader
         user={user}
         friendsCount={friends.length}
+        authToken={authToken}
+        locale={locale}
         onEdit={() => setEditing(true)}
+        onUserChange={onUserUpdated}
       />
 
       <div className="profil-body">
@@ -12711,7 +15472,7 @@ function CompteSection({
                 onClick={() => setTab(item.id)}
               >
                 <span aria-hidden="true">{item.icon}</span>
-                {item.label}
+                {item.labelKey ? translate(locale, item.labelKey) : item.label}
               </button>
             ))}
           </nav>
@@ -12750,10 +15511,33 @@ function CompteSection({
           )}
           {tab === 'groupes' && (
             <div className="profil-tab-content">
-              <GroupsBlock authToken={authToken} userId={user.id} />
+              <GroupsBlock
+                authToken={authToken}
+                userId={user.id}
+                locale={locale}
+              />
             </div>
           )}
-          {tab === 'activite' && <ActiviteTab authToken={authToken} />}
+          {tab === 'photos' && (
+            <ProfilPhotosTab authToken={authToken} locale={locale} />
+          )}
+          {tab === 'amis' && (
+            <ProfilAmisTab
+              friends={friends}
+              locale={locale}
+              onOpenAmis={onOpenAmis}
+            />
+          )}
+          {tab === 'lieux' && (
+            <ProfilLieuxTab
+              groups={favoriteVenueGroups}
+              locale={locale}
+              onSelectVenue={onSelectVenue}
+            />
+          )}
+          {tab === 'activite' && (
+            <ActiviteTab authToken={authToken} locale={locale} />
+          )}
         </div>
 
         <div className="profil-side">
@@ -12762,6 +15546,7 @@ function CompteSection({
           <ProfilTrendsCard authToken={authToken} />
           <ProfilActivityRecentCard
             authToken={authToken}
+            locale={locale}
             onSeeAll={() => setTab('activite')}
           />
           <div className="profil-side-card profil-settings-card">
@@ -12898,11 +15683,7 @@ function FriendDetailPanel({
         </div>
         <div className="friend-detail-header">
           <span className="friends-row-avatar friends-row-avatar-xl">
-            {friend.avatarUrl ? (
-              <img src={friend.avatarUrl} alt="" />
-            ) : (
-              friend.displayName.slice(0, 1).toUpperCase()
-            )}
+            {renderAvatarContent(friend)}
           </span>
           <div className="friend-detail-identity">
             <span className="amis-page-kicker">Dans ton cercle</span>
@@ -12915,14 +15696,19 @@ function FriendDetailPanel({
               )}
               {mutualCount > 0 && (
                 <span>
-                  {mutualCount} ami{mutualCount > 1 ? 's' : ''} en commun
+                  {translatePlural(
+                    locale,
+                    mutualCount,
+                    'friends.mutualCount',
+                    'friends.mutualCountPlural'
+                  )}
                 </span>
               )}
             </div>
             <p
               className={`friend-detail-bio ${profile?.bio ? '' : 'is-empty'}`}
             >
-              {profile?.bio || 'Aucune bio partagée pour le moment.'}
+              {profile?.bio || translate(locale, 'friends.noBio')}
             </p>
           </div>
           <div className="friend-detail-actions">
@@ -13000,14 +15786,14 @@ function FriendDetailPanel({
       <div className="dashboard-home-section friend-detail-section">
         <div className="friend-section-title">
           <div>
-            <span>Vos rendez-vous</span>
-            <h2>Événements en commun</h2>
+            <span>{translate(locale, 'friends.yourMeetups')}</span>
+            <h2>{translate(locale, 'friends.commonEvents')}</h2>
           </div>
           <strong>{mutualEvents.length}</strong>
         </div>
         {mutualEvents.length === 0 ? (
           <p className="list-view-empty">
-            Aucun événement en commun pour l'instant.
+            {translate(locale, 'friends.noCommonEvents')}
           </p>
         ) : (
           <EventCarouselRow
@@ -13021,13 +15807,32 @@ function FriendDetailPanel({
       <div className="friend-detail-section">
         <div className="friend-section-title">
           <div>
-            <span>Historique partagé</span>
-            <h2>Activité récente</h2>
+            <span>{translate(locale, 'friends.theirPhotos')}</span>
+            <h2>{translate(locale, 'profile.tabPhotos')}</h2>
+          </div>
+        </div>
+        {/* DEC-0020 - the other half of the gallery. Passing ownerId is
+            what makes it read-only and routes it through
+            /users/:id/photos, where the friends-only rule is enforced in
+            SQL rather than by this component choosing to be polite. */}
+        <ProfilPhotosTab
+          authToken={authToken}
+          ownerId={friend.id}
+          locale={locale}
+        />
+      </div>
+
+      <div className="friend-detail-section">
+        <div className="friend-section-title">
+          <div>
+            <span>{translate(locale, 'friends.sharedHistory')}</span>
+            <h2>{translate(locale, 'friends.recentActivity')}</h2>
           </div>
         </div>
         <ActivityList
           entries={activity}
-          emptyMessage="Rien à afficher pour l'instant."
+          emptyMessage={translate(locale, 'friends.nothingToShow')}
+          locale={locale}
         />
       </div>
 
@@ -13036,6 +15841,7 @@ function FriendDetailPanel({
           friend={friend}
           authToken={authToken}
           attendance={attendance}
+          locale={locale}
           onClose={() => setInviteEventOpen(false)}
         />
       )}
@@ -13051,11 +15857,13 @@ function InviteFriendToEventModal({
   friend,
   authToken,
   attendance,
+  locale,
   onClose
 }: {
   friend: PublicUser;
   authToken: string | undefined;
   attendance: Record<string, AttendanceVisibility>;
+  locale: SupportedLocale;
   onClose: () => void;
 }) {
   const { events, state } = useAttendanceEvents(attendance, 'upcoming');
@@ -13098,7 +15906,7 @@ function InviteFriendToEventModal({
           )}
           {state === 'success' && events.length === 0 && (
             <p className="list-view-empty">
-              Marque ta présence sur un événement pour pouvoir l'inviter.
+              {translate(locale, 'friends.markAttendanceFirst')}
             </p>
           )}
           {state === 'success' &&
@@ -13324,11 +16132,7 @@ function FriendsMapModal({
                   }}
                 >
                   <span className="friends-row-avatar">
-                    {entry.friend.avatarUrl ? (
-                      <img src={entry.friend.avatarUrl} alt="" />
-                    ) : (
-                      entry.friend.displayName.slice(0, 1).toUpperCase()
-                    )}
+                    {renderAvatarContent(entry.friend)}
                   </span>
                   <span className="friends-map-row-info">
                     <strong>{entry.friend.displayName}</strong>
@@ -13355,10 +16159,12 @@ function FriendsMapModal({
 function ConversationThread({
   friend,
   authToken,
+  locale,
   onActivity
 }: {
   friend: PublicUser;
   authToken: string | undefined;
+  locale: SupportedLocale;
   // Fired after a message is sent or the conversation is marked read, so
   // a parent showing a conversation LIST (unread badges, last-message
   // preview) can refresh itself - ConversationModal has no such list, so
@@ -13433,11 +16239,7 @@ function ConversationThread({
         {state === 'success' && messages.length === 0 && (
           <div className="conversation-empty-state">
             <span className="friends-row-avatar friends-row-avatar-lg">
-              {friend.avatarUrl ? (
-                <img src={friend.avatarUrl} alt="" />
-              ) : (
-                friend.displayName.slice(0, 1).toUpperCase()
-              )}
+              {renderAvatarContent(friend)}
             </span>
             <strong>Commence la conversation avec {friend.displayName}.</strong>
             <p>
@@ -13467,11 +16269,7 @@ function ConversationThread({
                 >
                   {incoming && (
                     <span className="friends-row-avatar conversation-message-avatar">
-                      {friend.avatarUrl ? (
-                        <img src={friend.avatarUrl} alt="" />
-                      ) : (
-                        friend.displayName.slice(0, 1).toUpperCase()
-                      )}
+                      {renderAvatarContent(friend)}
                     </span>
                   )}
                   <div
@@ -13496,7 +16294,12 @@ function ConversationThread({
                         type="button"
                         className="conversation-message-report"
                         onClick={() =>
-                          reportContent(authToken, 'message', message.id)
+                          reportContent(
+                            authToken,
+                            'message',
+                            message.id,
+                            locale
+                          )
                         }
                       >
                         Signaler
@@ -13543,10 +16346,12 @@ function ConversationThread({
 function ConversationModal({
   friend,
   authToken,
+  locale,
   onClose
 }: {
   friend: PublicUser;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onClose: () => void;
 }) {
   return (
@@ -13558,11 +16363,7 @@ function ConversationModal({
         <div className="conversation-modal-header">
           <span className="conversation-modal-friend">
             <span className="friends-row-avatar friends-row-avatar-md">
-              {friend.avatarUrl ? (
-                <img src={friend.avatarUrl} alt="" />
-              ) : (
-                friend.displayName.slice(0, 1).toUpperCase()
-              )}
+              {renderAvatarContent(friend)}
             </span>
             <strong>{friend.displayName}</strong>
           </span>
@@ -13570,1548 +16371,13 @@ function ConversationModal({
             Fermer
           </button>
         </div>
-        <ConversationThread friend={friend} authToken={authToken} />
-      </div>
-    </div>
-  );
-}
-
-// Own block for the same reason as FriendsBlock above: its own
-// fetch/mutate cycle, only renders once signed in. Group membership here
-// is always self-service (DEC-0013) - no invite/approval step to model.
-function GroupsBlock({
-  authToken,
-  userId
-}: {
-  authToken: string | undefined;
-  userId: string;
-}) {
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [visibility, setVisibility] = useState<GroupVisibility>('open');
-  const [creating, setCreating] = useState(false);
-  const [openGroup, setOpenGroup] = useState<Group>();
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setLoadState('loading');
-    fetch(`${API_BASE_URL}/me/groups`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setGroups(groupsResponseSchema.parse(json).data);
-        setLoadState('success');
-      })
-      .catch(() => setLoadState('error'));
-  }, [authToken]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const createGroup = () => {
-    if (!authToken || !name.trim() || creating) return;
-    setCreating(true);
-    fetch(`${API_BASE_URL}/me/groups`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        name: name.trim(),
-        visibility,
-        ...(description.trim() ? { description: description.trim() } : {})
-      })
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then(() => {
-        setName('');
-        setDescription('');
-        setVisibility('open');
-        refresh();
-      })
-      .catch(() => {})
-      .finally(() => setCreating(false));
-  };
-
-  return (
-    <div className="compte-block">
-      <h3>Mes groupes</h3>
-      {loadState === 'loading' && (
-        <p className="list-view-empty">Chargement…</p>
-      )}
-      {loadState === 'error' && (
-        <p className="list-view-empty">
-          Impossible de charger vos groupes pour le moment.
-        </p>
-      )}
-      {loadState === 'success' && (
-        <div className="friends-block">
-          <form
-            className="friends-add-form groups-create-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              createGroup();
-            }}
-          >
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Nom du groupe"
-              maxLength={80}
-            />
-            <input
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="Description (optionnel)"
-              maxLength={500}
-            />
-            <div className="groups-visibility-choice">
-              <label>
-                <input
-                  type="radio"
-                  name="group-visibility"
-                  checked={visibility === 'open'}
-                  onChange={() => setVisibility('open')}
-                />
-                Accès libre — tout le monde peut rejoindre
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="group-visibility"
-                  checked={visibility === 'restricted'}
-                  onChange={() => setVisibility('restricted')}
-                />
-                Accès limité — sur demande, approuvée par toi
-              </label>
-            </div>
-            <button
-              type="submit"
-              className="btn-secondary"
-              disabled={creating || !name.trim()}
-            >
-              Créer
-            </button>
-          </form>
-
-          <div className="friends-list">
-            {groups.length === 0 && (
-              <p className="list-view-empty">Aucun groupe pour le moment.</p>
-            )}
-            {groups.map((group) => (
-              <div className="friends-row" key={group.id}>
-                <span className="friends-row-name">
-                  {group.name}
-                  <span className="compte-trends-count">
-                    {group.memberCount}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  className="text-btn"
-                  onClick={() => setOpenGroup(group)}
-                >
-                  Ouvrir
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {openGroup && (
-        <GroupModal
-          group={openGroup}
+        <ConversationThread
+          friend={friend}
           authToken={authToken}
-          userId={userId}
-          onClose={() => setOpenGroup(undefined)}
-          onLeft={() => {
-            setOpenGroup(undefined);
-            refresh();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// Phase 4.10 ("Groupes avancés") - the rich detail content shared by the
-// modal chrome (GroupModal, unchanged call sites: sidebar mini-list,
-// GroupsBlock, ForumPanel's meetup flow) and the new inline pane inside
-// Messages' "Groupes" tabs. Everything here is real: member avatars/count,
-// a moderator's real pending-request queue, a meetup point derived from
-// the linked event's actual venue, and member-added schedule/attendance/
-// checklist modules - no online presence, no kick/removal, no content
-// moderation beyond the existing author-only delete (DEC-0013 v1.2).
-type GroupDetailTab = 'organize' | 'discussion' | 'members' | 'manage';
-
-function GroupDetailContent({
-  group,
-  authToken,
-  userId,
-  onGroupUpdated,
-  onLeave,
-  onOpenEventForum
-}: {
-  group: Group;
-  authToken: string | undefined;
-  userId: string;
-  onGroupUpdated: (group: Group) => void;
-  onLeave?: () => void;
-  onOpenEventForum?: (eventId: string) => void;
-}) {
-  const [posts, setPosts] = useState<GroupPost[]>([]);
-  const [postsState, setPostsState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [draft, setDraft] = useState('');
-  const [posting, setPosting] = useState(false);
-  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(
-    new Set()
-  );
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-  const [members, setMembers] = useState<PublicUser[]>([]);
-  const [joining, setJoining] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [tab, setTab] = useState<GroupDetailTab>('organize');
-
-  useEffect(() => {
-    setTab('organize');
-  }, [group.id]);
-
-  const refreshPosts = useCallback(() => {
-    if (!authToken || !group.isMember) return;
-    setPostsState('loading');
-    fetch(`${API_BASE_URL}/groups/${group.id}/posts`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setPosts(groupPostsResponseSchema.parse(json).data);
-        setPostsState('success');
-      })
-      .catch(() => setPostsState('error'));
-  }, [authToken, group.id, group.isMember]);
-
-  useEffect(() => {
-    refreshPosts();
-  }, [refreshPosts]);
-
-  useEffect(() => {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setMembers(groupMembersResponseSchema.parse(json).data))
-      .catch(() => {});
-  }, [authToken, group.id]);
-
-  const refreshGroup = useCallback(() => {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/groups/${group.id}`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => onGroupUpdated(groupResponseSchema.parse(json).data))
-      .catch(() => {});
-  }, [authToken, group.id, onGroupUpdated]);
-
-  const joinGroupAction = () => {
-    if (!authToken || joining) return;
-    setJoining(true);
-    fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then(() => refreshGroup())
-      .catch(() => {})
-      .finally(() => setJoining(false));
-  };
-
-  const leaveGroupAction = () => {
-    if (!authToken) return;
-    void fetch(`${API_BASE_URL}/groups/${group.id}/members`, {
-      method: 'DELETE',
-      headers: { authorization: `Bearer ${authToken}` }
-    }).then(() => {
-      if (onLeave) onLeave();
-      else refreshGroup();
-    });
-  };
-
-  // Phase 4.14 - which groups show in the sidebar shortcut list is the
-  // member's own choice, not "every group I've joined". Optimistic: the
-  // route returns 204, there's nothing to reconcile against.
-  const [pinning, setPinning] = useState(false);
-  const togglePin = () => {
-    if (!authToken || pinning) return;
-    setPinning(true);
-    const nextPinned = !group.pinned;
-    fetch(`${API_BASE_URL}/groups/${group.id}/pin`, {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ pinned: nextPinned })
-    })
-      .then((response) =>
-        response.ok
-          ? onGroupUpdated({ ...group, pinned: nextPinned })
-          : Promise.reject()
-      )
-      .catch(() => {})
-      .finally(() => setPinning(false));
-  };
-
-  const submitPost = (parentId?: string) => {
-    const body = (parentId ? replyDrafts[parentId] : draft)?.trim();
-    if (!authToken || !body || posting) return;
-    setPosting(true);
-    fetch(`${API_BASE_URL}/groups/${group.id}/posts`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ body, ...(parentId ? { parentId } : {}) })
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then(() => {
-        if (parentId) {
-          setReplyDrafts((prev) => ({ ...prev, [parentId]: '' }));
-          setExpandedReplies((prev) => new Set(prev).add(parentId));
-        } else {
-          setDraft('');
-        }
-        refreshPosts();
-      })
-      .catch(() => {})
-      .finally(() => setPosting(false));
-  };
-
-  const removePost = (postId: string) => {
-    if (!authToken) return;
-    void fetch(`${API_BASE_URL}/groups/${group.id}/posts/${postId}`, {
-      method: 'DELETE',
-      headers: { authorization: `Bearer ${authToken}` }
-    }).then(() => refreshPosts());
-  };
-
-  const toggleLike = (post: GroupPost) => {
-    if (!authToken) return;
-    setPosts((prev) =>
-      prev.map((candidate) =>
-        candidate.id === post.id
-          ? {
-              ...candidate,
-              likedByMe: !candidate.likedByMe,
-              likeCount: candidate.likeCount + (candidate.likedByMe ? -1 : 1)
-            }
-          : candidate
-      )
-    );
-    fetch(`${API_BASE_URL}/groups/${group.id}/posts/${post.id}/like`, {
-      method: post.likedByMe ? 'DELETE' : 'POST',
-      headers: { authorization: `Bearer ${authToken}` }
-    }).catch(() => refreshPosts());
-  };
-
-  const toggleExpanded = (postId: string) => {
-    setExpandedReplies((prev) => {
-      const next = new Set(prev);
-      if (next.has(postId)) next.delete(postId);
-      else next.add(postId);
-      return next;
-    });
-  };
-
-  const topLevelPosts = posts.filter((post) => !post.parentId);
-  const repliesFor = (postId: string) =>
-    posts.filter((post) => post.parentId === postId);
-
-  return (
-    <div className="group-detail">
-      <div className="group-detail-header">
-        <div className="group-detail-cover" aria-hidden="true">
-          <span>{group.name.slice(0, 1).toUpperCase()}</span>
-          <i />
-          <i />
-          <i />
-        </div>
-        <div className="group-detail-header-top">
-          <div className="group-detail-header-info">
-            <span className="groups-page-eyebrow">
-              {group.eventId ? 'Groupe événement' : 'Communauté permanente'}
-            </span>
-            <strong>{group.name}</strong>
-            <div className="group-detail-status-row">
-              <span className="group-detail-visibility-badge">
-                {group.visibility === 'restricted'
-                  ? '◇ Sur demande'
-                  : '◎ Accès libre'}
-              </span>
-              {group.isModerator && (
-                <span className="group-detail-role-badge">Gestionnaire</span>
-              )}
-            </div>
-            {group.eventId && group.eventTitle && (
-              <span className="group-detail-event-badge">
-                Groupe lié à{' '}
-                <button
-                  type="button"
-                  className="group-detail-event-link"
-                  onClick={() =>
-                    group.eventId &&
-                    onOpenEventForum &&
-                    onOpenEventForum(group.eventId)
-                  }
-                  disabled={!onOpenEventForum}
-                >
-                  {group.eventTitle}
-                  {group.eventStartsAt &&
-                    ` — ${new Date(group.eventStartsAt).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}`}
-                  {group.meetupVenue && ` · ${group.meetupVenue.name}`}
-                </button>
-              </span>
-            )}
-          </div>
-          {group.isMember && (
-            <div className="group-detail-header-actions">
-              <button
-                type="button"
-                className={`text-btn ${group.pinned ? 'active' : ''}`}
-                onClick={togglePin}
-                disabled={pinning}
-                title={
-                  group.pinned
-                    ? 'Retirer des raccourcis'
-                    : 'Épingler dans les raccourcis'
-                }
-              >
-                {group.pinned ? '📌 Épinglé' : '📌 Épingler'}
-              </button>
-              <button
-                type="button"
-                className="text-btn"
-                onClick={leaveGroupAction}
-              >
-                Quitter
-              </button>
-            </div>
-          )}
-        </div>
-        {group.description && (
-          <p className="group-detail-description">{group.description}</p>
-        )}
-        <div className="group-detail-members-row">
-          {members.length > 0 && (
-            <div className="forum-members-avatars">
-              {members.slice(0, 8).map((member) => (
-                <span
-                  className="friends-row-avatar"
-                  key={member.id}
-                  title={member.displayName}
-                >
-                  {member.avatarUrl ? (
-                    <img src={member.avatarUrl} alt="" />
-                  ) : (
-                    member.displayName.slice(0, 1).toUpperCase()
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
-          <span className="forum-members-count">
-            {group.memberCount} membre{group.memberCount !== 1 ? 's' : ''}
-          </span>
-          {group.isMember && (
-            <button
-              type="button"
-              className="text-btn"
-              onClick={() => setInviteOpen(true)}
-            >
-              Inviter des amis
-            </button>
-          )}
-        </div>
-      </div>
-
-      {!group.isMember && group.myStatus !== 'pending' && (
-        <div className="group-detail-join-banner">
-          <p>
-            {group.visibility === 'restricted'
-              ? 'Ce groupe est à accès limité - ta demande sera envoyée au modérateur.'
-              : 'Rejoins ce groupe pour discuter, voter, et voir le programme.'}
-          </p>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={joinGroupAction}
-            disabled={joining}
-          >
-            {joining
-              ? 'Un instant…'
-              : group.visibility === 'restricted'
-                ? 'Demander à rejoindre'
-                : 'Rejoindre'}
-          </button>
-        </div>
-      )}
-      {group.myStatus === 'pending' && (
-        <div className="group-detail-join-banner">
-          <p>Demande envoyée, en attente d'approbation du modérateur.</p>
-        </div>
-      )}
-
-      {group.isMember && (
-        <>
-          <nav className="group-detail-tabs" aria-label="Espaces du groupe">
-            <button
-              type="button"
-              className={tab === 'organize' ? 'active' : ''}
-              onClick={() => setTab('organize')}
-            >
-              <span aria-hidden="true">▦</span>
-              Organiser
-            </button>
-            <button
-              type="button"
-              className={tab === 'discussion' ? 'active' : ''}
-              onClick={() => setTab('discussion')}
-            >
-              <span aria-hidden="true">◌</span>
-              Discussion
-              {posts.length > 0 && <small>{posts.length}</small>}
-            </button>
-            <button
-              type="button"
-              className={tab === 'members' ? 'active' : ''}
-              onClick={() => setTab('members')}
-            >
-              <span aria-hidden="true">◎</span>
-              Membres
-              <small>{group.memberCount}</small>
-            </button>
-            {group.isModerator && (
-              <button
-                type="button"
-                className={tab === 'manage' ? 'active' : ''}
-                onClick={() => setTab('manage')}
-              >
-                <span aria-hidden="true">◇</span>
-                Gestion
-                {(group.pendingRequestCount ?? 0) > 0 && (
-                  <small className="attention">
-                    {group.pendingRequestCount}
-                  </small>
-                )}
-              </button>
-            )}
-          </nav>
-
-          {tab === 'organize' && (
-            <section className="group-organize-view">
-              <div className="group-view-heading">
-                <div>
-                  <span className="groups-page-eyebrow">
-                    Tableau d’organisation
-                  </span>
-                  <h2>Préparez la prochaine sortie ensemble.</h2>
-                </div>
-                <p>Chaque action ici est partagée avec tous les membres.</p>
-              </div>
-              <div className="group-modules-grid">
-                {group.meetupVenue && (
-                  <GroupMeetupCard venue={group.meetupVenue} />
-                )}
-                <GroupScheduleCard groupId={group.id} authToken={authToken} />
-                <GroupAttendanceCard groupId={group.id} authToken={authToken} />
-                <GroupChecklistCard groupId={group.id} authToken={authToken} />
-              </div>
-            </section>
-          )}
-
-          {tab === 'discussion' && (
-            <section className="group-detail-discussion">
-              <div className="group-view-heading">
-                <div>
-                  <span className="groups-page-eyebrow">Fil du groupe</span>
-                  <h2>Décidez, échangez, avancez.</h2>
-                </div>
-                <p>
-                  {posts.length} message{posts.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <form
-                className="forum-composer group-main-composer"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  submitPost();
-                }}
-              >
-                <textarea
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Partage une idée, une question ou une décision…"
-                  maxLength={2000}
-                  rows={3}
-                />
-                <div className="group-main-composer-footer">
-                  <span>{draft.length}/2000</span>
-                  <button
-                    type="submit"
-                    className="btn-secondary"
-                    disabled={posting || !draft.trim()}
-                  >
-                    {posting ? 'Publication…' : 'Publier'}
-                  </button>
-                </div>
-              </form>
-              <div className="forum-posts group-posts-feed">
-                {postsState === 'loading' && (
-                  <p className="list-view-empty">Chargement…</p>
-                )}
-                {postsState === 'error' && (
-                  <p className="list-view-empty">
-                    Impossible de charger le fil pour le moment.
-                  </p>
-                )}
-                {postsState === 'success' && topLevelPosts.length === 0 && (
-                  <div className="group-empty-feed">
-                    <span aria-hidden="true">◌</span>
-                    <strong>Lance la première conversation.</strong>
-                    <p>
-                      Une question simple suffit souvent à organiser toute une
-                      sortie.
-                    </p>
-                  </div>
-                )}
-                {postsState === 'success' &&
-                  topLevelPosts.map((post) => (
-                    <GroupPostRow
-                      key={post.id}
-                      post={post}
-                      userId={userId}
-                      authToken={authToken}
-                      onLike={toggleLike}
-                      onDelete={removePost}
-                      replies={repliesFor(post.id)}
-                      expanded={expandedReplies.has(post.id)}
-                      onToggleExpanded={() => toggleExpanded(post.id)}
-                      replyDraft={replyDrafts[post.id] ?? ''}
-                      onReplyDraftChange={(value) =>
-                        setReplyDrafts((prev) => ({
-                          ...prev,
-                          [post.id]: value
-                        }))
-                      }
-                      onSubmitReply={() => submitPost(post.id)}
-                      posting={posting}
-                    />
-                  ))}
-              </div>
-            </section>
-          )}
-
-          {tab === 'members' && (
-            <section className="group-members-view">
-              <div className="group-view-heading">
-                <div>
-                  <span className="groups-page-eyebrow">La communauté</span>
-                  <h2>
-                    {group.memberCount} membre
-                    {group.memberCount !== 1 ? 's' : ''}
-                  </h2>
-                </div>
-                <button
-                  type="button"
-                  className="groups-create-submit"
-                  onClick={() => setInviteOpen(true)}
-                >
-                  Inviter des amis
-                </button>
-              </div>
-              <div className="group-members-grid">
-                {members.map((member) => (
-                  <div className="group-member-card" key={member.id}>
-                    <span className="friends-row-avatar friends-row-avatar-lg">
-                      {member.avatarUrl ? (
-                        <img src={member.avatarUrl} alt="" />
-                      ) : (
-                        member.displayName.slice(0, 1).toUpperCase()
-                      )}
-                    </span>
-                    <span>
-                      <strong>{member.displayName}</strong>
-                      <small>
-                        {member.id === group.createdBy
-                          ? 'Créateur du groupe'
-                          : 'Membre'}
-                      </small>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {tab === 'manage' && group.isModerator && (
-            <section className="group-management-view">
-              <div className="group-view-heading">
-                <div>
-                  <span className="groups-page-eyebrow">
-                    Espace gestionnaire
-                  </span>
-                  <h2>Gérer les accès au groupe.</h2>
-                </div>
-                <span className="group-management-role">
-                  Créateur · Gestionnaire
-                </span>
-              </div>
-              <div className="group-management-summary">
-                <div>
-                  <span>Accès</span>
-                  <strong>
-                    {group.visibility === 'restricted'
-                      ? 'Sur approbation'
-                      : 'Libre'}
-                  </strong>
-                </div>
-                <div>
-                  <span>Membres</span>
-                  <strong>{group.memberCount}</strong>
-                </div>
-                <div>
-                  <span>Demandes</span>
-                  <strong>{group.pendingRequestCount ?? 0}</strong>
-                </div>
-              </div>
-              {group.visibility === 'restricted' ? (
-                <GroupJoinRequestsCard
-                  groupId={group.id}
-                  authToken={authToken}
-                  onResolved={refreshGroup}
-                  showEmpty
-                />
-              ) : (
-                <div className="group-detail-card group-management-empty">
-                  <span aria-hidden="true">◎</span>
-                  <div>
-                    <strong>Ce groupe est en accès libre.</strong>
-                    <p>
-                      Les membres le rejoignent sans passer par une demande.
-                    </p>
-                  </div>
-                </div>
-              )}
-              <div className="group-management-scope">
-                <strong>Pouvoirs actuellement disponibles</strong>
-                <p>
-                  Le gestionnaire peut approuver ou refuser les demandes. Les
-                  rôles multiples, la configuration des modules et la mise en
-                  avant d’événements restent proposés pour la prochaine décision
-                  produit.
-                </p>
-              </div>
-            </section>
-          )}
-        </>
-      )}
-
-      {inviteOpen && (
-        <InviteToGroupModal
-          group={group}
-          authToken={authToken}
-          onClose={() => setInviteOpen(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-// A small, non-interactive MapLibre instance centered on the linked
-// event's real venue - same map tech/style already used everywhere else
-// in the app, not a third-party static-image API (no new dependency, no
-// cost). Absent entirely for permanent groups (no event to derive a
-// meetup point from).
-function GroupMeetupCard({ venue }: { venue: GroupMeetupVenue }) {
-  const container = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!container.current) return;
-    const instance = new maplibregl.Map({
-      container: container.current,
-      center: [venue.longitude, venue.latitude],
-      zoom: 15,
-      style: MAP_STYLE_URL,
-      interactive: false,
-      attributionControl: false
-    });
-    new maplibregl.Marker({ color: '#c026d3' })
-      .setLngLat([venue.longitude, venue.latitude])
-      .addTo(instance);
-    return () => instance.remove();
-  }, [venue.longitude, venue.latitude]);
-
-  return (
-    <div className="group-detail-card group-module-card group-meetup-card">
-      <div className="group-module-heading">
-        <span aria-hidden="true">⌖</span>
-        <div>
-          <h3>Point de rendez-vous</h3>
-          <p>Le lieu réel lié à l’événement.</p>
-        </div>
-      </div>
-      <div className="group-meetup-map" ref={container} />
-      <div className="group-meetup-address">
-        <strong>{venue.name}</strong>
-        <span>{venue.address}</span>
-      </div>
-    </div>
-  );
-}
-
-// "Programme" - real items added by members, sorted by time. No item is
-// ever guessed or auto-filled.
-function GroupScheduleCard({
-  groupId,
-  authToken
-}: {
-  groupId: string;
-  authToken: string | undefined;
-}) {
-  const [items, setItems] = useState<GroupScheduleItem[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [label, setLabel] = useState('');
-  const [time, setTime] = useState('');
-  const [adding, setAdding] = useState(false);
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/schedule`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setItems(groupScheduleItemsResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken, groupId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const addItem = () => {
-    if (!authToken || !label.trim() || !time || adding) return;
-    setAdding(true);
-    fetch(`${API_BASE_URL}/groups/${groupId}/schedule`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        label: label.trim(),
-        scheduledAt: new Date(time).toISOString()
-      })
-    })
-      .then((response) => (response.ok ? undefined : Promise.reject()))
-      .then(() => {
-        setLabel('');
-        setTime('');
-        refresh();
-      })
-      .catch(() => {})
-      .finally(() => setAdding(false));
-  };
-
-  return (
-    <div className="group-detail-card group-module-card group-schedule-card">
-      <div className="group-module-heading">
-        <span aria-hidden="true">◷</span>
-        <div>
-          <h3>Programme</h3>
-          <p>Construisez le déroulé de la sortie.</p>
-        </div>
-      </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'success' && items.length === 0 && (
-        <p className="list-view-empty">Aucun horaire pour l'instant.</p>
-      )}
-      {state === 'success' && items.length > 0 && (
-        <ul className="group-schedule-list">
-          {items.map((item) => (
-            <li key={item.id}>
-              <span className="group-schedule-time">
-                {new Date(item.scheduledAt).toLocaleTimeString('fr-CA', {
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
-              </span>
-              <span>{item.label}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <form
-        className="group-schedule-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addItem();
-        }}
-      >
-        <input
-          type="datetime-local"
-          value={time}
-          onChange={(event) => setTime(event.target.value)}
-        />
-        <input
-          value={label}
-          onChange={(event) => setLabel(event.target.value)}
-          placeholder="Ex: Rendez-vous au bar"
-          maxLength={120}
-        />
-        <button
-          type="submit"
-          className="text-btn"
-          disabled={adding || !label.trim() || !time}
-        >
-          + Ajouter
-        </button>
-      </form>
-    </div>
-  );
-}
-
-const ATTENDANCE_LABELS: Record<AttendanceResponse, string> = {
-  yes: 'Oui',
-  maybe: 'Peut-être',
-  no: 'Non'
-};
-
-// "Qui vient ?" - real votes from real members, percentages computed from
-// the real total of votes cast (never simulated, never assumed).
-function GroupAttendanceCard({
-  groupId,
-  authToken
-}: {
-  groupId: string;
-  authToken: string | undefined;
-}) {
-  const [summary, setSummary] = useState<GroupAttendanceSummary>();
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/attendance`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setSummary(groupAttendanceSummarySchema.parse(json));
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken, groupId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const vote = (response: AttendanceResponse) => {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/groups/${groupId}/attendance`, {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ response })
-    }).then(() => refresh());
-  };
-
-  const total = summary ? summary.yes + summary.maybe + summary.no : 0;
-
-  return (
-    <div className="group-detail-card group-module-card group-attendance-card">
-      <div className="group-module-heading">
-        <span aria-hidden="true">◎</span>
-        <div>
-          <h3>Qui vient ?</h3>
-          <p>Une réponse claire par membre.</p>
-        </div>
-      </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'success' && summary && (
-        <>
-          <div className="group-attendance-bars">
-            {(['yes', 'maybe', 'no'] as const).map((key) => {
-              const count = summary[key];
-              const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-              return (
-                <div className="group-attendance-row" key={key}>
-                  <span className="group-attendance-label">
-                    {ATTENDANCE_LABELS[key]}
-                  </span>
-                  <div className="group-attendance-bar-track">
-                    <div
-                      className={`group-attendance-bar-fill group-attendance-${key}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="group-attendance-count">
-                    {count} ({pct}%)
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="group-attendance-total">
-            {total} réponse{total !== 1 ? 's' : ''}
-          </p>
-          <div className="group-attendance-actions">
-            {(['yes', 'maybe', 'no'] as const).map((key) => (
-              <button
-                type="button"
-                key={key}
-                className={`text-btn ${summary.myResponse === key ? 'active' : ''}`}
-                onClick={() => vote(key)}
-              >
-                {ATTENDANCE_LABELS[key]}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// "Checklist" - checkedCount/totalMembers reflects real, individual
-// members checking an item off for themselves, never a fabricated
-// fraction.
-function GroupChecklistCard({
-  groupId,
-  authToken
-}: {
-  groupId: string;
-  authToken: string | undefined;
-}) {
-  const [items, setItems] = useState<GroupChecklistItem[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [label, setLabel] = useState('');
-  const [adding, setAdding] = useState(false);
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/checklist`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setItems(groupChecklistItemsResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken, groupId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const addItem = () => {
-    if (!authToken || !label.trim() || adding) return;
-    setAdding(true);
-    fetch(`${API_BASE_URL}/groups/${groupId}/checklist`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ label: label.trim() })
-    })
-      .then((response) => (response.ok ? undefined : Promise.reject()))
-      .then(() => {
-        setLabel('');
-        refresh();
-      })
-      .catch(() => {})
-      .finally(() => setAdding(false));
-  };
-
-  const toggle = (item: GroupChecklistItem) => {
-    if (!authToken) return;
-    const nextChecked = !item.checkedByMe;
-    setItems((prev) =>
-      prev.map((candidate) =>
-        candidate.id === item.id
-          ? {
-              ...candidate,
-              checkedByMe: nextChecked,
-              checkedCount: candidate.checkedCount + (nextChecked ? 1 : -1)
-            }
-          : candidate
-      )
-    );
-    fetch(`${API_BASE_URL}/groups/${groupId}/checklist/${item.id}`, {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ checked: nextChecked })
-    }).catch(() => refresh());
-  };
-
-  return (
-    <div className="group-detail-card group-module-card group-checklist-card">
-      <div className="group-module-heading">
-        <span aria-hidden="true">✓</span>
-        <div>
-          <h3>Checklist</h3>
-          <p>Les choses à prévoir avant de partir.</p>
-        </div>
-      </div>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'success' && items.length === 0 && (
-        <p className="list-view-empty">Aucun item pour l'instant.</p>
-      )}
-      {state === 'success' && items.length > 0 && (
-        <ul className="group-checklist-list">
-          {items.map((item) => (
-            <li key={item.id}>
-              <label className="group-checklist-item">
-                <input
-                  type="checkbox"
-                  checked={item.checkedByMe}
-                  onChange={() => toggle(item)}
-                />
-                <span>{item.label}</span>
-              </label>
-              <span className="group-checklist-fraction">
-                {item.checkedCount}/{item.totalMembers}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <form
-        className="group-checklist-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addItem();
-        }}
-      >
-        <input
-          value={label}
-          onChange={(event) => setLabel(event.target.value)}
-          placeholder="Ex: Tickets"
-          maxLength={120}
-        />
-        <button
-          type="submit"
-          className="text-btn"
-          disabled={adding || !label.trim()}
-        >
-          + Ajouter un item
-        </button>
-      </form>
-    </div>
-  );
-}
-
-// Moderator-only (Phase 4.10, DEC-0013 v1.2) - the only moderation power
-// a group's creator has: approving/declining join requests for a
-// restricted group. Nothing else.
-function GroupJoinRequestsCard({
-  groupId,
-  authToken,
-  onResolved,
-  showEmpty = false
-}: {
-  groupId: string;
-  authToken: string | undefined;
-  onResolved: () => void;
-  showEmpty?: boolean;
-}) {
-  const [requests, setRequests] = useState<PublicUser[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-
-  const refresh = useCallback(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/groups/${groupId}/join-requests`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setRequests(groupJoinRequestsResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken, groupId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const respond = (targetUserId: string, action: 'accept' | 'decline') => {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/groups/${groupId}/join-requests/${targetUserId}`, {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ action })
-    }).then(() => {
-      refresh();
-      onResolved();
-    });
-  };
-
-  if (state === 'success' && requests.length === 0 && !showEmpty) return null;
-
-  return (
-    <div className="group-detail-card group-join-requests-card">
-      <h3>Demandes en attente</h3>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'success' && requests.length === 0 && (
-        <div className="group-management-empty-inline">
-          <span aria-hidden="true">✓</span>
-          <p>Aucune demande à traiter pour le moment.</p>
-        </div>
-      )}
-      {requests.map((request) => (
-        <div className="amis-row" key={request.id}>
-          <span className="friends-row-avatar friends-row-avatar-lg">
-            {request.avatarUrl ? (
-              <img src={request.avatarUrl} alt="" />
-            ) : (
-              request.displayName.slice(0, 1).toUpperCase()
-            )}
-          </span>
-          <span className="amis-row-name">{request.displayName}</span>
-          <div className="amis-row-actions">
-            <button
-              type="button"
-              className="amis-btn-accept"
-              onClick={() => respond(request.id, 'accept')}
-            >
-              Accepter
-            </button>
-            <button
-              type="button"
-              className="amis-btn-ghost"
-              onClick={() => respond(request.id, 'decline')}
-            >
-              Refuser
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// "Inviter des amis" - never joins someone on their behalf (membership
-// stays a self-service action per DEC-0013); sends a direct message with
-// a link, same real mechanism as EventHero's "Envoyer à un ami".
-function InviteToGroupModal({
-  group,
-  authToken,
-  onClose
-}: {
-  group: Group;
-  authToken: string | undefined;
-  onClose: () => void;
-}) {
-  const [friendsList, setFriendsList] = useState<PublicUser[]>([]);
-  const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    'loading'
-  );
-  const [sentTo, setSentTo] = useState<Set<string>>(new Set());
-  const [sendingTo, setSendingTo] = useState<string>();
-
-  useEffect(() => {
-    if (!authToken) return;
-    setState('loading');
-    fetch(`${API_BASE_URL}/me/friends`, {
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => {
-        setFriendsList(friendsResponseSchema.parse(json).data);
-        setState('success');
-      })
-      .catch(() => setState('error'));
-  }, [authToken]);
-
-  const sendInvite = (friendId: string) => {
-    if (!authToken || sendingTo) return;
-    setSendingTo(friendId);
-    const url = `${window.location.origin}/groups/${group.id}`;
-    fetch(`${API_BASE_URL}/me/friends/${friendId}/messages`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        body: `Rejoins le groupe « ${group.name} » sur Pulso !\n${url}`
-      })
-    })
-      .then((response) => (response.ok ? undefined : Promise.reject()))
-      .then(() => setSentTo((prev) => new Set(prev).add(friendId)))
-      .catch(() => {})
-      .finally(() => setSendingTo(undefined));
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="share-friend-modal"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="conversation-modal-header">
-          <strong>Inviter des amis</strong>
-          <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
-        <div className="share-friend-list">
-          {state === 'loading' && (
-            <p className="list-view-empty">Chargement…</p>
-          )}
-          {state === 'error' && (
-            <p className="list-view-empty">
-              Impossible de charger vos amis pour le moment.
-            </p>
-          )}
-          {state === 'success' && friendsList.length === 0 && (
-            <p className="list-view-empty">
-              Ajoute des amis pour pouvoir les inviter.
-            </p>
-          )}
-          {state === 'success' &&
-            friendsList.map((friend) => (
-              <div className="friends-row" key={friend.id}>
-                <span className="friends-row-avatar">
-                  {friend.avatarUrl ? (
-                    <img src={friend.avatarUrl} alt="" />
-                  ) : (
-                    friend.displayName.slice(0, 1).toUpperCase()
-                  )}
-                </span>
-                <span className="friends-row-name">{friend.displayName}</span>
-                <button
-                  type="button"
-                  className="text-btn"
-                  onClick={() => sendInvite(friend.id)}
-                  disabled={sendingTo === friend.id || sentTo.has(friend.id)}
-                >
-                  {sentTo.has(friend.id)
-                    ? 'Envoyé ✓'
-                    : sendingTo === friend.id
-                      ? 'Envoi…'
-                      : 'Inviter'}
-                </button>
-              </div>
-            ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function GroupModal({
-  group,
-  authToken,
-  userId,
-  onClose,
-  onLeft
-}: {
-  group: Group;
-  authToken: string | undefined;
-  userId: string;
-  onClose: () => void;
-  onLeft: () => void;
-}) {
-  const [current, setCurrent] = useState(group);
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="group-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="group-modal-close-row">
-          <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
-        <GroupDetailContent
-          group={current}
-          authToken={authToken}
-          userId={userId}
-          onGroupUpdated={setCurrent}
-          onLeave={onLeft}
+          locale={locale}
         />
       </div>
     </div>
-  );
-}
-
-function GroupPostRow({
-  post,
-  userId,
-  authToken,
-  onLike,
-  onDelete,
-  replies,
-  expanded,
-  onToggleExpanded,
-  replyDraft,
-  onReplyDraftChange,
-  onSubmitReply,
-  posting
-}: {
-  post: GroupPost;
-  userId: string;
-  authToken: string | undefined;
-  onLike: (post: GroupPost) => void;
-  onDelete: (postId: string) => void;
-  replies: GroupPost[];
-  expanded: boolean;
-  onToggleExpanded: () => void;
-  replyDraft: string;
-  onReplyDraftChange: (value: string) => void;
-  onSubmitReply: () => void;
-  posting: boolean;
-}) {
-  // Groups are a small, personal space between people who already know
-  // each other (unlike the public, categorized Forum) - real chat bubbles
-  // with a clear "mine vs. theirs" color/side distinction read as personal
-  // in a way the Forum's public post-card feed deliberately doesn't.
-  const renderBubble = (item: GroupPost, isReply: boolean) => {
-    const mine = item.author.id === userId;
-    return (
-      <div
-        key={item.id}
-        className={`group-bubble-row ${mine ? 'mine' : 'theirs'}`}
-      >
-        {!mine && (
-          <span className="friends-row-avatar group-bubble-avatar">
-            {item.author.avatarUrl ? (
-              <img src={item.author.avatarUrl} alt="" />
-            ) : (
-              item.author.displayName.slice(0, 1).toUpperCase()
-            )}
-          </span>
-        )}
-        <div className="group-bubble-col">
-          <span className="group-bubble-author">
-            {mine ? 'Vous' : item.author.displayName}
-            <time dateTime={item.createdAt}>
-              {formatRelativeTime(item.createdAt)}
-            </time>
-          </span>
-          <div className="group-bubble">
-            <p>{item.body}</p>
-          </div>
-          <div className="group-bubble-actions">
-            <button
-              type="button"
-              className={`forum-like-btn ${item.likedByMe ? 'active' : ''}`}
-              onClick={() => onLike(item)}
-            >
-              <HeartIcon filled={item.likedByMe} />
-              <span>{item.likedByMe ? 'Aimé' : 'J’aime'}</span>
-              {item.likeCount > 0 && <b>{item.likeCount}</b>}
-            </button>
-            {!isReply && (
-              <button
-                type="button"
-                className="text-btn"
-                onClick={onToggleExpanded}
-              >
-                {item.replyCount === 0
-                  ? 'Répondre'
-                  : `${item.replyCount} réponse${item.replyCount !== 1 ? 's' : ''}`}
-              </button>
-            )}
-            {mine ? (
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() => onDelete(item.id)}
-              >
-                Supprimer
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() => reportContent(authToken, 'group_post', item.id)}
-              >
-                Signaler
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <>
-      {renderBubble(post, false)}
-      {expanded && (
-        <div className="group-bubble-replies">
-          {replies.map((reply) => renderBubble(reply, true))}
-          <form
-            className="forum-composer forum-reply-composer"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onSubmitReply();
-            }}
-          >
-            <textarea
-              value={replyDraft}
-              onChange={(event) => onReplyDraftChange(event.target.value)}
-              placeholder="Répondre…"
-              maxLength={2000}
-              rows={1}
-            />
-            <button
-              type="submit"
-              className="btn-secondary"
-              disabled={posting || !replyDraft.trim()}
-            >
-              Répondre
-            </button>
-          </form>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -15125,6 +16391,10 @@ function SearchPanel({
   onClear,
   onClearConstraint,
   onPreview,
+  onShowOnMap,
+  onOpenVenue,
+  open,
+  onClose,
   locale
 }: {
   query: string;
@@ -15136,10 +16406,43 @@ function SearchPanel({
   onClear: () => void;
   onClearConstraint: (key: SearchConstraintKey) => void;
   onPreview: (event: PublicEvent) => void;
+  onShowOnMap: (
+    point: { longitude: number; latitude: number },
+    kind?: 'event' | 'venue'
+  ) => void;
+  onOpenVenue: (venue: PublicVenue) => void;
+  open: boolean;
+  onClose: () => void;
   locale: SupportedLocale;
 }) {
+  // The results panel overlays the map, so clicking the map to dismiss it is
+  // the obvious gesture - it used to require finding "Effacer la recherche",
+  // which also throws the query away rather than just closing the panel.
+  const panelRef = useRef<HTMLElement>(null);
+  // Same delayed-unmount hook the right-hand panel uses, so the dropdown
+  // fades out instead of vanishing on the frame the visitor clicks.
+  const dropdownMount = useTransitionedMount(
+    open && (processing || error || result !== undefined)
+  );
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!panelRef.current?.contains(event.target as Node)) onClose();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open, onClose]);
+
   return (
     <aside
+      ref={panelRef}
       className="search-panel"
       aria-label={translate(locale, 'search.panelAria')}
     >
@@ -15181,8 +16484,12 @@ function SearchPanel({
         </div>
       </form>
 
-      {(processing || error || result) && (
-        <div className="search-dropdown">
+      {dropdownMount.mounted && (
+        <div
+          className={`search-dropdown search-dropdown-transition ${
+            dropdownMount.visible ? 'search-dropdown-visible' : ''
+          }`}
+        >
           <div className="search-dropdown-content">
             {processing && (
               <p role="status">{translate(locale, 'search.processing')}</p>
@@ -15252,29 +16559,156 @@ function SearchPanel({
                 )}
               </div>
             )}
+            {result && result.venues.length > 0 && (
+              <div
+                className="search-results search-venue-results"
+                aria-label={translate(locale, 'search.venueResultsAria')}
+              >
+                <h3>{translate(locale, 'search.venueResults')}</h3>
+                {result.venues.map((venue) => (
+                  <div
+                    className="search-result-row search-result-row-venue"
+                    key={venue.id}
+                  >
+                    <span className="search-result-marker" aria-hidden="true">
+                      <svg viewBox="0 0 16 16" width="14" height="14">
+                        <path
+                          d="M8 1.5c-2.5 0-4.5 2-4.5 4.5 0 3.2 4.5 8.5 4.5 8.5s4.5-5.3 4.5-8.5c0-2.5-2-4.5-4.5-4.5Zm0 6.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </span>
+                    <span className="search-result-title">
+                      <span className="search-result-name">
+                        {venue.name}
+                        {venue.suggested && (
+                          <span
+                            className="search-result-badge"
+                            title={translate(
+                              locale,
+                              'search.suggestedVenueTitle'
+                            )}
+                          >
+                            {translate(locale, 'search.suggestedVenue')}
+                          </span>
+                        )}
+                      </span>
+                      <span className="search-result-meta">
+                        {venue.address}
+                      </span>
+                    </span>
+                    <span className="search-result-actions">
+                      <button
+                        type="button"
+                        aria-label={translate(locale, 'search.openRecordAria', {
+                          title: venue.name
+                        })}
+                        onClick={() => onOpenVenue(venue)}
+                      >
+                        {translate(locale, 'search.openRecord')}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={translate(locale, 'search.showOnMapAria', {
+                          title: venue.name
+                        })}
+                        onClick={() => onShowOnMap(venue.point, 'venue')}
+                      >
+                        {translate(locale, 'search.showOnMap')}
+                      </button>
+                    </span>
+                  </div>
+                ))}
+                {/* ODbL requires attribution to accompany the data. Rendered
+                    from the record's own field rather than hard-coded, so a
+                    future source brings its own notice. */}
+                {result.venues.some((venue) => venue.attribution) && (
+                  <p className="search-attribution">
+                    {[
+                      ...new Set(
+                        result.venues
+                          .map((venue) => venue.attribution)
+                          .filter((value): value is string => Boolean(value))
+                      )
+                    ].join(' · ')}
+                  </p>
+                )}
+              </div>
+            )}
             {result && result.data.length > 0 && (
               <div
                 className="search-results"
                 aria-label={translate(locale, 'search.resultsAria')}
               >
-                <h3>{translate(locale, 'search.results')}</h3>
+                <h3>
+                  {/* "Results on this map" is only true of a filter search. A
+                      named one deliberately looks past the viewport, so
+                      labelling it that way would misdescribe what ran. */}
+                  {result.searchText
+                    ? translate(locale, 'search.searchedFor', {
+                        text: result.searchText
+                      })
+                    : translate(locale, 'search.results')}
+                </h3>
                 {result.data.map(({ event, matchType }, index) => (
-                  <button
-                    type="button"
-                    key={event.id}
-                    aria-label={translate(locale, 'search.previewResultAria', {
-                      index: index + 1,
-                      matchType: translate(locale, `search.match.${matchType}`)
-                    })}
-                    onClick={() => {
-                      onPreview(event);
-                    }}
-                  >
-                    {translate(locale, 'search.previewResult', {
-                      title: event.title,
-                      matchType: translate(locale, `search.match.${matchType}`)
-                    })}
-                  </button>
+                  <div className="search-result-row" key={event.id}>
+                    {/* Category colour is the same one the map pin uses, so a
+                        result and its marker read as the same thing. */}
+                    <span
+                      className="search-result-swatch"
+                      style={{ background: CATEGORY_COLORS[event.category] }}
+                      aria-hidden="true"
+                    />
+                    <button
+                      type="button"
+                      className="search-result-title"
+                      aria-label={translate(
+                        locale,
+                        'search.previewResultAria',
+                        {
+                          index: index + 1,
+                          matchType: translate(
+                            locale,
+                            `search.match.${matchType}`
+                          )
+                        }
+                      )}
+                      onClick={() => onPreview(event)}
+                    >
+                      {/* Just the title. "Aperçu de X (exact)" read as a
+                          button label back when the whole row was one; next
+                          to an explicit "Ouvrir la fiche" it is noise.
+                          The date and venue are not decoration: a named
+                          search returns every performance of a run, and
+                          twelve rows reading "Disney's The Lion King" are
+                          impossible to tell apart without them. */}
+                      <span className="search-result-name">{event.title}</span>
+                      <span className="search-result-meta">
+                        {formatMontrealDateTime(event.startsAt, locale)} ·{' '}
+                        {event.venue.name}
+                      </span>
+                    </button>
+                    <span className="search-result-actions">
+                      <button
+                        type="button"
+                        aria-label={translate(locale, 'search.openRecordAria', {
+                          title: event.title
+                        })}
+                        onClick={() => onPreview(event)}
+                      >
+                        {translate(locale, 'search.openRecord')}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={translate(locale, 'search.showOnMapAria', {
+                          title: event.title
+                        })}
+                        onClick={() => onShowOnMap(event.venue.point)}
+                      >
+                        {translate(locale, 'search.showOnMap')}
+                      </button>
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
@@ -15349,17 +16783,35 @@ function applySearchFilterEdits(
  * chips, plus a "Plus de filtres" chip opening the full FilterOverlay -
  * replaces the previous always-expanded ActiveFilters chip row per user
  * feedback that a second, redundant pill "ne sert a rien" on the map.
+ *
+ * The bar follows what the map is showing. Pinning venues and offering to
+ * filter them by date, by price and by *event* category asked the visitor
+ * three questions a venue cannot answer: a bar has no date and no ticket
+ * price, and "musique / humour / festival" describes an evening rather than
+ * a place. In that mode the bar is a single chip that asks the only question
+ * with an answer - what kind of place - and the vocabulary switches to
+ * VENUE_CATEGORIES.
+ *
+ * That is also what keeps it on one row at phone width, where four chips
+ * wrapped onto two and covered the map.
  */
 function MapFilterBar({
   filters,
   onChange,
   onOpenMore,
-  locale
+  locale,
+  pinKind,
+  venueCategories,
+  onVenueCategoriesChange
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
   onOpenMore: () => void;
   locale: SupportedLocale;
+  /** What the map is pinning. Absent on surfaces that only ever show events. */
+  pinKind?: 'all' | 'event' | 'venue' | 'after';
+  venueCategories?: VenueCategory[];
+  onVenueCategoriesChange?: (categories: VenueCategory[]) => void;
 }) {
   const [openChip, setOpenChip] = useState<'date' | 'price' | 'category'>();
   const barRef = useRef<HTMLDivElement>(null);
@@ -15393,6 +16845,73 @@ function MapFilterBar({
       : filters.categories
           .map((category) => SHORT_CATEGORY_LABELS[locale][category])
           .join(', ');
+
+  // Venue mode asks one question, in the venue vocabulary.
+  if (pinKind === 'venue' && onVenueCategoriesChange) {
+    const selected = venueCategories ?? [];
+    const label =
+      selected.length === 0
+        ? 'Type de lieu'
+        : selected
+            .map((category) => VENUE_CATEGORY_LABELS[locale][category])
+            .join(', ');
+    return (
+      <div className="map-filter-bar" ref={barRef}>
+        <div className="map-filter-chip-wrapper">
+          <button
+            type="button"
+            className={`map-filter-chip ${openChip === 'category' ? 'open' : ''} ${selected.length > 0 ? 'active' : ''}`}
+            onClick={() => toggleChip('category')}
+            aria-expanded={openChip === 'category'}
+            aria-haspopup="true"
+          >
+            {label}
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {openChip === 'category' && (
+            <div className="map-filter-dropdown">
+              {VENUE_CATEGORY_FILTER_OPTIONS.map((option) => (
+                <label key={option.value}>
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(option.value)}
+                    onChange={() =>
+                      onVenueCategoriesChange(
+                        selected.includes(option.value)
+                          ? selected.filter(
+                              (category) => category !== option.value
+                            )
+                          : [...selected, option.value]
+                      )
+                    }
+                  />
+                  {VENUE_CATEGORY_LABELS[locale][option.value]}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        {selected.length > 0 && (
+          <button
+            type="button"
+            className="map-filter-chip"
+            onClick={() => onVenueCategoriesChange([])}
+          >
+            Effacer
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="map-filter-bar" ref={barRef}>
@@ -15757,12 +17276,14 @@ function FilterOverlay({
           </div>
           <p className="distance-value">
             {distanceFilterActive
-              ? `Rayon actif : ${distanceKm} km`
-              : `Rayon max (${distanceKm} km) — non appliqué`}
-            {geoStatus === 'pending' && ' · localisation…'}
-            {geoStatus === 'denied' && ' · position non partagée'}
+              ? translate(locale, 'filters.radiusActive', { km: distanceKm })
+              : translate(locale, 'filters.radiusMax', { km: distanceKm })}
+            {geoStatus === 'pending' &&
+              ` · ${translate(locale, 'filters.geoPending')}`}
+            {geoStatus === 'denied' &&
+              ` · ${translate(locale, 'filters.geoDenied')}`}
             {geoStatus === 'unsupported' &&
-              ' · non disponible sur cet appareil'}
+              ` · ${translate(locale, 'filters.geoUnsupported')}`}
           </p>
         </div>
       </fieldset>
@@ -16047,26 +17568,31 @@ function EventHero({
       }
     >
       <div className="details-hero-actions">
-        {!hideBackButton && (
-          <button type="button" className="back-button" onClick={onBack}>
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-            Retour
-          </button>
-        )}
-        {inlineBadge && (
-          <div className="details-badge details-badge-inline">
-            {SHORT_CATEGORY_LABELS[locale][event.category]}
-          </div>
-        )}
+        {/* Back and the category badge are one left-hand group: with all
+            three as direct space-between children the badge floated into
+            the middle of the banner, detached from both. */}
+        <div className="details-hero-actions-left">
+          {!hideBackButton && (
+            <button type="button" className="back-button" onClick={onBack}>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              Retour
+            </button>
+          )}
+          {inlineBadge && (
+            <div className="details-badge details-badge-inline">
+              {SHORT_CATEGORY_LABELS[locale][event.category]}
+            </div>
+          )}
+        </div>
         <div className="details-hero-actions-right">
           <button
             type="button"
@@ -16235,11 +17761,7 @@ function ShareToFriendModal({
             friends.map((friend) => (
               <div className="friends-row" key={friend.id}>
                 <span className="friends-row-avatar">
-                  {friend.avatarUrl ? (
-                    <img src={friend.avatarUrl} alt="" />
-                  ) : (
-                    friend.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(friend)}
                 </span>
                 <span className="friends-row-name">{friend.displayName}</span>
                 <button
@@ -16413,7 +17935,8 @@ function EventDetails({
   onSetAttendance,
   onClearAttendance,
   initialTab,
-  onOpenForumPanel
+  onOpenForumPanel,
+  onMessageUser
 }: {
   event: PublicEvent;
   headingRef: RefObject<HTMLHeadingElement | null>;
@@ -16434,6 +17957,9 @@ function EventDetails({
   // ForumPanel mode for the same event instead of duplicating that
   // experience here.
   onOpenForumPanel: () => void;
+  // DEC-0020: a participant is an account, and every account displayed
+  // anywhere gets a way to be written to.
+  onMessageUser: (user: PublicUser) => void;
 }) {
   const [tab, setTab] = useState<EventDetailsTab>(initialTab ?? 'about');
   // EventDetails stays mounted across different events (see rightPanelMount)
@@ -16532,37 +18058,38 @@ function EventDetails({
                       : onSetAttendance('private')
                   }
                 >
-                  {attendanceVisibility ? '✓ Vous y allez' : "🎟️ J'y vais"}
+                  {attendanceVisibility
+                    ? translate(locale, 'forum.attendanceGoing')
+                    : translate(locale, 'forum.attendanceGo')}
                 </button>
                 {attendanceVisibility && (
-                  <select
-                    className="attendance-visibility-select"
+                  <AttendanceVisibilityToggle
                     value={attendanceVisibility}
-                    onChange={(changeEvent) =>
-                      onSetAttendance(
-                        changeEvent.target.value as AttendanceVisibility
-                      )
-                    }
-                    aria-label="Visibilité de votre participation"
-                  >
-                    <option value="private">Visible par vous seul</option>
-                    <option value="friends">Visible par vos amis</option>
-                  </select>
+                    onChange={onSetAttendance}
+                  />
                 )}
               </div>
               {friendsAttending.length > 0 ? (
                 <div className="attendance-friends">
                   {friendsAttending.map((attendee) => (
-                    <span className="attendance-friend" key={attendee.id}>
+                    <button
+                      type="button"
+                      className="attendance-friend"
+                      key={attendee.id}
+                      title={translate(locale, 'friends.writeTo')}
+                      onClick={() => onMessageUser(attendee)}
+                    >
                       <span className="friends-row-avatar">
-                        {attendee.avatarUrl ? (
-                          <img src={attendee.avatarUrl} alt="" />
-                        ) : (
-                          attendee.displayName.slice(0, 1).toUpperCase()
-                        )}
+                        {renderAvatarContent(attendee)}
                       </span>
                       {attendee.displayName}
-                    </span>
+                      <span
+                        className="attendance-friend-write"
+                        aria-hidden="true"
+                      >
+                        ✉
+                      </span>
+                    </button>
                   ))}
                   <span className="attendance-friends-label">
                     {friendsAttending.length === 1
@@ -16679,11 +18206,7 @@ function ForumTeaser({
                 key={member.id}
                 title={member.displayName}
               >
-                {member.avatarUrl ? (
-                  <img src={member.avatarUrl} alt="" />
-                ) : (
-                  member.displayName.slice(0, 1).toUpperCase()
-                )}
+                {renderAvatarContent(member)}
               </span>
             ))}
           </div>
@@ -16717,12 +18240,12 @@ function ForumTeaser({
 type ForumPanelTab =
   'discussion' | 'evenement' | 'membres' | 'photos' | 'apropos';
 
-const FORUM_PANEL_TAB_LABELS: Record<ForumPanelTab, string> = {
-  discussion: 'Discussion',
-  evenement: 'Événement',
-  membres: 'Membres',
-  photos: 'Photos',
-  apropos: 'À propos'
+const FORUM_PANEL_TAB_KEYS: Record<ForumPanelTab, MessageKey> = {
+  discussion: 'forum.tabDiscussion',
+  evenement: 'forum.tabEvent',
+  membres: 'forum.tabMembers',
+  photos: 'forum.tabPhotos',
+  apropos: 'forum.tabAbout'
 };
 
 // The dedicated Forum panel (Phase 4.8 follow-up) - opened specifically
@@ -16856,7 +18379,10 @@ function ForumPanel({
   };
 
   return (
-    <div className="forum-panel-layout" aria-label="Forum de l'événement">
+    <div
+      className="forum-panel-layout"
+      aria-label={translate(locale, 'forum.panelLabel')}
+    >
       <div className="forum-panel-main">
         <div className="forum-panel-hero-wrap">
           <button type="button" className="forum-panel-back" onClick={onBack}>
@@ -16898,22 +18424,15 @@ function ForumPanel({
                   : onSetAttendance('private')
               }
             >
-              {attendanceVisibility ? '✓ Vous y allez' : "🎟️ J'y vais"}
+              {attendanceVisibility
+                ? translate(locale, 'forum.attendanceGoing')
+                : translate(locale, 'forum.attendanceGo')}
             </button>
             {attendanceVisibility && (
-              <select
-                className="attendance-visibility-select"
+              <AttendanceVisibilityToggle
                 value={attendanceVisibility}
-                onChange={(changeEvent) =>
-                  onSetAttendance(
-                    changeEvent.target.value as AttendanceVisibility
-                  )
-                }
-                aria-label="Visibilité de votre participation"
-              >
-                <option value="private">Visible par vous seul</option>
-                <option value="friends">Visible par vos amis</option>
-              </select>
+                onChange={onSetAttendance}
+              />
             )}
             <button
               type="button"
@@ -16922,7 +18441,9 @@ function ForumPanel({
               disabled={meetupLoading}
             >
               🤝{' '}
-              {meetupLoading ? 'Un instant…' : "Rencontrer avant l'événement"}
+              {meetupLoading
+                ? translate(locale, 'forum.meetupLoading')
+                : translate(locale, 'forum.meetupCta')}
             </button>
           </div>
         )}
@@ -16931,11 +18452,7 @@ function ForumPanel({
             {friendsAttending.map((attendee) => (
               <span className="attendance-friend" key={attendee.id}>
                 <span className="friends-row-avatar">
-                  {attendee.avatarUrl ? (
-                    <img src={attendee.avatarUrl} alt="" />
-                  ) : (
-                    attendee.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(attendee)}
                 </span>
                 {attendee.displayName}
               </span>
@@ -16963,7 +18480,7 @@ function ForumPanel({
               className={tab === tabId ? 'active' : ''}
               onClick={() => setTab(tabId)}
             >
-              {FORUM_PANEL_TAB_LABELS[tabId]}
+              {translate(locale, FORUM_PANEL_TAB_KEYS[tabId])}
             </button>
           ))}
         </div>
@@ -16972,7 +18489,7 @@ function ForumPanel({
           <div className="details-section">
             {!user ? (
               <SignInPrompt
-                message="Connectez-vous pour lire et participer au forum de cet événement."
+                message={translate(locale, 'forum.signInDiscussion')}
                 onLogin={onLogin}
               />
             ) : (
@@ -16981,6 +18498,7 @@ function ForumPanel({
                 authToken={authToken}
                 userId={user.id}
                 user={user}
+                locale={locale}
               />
             )}
           </div>
@@ -17003,13 +18521,12 @@ function ForumPanel({
             )}
             {membersState === 'error' && (
               <p className="list-view-empty">
-                Impossible de charger les membres pour le moment.
+                {translate(locale, 'forum.membersLoadError')}
               </p>
             )}
             {membersState === 'success' && members.length === 0 && (
               <p className="list-view-empty">
-                Personne n'a encore écrit ici. Lance la discussion dans l'onglet
-                Discussion !
+                {translate(locale, 'forum.emptyDiscussion')}
               </p>
             )}
             {membersState === 'success' && members.length > 0 && (
@@ -17017,11 +18534,7 @@ function ForumPanel({
                 {members.map((member) => (
                   <div className="friends-row" key={member.id}>
                     <span className="friends-row-avatar">
-                      {member.avatarUrl ? (
-                        <img src={member.avatarUrl} alt="" />
-                      ) : (
-                        member.displayName.slice(0, 1).toUpperCase()
-                      )}
+                      {renderAvatarContent(member)}
                     </span>
                     <span className="friends-row-name">
                       {member.displayName}
@@ -17037,7 +18550,7 @@ function ForumPanel({
           <div className="details-section">
             {!user ? (
               <SignInPrompt
-                message="Connectez-vous pour voir et partager des photos de cet événement."
+                message={translate(locale, 'forum.signInPhotos')}
                 onLogin={onLogin}
               />
             ) : (
@@ -17045,6 +18558,7 @@ function ForumPanel({
                 eventId={event.id}
                 authToken={authToken}
                 userId={user.id}
+                locale={locale}
               />
             )}
           </div>
@@ -17057,10 +18571,11 @@ function ForumPanel({
                 💬
               </span>
               <div>
-                <strong>Un espace pour cet événement</strong>
+                <strong>{translate(locale, 'forum.aboutSpaceTitle')}</strong>
                 <p>
-                  Discutez de « {event.title} », posez vos questions et trouvez
-                  des partenaires pour la soirée.
+                  {translate(locale, 'forum.aboutSpaceBody', {
+                    title: event.title
+                  })}
                 </p>
               </div>
             </div>
@@ -17069,11 +18584,8 @@ function ForumPanel({
                 ✏️
               </span>
               <div>
-                <strong>Un message, une fois</strong>
-                <p>
-                  Un message publié n'est pas modifiable après coup — seulement
-                  supprimable par son auteur.
-                </p>
+                <strong>{translate(locale, 'forum.aboutOnceTitle')}</strong>
+                <p>{translate(locale, 'forum.aboutOnceBody')}</p>
               </div>
             </div>
             <div className="forum-about-card">
@@ -17081,11 +18593,8 @@ function ForumPanel({
                 🎟️
               </span>
               <div>
-                <strong>Revente entre particuliers</strong>
-                <p>
-                  La revente de billets entre participants reste entièrement
-                  pair-à-pair — Pulso n'y est jamais partie prenante.
-                </p>
+                <strong>{translate(locale, 'forum.aboutResaleTitle')}</strong>
+                <p>{translate(locale, 'forum.aboutResaleBody')}</p>
               </div>
             </div>
             <div className="forum-about-card">
@@ -17093,11 +18602,8 @@ function ForumPanel({
                 🚩
               </span>
               <div>
-                <strong>Signalement</strong>
-                <p>
-                  Chaque message peut être signalé. Restez courtois·e envers les
-                  autres participants.
-                </p>
+                <strong>{translate(locale, 'forum.aboutReportTitle')}</strong>
+                <p>{translate(locale, 'forum.aboutReportBody')}</p>
               </div>
             </div>
           </div>
@@ -17105,6 +18611,7 @@ function ForumPanel({
 
         {meetupGroup && user && (
           <GroupModal
+            locale={locale}
             group={meetupGroup}
             authToken={authToken}
             userId={user.id}
@@ -17116,7 +18623,7 @@ function ForumPanel({
 
       <aside className="forum-panel-rail">
         <div className="forum-panel-rail-card">
-          <h3>À propos de l'événement</h3>
+          <h3>{translate(locale, 'forum.aboutEvent')}</h3>
           <div className="forum-panel-rail-event">
             <div
               className="forum-panel-rail-thumb"
@@ -17147,7 +18654,7 @@ function ForumPanel({
             className="text-btn"
             onClick={() => setTab('evenement')}
           >
-            Voir l'événement
+            {translate(locale, 'forum.seeEvent')}
           </button>
         </div>
 
@@ -17162,11 +18669,7 @@ function ForumPanel({
                     key={member.id}
                     title={member.displayName}
                   >
-                    {member.avatarUrl ? (
-                      <img src={member.avatarUrl} alt="" />
-                    ) : (
-                      member.displayName.slice(0, 1).toUpperCase()
-                    )}
+                    {renderAvatarContent(member)}
                   </span>
                 ))}
               </div>
@@ -17175,17 +18678,19 @@ function ForumPanel({
               </span>
             </div>
           ) : (
-            <p className="list-view-empty">Personne n'a encore écrit ici.</p>
+            <p className="list-view-empty">
+              {translate(locale, 'forum.empty')}
+            </p>
           )}
         </div>
 
         <div className="forum-panel-rail-card">
-          <h3>Règles du forum</h3>
+          <h3>{translate(locale, 'forum.rulesTitle')}</h3>
           <ul className="forum-panel-rail-rules">
             <li>Respect et bienveillance avant tout</li>
-            <li>Pas de spam ni de publicité</li>
-            <li>Revente de billets uniquement pair-à-pair</li>
-            <li>Reste sur le sujet de l'événement</li>
+            <li>{translate(locale, 'forum.ruleNoSpam')}</li>
+            <li>{translate(locale, 'forum.ruleResale')}</li>
+            <li>{translate(locale, 'forum.ruleOnTopic')}</li>
           </ul>
         </div>
 
@@ -17221,11 +18726,13 @@ function ForumPanel({
 function EventPhotosTab({
   eventId,
   authToken,
-  userId
+  userId,
+  locale
 }: {
   eventId: string;
   authToken: string | undefined;
   userId: string;
+  locale: SupportedLocale;
 }) {
   const [photos, setPhotos] = useState<EventPhoto[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
@@ -17302,24 +18809,28 @@ function EventPhotosTab({
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
         >
-          {uploading ? 'Envoi en cours…' : '📷 Ajouter une photo'}
+          {uploading
+            ? translate(locale, 'forum.photoUploading')
+            : translate(locale, 'forum.photoAdd')}
         </button>
         {uploadError && (
           <span className="event-photos-upload-error">
-            L'envoi a échoué. Réessayez avec une photo JPEG, PNG, WebP ou GIF.
+            {translate(locale, 'forum.photoUploadError')}
           </span>
         )}
       </div>
 
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger les photos pour le moment.
+          {translate(locale, 'forum.photosLoadError')}
         </p>
       )}
       {state === 'success' && photos.length === 0 && (
         <p className="list-view-empty">
-          Aucune photo pour l'instant. Partage la première !
+          {translate(locale, 'forum.photosEmpty')}
         </p>
       )}
       {state === 'success' && photos.length > 0 && (
@@ -17332,7 +18843,7 @@ function EventPhotosTab({
                   type="button"
                   className="event-photo-delete"
                   onClick={() => removePhoto(photo.id)}
-                  aria-label="Supprimer cette photo"
+                  aria-label={translate(locale, 'forum.photoDelete')}
                 >
                   ✕
                 </button>
@@ -17380,38 +18891,39 @@ const FORUM_ROOM_PRESENTATION: Record<
   ForumCategory,
   {
     icon: string;
-    description: string;
-    placeholder: string;
-    emptyMessage: string;
+    label: MessageKey;
+    description: MessageKey;
+    placeholder: MessageKey;
+    emptyMessage: MessageKey;
   }
 > = {
   general: {
     icon: '💬',
-    description: 'Questions, conseils et impressions autour de la sortie.',
-    placeholder: 'Pose une question ou partage un bon plan…',
-    emptyMessage:
-      'Pose la première question ou partage ton conseil sur la soirée.'
+    label: 'forum.roomGeneral',
+    description: 'forum.roomGeneralDescription',
+    placeholder: 'forum.roomGeneralPlaceholder',
+    emptyMessage: 'forum.roomGeneralEmpty'
   },
   find_partners: {
     icon: '👋',
-    description: 'Présente-toi et trouve des personnes avec qui y aller.',
-    placeholder: 'Dis qui tu es et avec qui tu aimerais y aller…',
-    emptyMessage:
-      'Présente-toi et propose un point de rendez-vous avant l’événement.'
+    label: 'forum.roomPartners',
+    description: 'forum.roomPartnersDescription',
+    placeholder: 'forum.roomPartnersPlaceholder',
+    emptyMessage: 'forum.roomPartnersEmpty'
   },
   ticket_resale: {
     icon: '🎟️',
-    description: 'Propositions de billets entre membres de la communauté.',
-    placeholder: 'Décris clairement le billet que tu proposes ou recherches…',
-    emptyMessage:
-      'Indique le type de billet recherché ou proposé, sans partager de données sensibles.'
+    label: 'forum.roomResale',
+    description: 'forum.roomResaleDescription',
+    placeholder: 'forum.roomResalePlaceholder',
+    emptyMessage: 'forum.roomResaleEmpty'
   },
   find_someone: {
     icon: '🔎',
-    description: 'Retrouve une personne croisée pendant l’événement.',
-    placeholder: 'Décris le contexte de votre rencontre avec respect…',
-    emptyMessage:
-      'Décris sobrement le moment et le lieu de la rencontre pour lancer la recherche.'
+    label: 'forum.roomFindSomeone',
+    description: 'forum.roomFindSomeoneDescription',
+    placeholder: 'forum.roomFindSomeonePlaceholder',
+    emptyMessage: 'forum.roomFindSomeoneEmpty'
   }
 };
 
@@ -17419,12 +18931,14 @@ function EventForum({
   eventId,
   authToken,
   userId,
-  user
+  user,
+  locale
 }: {
   eventId: string;
   authToken: string | undefined;
   userId: string;
   user: User;
+  locale: SupportedLocale;
 }) {
   const [category, setCategory] = useState<ForumCategory>('general');
   const [posts, setPosts] = useState<ForumPost[]>([]);
@@ -17569,20 +19083,28 @@ function EventForum({
     <div className="event-forum">
       <div className="forum-community-intro">
         <div>
-          <span className="forum-section-eyebrow">L’agora de l’événement</span>
-          <h2>Choisis ton espace de discussion</h2>
-          <p>
-            Quatre salons, un seul événement : va directement vers la
-            conversation qui t’intéresse.
-          </p>
+          <span className="forum-section-eyebrow">
+            {translate(locale, 'forum.agoraEyebrow')}
+          </span>
+          <h2>{translate(locale, 'forum.chooseSpace')}</h2>
+          <p>{translate(locale, 'forum.agoraBody')}</p>
         </div>
         <span className="forum-community-count">
           <b>{totalMessages}</b>
-          message{totalMessages !== 1 ? 's' : ''}
+          {translatePlural(
+            locale,
+            totalMessages,
+            'forum.messageWord',
+            'forum.messageWordPlural'
+          )}
         </span>
       </div>
 
-      <div className="forum-rooms" role="tablist" aria-label="Salons du forum">
+      <div
+        className="forum-rooms"
+        role="tablist"
+        aria-label={translate(locale, 'forum.roomsLabel')}
+      >
         {FORUM_CATEGORIES.map((option) => (
           <button
             type="button"
@@ -17596,8 +19118,12 @@ function EventForum({
               {FORUM_ROOM_PRESENTATION[option].icon}
             </span>
             <span className="forum-room-copy">
-              <strong>{FORUM_CATEGORY_LABELS[option]}</strong>
-              <small>{FORUM_ROOM_PRESENTATION[option].description}</small>
+              <strong>
+                {translate(locale, FORUM_ROOM_PRESENTATION[option].label)}
+              </strong>
+              <small>
+                {translate(locale, FORUM_ROOM_PRESENTATION[option].description)}
+              </small>
             </span>
             <span className="forum-room-count">
               {roomCounts[option] ?? '—'}
@@ -17612,13 +19138,19 @@ function EventForum({
             {activeRoom.icon}
           </span>
           <div>
-            <span className="forum-section-eyebrow">Salon sélectionné</span>
-            <h3 id="forum-feed-title">{FORUM_CATEGORY_LABELS[category]}</h3>
-            <p>{activeRoom.description}</p>
+            <span className="forum-section-eyebrow">
+              {translate(locale, 'forum.roomSelected')}
+            </span>
+            <h3 id="forum-feed-title">{translate(locale, activeRoom.label)}</h3>
+            <p>{translate(locale, activeRoom.description)}</p>
           </div>
           <span className="forum-feed-count">
-            {roomCounts[category] ?? 0} message
-            {(roomCounts[category] ?? 0) !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              roomCounts[category] ?? 0,
+              'forum.messageCount',
+              'forum.messageCountPlural'
+            )}
           </span>
         </div>
 
@@ -17626,9 +19158,8 @@ function EventForum({
           <p className="forum-disclaimer">
             <span aria-hidden="true">!</span>
             <span>
-              <strong>Échange entre particuliers uniquement.</strong> Pulso
-              n’intervient pas dans la transaction : aucun paiement ni billet ne
-              transite par la plateforme.
+              <strong>{translate(locale, 'forum.resaleDisclaimer')}</strong>{' '}
+              {translate(locale, 'forum.resaleDisclaimerBody')}
             </span>
           </p>
         )}
@@ -17647,8 +19178,10 @@ function EventForum({
             <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder={activeRoom.placeholder}
-              aria-label={`Écrire dans le salon ${FORUM_CATEGORY_LABELS[category]}`}
+              placeholder={translate(locale, activeRoom.placeholder)}
+              aria-label={translate(locale, 'forum.writeInRoom', {
+                room: translate(locale, activeRoom.label)
+              })}
               maxLength={2000}
               rows={3}
             />
@@ -17659,7 +19192,9 @@ function EventForum({
                 className="btn-secondary"
                 disabled={posting || !draft.trim()}
               >
-                {posting ? 'Publication…' : 'Publier'}
+                {posting
+                  ? translate(locale, 'forum.posting')
+                  : translate(locale, 'forum.post')}
               </button>
             </div>
           </div>
@@ -17688,6 +19223,7 @@ function EventForum({
                 post={post}
                 userId={userId}
                 authToken={authToken}
+                locale={locale}
                 onLike={toggleLike}
                 onDelete={removePost}
                 replies={repliesFor(post.id)}
@@ -17711,11 +19247,13 @@ function ForumPostAuthorRow({
   post,
   userId,
   authToken,
+  locale,
   onDelete
 }: {
   post: ForumPost;
   userId: string;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onDelete: () => void;
 }) {
   return (
@@ -17723,7 +19261,7 @@ function ForumPostAuthorRow({
       <span className="forum-post-author">
         <strong>{post.author.displayName}</strong>
         <time dateTime={post.createdAt}>
-          {formatRelativeTime(post.createdAt)}
+          {formatRelativeTime(post.createdAt, locale)}
         </time>
       </span>
       {post.author.id === userId ? (
@@ -17734,7 +19272,9 @@ function ForumPostAuthorRow({
         <button
           type="button"
           className="text-btn"
-          onClick={() => reportContent(authToken, 'forum_post', post.id)}
+          onClick={() =>
+            reportContent(authToken, 'forum_post', post.id, locale)
+          }
         >
           Signaler
         </button>
@@ -17747,6 +19287,7 @@ function ForumPostRow({
   post,
   userId,
   authToken,
+  locale,
   onLike,
   onDelete,
   replies,
@@ -17760,6 +19301,7 @@ function ForumPostRow({
   post: ForumPost;
   userId: string;
   authToken: string | undefined;
+  locale: SupportedLocale;
   onLike: (post: ForumPost) => void;
   onDelete: (postId: string) => void;
   replies: ForumPost[];
@@ -17773,17 +19315,14 @@ function ForumPostRow({
   return (
     <div className={`forum-post ${post.author.id === userId ? 'mine' : ''}`}>
       <span className="friends-row-avatar">
-        {post.author.avatarUrl ? (
-          <img src={post.author.avatarUrl} alt="" />
-        ) : (
-          post.author.displayName.slice(0, 1).toUpperCase()
-        )}
+        {renderAvatarContent(post.author)}
       </span>
       <div className="forum-post-body">
         <ForumPostAuthorRow
           post={post}
           userId={userId}
           authToken={authToken}
+          locale={locale}
           onDelete={() => onDelete(post.id)}
         />
         <p>{post.body}</p>
@@ -17794,13 +19333,22 @@ function ForumPostRow({
             onClick={() => onLike(post)}
           >
             <HeartIcon filled={post.likedByMe} />
-            <span>{post.likedByMe ? 'Aimé' : 'J’aime'}</span>
+            <span>
+              {post.likedByMe
+                ? translate(locale, 'post.liked')
+                : translate(locale, 'post.like')}
+            </span>
             {post.likeCount > 0 && <b>{post.likeCount}</b>}
           </button>
           <button type="button" className="text-btn" onClick={onToggleExpanded}>
             {post.replyCount === 0
-              ? 'Répondre'
-              : `${post.replyCount} réponse${post.replyCount !== 1 ? 's' : ''}`}
+              ? translate(locale, 'post.reply')
+              : translatePlural(
+                  locale,
+                  post.replyCount,
+                  'post.replyCount',
+                  'post.replyCountPlural'
+                )}
           </button>
         </div>
 
@@ -17812,17 +19360,14 @@ function ForumPostRow({
                 key={reply.id}
               >
                 <span className="friends-row-avatar">
-                  {reply.author.avatarUrl ? (
-                    <img src={reply.author.avatarUrl} alt="" />
-                  ) : (
-                    reply.author.displayName.slice(0, 1).toUpperCase()
-                  )}
+                  {renderAvatarContent(reply.author)}
                 </span>
                 <div className="forum-post-body">
                   <ForumPostAuthorRow
                     post={reply}
                     userId={userId}
                     authToken={authToken}
+                    locale={locale}
                     onDelete={() => onDelete(reply.id)}
                   />
                   <p>{reply.body}</p>
@@ -17832,7 +19377,11 @@ function ForumPostRow({
                     onClick={() => onLike(reply)}
                   >
                     <HeartIcon filled={reply.likedByMe} />
-                    <span>{reply.likedByMe ? 'Aimé' : 'J’aime'}</span>
+                    <span>
+                      {reply.likedByMe
+                        ? translate(locale, 'post.liked')
+                        : translate(locale, 'post.like')}
+                    </span>
                     {reply.likeCount > 0 && <b>{reply.likeCount}</b>}
                   </button>
                 </div>
@@ -17848,7 +19397,7 @@ function ForumPostRow({
               <textarea
                 value={replyDraft}
                 onChange={(event) => onReplyDraftChange(event.target.value)}
-                placeholder="Répondre…"
+                placeholder={translate(locale, 'post.replyPlaceholder')}
                 maxLength={2000}
                 rows={1}
               />
@@ -17857,7 +19406,7 @@ function ForumPostRow({
                 className="btn-secondary"
                 disabled={posting || !replyDraft.trim()}
               >
-                Répondre
+                {translate(locale, 'post.reply')}
               </button>
             </form>
           </div>

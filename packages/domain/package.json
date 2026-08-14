@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./localization": "./src/localization.ts"
+    "./localization": "./src/localization.ts",
+    "./opening-hours": "./src/opening-hours.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

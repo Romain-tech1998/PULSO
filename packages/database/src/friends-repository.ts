@@ -2,6 +2,12 @@ import type { PublicUser } from '@pulso/contracts';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
+import {
+  publicUserColumns,
+  toPublicUser,
+  type PublicUserRow
+} from './public-user.js';
+
 export class FriendCodeNotFoundError extends Error {
   constructor() {
     super('No account matches this friend code.');
@@ -52,13 +58,18 @@ export interface FriendSuggestion {
 
 export interface FriendsRepository {
   getFriendCode(userId: string): Promise<string>;
-  sendRequest(requesterId: string, friendCode: string): Promise<void>;
+  // Returns the addressee's user id so the caller can notify them
+  // (DEC-0016 trigger 2).
+  sendRequest(requesterId: string, friendCode: string): Promise<string>;
   getPendingRequests(userId: string): Promise<FriendRequest[]>;
+  // Returns the requester's user id when the request was accepted, so the
+  // caller can notify them (DEC-0016 trigger 3); undefined on decline -
+  // DEC-0016 authorizes no notification for a declined request.
   respondToRequest(
     userId: string,
     requestId: string,
     action: 'accept' | 'decline'
-  ): Promise<void>;
+  ): Promise<string | undefined>;
   getFriends(userId: string): Promise<PublicUser[]>;
   removeFriend(userId: string, friendUserId: string): Promise<void>;
   // Guards the new friend-scoped routes below (profile, activity, mutual
@@ -84,21 +95,7 @@ export interface FriendsRepository {
   // ever exposes a real user id (never a friend_code, per DEC-0011), so
   // sending a request to one needs this by-id variant alongside the
   // existing by-code sendRequest above.
-  sendRequestToUser(requesterId: string, addresseeId: string): Promise<void>;
-}
-
-interface PublicUserRow {
-  id: string;
-  display_name: string;
-  avatar_url: string | null;
-}
-
-function toPublicUser(row: PublicUserRow): PublicUser {
-  return {
-    id: row.id,
-    displayName: row.display_name,
-    ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-  };
+  sendRequestToUser(requesterId: string, addresseeId: string): Promise<string>;
 }
 
 export class PostgresFriendsRepository implements FriendsRepository {
@@ -115,7 +112,7 @@ export class PostgresFriendsRepository implements FriendsRepository {
   // Not fully race-safe between the existence check and the insert (two
   // simultaneous requests in opposite directions could both succeed) - an
   // acceptable gap for a personal social feature, not a security boundary.
-  async sendRequest(requesterId: string, friendCode: string): Promise<void> {
+  async sendRequest(requesterId: string, friendCode: string): Promise<string> {
     const addressee = await this.pool.query<{ id: string }>(
       `SELECT id FROM users WHERE friend_code = $1`,
       [friendCode]
@@ -123,6 +120,7 @@ export class PostgresFriendsRepository implements FriendsRepository {
     const addresseeId = addressee.rows[0]?.id;
     if (!addresseeId) throw new FriendCodeNotFoundError();
     await this.insertPendingRequest(requesterId, addresseeId);
+    return addresseeId;
   }
 
   // "Suggestions pour toi"'s one-click add - same rules as sendRequest
@@ -130,8 +128,9 @@ export class PostgresFriendsRepository implements FriendsRepository {
   async sendRequestToUser(
     requesterId: string,
     addresseeId: string
-  ): Promise<void> {
+  ): Promise<string> {
     await this.insertPendingRequest(requesterId, addresseeId);
+    return addresseeId;
   }
 
   private async insertPendingRequest(
@@ -163,11 +162,13 @@ export class PostgresFriendsRepository implements FriendsRepository {
       other_id: string;
       display_name: string;
       avatar_url: string | null;
+      photo_url: string | null;
+      avatar_style: string | null;
     }
     const result = await this.pool.query<Row>(
       `SELECT f.id AS request_id, f.created_at,
          CASE WHEN f.requester_id = $1 THEN 'outgoing' ELSE 'incoming' END AS direction,
-         u.id AS other_id, u.display_name, u.avatar_url
+         u.id AS other_id, u.display_name, u.avatar_url, u.photo_url, u.avatar_style
        FROM friendships f
        JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
        WHERE f.status = 'pending' AND (f.requester_id = $1 OR f.addressee_id = $1)
@@ -179,7 +180,9 @@ export class PostgresFriendsRepository implements FriendsRepository {
       user: toPublicUser({
         id: row.other_id,
         display_name: row.display_name,
-        avatar_url: row.avatar_url
+        avatar_url: row.avatar_url,
+        photo_url: row.photo_url,
+        avatar_style: row.avatar_style
       }),
       direction: row.direction,
       createdAt: new Date(row.created_at).toISOString()
@@ -190,28 +193,29 @@ export class PostgresFriendsRepository implements FriendsRepository {
     userId: string,
     requestId: string,
     action: 'accept' | 'decline'
-  ): Promise<void> {
-    const existing = await this.pool.query(
-      `SELECT 1 FROM friendships WHERE id = $1 AND addressee_id = $2 AND status = 'pending'`,
+  ): Promise<string | undefined> {
+    const existing = await this.pool.query<{ requester_id: string }>(
+      `SELECT requester_id FROM friendships
+       WHERE id = $1 AND addressee_id = $2 AND status = 'pending'`,
       [requestId, userId]
     );
-    if (existing.rows.length === 0) throw new FriendRequestNotFoundError();
+    const requesterId = existing.rows[0]?.requester_id;
+    if (!requesterId) throw new FriendRequestNotFoundError();
 
     if (action === 'accept') {
       await this.pool.query(
         `UPDATE friendships SET status = 'accepted' WHERE id = $1`,
         [requestId]
       );
-    } else {
-      await this.pool.query(`DELETE FROM friendships WHERE id = $1`, [
-        requestId
-      ]);
+      return requesterId;
     }
+    await this.pool.query(`DELETE FROM friendships WHERE id = $1`, [requestId]);
+    return undefined;
   }
 
   async getFriends(userId: string): Promise<PublicUser[]> {
     const result = await this.pool.query<PublicUserRow>(
-      `SELECT u.id, u.display_name, u.avatar_url
+      `SELECT ${publicUserColumns('u')}
        FROM friendships f
        JOIN users u ON u.id = CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
        WHERE f.status = 'accepted' AND (f.requester_id = $1 OR f.addressee_id = $1)
@@ -279,6 +283,8 @@ export class PostgresFriendsRepository implements FriendsRepository {
       id: string;
       display_name: string;
       avatar_url: string | null;
+      photo_url: string | null;
+      avatar_style: string | null;
       mutual_count: string;
     }>(
       `WITH my_friends AS (
@@ -301,21 +307,17 @@ export class PostgresFriendsRepository implements FriendsRepository {
          JOIN my_friends mf ON f.requester_id = mf.friend_id OR f.addressee_id = mf.friend_id
          WHERE f.status = 'accepted'
        )
-       SELECT u.id, u.display_name, u.avatar_url, COUNT(*) AS mutual_count
+       SELECT ${publicUserColumns('u')}, COUNT(*) AS mutual_count
        FROM friends_of_friends fof
        JOIN users u ON u.id = fof.candidate
        WHERE fof.candidate NOT IN (SELECT friend_id FROM excluded)
-       GROUP BY u.id, u.display_name, u.avatar_url
+       GROUP BY ${publicUserColumns('u')}
        ORDER BY mutual_count DESC, u.display_name ASC
        LIMIT $2`,
       [userId, limit]
     );
     return result.rows.map((row) => ({
-      user: toPublicUser({
-        id: row.id,
-        display_name: row.display_name,
-        avatar_url: row.avatar_url
-      }),
+      user: toPublicUser(row),
       mutualFriendCount: Number(row.mutual_count)
     }));
   }
@@ -328,10 +330,12 @@ export class PostgresFriendsRepository implements FriendsRepository {
       id: string;
       display_name: string;
       avatar_url: string | null;
+      photo_url: string | null;
+      avatar_style: string | null;
       bio: string | null;
       created_at: string;
     }>(
-      `SELECT u.id, u.display_name, u.avatar_url, u.bio, u.created_at
+      `SELECT ${publicUserColumns('u')}, u.bio, u.created_at
        FROM users u
        WHERE u.id = $2
          AND EXISTS (
@@ -345,11 +349,7 @@ export class PostgresFriendsRepository implements FriendsRepository {
     const row = result.rows[0];
     if (!row) return undefined;
     return {
-      ...toPublicUser({
-        id: row.id,
-        display_name: row.display_name,
-        avatar_url: row.avatar_url
-      }),
+      ...toPublicUser(row),
       bio: row.bio ?? undefined,
       createdAt: new Date(row.created_at).toISOString()
     };

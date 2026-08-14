@@ -8,6 +8,7 @@ import {
   FRESHNESS_STATES,
   LOCATION_CONFIDENCE_STATES,
   PRICE_FILTER_VALUES,
+  GROUP_MODULES,
   TRUST_LABELS,
   VENUE_CATEGORIES
 } from '@pulso/domain';
@@ -191,7 +192,33 @@ export const publicVenueSchema = z.object({
   // hand-set" rule as `category`.
   secondaryCategories: z.array(z.enum(VENUE_CATEGORIES)).optional(),
   // A real photo of the venue, when a source actually provides one.
-  imageUrl: z.url().optional()
+  imageUrl: z.url().optional(),
+  // The credit the photo's licence requires, e.g. "Photo : Jean Gagnon
+  // (CC BY-SA 4.0)". Separate from `attribution` below, which credits the
+  // *data*: a venue can carry an OpenStreetMap record and a Wikimedia
+  // Commons photograph by different authors under different licences, and
+  // collapsing the two would misattribute both. Absent when the source
+  // imposes no credit - a venue's own preview image of itself does not need
+  // to be captioned with the venue's name.
+  imageAttribution: z.string().min(1).optional(),
+  // An imported place Pulso has not reviewed yet (DEC-0006). Search offers
+  // these as labelled suggestions; the map never shows them, because a pin
+  // is a claim that Pulso stands behind the record.
+  suggested: z.boolean().optional(),
+  // Required by the source licence when present. OpenStreetMap data is ODbL:
+  // attribution has to travel with the data, so it lives on the record
+  // rather than being hard-coded into one component.
+  attribution: z.string().min(1).optional(),
+  // The source's own opening-hours rule, unparsed. Sent verbatim so the
+  // client parses it with the same @pulso/domain code the server would use,
+  // and so "open now" is computed against the viewer's real clock rather
+  // than baked into a response that goes stale minutes later.
+  openingHours: z.string().min(1).optional(),
+  // When that rule was last read from the source. Present whenever
+  // openingHours is: Pulso states "open now" from this data, and a claim
+  // about the present made from a record of unknown age is not one the
+  // interface should be able to make by accident.
+  openingHoursObservedAt: z.iso.datetime().optional()
 });
 
 export const venueListResponseSchema = z.object({
@@ -248,8 +275,10 @@ export const venueRatingSummariesResponseSchema = z.object({
 // Google or derived on demand (see /me/trends), never a stored preference
 // invented beyond what the user actually gave Pulso. `coverStyle`/
 // `avatarStyle` are keys into small fixed preset sets (see
-// PROFILE_COVER_STYLES/PROFILE_AVATAR_STYLES on the web side), never a photo
-// upload - Pulso doesn't store user images beyond the Google avatar.
+// PROFILE_COVER_STYLES/PROFILE_AVATAR_STYLES on the web side). They were
+// once the only avatar a user could choose, because Phase 4.7 stored no
+// user image at all; DEC-0020 lifted that and added `photoUrl`, so the
+// presets are now the fallback rather than the whole story.
 export const userSchema = z.object({
   id: z.uuid(),
   email: z.email(),
@@ -258,7 +287,11 @@ export const userSchema = z.object({
   createdAt: z.iso.datetime(),
   bio: z.string().max(280).optional(),
   coverStyle: z.string().optional(),
-  avatarStyle: z.string().optional()
+  avatarStyle: z.string().optional(),
+  // DEC-0020: a real uploaded photo, and the highest-priority avatar
+  // source. Separate from avatarUrl, which mirrors Google and is
+  // overwritten on every sign-in - see the migration's note.
+  photoUrl: z.url().optional()
 });
 
 export const meResponseSchema = z.object({ data: userSchema });
@@ -402,6 +435,68 @@ export const notificationSchema = z.discriminatedUnion('kind', [
     eventTitle: z.string()
   }),
   z.object({
+    kind: z.literal('organizer_request_received'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string().min(1),
+    actorAvatarUrl: z.string().optional(),
+    venueId: z.uuid(),
+    venueName: z.string().min(1)
+  }),
+  z.object({
+    kind: z.literal('organizer_request_resolved'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    venueId: z.uuid(),
+    venueName: z.string().min(1),
+    approved: z.boolean()
+  }),
+  // Groups. `group_join_request_received` closes a real gap rather than
+  // adding noise: a restricted group's pending queue already existed, but
+  // nothing ever told its moderator to go look at it.
+  z.object({
+    kind: z.literal('group_verification_received'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string().min(1),
+    actorAvatarUrl: z.string().optional(),
+    groupId: z.uuid(),
+    groupName: z.string().min(1)
+  }),
+  z.object({
+    kind: z.literal('group_verification_resolved'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    groupId: z.uuid(),
+    groupName: z.string().min(1),
+    approved: z.boolean()
+  }),
+  z.object({
+    kind: z.literal('group_join_request_received'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string().min(1),
+    actorAvatarUrl: z.string().optional(),
+    groupId: z.uuid(),
+    groupName: z.string().min(1)
+  }),
+  z.object({
+    kind: z.literal('group_join_request_accepted'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    groupId: z.uuid(),
+    groupName: z.string().min(1)
+  }),
+  z.object({
     kind: z.literal('upcoming_event'),
     createdAt: z.iso.datetime(),
     eventId: z.uuid(),
@@ -466,7 +561,12 @@ export const trendsResponseSchema = z.object({
 export const publicUserSchema = z.object({
   id: z.uuid(),
   displayName: z.string().min(1),
-  avatarUrl: z.url().optional()
+  avatarUrl: z.url().optional(),
+  // DEC-0020. Carried here so an uploaded photo shows wherever another
+  // account already appears (conversation list, members, participants)
+  // rather than only on the profile page.
+  photoUrl: z.url().optional(),
+  avatarStyle: z.string().optional()
 });
 
 export const friendCodeResponseSchema = z.object({
@@ -647,8 +747,10 @@ export const unreadCountResponseSchema = z.object({
   data: z.object({ count: z.number().int().min(0) })
 });
 
-// One row per accepted friend (not just ones with an existing message
-// history) - powers the Messages page's conversation list.
+// One row per account this user has an inbox with: every accepted friend
+// (whether or not anything was ever said) plus, since DEC-0020, every
+// accepted message request. A pending request is not here - it belongs to
+// messageRequestSchema below.
 export const conversationSummarySchema = z.object({
   friend: publicUserSchema,
   lastMessage: messageSchema.optional(),
@@ -657,6 +759,24 @@ export const conversationSummarySchema = z.object({
 
 export const conversationsResponseSchema = z.object({
   data: z.array(conversationSummarySchema)
+});
+
+// DEC-0020 - a conversation waiting to be let in. Carries the one message
+// the sender was allowed to send, so the recipient answers on the content
+// rather than on a display name alone. `message` is optional only because
+// the row and the message are separate writes; in practice one exists.
+export const messageRequestSchema = z.object({
+  sender: publicUserSchema,
+  message: messageSchema.optional(),
+  createdAt: z.iso.datetime()
+});
+
+export const messageRequestsResponseSchema = z.object({
+  data: z.array(messageRequestSchema)
+});
+
+export const respondToMessageRequestSchema = z.object({
+  action: z.enum(['accept', 'decline'])
 });
 
 // Captures a report only (DEC-0012) - no moderation queue or automated
@@ -681,7 +801,22 @@ export const createReportRequestSchema = z.object({
 // per event ("Rencontrer avant l'événement") - undefined for every group
 // created the normal way. `meetupVenue` (Phase 4.10) is derived from that
 // same linked event's real venue, never entered by hand.
-export const groupVisibilitySchema = z.enum(['open', 'restricted']);
+export const groupVisibilitySchema = z.enum([
+  'open',
+  'restricted',
+  'private_invite'
+]);
+export const groupTypeSchema = z.enum(['community', 'event', 'private_crew']);
+// Requested by the group's creator, granted by a Pulso administrator - the
+// same request/approve shape DEC-0018 established for organizer accounts.
+// 'none' and 'declined' stay distinct so a refused group can ask again
+// without the interface pretending it never asked.
+export const groupVerificationStatusSchema = z.enum([
+  'none',
+  'pending',
+  'verified',
+  'declined'
+]);
 export const groupMembershipStatusSchema = z.enum(['member', 'pending']);
 export const attendanceResponseSchema = z.enum(['yes', 'maybe', 'no']);
 
@@ -692,6 +827,17 @@ export const groupMeetupVenueSchema = z.object({
   latitude: z.number()
 });
 
+// DEC-0015's module registry, typed rather than `z.array(z.any())`: `any`
+// let a misspelled module name through the contract and into `modules_config`
+// jsonb, where nothing would ever reject it.
+export const groupModuleConfigSchema = z
+  .object({
+    module: z.enum(GROUP_MODULES),
+    enabled: z.boolean(),
+    position: z.number().int().min(0)
+  })
+  .strict();
+
 export const groupSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
@@ -701,7 +847,12 @@ export const groupSchema = z.object({
   memberCount: z.number().int().min(0),
   isMember: z.boolean(),
   eventId: z.uuid().optional(),
+  type: groupTypeSchema,
   visibility: groupVisibilitySchema,
+  // Normalized by the repository before it ever reaches here: unknown
+  // module names dropped, missing ones appended disabled, positions
+  // renumbered. So this can be the real type rather than `any[]`.
+  modulesConfig: z.array(groupModuleConfigSchema),
   isModerator: z.boolean(),
   myStatus: groupMembershipStatusSchema.optional(),
   pendingRequestCount: z.number().int().min(0).optional(),
@@ -710,17 +861,55 @@ export const groupSchema = z.object({
   eventStartsAt: z.iso.datetime().optional(),
   // Phase 4.14: this viewer's own choice to show this group in their
   // sidebar shortcut list - always false for a group they haven't joined.
-  pinned: z.boolean()
+  pinned: z.boolean(),
+  // The group's own photo, uploaded by its moderator. Absent until one is
+  // set - the interface falls back to the group's initial rather than to a
+  // stock image standing in for a picture the group never chose.
+  imageUrl: z.url().optional(),
+  verificationStatus: groupVerificationStatusSchema
 });
 
 export const createGroupRequestSchema = z.object({
   name: z.string().min(1).max(80),
   description: z.string().min(1).max(500).optional(),
-  visibility: groupVisibilitySchema.optional()
+  // Defaulted, not required. DEC-0013 groups predate the type concept and
+  // every existing client still creates one without naming a type - making
+  // it mandatory rejected them all with a 400.
+  type: groupTypeSchema.default('community'),
+  visibility: groupVisibilitySchema.optional(),
+  modulesConfig: z.array(groupModuleConfigSchema).optional()
+});
+
+export const updateGroupModulesRequestSchema = z.object({
+  modulesConfig: z.array(groupModuleConfigSchema)
 });
 
 export const setGroupPinnedRequestSchema = z.object({
   pinned: z.boolean()
+});
+
+// What the moderator tells the administrator about the group. Stored and
+// displayed; like DEC-0018's organizer justification, Pulso verifies
+// nothing on its own from it.
+export const requestGroupVerificationSchema = z.object({
+  justification: z.string().min(1).max(500)
+});
+
+export const resolveGroupVerificationSchema = z.object({
+  approve: z.boolean()
+});
+
+// The administration queue (same console and same is_admin gate as
+// DEC-0018's organizer requests).
+export const groupVerificationRequestSchema = z.object({
+  group: groupSchema,
+  requester: publicUserSchema,
+  requestedAt: z.iso.datetime(),
+  justification: z.string().min(1)
+});
+
+export const groupVerificationRequestsResponseSchema = z.object({
+  data: z.array(groupVerificationRequestSchema)
 });
 
 export const groupsResponseSchema = z.object({
@@ -821,9 +1010,156 @@ export const groupChecklistItemsResponseSchema = z.object({
 
 // Same content model as the event forum (DEC-0012 v1.1): one level of
 // nested replies, one like per user per post, author-only delete.
+/**
+ * A group's discussion threads. `staffOnly` is how DEC-0015's
+ * "announcements reserved for staff" module exists without a second
+ * content model: everyone reads such a channel, only the moderator writes
+ * in it.
+ */
+/**
+ * A paid placement of an event inside a group (DEC-0015 §Future
+ * monetization). Created by a Pulso administrator only; the group's own
+ * moderator can take it down.
+ *
+ * `sponsorName` is typed by the administrator rather than derived from the
+ * event's organizer: the payer and the listed organizer are not always the
+ * same name, and a banner has to say who actually paid for it.
+ */
+export const groupSponsoredPlacementSchema = z.object({
+  id: z.uuid(),
+  groupId: z.uuid(),
+  sponsorName: z.string().min(1),
+  message: z.string().min(1).optional(),
+  createdAt: z.iso.datetime(),
+  endsAt: z.iso.datetime().optional(),
+  event: z.object({
+    id: z.uuid(),
+    title: z.string().min(1),
+    startsAt: z.iso.datetime(),
+    category: z.enum(EVENT_CATEGORIES),
+    imageUrl: z.url().optional(),
+    venueName: z.string().min(1).optional()
+  })
+});
+
+export const groupSponsoredPlacementsResponseSchema = z.object({
+  data: z.array(groupSponsoredPlacementSchema)
+});
+
+// Admin-side: the same placement plus which group it landed in and whether
+// that group's moderator has since taken it down - the two numbers that
+// say whether a package was actually delivered.
+export const adminGroupPlacementSchema = z.object({
+  placement: groupSponsoredPlacementSchema,
+  groupName: z.string().min(1),
+  groupMemberCount: z.number().int().min(0),
+  dismissedAt: z.iso.datetime().optional()
+});
+
+export const adminGroupPlacementsResponseSchema = z.object({
+  data: z.array(adminGroupPlacementSchema)
+});
+
+export const createGroupPlacementRequestSchema = z.object({
+  groupId: z.uuid(),
+  eventId: z.uuid(),
+  sponsorName: z.string().min(1).max(80),
+  message: z.string().min(1).max(280).optional(),
+  endsAt: z.iso.datetime().optional()
+});
+
+// The administrator has to find a group by name to place into one.
+export const adminGroupSummarySchema = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  memberCount: z.number().int().min(0),
+  verified: z.boolean()
+});
+
+export const adminGroupSummariesResponseSchema = z.object({
+  data: z.array(adminGroupSummarySchema)
+});
+
+/**
+ * One outing a group is organising. The programme, attendance and checklist
+ * describe an outing rather than the group itself, so a community that goes
+ * out weekly starts each week clean instead of inheriting last week's plan.
+ */
+export const groupOutingSchema = z.object({
+  id: z.uuid(),
+  groupId: z.uuid(),
+  eventId: z.uuid().optional(),
+  title: z.string().min(1).max(120),
+  startsAt: z.iso.datetime().optional(),
+  place: z.string().min(1).optional(),
+  createdAt: z.iso.datetime(),
+  archivedAt: z.iso.datetime().optional()
+});
+
+export const groupOutingsResponseSchema = z.object({
+  data: z.array(groupOutingSchema)
+});
+
+export const groupOutingResponseSchema = z.object({
+  data: groupOutingSchema
+});
+
+// Starting a new outing archives the current one. `eventId` is set when the
+// group adopts a real Pulso event - including a sponsored placement it
+// decided to act on.
+export const startGroupOutingRequestSchema = z.object({
+  title: z.string().min(1).max(120),
+  eventId: z.uuid().optional(),
+  startsAt: z.iso.datetime().optional(),
+  // Where it is, in the group own words - "chez Marie" and every other
+  // place Pulso has never heard of, without inventing a fake venue.
+  place: z.string().min(1).max(120).optional()
+});
+
+export const groupChannelSchema = z.object({
+  id: z.uuid(),
+  groupId: z.uuid(),
+  name: z.string().min(1).max(40),
+  position: z.number().int().min(0),
+  staffOnly: z.boolean(),
+  postCount: z.number().int().min(0)
+});
+
+export const groupChannelsResponseSchema = z.object({
+  data: z.array(groupChannelSchema)
+});
+
+export const groupChannelResponseSchema = z.object({
+  data: groupChannelSchema
+});
+
+export const createGroupChannelRequestSchema = z.object({
+  name: z.string().min(1).max(40),
+  staffOnly: z.boolean().optional()
+});
+
 export const groupPostSchema = z.object({
   id: z.uuid(),
   groupId: z.uuid(),
+  channelId: z.uuid(),
+  // A message someone wrote, or an outing they proposed into the feed.
+  kind: z.enum(['message', 'outing']),
+  outingId: z.uuid().optional(),
+  // Present on an outing post: everything its feed card renders, votes
+  // included, so a feed of twenty outings is still one request.
+  outing: z
+    .object({
+      id: z.uuid(),
+      title: z.string().min(1),
+      place: z.string().min(1).optional(),
+      startsAt: z.iso.datetime().optional(),
+      eventId: z.uuid().optional(),
+      yes: z.number().int().min(0),
+      maybe: z.number().int().min(0),
+      no: z.number().int().min(0),
+      myResponse: attendanceResponseSchema.optional()
+    })
+    .optional(),
   author: publicUserSchema,
   body: z.string().min(1),
   createdAt: z.iso.datetime(),
@@ -834,6 +1170,10 @@ export const groupPostSchema = z.object({
 });
 
 export const createGroupPostRequestSchema = z.object({
+  // Which thread the message belongs to. Optional so the pre-channel
+  // clients that only knew one feed keep working - the server resolves
+  // those to the group's first channel rather than rejecting them.
+  channelId: z.uuid().optional(),
   body: z.string().min(1).max(2000),
   parentId: z.uuid().optional()
 });
@@ -924,6 +1264,11 @@ export const publicEventSchema = z.object({
   // matches on start time, so an ingested late-night event qualifies
   // without carrying this flag.
   isAfter: z.boolean().optional(),
+  // True when the organizer withheld the street address. The venue's
+  // `address` then carries a coarse label instead of the exact line.
+  addressHidden: z.boolean().optional(),
+  // DEC-0017 v1.2: pinned by its creator into the sidebar's Raccourcis.
+  pinned: z.boolean().optional(),
   externalDestination: z
     .object({
       label: z.string().min(1),
@@ -951,6 +1296,14 @@ export const createEventRequestSchema = z.object({
   description: z.string().min(1).max(4000).optional(),
   imageUrl: z.url().optional(),
   isAfter: z.boolean().optional(),
+  // DEC-0017 v1.1: an external checkout, never a Pulso one. Surfaced with
+  // the same "clearly identified external destination" treatment every
+  // ingested ticketing link already gets (UX-0001).
+  ticketingUrl: z.url().optional(),
+  // DEC-0017 v1.2: a "select" after can withhold its street address. The
+  // event still carries real coordinates - it is a map pin either way -
+  // but the exact line is shown only to its organizer.
+  addressHidden: z.boolean().optional(),
   price: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('free') }),
     z.object({
@@ -973,6 +1326,105 @@ export type CreateEventRequest = z.infer<typeof createEventRequestSchema>;
 
 export const createdEventResponseSchema = z.object({
   data: publicEventSchema
+});
+
+// DEC-0017 v1.1. Editing reuses the creation shape minus the venue: moving
+// an event to a different place is a different event, not an edit.
+export const updateEventRequestSchema = createEventRequestSchema.omit({
+  venue: true
+});
+export type UpdateEventRequest = z.infer<typeof updateEventRequestSchema>;
+
+// The organizer workspace lists the account's own events, past ones
+// included - an organizer needs to see what they ran, not only what is
+// still ahead.
+// DEC-0018 organizer requests.
+export const organizerRequestSchema = z.object({
+  id: z.uuid(),
+  venueId: z.uuid(),
+  venueName: z.string().min(1),
+  venueAddress: z.string().min(1),
+  justification: z.string().min(1),
+  status: z.enum(['pending', 'approved', 'declined']),
+  createdAt: z.iso.datetime(),
+  requester: z.object({
+    id: z.uuid(),
+    displayName: z.string().min(1),
+    email: z.string().min(1)
+  })
+});
+export type OrganizerRequest = z.infer<typeof organizerRequestSchema>;
+
+export const createOrganizerRequestSchema = z.object({
+  venueId: z.uuid(),
+  justification: z.string().min(10).max(2000)
+});
+
+export const organizerRequestsResponseSchema = z.object({
+  data: z.array(organizerRequestSchema)
+});
+
+export const resolveOrganizerRequestSchema = z.object({
+  approve: z.boolean()
+});
+
+// DEC-0019. The administration view of an imported venue photo: what is
+// shown, where it came from, and whether it has already been taken down.
+//
+// `imageUrl` and `pageUrl` are both present because they answer different
+// questions - the first is what a visitor sees, the second is the page an
+// administrator opens to check a licence or answer a takedown request.
+export const adminVenuePhotoSchema = z.object({
+  venueId: z.uuid(),
+  venueName: z.string().min(1),
+  imageUrl: z.url().optional(),
+  imageSource: z.string().min(1).optional(),
+  imageAttribution: z.string().min(1).optional(),
+  pageUrl: z.url().optional(),
+  // True once a suppression is in force, so the console can show that a
+  // venue is deliberately photo-less rather than merely unlucky.
+  suppressed: z.boolean()
+});
+
+export const adminVenuePhotosResponseSchema = z.object({
+  data: z.array(adminVenuePhotoSchema)
+});
+
+export const suppressVenuePhotoRequestSchema = z.object({
+  // Absent means "no photo for this venue, ever", which is what a business
+  // asking Pulso to stop using its pictures means. True narrows it to the
+  // image currently shown, for the case where a better one should replace it.
+  thisOneOnly: z.boolean().optional(),
+  reason: z.string().max(500).optional()
+});
+
+// What the signed-in account may currently do as an organizer: the venues
+// it is verified for, plus any request still awaiting a decision.
+export const myOrganizerStatusResponseSchema = z.object({
+  data: z.object({
+    isAdmin: z.boolean(),
+    verifiedVenues: z.array(
+      z.object({ venueId: z.uuid(), venueName: z.string().min(1) })
+    ),
+    pendingRequests: z.array(organizerRequestSchema)
+  })
+});
+
+export const myEventsResponseSchema = z.object({
+  data: z.array(publicEventSchema)
+});
+
+// A typed address resolved to real coordinates server-side. `undefined`
+// coordinates mean resolution failed and publication must be refused
+// rather than pinned at a guess (DEC-0017 v1.1).
+export const geocodeResponseSchema = z.object({
+  data: z
+    .object({
+      longitude: z.number().min(-180).max(180),
+      latitude: z.number().min(-90).max(90),
+      label: z.string().min(1)
+    })
+    .nullable()
 });
 
 // Forums discovery grid (Phase 4.8) - one entry per upcoming event, not
@@ -1021,6 +1473,25 @@ export const eventPhotosResponseSchema = z.object({
 export const eventPhotoResponseSchema = z.object({
   data: eventPhotoSchema
 });
+// DEC-0020 - the personal photo gallery. A gallery, not a feed: a photo is
+// only ever read as part of one account's own grid, which is why there is
+// no author field (the owner is the profile being viewed) and no like or
+// comment count. `eventId`/`venueId` are an optional "taken at" reference,
+// at most one of the two; hydrating either into a name is the caller's job,
+// exactly as the Favoris section already hydrates ids.
+export const userPhotoSchema = z.object({
+  id: z.uuid(),
+  url: z.url(),
+  caption: z.string().max(280).optional(),
+  eventId: z.uuid().optional(),
+  venueId: z.uuid().optional(),
+  createdAt: z.iso.datetime()
+});
+export const userPhotosResponseSchema = z.object({
+  data: z.array(userPhotoSchema)
+});
+export const userPhotoResponseSchema = z.object({ data: userPhotoSchema });
+
 export const eventDetailsResponseSchema = z.object({ data: publicEventSchema });
 export const errorResponseSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() })
@@ -1036,6 +1507,9 @@ export type ForumMembersResponse = z.infer<typeof forumMembersResponseSchema>;
 export type ForumFollowResponse = z.infer<typeof forumFollowResponseSchema>;
 export type EventPhoto = z.infer<typeof eventPhotoSchema>;
 export type EventPhotosResponse = z.infer<typeof eventPhotosResponseSchema>;
+export type UserPhoto = z.infer<typeof userPhotoSchema>;
+export type UserPhotosResponse = z.infer<typeof userPhotosResponseSchema>;
+export type UserPhotoResponse = z.infer<typeof userPhotoResponseSchema>;
 export type EventDetailsResponse = z.infer<typeof eventDetailsResponseSchema>;
 export type MapBoundsQuery = z.infer<typeof mapBoundsQuerySchema>;
 export type DirectDistanceQuery = z.infer<typeof directDistanceQuerySchema>;
@@ -1048,6 +1522,13 @@ export type VenueFavoriteCountsResponse = z.infer<
   typeof venueFavoriteCountsResponseSchema
 >;
 export type SetVenueRatingRequest = z.infer<typeof setVenueRatingRequestSchema>;
+export type AdminVenuePhoto = z.infer<typeof adminVenuePhotoSchema>;
+export type AdminVenuePhotosResponse = z.infer<
+  typeof adminVenuePhotosResponseSchema
+>;
+export type SuppressVenuePhotoRequest = z.infer<
+  typeof suppressVenuePhotoRequestSchema
+>;
 export type MyVenueRating = z.infer<typeof myVenueRatingSchema>;
 export type MyVenueRatingResponse = z.infer<typeof myVenueRatingResponseSchema>;
 export type VenueRatingSummariesResponse = z.infer<
@@ -1117,6 +1598,10 @@ export type MessageResponse = z.infer<typeof messageResponseSchema>;
 export type UnreadCountResponse = z.infer<typeof unreadCountResponseSchema>;
 export type ConversationSummary = z.infer<typeof conversationSummarySchema>;
 export type ConversationsResponse = z.infer<typeof conversationsResponseSchema>;
+export type MessageRequest = z.infer<typeof messageRequestSchema>;
+export type MessageRequestsResponse = z.infer<
+  typeof messageRequestsResponseSchema
+>;
 export type ReportTargetType = z.infer<typeof reportTargetTypeSchema>;
 export type CreateReportRequest = z.infer<typeof createReportRequestSchema>;
 export type Group = z.infer<typeof groupSchema>;
@@ -1130,7 +1615,49 @@ export type CreateGroupPostRequest = z.infer<
 >;
 export type GroupPostsResponse = z.infer<typeof groupPostsResponseSchema>;
 export type GroupPostResponse = z.infer<typeof groupPostResponseSchema>;
+export type GroupSponsoredPlacement = z.infer<
+  typeof groupSponsoredPlacementSchema
+>;
+export type GroupSponsoredPlacementsResponse = z.infer<
+  typeof groupSponsoredPlacementsResponseSchema
+>;
+export type AdminGroupPlacement = z.infer<typeof adminGroupPlacementSchema>;
+export type AdminGroupPlacementsResponse = z.infer<
+  typeof adminGroupPlacementsResponseSchema
+>;
+export type CreateGroupPlacementRequest = z.infer<
+  typeof createGroupPlacementRequestSchema
+>;
+export type AdminGroupSummary = z.infer<typeof adminGroupSummarySchema>;
+export type AdminGroupSummariesResponse = z.infer<
+  typeof adminGroupSummariesResponseSchema
+>;
+export type GroupOuting = z.infer<typeof groupOutingSchema>;
+export type GroupOutingsResponse = z.infer<typeof groupOutingsResponseSchema>;
+export type StartGroupOutingRequest = z.infer<
+  typeof startGroupOutingRequestSchema
+>;
+export type GroupChannel = z.infer<typeof groupChannelSchema>;
+export type GroupChannelsResponse = z.infer<typeof groupChannelsResponseSchema>;
+export type CreateGroupChannelRequest = z.infer<
+  typeof createGroupChannelRequestSchema
+>;
 export type GroupVisibility = z.infer<typeof groupVisibilitySchema>;
+export type GroupVerificationStatus = z.infer<
+  typeof groupVerificationStatusSchema
+>;
+export type RequestGroupVerification = z.infer<
+  typeof requestGroupVerificationSchema
+>;
+export type ResolveGroupVerification = z.infer<
+  typeof resolveGroupVerificationSchema
+>;
+export type GroupVerificationRequest = z.infer<
+  typeof groupVerificationRequestSchema
+>;
+export type GroupVerificationRequestsResponse = z.infer<
+  typeof groupVerificationRequestsResponseSchema
+>;
 export type GroupMembershipStatus = z.infer<typeof groupMembershipStatusSchema>;
 export type AttendanceResponse = z.infer<typeof attendanceResponseSchema>;
 export type GroupMeetupVenue = z.infer<typeof groupMeetupVenueSchema>;
@@ -1229,6 +1756,13 @@ export const intelligentSearchRequestSchema = z
     query: z.string().trim().min(1).max(240),
     locale: z.enum(SUPPORTED_LOCALES),
     bounds: mapBoundsSchema,
+    near: z
+      .object({
+        longitude: z.number().min(-180).max(180),
+        latitude: z.number().min(-90).max(90),
+        radiusMeters: z.number().positive().max(50_000)
+      })
+      .optional(),
     manualFilters: searchFiltersSchema,
     disabledDerivedKeys: z
       .array(searchConstraintKeySchema)
@@ -1259,7 +1793,7 @@ export const intelligentSearchResponseSchema = z
   .object({
     interpretation: z
       .object({
-        engine: z.literal('deterministic'),
+        engine: z.enum(['deterministic', 'intelligent']),
         language: z.enum(SUPPORTED_LOCALES),
         constraints: z.array(searchExplanationSchema),
         rankingSignals: z.array(searchExplanationSchema),
@@ -1272,6 +1806,13 @@ export const intelligentSearchResponseSchema = z
       'no_reliable_result',
       'clarification'
     ]),
+    suggestedLocation: z
+      .object({
+        longitude: z.number().min(-180).max(180),
+        latitude: z.number().min(-90).max(90)
+      })
+      .optional(),
+    suggestedNearMe: z.boolean().optional(),
     message: searchMessageSchema,
     clarification: searchMessageSchema.optional(),
     data: z.array(
@@ -1283,7 +1824,17 @@ export const intelligentSearchResponseSchema = z
           differences: z.array(searchMessageSchema)
         })
         .strict()
-    )
+    ),
+    // Venues matched by name or address when the query named a place rather
+    // than describing an evening ("Centre Bell", "Newspeak"). A venue is not
+    // an event and never appears in `data`: it has no date, no price and no
+    // trust label, so folding the two into one list would mean inventing
+    // those fields. The client opens a venue's own record instead.
+    venues: z.array(publicVenueSchema).default([]),
+    // The free-text fragment the interpreter matched on, when there was one.
+    // Present so the interface can say what it searched for rather than
+    // leaving the visitor to guess why these results came back.
+    searchText: z.string().min(1).optional()
   })
   .strict();
 

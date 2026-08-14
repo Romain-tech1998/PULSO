@@ -9,8 +9,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.33",
     "@pulso/contracts": "workspace:*",
-    "@pulso/domain": "workspace:*"
+    "@pulso/domain": "workspace:*",
+    "ai": "^7.0.55",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "typescript": "6.0.3"

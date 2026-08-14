@@ -4,6 +4,11 @@ import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
 import { EventNotFoundError } from './attendance-repository.js';
+import {
+  publicUserColumns,
+  toPublicUser,
+  type PublicUserRow
+} from './public-user.js';
 
 const FOREIGN_KEY_VIOLATION = '23503';
 
@@ -103,9 +108,14 @@ export interface ForumRepository {
   unfollowForum(eventId: string, userId: string): Promise<void>;
   isFollowingForum(eventId: string, userId: string): Promise<boolean>;
   getFollowedEventIds(userId: string): Promise<string[]>;
+  // Reverse of getFollowedEventIds - who to notify when someone posts in
+  // this event's forum (DEC-0016 trigger 5).
+  getForumFollowerIds(eventId: string): Promise<string[]>;
 }
 
-interface PostRow {
+// The author's columns come back alongside the post's own, and the post
+// owns `id` - hence Omit<..., 'id'> plus the reshape in toForumPost.
+interface PostRow extends Omit<PublicUserRow, 'id'> {
   id: string;
   event_id: string;
   category: ForumCategory;
@@ -113,8 +123,6 @@ interface PostRow {
   created_at: string;
   parent_id: string | null;
   author_id: string;
-  display_name: string;
-  avatar_url: string | null;
   like_count: string;
   reply_count: string;
   liked_by_me: boolean;
@@ -131,11 +139,7 @@ function toForumPost(row: PostRow): ForumPost {
     likeCount: Number(row.like_count),
     likedByMe: row.liked_by_me,
     replyCount: Number(row.reply_count),
-    author: {
-      id: row.author_id,
-      displayName: row.display_name,
-      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-    }
+    author: toPublicUser({ ...row, id: row.author_id })
   };
 }
 
@@ -150,6 +154,7 @@ export class PostgresForumRepository implements ForumRepository {
     const result = await this.pool.query<PostRow>(
       `SELECT p.id, p.event_id, p.category, p.body, p.created_at, p.parent_id,
               u.id AS author_id, u.display_name, u.avatar_url,
+              u.photo_url, u.avatar_style,
               COALESCE(likes.like_count, 0) AS like_count,
               COALESCE(replies.reply_count, 0) AS reply_count,
               (my_like.user_id IS NOT NULL) AS liked_by_me
@@ -185,7 +190,9 @@ export class PostgresForumRepository implements ForumRepository {
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING id, event_id, category, body, created_at, author_id, parent_id
          )
-         SELECT inserted.*, u.display_name, u.avatar_url, 0 AS like_count, 0 AS reply_count, false AS liked_by_me
+         SELECT inserted.*, u.display_name, u.avatar_url,
+                u.photo_url, u.avatar_style,
+                0 AS like_count, 0 AS reply_count, false AS liked_by_me
          FROM inserted
          JOIN users u ON u.id = inserted.author_id`,
         [id, eventId, authorId, category, body, parentId ?? null]
@@ -301,23 +308,15 @@ export class PostgresForumRepository implements ForumRepository {
   }
 
   async getForumMembers(eventId: string): Promise<PublicUser[]> {
-    const result = await this.pool.query<{
-      id: string;
-      display_name: string;
-      avatar_url: string | null;
-    }>(
-      `SELECT DISTINCT u.id, u.display_name, u.avatar_url
+    const result = await this.pool.query<PublicUserRow>(
+      `SELECT DISTINCT ${publicUserColumns('u')}
        FROM forum_posts p
        JOIN users u ON u.id = p.author_id
        WHERE p.event_id = $1
        ORDER BY u.display_name ASC`,
       [eventId]
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      displayName: row.display_name,
-      ...(row.avatar_url !== null ? { avatarUrl: row.avatar_url } : {})
-    }));
+    return result.rows.map(toPublicUser);
   }
 
   async getPostedEventIds(userId: string): Promise<string[]> {
@@ -339,6 +338,14 @@ export class PostgresForumRepository implements ForumRepository {
       if (isForeignKeyViolation(error)) throw new EventNotFoundError();
       throw error;
     }
+  }
+
+  async getForumFollowerIds(eventId: string): Promise<string[]> {
+    const result = await this.pool.query<{ user_id: string }>(
+      `SELECT user_id FROM forum_follows WHERE event_id = $1`,
+      [eventId]
+    );
+    return result.rows.map((row) => row.user_id);
   }
 
   async unfollowForum(eventId: string, userId: string): Promise<void> {

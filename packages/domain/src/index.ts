@@ -77,16 +77,6 @@ export const FORUM_CATEGORIES = [
   'find_someone'
 ] as const;
 
-export const FORUM_CATEGORY_LABELS: Record<
-  (typeof FORUM_CATEGORIES)[number],
-  string
-> = {
-  find_partners: 'Trouver des partenaires',
-  general: 'Discussion générale',
-  ticket_resale: 'Revente de place',
-  find_someone: 'Retrouver quelqu’un qui était là'
-};
-
 export type EventCategory = (typeof EVENT_CATEGORIES)[number];
 export type VenueCategory = (typeof VENUE_CATEGORIES)[number];
 export type ForumCategory = (typeof FORUM_CATEGORIES)[number];
@@ -96,6 +86,121 @@ export type LocationConfidence = (typeof LOCATION_CONFIDENCE_STATES)[number];
 export type TrustLabel = (typeof TRUST_LABELS)[number];
 export type DateFilterValue = (typeof DATE_FILTER_VALUES)[number];
 export type PriceFilterValue = (typeof PRICE_FILTER_VALUES)[number];
+
+/**
+ * The configurable modules of a group workspace (DEC-0015).
+ *
+ * A closed set, like EVENT_CATEGORIES: staff enable, disable and reorder
+ * these, they do not invent new ones.
+ *
+ * This list is deliberately shorter than the sixteen names DEC-0015
+ * proposes. It contains exactly the modules that exist, because a switch
+ * that turns nothing on is worse than no switch: it promises a capability
+ * Pulso does not have. Ride coordination, expense splitting, check-ins,
+ * party meetups, the photo gallery and vibe inspiration are each a product
+ * of their own and are not built - they come back here when they are real.
+ *
+ * Discussion, members and the join-request queue are not in the registry
+ * either, for the opposite reason: they are not optional. Discussion is a
+ * core surface DEC-0015 keeps out of the configurable set, the member list
+ * is what a group *is*, and the join-request queue only exists for a
+ * restricted group, where it is never unwanted. Announcements is a
+ * staff-only channel now (see migration 0037), configured with the other
+ * threads rather than as a module.
+ */
+export const GROUP_MODULES = [
+  'programme',
+  'attendance',
+  'meetup_point',
+  'checklist'
+] as const;
+export type GroupModule = (typeof GROUP_MODULES)[number];
+
+export const GROUP_TYPES = ['community', 'event', 'private_crew'] as const;
+export type GroupTypeValue = (typeof GROUP_TYPES)[number];
+
+export interface GroupModuleConfig {
+  module: GroupModule;
+  enabled: boolean;
+  /** Ordinal position in the group home. Contiguous from 0. */
+  position: number;
+}
+
+/**
+ * The starting layout for each group type.
+ *
+ * Disabling a module hides it and never destroys its data, so every group
+ * carries the whole registry - the ones outside its template simply start
+ * disabled, rather than being absent and having to be invented later.
+ */
+const GROUP_TYPE_TEMPLATES: Record<GroupTypeValue, readonly GroupModule[]> = {
+  // A permanent community organises outings without one fixed venue, so it
+  // starts without the meetup point it could not derive anyway.
+  community: ['programme', 'attendance'],
+  event: ['attendance', 'programme', 'meetup_point', 'checklist'],
+  private_crew: ['attendance', 'checklist']
+};
+
+export function defaultModulesForGroupType(
+  type: GroupTypeValue
+): GroupModuleConfig[] {
+  const template = GROUP_TYPE_TEMPLATES[type];
+  return [
+    ...template.map((module, position) => ({
+      module,
+      enabled: true,
+      position
+    })),
+    ...GROUP_MODULES.filter((module) => !template.includes(module)).map(
+      (module, index) => ({
+        module,
+        enabled: false,
+        position: template.length + index
+      })
+    )
+  ];
+}
+
+/**
+ * Reads whatever `groups.modules_config` happens to hold and returns a
+ * layout the rest of the product can rely on.
+ *
+ * The column is jsonb and predates this registry, so a stored row can name
+ * a module that no longer exists (the twelve DEC-0015 proposed but which
+ * were never built), miss one that does, or carry duplicate positions.
+ * Rather than let any of that reach the interface, unknown names are
+ * dropped, missing modules are appended disabled, and positions are
+ * renumbered contiguously from zero.
+ */
+export function normalizeGroupModules(raw: unknown): GroupModuleConfig[] {
+  const known = new Set<string>(GROUP_MODULES);
+  const seen = new Set<GroupModule>();
+  const kept: GroupModuleConfig[] = [];
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const { module, enabled, position } = entry as Record<string, unknown>;
+      if (typeof module !== 'string' || !known.has(module)) continue;
+      const name = module as GroupModule;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      kept.push({
+        module: name,
+        enabled: enabled !== false,
+        position: typeof position === 'number' ? position : kept.length
+      });
+    }
+  }
+
+  kept.sort((a, b) => a.position - b.position);
+  for (const module of GROUP_MODULES) {
+    if (!seen.has(module)) {
+      kept.push({ module, enabled: false, position: kept.length });
+    }
+  }
+  return kept.map((entry, position) => ({ ...entry, position }));
+}
 
 export const CATEGORY_COLORS: Record<EventCategory, string> = {
   music: '#EA3E81',
@@ -430,3 +535,8 @@ export function isEligibleForActiveDiscovery(
     startsAt <= window.endsAt
   );
 }
+
+// Opening hours are reached as `@pulso/domain/opening-hours`, the same way
+// localization is. Re-exporting them from here instead would give this entry
+// its first relative import, which the web bundler resolves literally and
+// cannot follow to a .ts file.

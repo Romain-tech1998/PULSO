@@ -108,6 +108,29 @@ describe('deterministic intelligent-search interpretation', () => {
     });
   });
 
+  it('leaves no search text behind when the query is only an exclusion', () => {
+    // The negation particle used to survive the category it negated, so
+    // "not comedy" became a name search for "not". Against a small database
+    // that matched nothing and dead-ended the whole query into
+    // "alternative"; against a large one it matched something and routed
+    // the query through a named-search path it did not belong on.
+    const english = interpretDeterministicSearch('not comedy');
+    expect(english.excludedCategories).toEqual(['comedy']);
+    expect(english.searchText).toBeUndefined();
+
+    const french = interpretDeterministicSearch('sans humour', [], 'fr');
+    expect(french.excludedCategories).toEqual(['comedy']);
+    expect(french.searchText).toBeUndefined();
+  });
+
+  it('keeps a real name that sits beside an exclusion', () => {
+    // Only the exclusion phrase is consumed - the rest of the query is
+    // still what the visitor is looking for.
+    const result = interpretDeterministicSearch('lion king not comedy');
+    expect(result.excludedCategories).toEqual(['comedy']);
+    expect(result.searchText).toBe('lion king');
+  });
+
   it('recognizes French exclusions and ranking with the same semantics', () => {
     const result = interpretDeterministicSearch(
       'musique gratuite ce soir sans humour, abordable et fiable',
@@ -135,6 +158,25 @@ describe('deterministic intelligent-search interpretation', () => {
     ).toBe('search.clarification.location');
   });
 
+  it('centres on the visitor for "near me" rather than asking, since Explore has a Distance filter', () => {
+    const result = interpretDeterministicSearch('comedy near me');
+    expect(result.resolution).toBe('ready');
+    expect(result.suggestedNearMe).toBe(true);
+    expect(result.derivedFilters.categories).toEqual(['comedy']);
+    expect(
+      interpretDeterministicSearch('humour proche de moi', [], 'fr')
+        .suggestedNearMe
+    ).toBe(true);
+  });
+
+  it('does not claim a radius it cannot carry, even alongside "near me"', () => {
+    // "near me within 5 km" names a radius DeterministicInterpretation has no
+    // field for; the radius must win over the centring shortcut.
+    const result = interpretDeterministicSearch('comedy near me within 5 km');
+    expect(result.resolution).toBe('clarification');
+    expect(result.suggestedNearMe).toBeUndefined();
+  });
+
   it('rejects routing-time semantics rather than claiming a match', () => {
     const result = interpretDeterministicSearch('music within 20 minutes');
     expect(result.resolution).toBe('no_reliable_result');
@@ -145,14 +187,23 @@ describe('deterministic intelligent-search interpretation', () => {
     ).toBe('search.message.routingUnsupported');
   });
 
-  it('does not claim reliable interpretation for unsupported input', () => {
+  it('treats words it cannot map onto a filter as text to look for', () => {
+    // This used to answer "unsupported" outright. It now derives no filter,
+    // which is still true, but hands the words on as a search term - so the
+    // "no reliable result" verdict is reached by actually looking in the
+    // directory rather than by refusing to look. A query naming a real show
+    // was being rejected by exactly this path.
     const result = interpretDeterministicSearch('surprise me with magic vibes');
-    expect(result.resolution).toBe('no_reliable_result');
+    expect(result.resolution).toBe('ready');
     expect(result.derivedFilters).toEqual({});
-    expect(
-      interpretDeterministicSearch('ambiance magique surprise', [], 'fr')
-        .message?.code
-    ).toBe('search.message.unsupported');
+    expect(result.searchText).toBe('surprise magic vibes');
+  });
+
+  it('still refuses input that carries no searchable words at all', () => {
+    const result = interpretDeterministicSearch('me to the', [], 'en');
+    expect(result.resolution).toBe('no_reliable_result');
+    expect(result.message?.code).toBe('search.message.unsupported');
+    expect(result.searchText).toBeUndefined();
   });
 
   it('allows a derived criterion to be disabled for manual editing', () => {

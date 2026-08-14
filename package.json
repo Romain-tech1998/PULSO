@@ -11,6 +11,8 @@
     "build": "pnpm --filter @pulso/domain build && pnpm --filter @pulso/contracts build && pnpm --filter @pulso/search build && pnpm --filter @pulso/database build && pnpm --filter @pulso/ingestion build && pnpm --filter @pulso/api build && pnpm --filter @pulso/web build",
     "db:migrate": "pnpm --filter @pulso/database db:migrate",
     "db:seed": "pnpm --filter @pulso/database db:seed",
+    "db:import-osm-venues": "pnpm --filter @pulso/database db:import-osm-venues",
+    "db:venue-photos": "pnpm --filter @pulso/database db:venue-photos",
     "instagram:scout": "pnpm --filter @pulso/database instagram:scout",
     "instagram:scout:apply-decisions": "pnpm --filter @pulso/database instagram:scout:apply-decisions",
     "instagram:scout:crosscheck": "pnpm --filter @pulso/database instagram:scout:crosscheck",

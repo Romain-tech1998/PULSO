@@ -4,16 +4,11 @@ import { createPool } from './client.js';
  * One-time cleanup for two Ville de Montréal data-quality issues found by
  * direct database inspection (see PROJECT_INDEX.md):
  *
- * 1. Duplicate events: the open-data connector's free-text venue-name
- *    column (titre_adresse) was observed to vary across separate CSV
- *    exports for the exact same calendar entry (same source_url, same
- *    address, same date) - since that field fed the deterministic event
- *    id, each ingestion run with slightly different text produced a new
- *    id, and the DB upsert (keyed on id) inserted a new row instead of
- *    updating the existing one. Fixed going forward in
- *    montreal-open-data.ts (identitySeed now anchors identity to the
- *    stable civic address instead) - this script cleans up the rows that
- *    already accumulated before that fix.
+ * 1. Duplicate events: the source can change a venue label or the title slug
+ *    between exports. Ville de Montréal event URLs end with a stable numeric
+ *    entry id, so duplicate detection uses that id plus the start instant and
+ *    retains the newest observed version. upsert-public-events.ts applies the
+ *    same identity rule to future ingestions.
  * 2. Family/kids-audience events: out of MVP-0001's festive/nightlife
  *    scope, now excluded at ingestion time (see
  *    looksLikeFamilyOrKidsEvent in montreal-open-data.ts) - this removes
@@ -44,22 +39,35 @@ async function main(): Promise<void> {
 
   try {
     // --- 1. Duplicate events -------------------------------------------
-    // A "duplicate" here means: same title, same venue (by address), same
-    // start time, same source_url - i.e. provably the same calendar entry,
-    // not just a coincidental same-day/same-address pairing of two
-    // genuinely different events. Keeps the row with the lexicographically
-    // smallest id (arbitrary but deterministic) as the survivor.
+    // A "duplicate" here means the same stable civic source entry and start
+    // instant. The source id remains stable even when its human-readable URL
+    // slug changes. Keep the newest observation, then the most descriptive
+    // title as a deterministic tie-breaker.
     const dupeGroups = await pool.query<{
       keep_id: string;
       remove_ids: string[];
     }>(
       `
-      SELECT (array_agg(e.id ORDER BY e.id))[1] AS keep_id,
-             (array_agg(e.id ORDER BY e.id))[2:] AS remove_ids
+      SELECT (
+               array_agg(
+                 e.id ORDER BY e.observed_at DESC NULLS LAST,
+                 length(e.title) DESC,
+                 e.id
+               )
+             )[1] AS keep_id,
+             (
+               array_agg(
+                 e.id ORDER BY e.observed_at DESC NULLS LAST,
+                 length(e.title) DESC,
+                 e.id
+               )
+             )[2:] AS remove_ids
       FROM events e
-      JOIN venues v ON v.id = e.venue_id
       WHERE e.source_name = $1
-      GROUP BY e.title, v.address, e.starts_at, e.source_url
+        AND (regexp_match(e.source_url, '-([0-9]+)(?:[/?#]*)$'))[1] IS NOT NULL
+      GROUP BY
+        (regexp_match(e.source_url, '-([0-9]+)(?:[/?#]*)$'))[1],
+        e.starts_at
       HAVING count(*) > 1
     `,
       [SOURCE_NAME]
@@ -117,6 +125,27 @@ async function main(): Promise<void> {
         remove_ids: removeIds
       } of dupeGroups.rows) {
         if (removeIds.length === 0) continue;
+        const sourceRows = await pool.query<{
+          source_name: string;
+          source_url: string;
+          observed_at: Date;
+        }>(
+          `SELECT source_name, source_url, observed_at
+           FROM events
+           WHERE id = ANY($1)`,
+          [removeIds]
+        );
+        const additionalSources = sourceRows.rows.map((row) => ({
+          name: row.source_name,
+          url: row.source_url,
+          observedAt: row.observed_at.toISOString()
+        }));
+        await pool.query(
+          `UPDATE events
+           SET additional_sources = coalesce(additional_sources, '[]'::jsonb) || $2::jsonb
+           WHERE id = $1`,
+          [keepId, JSON.stringify(additionalSources)]
+        );
         await pool.query(
           `UPDATE event_attendance SET event_id = $1 WHERE event_id = ANY($2)
            AND NOT EXISTS (SELECT 1 FROM event_attendance ea2 WHERE ea2.event_id = $1 AND ea2.user_id = event_attendance.user_id)`,
@@ -139,6 +168,36 @@ async function main(): Promise<void> {
           `DELETE FROM user_favorite_events WHERE event_id = ANY($1)`,
           [removeIds]
         );
+        await pool.query(
+          `UPDATE forum_follows SET event_id = $1 WHERE event_id = ANY($2)
+           AND NOT EXISTS (SELECT 1 FROM forum_follows ff2 WHERE ff2.event_id = $1 AND ff2.user_id = forum_follows.user_id)`,
+          [keepId, removeIds]
+        );
+        await pool.query(`DELETE FROM forum_follows WHERE event_id = ANY($1)`, [
+          removeIds
+        ]);
+        await pool.query(
+          `UPDATE event_photos SET event_id = $1 WHERE event_id = ANY($2)`,
+          [keepId, removeIds]
+        );
+        await pool.query(
+          `UPDATE groups SET event_id = $1
+           WHERE id = (
+             SELECT id FROM groups
+             WHERE event_id = ANY($2)
+             ORDER BY created_at, id
+             LIMIT 1
+           )
+           AND NOT EXISTS (SELECT 1 FROM groups g2 WHERE g2.event_id = $1)`,
+          [keepId, removeIds]
+        );
+        // A second event-linked group cannot share the survivor because of
+        // the unique event/group relationship. Preserve it as a standalone
+        // group instead of deleting its members and history.
+        await pool.query(
+          `UPDATE groups SET event_id = NULL WHERE event_id = ANY($1)`,
+          [removeIds]
+        );
       }
 
       const familyIds = familyEvents.rows.map((r) => r.id);
@@ -152,6 +211,16 @@ async function main(): Promise<void> {
         ]);
         await pool.query(
           `DELETE FROM user_favorite_events WHERE event_id = ANY($1)`,
+          [familyIds]
+        );
+        await pool.query(`DELETE FROM forum_follows WHERE event_id = ANY($1)`, [
+          familyIds
+        ]);
+        await pool.query(`DELETE FROM event_photos WHERE event_id = ANY($1)`, [
+          familyIds
+        ]);
+        await pool.query(
+          `UPDATE groups SET event_id = NULL WHERE event_id = ANY($1)`,
           [familyIds]
         );
       }

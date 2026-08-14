@@ -1,4 +1,3 @@
-import type { EventRepository } from '@pulso/database';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
@@ -7,17 +6,11 @@ import {
   fakeAuthRepository,
   fakeFavoritesRepository,
   fakeTrendsRepository,
-  testUser
+  testUser,
+  fakeEventRepository
 } from './test-support.js';
 
-const event: EventRepository = {
-  findInBounds: async () => [],
-  findWithinDirectDistance: async () => [],
-  findById: async () => undefined,
-  findExternalDestination: async () => undefined,
-  findVenuesWithoutUpcomingEvents: async () => [],
-  findByIds: async () => []
-};
+const event = fakeEventRepository();
 
 describe('account authentication API', () => {
   it('does not register auth routes when Google credentials are absent', async () => {

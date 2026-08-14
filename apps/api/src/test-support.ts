@@ -1,9 +1,12 @@
 import type { PublicUser, User } from '@pulso/contracts';
+import { defaultModulesForGroupType } from '@pulso/domain';
 import type {
   AttendanceRepository,
   AuthRepository,
   EventPhoto,
   EventPhotosRepository,
+  UserPhotosRepository,
+  EventRepository,
   FavoritesRepository,
   ForumPost,
   ForumRepository,
@@ -15,6 +18,8 @@ import type {
   GroupsRepository,
   Message,
   MessagesRepository,
+  NotificationsRepository,
+  OrganizerRepository,
   ProfileRepository,
   RatingsRepository,
   ReportsRepository,
@@ -40,6 +45,40 @@ export const testGoogleConfig: GoogleAuthConfig = {
   appCallbackUrl: 'http://localhost:3000/auth/callback'
 };
 
+// Every account-layer test previously declared its own inline
+// EventRepository stub; they all drifted apart whenever the interface grew.
+export function fakeEventRepository(
+  overrides: Partial<EventRepository> = {}
+): EventRepository {
+  return {
+    findInBounds: async () => [],
+    findWithinDirectDistance: async () => [],
+    findById: async () => undefined,
+    findExternalDestination: async () => undefined,
+    findVenuesWithoutUpcomingEvents: async () => [],
+    searchEvents: async () => [],
+    searchVenues: async () => [],
+    // False by default so no test silently exercises the live-lookup path:
+    // a test that wants it opts in, which keeps the network-shaped branch
+    // visible in the tests that actually cover it.
+    shouldLookUpVenue: async () => false,
+    saveLookedUpVenues: async () => [],
+    listVenuePhotos: async () => [],
+    suppressVenuePhoto: async () => false,
+    restoreVenuePhoto: async () => false,
+    findByIds: async () => [],
+    createEvent: async () => {
+      throw new Error('createEvent is not stubbed in this test.');
+    },
+    updateCreatedEvent: async () => undefined,
+    deleteCreatedEvent: async () => false,
+    listCreatedEvents: async () => [],
+    setCreatedEventPinned: async () => false,
+    setCreatedEventImage: async () => false,
+    ...overrides
+  };
+}
+
 export function fakeAuthRepository(
   overrides: Partial<AuthRepository> = {}
 ): AuthRepository {
@@ -53,6 +92,14 @@ export function fakeAuthRepository(
       token === 'valid-token' ? testUser : undefined,
     deleteSession: async () => undefined,
     updateProfile: async () => testUser,
+    setProfilePhoto: async (_userId, photoUrl) => ({
+      user: { ...testUser, photoUrl },
+      previousPath: undefined
+    }),
+    clearProfilePhoto: async () => ({
+      user: testUser,
+      previousPath: undefined
+    }),
     ...overrides
   };
 }
@@ -81,16 +128,16 @@ export function fakeFriendsRepository(
 ): FriendsRepository {
   return {
     getFriendCode: async () => 'abcd1234',
-    sendRequest: async () => undefined,
+    sendRequest: async () => friend.id,
     getPendingRequests: async () => [],
-    respondToRequest: async () => undefined,
+    respondToRequest: async () => friend.id,
     getFriends: async () => [],
     removeFriend: async () => undefined,
     isFriend: async () => true,
     getMutualFriendCounts: async () => new Map(),
     getSuggestions: async () => [],
     getFriendProfile: async () => undefined,
-    sendRequestToUser: async () => undefined,
+    sendRequestToUser: async (_requesterId, addresseeId) => addresseeId,
     ...overrides
   };
 }
@@ -156,6 +203,7 @@ export function fakeForumRepository(
     unfollowForum: async () => undefined,
     isFollowingForum: async () => false,
     getFollowedEventIds: async () => [],
+    getForumFollowerIds: async () => [],
     ...overrides
   };
 }
@@ -192,6 +240,8 @@ export function fakeMessagesRepository(
     markConversationRead: async () => undefined,
     getUnreadCount: async () => 0,
     getConversations: async () => [],
+    getMessageRequests: async () => [],
+    respondToMessageRequest: async () => true,
     ...overrides
   };
 }
@@ -229,6 +279,49 @@ export function fakeRatingsRepository(
   };
 }
 
+export function fakeNotificationsRepository(
+  overrides: Partial<NotificationsRepository> = {}
+): NotificationsRepository {
+  return {
+    list: async () => [],
+    countUnread: async () => 0,
+    markAllRead: async () => undefined,
+    markRead: async () => undefined,
+    notifyGroupVerificationReceived: async () => undefined,
+    notifyGroupVerificationResolved: async () => undefined,
+    notifyGroupJoinRequestReceived: async () => undefined,
+    notifyGroupJoinRequestAccepted: async () => undefined,
+    notifyFriendRequestReceived: async () => undefined,
+    notifyFriendRequestAccepted: async () => undefined,
+    notifyMessageReceived: async () => undefined,
+    notifyForumReply: async () => undefined,
+    notifyVenueFollowersOfNewEvent: async () => 0,
+    notifyOrganizerRequestReceived: async () => undefined,
+    notifyOrganizerRequestResolved: async () => undefined,
+    ...overrides
+  };
+}
+
+export function fakeOrganizerRepository(
+  overrides: Partial<OrganizerRepository> = {}
+): OrganizerRepository {
+  return {
+    getStatus: async () => ({
+      isAdmin: false,
+      verifiedVenues: [],
+      pendingRequests: []
+    }),
+    createRequest: async () => {
+      throw new Error('createRequest is not stubbed in this test.');
+    },
+    listPendingRequests: async () => [],
+    resolveRequest: async () => undefined,
+    listAdminUserIds: async () => [],
+    isAdmin: async () => false,
+    ...overrides
+  };
+}
+
 export function fakeGroup(overrides: Partial<Group> = {}): Group {
   return {
     id: '00000000-0000-4000-8000-000000000017',
@@ -239,11 +332,14 @@ export function fakeGroup(overrides: Partial<Group> = {}): Group {
     memberCount: 1,
     isMember: true,
     eventId: undefined,
+    type: 'community',
+    modulesConfig: defaultModulesForGroupType('community'),
     visibility: 'open',
     isModerator: true,
     myStatus: 'member',
     pendingRequestCount: undefined,
     pinned: false,
+    verificationStatus: 'none',
     ...overrides
   };
 }
@@ -252,6 +348,9 @@ export function fakeGroupPost(overrides: Partial<GroupPost> = {}): GroupPost {
   return {
     id: '00000000-0000-4000-8000-000000000018',
     groupId: '00000000-0000-4000-8000-000000000017',
+    channelId: '00000000-0000-4000-8000-000000000031',
+    kind: 'message',
+    outingId: undefined,
     author: friend,
     body: "Quelqu'un a un plan pour ce soir ?",
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -267,8 +366,26 @@ export function fakeGroupsRepository(
   overrides: Partial<GroupsRepository> = {}
 ): GroupsRepository {
   return {
-    createGroup: async (creatorId, name, description, visibility) =>
-      fakeGroup({ createdBy: creatorId, name, description, visibility }),
+    // DEC-0015 added `type` before `visibility` and `modulesConfig` after it.
+    // The old stub still took four positional arguments, so it silently bound
+    // the new `type` to `visibility` - which is what broke the groups suite.
+    createGroup: async (
+      creatorId,
+      name,
+      description,
+      type,
+      visibility,
+      modulesConfig
+    ) =>
+      fakeGroup({
+        createdBy: creatorId,
+        name,
+        description,
+        type,
+        visibility,
+        modulesConfig
+      }),
+    updateGroupModules: async () => undefined,
     listMyGroups: async () => [],
     getGroup: async () => fakeGroup(),
     joinGroup: async () => 'member',
@@ -278,6 +395,33 @@ export function fakeGroupsRepository(
     getJoinRequests: async () => [],
     respondToJoinRequest: async () => undefined,
     discoverGroups: async () => [],
+    createPlacement: async () => undefined,
+    listGroupPlacements: async () => [],
+    dismissPlacement: async () => undefined,
+    listAllPlacements: async () => [],
+    searchGroups: async () => [],
+    getCurrentOuting: async () => undefined,
+    listOutings: async () => [],
+    startOuting: async (groupId, _userId, input) => ({
+      id: '00000000-0000-4000-8000-000000000032',
+      groupId,
+      eventId: input.eventId,
+      title: input.title,
+      startsAt: input.startsAt,
+      place: input.place,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      archivedAt: undefined
+    }),
+    listChannels: async () => [],
+    createChannel: async (groupId, _userId, name, staffOnly) => ({
+      id: '00000000-0000-4000-8000-000000000031',
+      groupId,
+      name,
+      position: 0,
+      staffOnly,
+      postCount: 0
+    }),
+    deleteChannel: async () => undefined,
     getPosts: async () => [],
     createPost: async (groupId, authorId, body, parentId) =>
       fakeGroupPost({
@@ -309,6 +453,11 @@ export function fakeGroupsRepository(
     addChecklistItem: async () => undefined,
     toggleChecklistCheck: async () => undefined,
     deleteChecklistItem: async () => undefined,
+    setGroupPhoto: async () => undefined,
+    clearGroupPhoto: async () => undefined,
+    requestVerification: async () => undefined,
+    listPendingVerifications: async () => [],
+    resolveVerification: async () => undefined,
     ...overrides
   };
 }
@@ -358,6 +507,24 @@ export function fakeEventPhotosRepository(
   };
 }
 
+export function fakeUserPhotosRepository(
+  overrides: Partial<UserPhotosRepository> = {}
+): UserPhotosRepository {
+  return {
+    listPhotos: async () => [],
+    createPhoto: async (_ownerId, filePath, input) => ({
+      id: '00000000-0000-4000-8000-0000000000f0',
+      filePath,
+      caption: input.caption,
+      eventId: input.eventId,
+      venueId: input.venueId,
+      createdAt: new Date('2026-08-13T12:00:00.000Z').toISOString()
+    }),
+    deletePhoto: async () => undefined,
+    ...overrides
+  };
+}
+
 // Isolated from any real upload directory the dev server might be using -
 // a fresh temp folder per test process, safe to leave behind (OS temp dir).
 export const testUploadDir = join(tmpdir(), 'pulso-test-uploads');
@@ -380,7 +547,10 @@ export function accountRepositories(
     groupsRepository?: GroupsRepository;
     profileRepository?: ProfileRepository;
     eventPhotosRepository?: EventPhotosRepository;
+    userPhotosRepository?: UserPhotosRepository;
     ratingsRepository?: RatingsRepository;
+    notificationsRepository?: NotificationsRepository;
+    organizerRepository?: OrganizerRepository;
     uploadDir?: string;
     publicUploadUrl?: string;
   } = {}
@@ -401,7 +571,13 @@ export function accountRepositories(
     profileRepository: overrides.profileRepository ?? fakeProfileRepository(),
     eventPhotosRepository:
       overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
+    userPhotosRepository:
+      overrides.userPhotosRepository ?? fakeUserPhotosRepository(),
     ratingsRepository: overrides.ratingsRepository ?? fakeRatingsRepository(),
+    notificationsRepository:
+      overrides.notificationsRepository ?? fakeNotificationsRepository(),
+    organizerRepository:
+      overrides.organizerRepository ?? fakeOrganizerRepository(),
     uploadDir: overrides.uploadDir ?? testUploadDir,
     publicUploadUrl: overrides.publicUploadUrl ?? testPublicUploadUrl,
     google: testGoogleConfig

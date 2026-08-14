@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsx watch src/server.ts",
+    "dev": "node --env-file=../../.env node_modules/tsx/dist/cli.mjs watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -16,6 +16,7 @@
     "@pulso/contracts": "workspace:*",
     "@pulso/database": "workspace:*",
     "@pulso/domain": "workspace:*",
+    "@pulso/ingestion": "workspace:*",
     "@pulso/search": "workspace:*",
     "fastify": "5.10.0",
     "zod": "4.4.3"

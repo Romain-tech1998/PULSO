@@ -5,22 +5,15 @@ import {
 import type { AuthRepository, EventPhotosRepository } from '@pulso/database';
 import { EventNotFoundError } from '@pulso/database';
 import type { FastifyInstance } from 'fastify';
-import { randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 
 import { resolveBearerUser, sendUnauthenticated } from './auth.js';
+import { savePhotoUpload } from './photo-upload.js';
 
 const eventParamsSchema = z.object({ eventId: z.uuid() });
 const photoParamsSchema = z.object({ photoId: z.uuid() });
-
-const ALLOWED_MIME_TO_EXTENSION: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/gif': 'gif'
-};
 
 /**
  * Registers the event "Photos" tab (Phase 4.8 follow-up). Real photo
@@ -54,38 +47,14 @@ export function registerEventPhotosRoutes(
     if (!user) return sendUnauthenticated(reply);
     const { eventId } = eventParamsSchema.parse(request.params);
 
-    const file = await request.file();
-    if (!file) {
-      return reply.status(400).send({
-        error: { code: 'NO_FILE', message: 'No photo was uploaded.' }
-      });
-    }
-    const extension = ALLOWED_MIME_TO_EXTENSION[file.mimetype];
-    if (!extension) {
-      return reply.status(415).send({
-        error: {
-          code: 'UNSUPPORTED_FILE_TYPE',
-          message: 'Only JPEG, PNG, WebP or GIF photos are supported.'
-        }
-      });
-    }
-    let buffer: Buffer;
-    try {
-      buffer = await file.toBuffer();
-    } catch {
-      return reply.status(413).send({
-        error: {
-          code: 'FILE_TOO_LARGE',
-          message: 'The photo exceeds the maximum allowed size.'
-        }
-      });
-    }
-
-    const eventDir = join(uploadDir, 'event-photos', eventId);
-    await mkdir(eventDir, { recursive: true });
-    const filename = `${randomUUID()}.${extension}`;
-    await writeFile(join(eventDir, filename), buffer);
-    const filePath = `event-photos/${eventId}/${filename}`;
+    const upload = await savePhotoUpload(
+      await request.file(),
+      reply,
+      uploadDir,
+      `event-photos/${eventId}`
+    );
+    if (!upload.ok) return upload.reply;
+    const { filePath } = upload;
 
     try {
       const photo = await eventPhotosRepository.createPhoto(

@@ -113,7 +113,8 @@ export async function analyzeEventImage(
   } catch (error) {
     if (timeoutController.signal.aborted) {
       throw new Error(
-        `OpenRouter request timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`
+        `OpenRouter request timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`,
+        { cause: error }
       );
     }
     throw error;
