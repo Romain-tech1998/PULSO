@@ -6694,6 +6694,21 @@ a.venue-detail-info-row:hover {
   font-size: 0.85rem;
 }
 
+/* Sits above the action buttons on purpose: UJ-0001 asks for anything
+   unconfirmed to be stated "avant que l'utilisateur ne prenne sa décision",
+   and this is the line that says an event is cancelled, postponed, still to
+   verify, or at an uncertain address. It was computed and never rendered. */
+.details-material-warning {
+  margin: 0 0 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(255, 42, 122, 0.35);
+  border-radius: 0.75rem;
+  background: rgba(255, 42, 122, 0.1);
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
 .details-actions-main {
   display: flex;
   flex-direction: column;

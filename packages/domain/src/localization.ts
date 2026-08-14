@@ -225,6 +225,13 @@ const en = {
   'details.source': 'Source',
   'details.trust': 'Trust',
   'details.verification': 'Verification',
+  // DEC-0017: a record created through the account layer carries no
+  // DATA-0001 trust label, so its provenance is stated instead. Descriptive,
+  // never evaluative - none of these three is a verdict on the information.
+  'details.origin': 'Origin',
+  'details.origin.directory': 'Pulso directory',
+  'details.origin.verified_organizer': 'Verified organizer',
+  'details.origin.community': 'Submitted by the community',
   'details.externalSuffix': 'external destination',
   'details.externalHint':
     'Opens the identified external destination outside Pulso',
@@ -1098,6 +1105,10 @@ const fr = {
   'details.source': 'Source',
   'details.trust': 'Confiance',
   'details.verification': 'Vérification',
+  'details.origin': 'Origine',
+  'details.origin.directory': 'Répertoire Pulso',
+  'details.origin.verified_organizer': 'Organisateur vérifié',
+  'details.origin.community': 'Proposé par la communauté',
   'details.externalSuffix': 'destination externe',
   'details.externalHint':
     'Ouvre la destination externe indiquée à l’extérieur de Pulso',
