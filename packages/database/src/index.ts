@@ -93,6 +93,14 @@ export {
   type EventPhotosRepository
 } from './event-photos-repository.js';
 export {
+  PostgresImageModerationRepository,
+  type ImageModerationQueueEntry,
+  type ImageModerationRecord,
+  type ImageModerationRepository,
+  type ImageModerationStatus,
+  type ImageSurface
+} from './image-moderation-repository.js';
+export {
   PostgresUserPhotosRepository,
   type CreateUserPhotoInput,
   type UserPhoto,

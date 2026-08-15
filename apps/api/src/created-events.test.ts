@@ -1,13 +1,16 @@
 import type { PublicEvent } from '@pulso/contracts';
-import { rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import {} from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
+// Nothing here deletes anything under testUploadDir. It is shared across
+// test files that vitest runs in parallel, so a recursive delete would - and
+// did - remove a directory another worker was mid-write into, producing a
+// 500 that had nothing to do with the code under test. The folder is a
+// disposable OS temp dir by design (see test-support.ts).
 import { buildApp } from './app.js';
 import {
   accountRepositories,
   fakeEventRepository,
-  testUploadDir,
   testUser
 } from './test-support.js';
 
@@ -243,11 +246,6 @@ describe('event cover upload', () => {
     expect(response.statusCode).toBe(201);
     expect(storedUrl).toContain('event-covers/');
     expect(response.json().data.imageUrl).toContain('event-covers/');
-
-    await rm(join(testUploadDir, 'event-covers'), {
-      recursive: true,
-      force: true
-    });
     await app.close();
   });
 

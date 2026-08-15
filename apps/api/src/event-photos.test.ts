@@ -1,8 +1,13 @@
 import { EventNotFoundError } from '@pulso/database';
-import { readFile, rm } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// Nothing here deletes anything under testUploadDir. It is shared across
+// test files that vitest runs in parallel, so a recursive delete would - and
+// did - remove a directory another worker was mid-write into, producing a
+// 500 that had nothing to do with the code under test. The folder is a
+// disposable OS temp dir by design (see test-support.ts).
 import { buildApp } from './app.js';
 import {
   accountRepositories,
@@ -163,11 +168,6 @@ describe('event photos API', () => {
 
     const written = await readFile(join(testUploadDir, created[0]!.filePath));
     expect([...written]).toEqual(bytes);
-
-    await rm(join(testUploadDir, 'event-photos', eventId), {
-      recursive: true,
-      force: true
-    });
     await app.close();
   });
 
@@ -196,10 +196,6 @@ describe('event photos API', () => {
       payload
     });
     expect(response.statusCode).toBe(404);
-    await rm(join(testUploadDir, 'event-photos', eventId), {
-      recursive: true,
-      force: true
-    });
     await app.close();
   });
 

@@ -5,6 +5,7 @@ import {
 } from '@pulso/contracts';
 import type {
   AuthRepository,
+  ImageModerationRepository,
   UserPhoto,
   UserPhotosRepository
 } from '@pulso/database';
@@ -14,6 +15,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 
 import { resolveBearerUser, sendUnauthenticated } from './auth.js';
+import type { ImageModerationProvider } from './image-moderation.js';
 import { savePhotoUpload } from './photo-upload.js';
 
 const photoParamsSchema = z.object({ photoId: z.uuid() });
@@ -56,10 +58,23 @@ export function registerUserPhotosRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
   userPhotosRepository: UserPhotosRepository,
+  imageModerationRepository: ImageModerationRepository,
   uploadDir: string,
-  publicUploadUrl: string
+  publicUploadUrl: string,
+  imageModerationProvider: ImageModerationProvider | undefined
 ) {
   const toUrl = (filePath: string) => `${publicUploadUrl}/${filePath}`;
+  // DEC-0021: an image that has not been approved is served to nobody but
+  // the console, including its own owner. Filtered here, on the read, so no
+  // caller can forget - and batched, so publication state never costs a
+  // round trip per photo.
+  const onlyApproved = async (photos: UserPhoto[]) => {
+    if (photos.length === 0) return photos;
+    const approved = await imageModerationRepository.approvedPaths(
+      photos.map((photo) => photo.filePath)
+    );
+    return photos.filter((photo) => approved.has(photo.filePath));
+  };
   // The repository deals in file paths and `undefined`; the contract wants a
   // URL and an absent key. One place to convert between the two.
   const toResponse = (photo: UserPhoto) => ({
@@ -81,9 +96,32 @@ export function registerUserPhotosRoutes(
       await request.file(),
       reply,
       uploadDir,
-      `profile-photos/${user.id}`
+      `profile-photos/${user.id}`,
+      undefined,
+      { provider: imageModerationProvider, log: (m) => request.log.warn(m) }
     );
     if (!upload.ok) return upload.reply;
+
+    await imageModerationRepository.record({
+      filePath: upload.filePath,
+      surface: 'profile_photo',
+      ownerId: user.id,
+      status: upload.moderation.decision,
+      provider: upload.moderation.provider,
+      scores: upload.moderation.scores,
+      reason: upload.moderation.reason
+    });
+
+    // DEC-0021 §2: an unsettled photo is stored but not published, and the
+    // one already on the profile is left exactly where it is. Attempting a
+    // change must never be a way to lose a working photo - or to blank
+    // someone's profile by uploading something that fails screening.
+    if (upload.moderation.decision !== 'approved') {
+      return reply.status(202).send({
+        data: user,
+        moderation: { status: upload.moderation.decision }
+      });
+    }
 
     const { user: updated, previousPath } =
       await authRepository.setProfilePhoto(
@@ -117,7 +155,9 @@ export function registerUserPhotosRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const photos = await userPhotosRepository.listPhotos(user.id, user.id);
-    return userPhotosResponseSchema.parse({ data: photos.map(toResponse) });
+    return userPhotosResponseSchema.parse({
+      data: (await onlyApproved(photos)).map(toResponse)
+    });
   });
 
   // Another account's gallery. An empty list is the answer for a stranger,
@@ -129,7 +169,9 @@ export function registerUserPhotosRoutes(
     if (!user) return sendUnauthenticated(reply);
     const { userId } = ownerParamsSchema.parse(request.params);
     const photos = await userPhotosRepository.listPhotos(userId, user.id);
-    return userPhotosResponseSchema.parse({ data: photos.map(toResponse) });
+    return userPhotosResponseSchema.parse({
+      data: (await onlyApproved(photos)).map(toResponse)
+    });
   });
 
   app.post('/me/photos', async (request, reply) => {
@@ -152,18 +194,40 @@ export function registerUserPhotosRoutes(
       await request.file(),
       reply,
       uploadDir,
-      `user-photos/${user.id}`
+      `user-photos/${user.id}`,
+      undefined,
+      { provider: imageModerationProvider, log: (m) => request.log.warn(m) }
     );
     if (!upload.ok) return upload.reply;
 
+    await imageModerationRepository.record({
+      filePath: upload.filePath,
+      surface: 'user_photo',
+      ownerId: user.id,
+      status: upload.moderation.decision,
+      provider: upload.moderation.provider,
+      scores: upload.moderation.scores,
+      reason: upload.moderation.reason
+    });
+
+    // The row is created either way, so the photo has an owner and a place
+    // in the queue. Whether anyone sees it is decided by the read below,
+    // not by this write.
     const photo = await userPhotosRepository.createPhoto(
       user.id,
       upload.filePath,
       fields
     );
     return reply
-      .status(201)
-      .send(userPhotoResponseSchema.parse({ data: toResponse(photo) }));
+      .status(upload.moderation.decision === 'approved' ? 201 : 202)
+      .send(
+        userPhotoResponseSchema.parse({
+          data: {
+            ...toResponse(photo),
+            moderationStatus: upload.moderation.decision
+          }
+        })
+      );
   });
 
   app.delete('/me/photos/:photoId', async (request, reply) => {

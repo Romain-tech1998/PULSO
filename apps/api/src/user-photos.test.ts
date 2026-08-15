@@ -1,7 +1,12 @@
-import { readFile, rm } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// Nothing here deletes anything under testUploadDir. It is shared across
+// test files that vitest runs in parallel, so a recursive delete would - and
+// did - remove a directory another worker was mid-write into, producing a
+// 500 that had nothing to do with the code under test. The folder is a
+// disposable OS temp dir by design (see test-support.ts).
 import { buildApp } from './app.js';
 import {
   accountRepositories,
@@ -78,11 +83,6 @@ describe('profile photo API (DEC-0020)', () => {
     expect([...(await readFile(join(testUploadDir, relativePath)))]).toEqual([
       137, 80, 78, 71
     ]);
-
-    await rm(join(testUploadDir, 'profile-photos'), {
-      recursive: true,
-      force: true
-    });
     await app.close();
   });
 
@@ -193,11 +193,6 @@ describe('photo gallery API (DEC-0020)', () => {
     expect(photo.eventId).toBe(eventId);
     expect(photo.venueId).toBeUndefined();
     expect(photo.url).toContain(`user-photos/${testUser.id}/`);
-
-    await rm(join(testUploadDir, 'user-photos'), {
-      recursive: true,
-      force: true
-    });
     await app.close();
   });
 
@@ -219,11 +214,6 @@ describe('photo gallery API (DEC-0020)', () => {
     expect(response.statusCode).toBe(201);
     expect(response.json().data.caption).toBeUndefined();
     expect(response.json().data.eventId).toBeUndefined();
-
-    await rm(join(testUploadDir, 'user-photos'), {
-      recursive: true,
-      force: true
-    });
     await app.close();
   });
 

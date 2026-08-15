@@ -1,3 +1,4 @@
+import type { ImageModerationProvider } from './image-moderation.js';
 import type { PublicUser, User } from '@pulso/contracts';
 import { defaultModulesForGroupType } from '@pulso/domain';
 import type {
@@ -6,6 +7,7 @@ import type {
   EventPhoto,
   EventPhotosRepository,
   UserPhotosRepository,
+  ImageModerationRepository,
   EventRepository,
   FavoritesRepository,
   ForumPost,
@@ -525,6 +527,48 @@ export function fakeUserPhotosRepository(
   };
 }
 
+/**
+ * A provider that reports whatever scores a test hands it, defaulting to
+ * clean ones. Without it every upload would come back flagged - which is
+ * the correct production default (DEC-0021 §3) but would block every test
+ * that merely happens to upload something.
+ */
+export function fakeImageModerationProvider(
+  scores: Record<string, number> = { sexual: 0.001, violence: 0.001 }
+): ImageModerationProvider {
+  return { name: 'fake', moderate: async () => scores };
+}
+
+/**
+ * DEC-0021. Approves everything by default, so a test that is not about
+ * moderation is not silently blocked by it; a test that is about moderation
+ * overrides the one method it cares about.
+ */
+export function fakeImageModerationRepository(
+  overrides: Partial<ImageModerationRepository> = {}
+): ImageModerationRepository {
+  return {
+    record: async (input) => ({
+      id: '00000000-0000-4000-8000-0000000000e0',
+      filePath: input.filePath,
+      surface: input.surface,
+      ownerId: input.ownerId,
+      status: input.status,
+      provider: input.provider,
+      scores: input.scores,
+      reason: input.reason,
+      moderatedAt: new Date('2026-08-14T12:00:00.000Z').toISOString(),
+      decidedAt: undefined
+    }),
+    approvedPaths: async (paths) => new Set(paths),
+    findByPath: async () => undefined,
+    queue: async () => [],
+    decide: async () => undefined,
+    report: async () => true,
+    ...overrides
+  };
+}
+
 // Isolated from any real upload directory the dev server might be using -
 // a fresh temp folder per test process, safe to leave behind (OS temp dir).
 export const testUploadDir = join(tmpdir(), 'pulso-test-uploads');
@@ -548,6 +592,8 @@ export function accountRepositories(
     profileRepository?: ProfileRepository;
     eventPhotosRepository?: EventPhotosRepository;
     userPhotosRepository?: UserPhotosRepository;
+    imageModerationRepository?: ImageModerationRepository;
+    imageModerationProvider?: ImageModerationProvider;
     ratingsRepository?: RatingsRepository;
     notificationsRepository?: NotificationsRepository;
     organizerRepository?: OrganizerRepository;
@@ -573,6 +619,10 @@ export function accountRepositories(
       overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
     userPhotosRepository:
       overrides.userPhotosRepository ?? fakeUserPhotosRepository(),
+    imageModerationRepository:
+      overrides.imageModerationRepository ?? fakeImageModerationRepository(),
+    imageModerationProvider:
+      overrides.imageModerationProvider ?? fakeImageModerationProvider(),
     ratingsRepository: overrides.ratingsRepository ?? fakeRatingsRepository(),
     notificationsRepository:
       overrides.notificationsRepository ?? fakeNotificationsRepository(),

@@ -2348,6 +2348,116 @@ span.search-result-title {
 /* "Lieux suivis" - rows rather than the square tiles the gallery and the
    friends grid use: a venue is read by its name and neighbourhood, which
    a 120px tile truncates into uselessness. */
+/* DEC-0021. The queue reuses the console's existing rhythm rather than
+   introducing a second administrative look. */
+.admin-moderation {
+  margin: 1.5rem 0;
+}
+
+.admin-moderation-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.admin-moderation-item {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.75rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.9rem;
+  background: var(--surface-raised);
+}
+
+/* The one place an unpublished image is visible, so it is shown small and
+   without any hover affordance that would invite treating it as content. */
+.admin-moderation-thumb {
+  width: 84px;
+  height: 84px;
+  flex-shrink: 0;
+  border-radius: 0.6rem;
+  object-fit: cover;
+  background: var(--surface-base);
+}
+
+.admin-moderation-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.admin-moderation-copy strong {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.admin-moderation-scores {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.admin-moderation-reports {
+  color: var(--brand-pink);
+  font-weight: 600;
+}
+
+.admin-moderation-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.admin-moderation-actions button {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+}
+
+/* Reporting sits where deleting sits on your own photo: same corner, same
+   reveal-on-hover, so neither is the accidental click. */
+.profil-photo-report {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: rgba(9, 8, 13, 0.7);
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.profil-photo:hover .profil-photo-report,
+.profil-photo-report:focus-visible {
+  opacity: 1;
+}
+
+.profil-photos-notice {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.7rem;
+  background: var(--surface-raised);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
 .profil-venues-grid {
   list-style: none;
   margin: 0;
