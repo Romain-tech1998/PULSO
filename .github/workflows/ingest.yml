@@ -63,6 +63,17 @@ jobs:
         run: pnpm install
       - name: Build packages
         run: pnpm --filter "@pulso/database..." run build
+      - name: Apply database migrations
+        # The schema the ingestion is about to write into has to be the one
+        # this checkout expects. Without this the database drifted behind
+        # the repository indefinitely, and every Eventbrite run failed on
+        # `invalid input value for enum event_category: "sport"` - migration
+        # 0040 added that value months ago and nothing ever applied it here.
+        # The migrator is tracked and idempotent, so this is a no-op once
+        # the database is current.
+        run: pnpm run --filter=@pulso/database db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - name: Run Events Ingestion
         run: pnpm run --filter=@pulso/database db:ingest
         env:
@@ -90,6 +101,17 @@ jobs:
         run: pnpm install
       - name: Build packages
         run: pnpm --filter "@pulso/database..." run build
+      - name: Apply database migrations
+        # The schema the ingestion is about to write into has to be the one
+        # this checkout expects. Without this the database drifted behind
+        # the repository indefinitely, and every Eventbrite run failed on
+        # `invalid input value for enum event_category: "sport"` - migration
+        # 0040 added that value months ago and nothing ever applied it here.
+        # The migrator is tracked and idempotent, so this is a no-op once
+        # the database is current.
+        run: pnpm run --filter=@pulso/database db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - name: Run Venues Ingestion
         run: pnpm run --filter=@pulso/database db:ingest -- --venues
         env:
@@ -117,6 +139,17 @@ jobs:
         run: pnpm install
       - name: Build packages
         run: pnpm --filter "@pulso/database..." run build
+      - name: Apply database migrations
+        # The schema the ingestion is about to write into has to be the one
+        # this checkout expects. Without this the database drifted behind
+        # the repository indefinitely, and every Eventbrite run failed on
+        # `invalid input value for enum event_category: "sport"` - migration
+        # 0040 added that value months ago and nothing ever applied it here.
+        # The migrator is tracked and idempotent, so this is a no-op once
+        # the database is current.
+        run: pnpm run --filter=@pulso/database db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - name: Run Eventbrite Ingestion
         run: pnpm run --filter=@pulso/database db:ingest -- --eventbrite
         env:
