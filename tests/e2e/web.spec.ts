@@ -56,6 +56,33 @@ async function dismissFilterPanel(page: Page) {
   }
 }
 
+/**
+ * How many records the directory says it is showing. Read as a number so a
+ * test can assert that filtering changed it, rather than pinning a count
+ * that only one particular database produces.
+ */
+async function countShown(page: Page): Promise<number> {
+  const text = await page
+    .getByText(/events? in this area|événements? dans cette zone/i)
+    .first()
+    .textContent();
+  return Number(/\d+/.exec(text ?? '')?.[0] ?? Number.NaN);
+}
+
+/**
+ * The count once a filter click has actually taken effect.
+ *
+ * Waiting for two equal reads is not enough: a slow answer reads the stale
+ * value twice and looks settled. Waiting for the value to *change* from
+ * what it was before the click is the real signal, and it needs no sleep.
+ */
+async function countAfterChange(page: Page, before: number): Promise<number> {
+  await expect
+    .poll(async () => countShown(page), { timeout: 15_000 })
+    .not.toBe(before);
+  return countShown(page);
+}
+
 /** Filter groups start collapsed; a visitor expands one before choosing. */
 async function expandGroup(page: Page, name: string) {
   const toggle = page.locator('button.filter-group-toggle', { hasText: name });
@@ -184,13 +211,23 @@ test('filters anonymously and keeps the filters modifiable', async ({
   // Stage 3: widen the window, so filtering has more than one day to bite
   // on, then narrow by category and watch the map answer immediately.
   await expandGroup(page, 'Date');
+  // Read before the click, not after: after it, the value being waited on
+  // has already arrived and nothing ever changes.
+  const onLanding = await countShown(page);
   await panel.getByRole('button', { name: 'This week', exact: true }).click();
-  await expect(page.getByText(/[2-9]\d* events in this area/)).toBeAttached();
+  const widened = await countAfterChange(page, onLanding);
+  expect(widened).toBeGreaterThan(onLanding);
 
   await expandGroup(page, 'Categories');
   await panel.getByRole('button', { name: 'Comedy', exact: true }).click();
 
-  await expect(page.getByText('1 event in this area')).toBeAttached();
+  // The claim is that filtering narrows what is shown, not that it lands
+  // on one particular number. An exact count only held against a
+  // fixtures-only database and became a false failure for anyone running
+  // this against a working copy carrying real ingested events - which is
+  // how a suite gets ignored.
+  const narrowed = await countAfterChange(page, widened);
+  expect(narrowed).toBeLessThan(widened);
   await expect(page.getByRole('heading', { name: COMEDY_EVENT })).toBeVisible();
   await expect(
     page.getByRole('heading', { name: SYNTHETIC_EVENT })
@@ -198,7 +235,7 @@ test('filters anonymously and keeps the filters modifiable', async ({
 
   // "Les filtres restent modifiables": the same control releases it.
   await panel.getByRole('button', { name: 'Comedy', exact: true }).click();
-  await expect(page.getByText(/[2-9]\d* events in this area/)).toBeAttached();
+  expect(await countAfterChange(page, narrowed)).toBeGreaterThan(narrowed);
   await expect(
     page.getByRole('heading', { name: SYNTHETIC_EVENT })
   ).toBeVisible();
