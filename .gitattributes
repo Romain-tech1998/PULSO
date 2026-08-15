@@ -1,0 +1,36 @@
+# Line endings, decided once for everyone.
+#
+# Without this file the ending depended on each developer's `core.autocrlf`,
+# which on Windows rewrites every file to CRLF on checkout. Prettier defaults
+# to LF, so `format:check` - the first step of `pnpm verify` - rejected every
+# file on a Windows working copy no matter what had been committed. 21 of the
+# 25 failures it reported were that, and the check could not be made to pass
+# by fixing files.
+#
+# `text=auto` lets git decide what is text and normalise it to LF in the
+# repository; `eol=lf` makes the checkout write LF too, so the working tree
+# and the stored content finally agree on every platform.
+* text=auto eol=lf
+
+# Binary, and must never be touched: normalising these corrupts them.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.otf binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+*.keystore binary
+*.hbc binary
+*.traineddata binary
+
+# Windows-only scripts that genuinely need CRLF to run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Generated and checked for byte equality by the package manager.
+pnpm-lock.yaml -diff
