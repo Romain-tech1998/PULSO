@@ -836,6 +836,9 @@ const en = {
     'Stripe has not enabled charges yet. Finish the setup, then refresh.',
   'pay.explain':
     'You are the merchant: the money goes to your Stripe account, and you own refunds and disputes. Pulso takes a commission.',
+  'pay.buyerFee': '{price} + {fee} Pulso fee',
+  'pay.organizerTake':
+    'You set {price}; the buyer pays {total}. Stripe’s own processing fee comes off your share.',
   'pay.buy': 'Buy',
   'pay.buying': 'Opening the checkout…',
   'pay.organizerNotPayable': 'This organizer cannot accept payments yet.',
@@ -1894,6 +1897,9 @@ const fr = {
     'Stripe n’a pas encore activé les encaissements. Termine la configuration, puis actualise.',
   'pay.explain':
     'C’est toi le marchand : l’argent va sur ton compte Stripe, et les remboursements et litiges t’appartiennent. Pulso prélève une commission.',
+  'pay.buyerFee': '{price} + {fee} de frais Pulso',
+  'pay.organizerTake':
+    'Tu fixes {price}, l’acheteur paie {total}. Les frais de traitement de Stripe sont prélevés sur ta part.',
   'pay.buy': 'Acheter',
   'pay.buying': 'Ouverture du paiement…',
   'pay.organizerNotPayable': 'Cet organisateur ne peut pas encore encaisser.',

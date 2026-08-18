@@ -12271,6 +12271,19 @@ function EventTicketingPanel({
             <li key={type.id}>
               <span className="ticketing-type-main">
                 <strong>{type.name}</strong>
+                {type.buyerPriceCents !== undefined && (
+                  <small>
+                    {translate(locale, 'pay.organizerTake')
+                      .replace(
+                        '{price}',
+                        formatCadMinor(type.priceCents, locale)
+                      )
+                      .replace(
+                        '{total}',
+                        formatCadMinor(type.buyerPriceCents, locale)
+                      )}
+                  </small>
+                )}
                 <small>
                   {type.priceCents === 0
                     ? translate(locale, 'tickets.free')
@@ -19484,13 +19497,29 @@ function TicketClaimPanel({
                 <small>
                   {type.priceCents === 0
                     ? translate(locale, 'tickets.free')
-                    : formatCadMinor(type.priceCents, locale)}
+                    : // DEC-0022 §1: the commission is added on top, so the
+                      // number shown is what the card will be charged - with
+                      // the split spelled out rather than buried.
+                      formatCadMinor(
+                        type.buyerPriceCents ?? type.priceCents,
+                        locale
+                      )}
                   {left !== undefined &&
                     ` · ${translate(locale, 'tickets.left').replace(
                       '{count}',
                       String(left)
                     )}`}
                 </small>
+                {type.feeCents !== undefined && (
+                  <small>
+                    {translate(locale, 'pay.buyerFee')
+                      .replace(
+                        '{price}',
+                        formatCadMinor(type.priceCents, locale)
+                      )
+                      .replace('{fee}', formatCadMinor(type.feeCents, locale))}
+                  </small>
+                )}
               </span>
               <button
                 type="button"

@@ -129,13 +129,35 @@ describeWithDatabase('DEC-0022 paid ticketing', () => {
     expect(order.totalCents).toBe(2000);
   });
 
-  it('computes the application fee from the total, rounded down', async () => {
-    const type = await paidType('Commission', 1999, 10);
-    // 250 bps of 3998 is 99.95: Pulso takes 99, never 100. Rounding up would
-    // take more than the configured share of what the buyer actually paid.
-    const order = await tickets.startPaidOrder(buyerId, type.id, 2, 250, 20);
-    expect(order.totalCents).toBe(3998);
-    expect(order.applicationFeeCents).toBe(99);
+  it('adds the commission on top of the price rather than taking it out', async () => {
+    // DEC-0022 §1, the model the product owner chose: Clébard sets 10.00 and
+    // receives 10.00 (less Stripe's own cut); the buyer sees 11.00.
+    const type = await paidType('Commission', 1000, 10);
+    const order = await tickets.startPaidOrder(buyerId, type.id, 1, 1000, 20);
+    expect(order.organizerPriceCents).toBe(1000);
+    expect(order.unitAmountCents).toBe(1100);
+    expect(order.applicationFeeCents).toBe(100);
+    expect(order.totalCents).toBe(1100);
+  });
+
+  it('rounds the fee per ticket, so unit price times quantity is the total', async () => {
+    // 10% of 19.99 is 1.999: rounded up to 2.00 per ticket, never
+    // under-collected, and the receipt adds up. Computing on the total
+    // instead would quote a unit price that does not multiply out.
+    const type = await paidType('Arrondi', 1999, 10);
+    const order = await tickets.startPaidOrder(buyerId, type.id, 2, 1000, 20);
+    expect(order.unitAmountCents).toBe(2199);
+    expect(order.applicationFeeCents).toBe(400);
+    expect(order.totalCents).toBe(order.unitAmountCents * 2);
+  });
+
+  it('charges nothing extra while the rate is zero', async () => {
+    // The default. Nothing changes for anyone until a rate is decided
+    // (DEC-0022 §8).
+    const type = await paidType('Sans commission', 1500, 10);
+    const order = await tickets.startPaidOrder(buyerId, type.id, 1, 0, 20);
+    expect(order.unitAmountCents).toBe(1500);
+    expect(order.applicationFeeCents).toBe(0);
   });
 
   it('holds the seats an open checkout is waiting on', async () => {

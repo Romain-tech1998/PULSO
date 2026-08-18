@@ -7,6 +7,7 @@ import {
   scanTicketResponseSchema,
   ticketTypesResponseSchema
 } from '@pulso/contracts';
+import type { TicketType } from '@pulso/contracts';
 import type {
   AuthRepository,
   HeldTicket,
@@ -41,8 +42,25 @@ export function registerTicketingRoutes(
   app: FastifyInstance,
   authRepository: AuthRepository,
   ticketingRepository: TicketingRepository,
-  ticketSigningSecret: string
+  ticketSigningSecret: string,
+  applicationFeeBps: number
 ) {
+  /**
+   * DEC-0022 §1. The commission sits on top of the organizer's price, so the
+   * two numbers travel together: what the organizer set, and what the buyer
+   * pays. Computed here from configuration rather than stored on the row, so
+   * changing the rate does not need a migration - and rounded per ticket, the
+   * same way issuance rounds it, so the price quoted is the price charged.
+   */
+  const withFee = (type: TicketType) => {
+    if (applicationFeeBps <= 0 || type.priceCents <= 0) return type;
+    const feeCents = Math.ceil((type.priceCents * applicationFeeBps) / 10_000);
+    return {
+      ...type,
+      feeCents,
+      buyerPriceCents: type.priceCents + feeCents
+    };
+  };
   const withToken = (ticket: HeldTicket) => ({
     ...ticket,
     token: issueTicketToken(
@@ -60,9 +78,8 @@ export function registerTicketingRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { eventId } = eventParamsSchema.parse(request.params);
-    return ticketTypesResponseSchema.parse({
-      data: await ticketingRepository.listTicketTypes(eventId)
-    });
+    const types = await ticketingRepository.listTicketTypes(eventId);
+    return ticketTypesResponseSchema.parse({ data: types.map(withFee) });
   });
 
   app.post('/me/events/:eventId/ticket-types', async (request, reply) => {
@@ -83,7 +100,7 @@ export function registerTicketingRoutes(
           salesCloseAt: input.salesCloseAt
         }
       );
-      return reply.status(201).send({ data: created });
+      return reply.status(201).send({ data: withFee(created) });
     } catch (error) {
       if (error instanceof NotTicketOrganizerError) {
         return reply.status(404).send({

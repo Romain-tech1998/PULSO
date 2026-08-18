@@ -1418,7 +1418,14 @@ export const ticketTypeSchema = z.object({
   maxPerAccount: z.number().int().positive(),
   salesOpenAt: z.iso.datetime().optional(),
   salesCloseAt: z.iso.datetime().optional(),
-  issuedCount: z.number().int().nonnegative()
+  issuedCount: z.number().int().nonnegative(),
+  // DEC-0022 §1. Pulso's commission is added on top of `priceCents`, so a
+  // buyer and an organizer are looking at two different numbers and both
+  // deserve to see theirs. Absent when the rate is zero, which is the
+  // default: no fee, nothing to explain.
+  feeCents: z.number().int().nonnegative().optional(),
+  /** What the buyer actually pays per ticket: priceCents + feeCents. */
+  buyerPriceCents: z.number().int().nonnegative().optional()
 });
 export type TicketType = z.infer<typeof ticketTypeSchema>;
 

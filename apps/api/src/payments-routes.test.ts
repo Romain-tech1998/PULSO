@@ -217,8 +217,9 @@ describe('DEC-0022 payments API', () => {
             eventId,
             ticketTypeId,
             quantity: 1,
-            unitAmountCents: 2000,
-            totalCents: 2000,
+            unitAmountCents: 2200,
+            organizerPriceCents: 2000,
+            totalCents: 2200,
             applicationFeeCents: 0,
             stripeAccountId: 'acct_fake',
             ticketTypeName: 'Prévente'

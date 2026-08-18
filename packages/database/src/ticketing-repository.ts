@@ -115,7 +115,10 @@ export interface PendingOrder {
   eventId: string;
   ticketTypeId: string;
   quantity: number;
+  /** What the buyer pays per ticket: organizer price plus Pulso's fee. */
   unitAmountCents: number;
+  /** What the organizer set, before Pulso's fee and before Stripe's. */
+  organizerPriceCents: number;
   totalCents: number;
   applicationFeeCents: number;
   stripeAccountId: string;
@@ -739,12 +742,20 @@ export class PostgresTicketingRepository implements TicketingRepository {
       if (mine + quantity > type.max_per_account)
         throw new TicketLimitReachedError(type.max_per_account);
 
-      const totalCents = type.price_cents * quantity;
-      // Rounded down, so Pulso never takes more than the configured share of
-      // what the buyer actually paid.
-      const applicationFeeCents = Math.floor(
-        (totalCents * applicationFeeBps) / 10_000
+      // DEC-0022 §1: the commission is added on top of the organizer's
+      // price, not taken out of it. The organizer sets 10.00 and receives
+      // 10.00 less Stripe's own processing fee; the buyer sees 11.00.
+      //
+      // Computed per ticket rather than on the total, so unit price ×
+      // quantity equals the total exactly - a receipt that does not add up is
+      // a support ticket. Rounded up, so a rate is never under-collected; the
+      // most that costs a buyer is one cent per ticket.
+      const feePerTicketCents = Math.ceil(
+        (type.price_cents * applicationFeeBps) / 10_000
       );
+      const unitAmountCents = type.price_cents + feePerTicketCents;
+      const totalCents = unitAmountCents * quantity;
+      const applicationFeeCents = feePerTicketCents * quantity;
       const orderId = randomUUID();
       await client.query(
         `INSERT INTO ticket_orders
@@ -770,7 +781,11 @@ export class PostgresTicketingRepository implements TicketingRepository {
         eventId: type.event_id,
         ticketTypeId,
         quantity,
-        unitAmountCents: type.price_cents,
+        // What Stripe charges per ticket: the organizer's price plus Pulso's
+        // fee. `PendingOrder.unitAmountCents` is therefore the buyer's unit
+        // price, not the organizer's.
+        unitAmountCents,
+        organizerPriceCents: type.price_cents,
         totalCents,
         applicationFeeCents,
         stripeAccountId: type.stripe_account_id,

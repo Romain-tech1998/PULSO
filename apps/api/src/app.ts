@@ -294,7 +294,8 @@ export function buildApp(
       app,
       options.authRepository,
       options.ticketingRepository,
-      apiConfig.ticketSigningSecret
+      apiConfig.ticketSigningSecret,
+      apiConfig.applicationFeeBps
     );
     registerPaymentsRoutes(
       app,
