@@ -3903,6 +3903,38 @@ span.search-result-title {
   gap: 0.4rem;
 }
 
+/* DEC-0022 §2: "Mes sorties" - the tickets held, and the outings said
+   yes to. Its three blocks were bare uppercase labels stacked on the page
+   background, while the Aperçu tab beside it presents the same kind of
+   content as cards with a kicker. They are the same thing, so they now read
+   the same way. */
+.mes-sorties-tab .ticket-list {
+  margin-bottom: 0;
+}
+/* How many, next to what. The number carries no noun on purpose: it sits
+   against a heading that already names what is being counted. */
+.sorties-count {
+  flex-shrink: 0;
+  min-width: 1.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
+}
+/* Shorter than the page-sized empty state it borrows from: three of these
+   can sit on one screen. */
+.sorties-empty {
+  padding: 1.75rem 1.25rem;
+}
+.sorties-empty .empty-state-icon {
+  width: 42px;
+  height: 42px;
+  margin-bottom: 0;
+}
+
 /* DEC-0022 §1: the organizer's Stripe account. This panel carried no rules
    at all - an unstyled div of stacked text sitting directly beside "Statut
    organisateur". It borrows that block's shape on purpose: same surface,

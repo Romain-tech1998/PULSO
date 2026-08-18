@@ -217,7 +217,7 @@ function countFrench(source: string): { line: number; text: string }[] {
  * them. Zero means the surface is done and must stay done.
  */
 const BUDGETS: Record<string, number> = {
-  'explore-map.tsx': 193,
+  'explore-map.tsx': 192,
   'groups.tsx': 0,
   'shared.tsx': 0
 };

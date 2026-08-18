@@ -11976,13 +11976,29 @@ function MyTicketsSection({
 
   if (!tickets) return null;
 
+  // Only the ones that still open a door. A used or refunded ticket is kept
+  // in the list for the record, and counting it here would promise
+  // admissions that no longer exist.
+  const valid = tickets.filter((ticket) => ticket.status === 'valid').length;
+
   return (
-    <>
-      <h3 className="profil-tab-section-title">
-        {translate(locale, 'tickets.mine')}
-      </h3>
+    <section className="dashboard-home-section profil-events-section">
+      <div className="list-view-heading profil-section-heading">
+        <div>
+          <span className="profil-section-kicker">
+            {translate(locale, 'outings.ticketsKicker')}
+          </span>
+          <h3>{translate(locale, 'tickets.mine')}</h3>
+        </div>
+        {valid > 0 && <span className="sorties-count">{valid}</span>}
+      </div>
       {tickets.length === 0 ? (
-        <p className="list-view-empty">{translate(locale, 'tickets.none')}</p>
+        <div className="empty-state-card sorties-empty">
+          <span className="empty-state-icon" aria-hidden="true">
+            <SidebarNavIcon kind="billets" />
+          </span>
+          <p>{translate(locale, 'tickets.none')}</p>
+        </div>
       ) : (
         <div className="ticket-list">
           {tickets.map((ticket) => (
@@ -11990,7 +12006,7 @@ function MyTicketsSection({
           ))}
         </div>
       )}
-    </>
+    </section>
   );
 }
 
@@ -16791,36 +16807,70 @@ function MesEvenementsTab({
     'past'
   );
   return (
-    <div className="profil-tab-content">
+    <div className="profil-tab-content mes-sorties-tab">
       {/* DEC-0022 §2. Tickets live here rather than behind a ninth profile
           tab: a ticket you hold is an outing you are going to, and the tab
           row already hides two of its eight entries behind a scroll. */}
       <MyTicketsSection authToken={authToken} locale={locale} />
-      <h3 className="profil-tab-section-title">À venir</h3>
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
-      {state === 'success' && events.length === 0 && (
-        <p className="list-view-empty">
-          Vous n'avez pas encore d'événement à venir.
-        </p>
-      )}
-      <EventCarouselRow
-        events={events}
-        onOpenDetails={onOpenDetails}
-        locale={locale}
-      />
+      <section className="dashboard-home-section profil-events-section">
+        <div className="list-view-heading profil-section-heading">
+          <div>
+            <span className="profil-section-kicker">
+              {translate(locale, 'outings.upcomingKicker')}
+            </span>
+            <h3>{translate(locale, 'outings.upcoming')}</h3>
+          </div>
+          {events.length > 0 && (
+            <span className="sorties-count">{events.length}</span>
+          )}
+        </div>
+        {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+        {state === 'success' && events.length === 0 ? (
+          <div className="empty-state-card sorties-empty">
+            <span className="empty-state-icon" aria-hidden="true">
+              <SidebarNavIcon kind="evenements" />
+            </span>
+            <p>{translate(locale, 'outings.upcomingEmpty')}</p>
+          </div>
+        ) : (
+          <EventCarouselRow
+            events={events}
+            onOpenDetails={onOpenDetails}
+            locale={locale}
+          />
+        )}
+      </section>
 
-      <h3 className="profil-tab-section-title">Historique</h3>
-      {pastState === 'loading' && (
-        <p className="list-view-empty">Chargement…</p>
-      )}
-      {pastState === 'success' && pastEvents.length === 0 && (
-        <p className="list-view-empty">Aucun événement passé pour l'instant.</p>
-      )}
-      <EventCarouselRow
-        events={pastEvents}
-        onOpenDetails={onOpenDetails}
-        locale={locale}
-      />
+      <section className="dashboard-home-section profil-events-section">
+        <div className="list-view-heading profil-section-heading">
+          <div>
+            <span className="profil-section-kicker">
+              {translate(locale, 'outings.pastKicker')}
+            </span>
+            <h3>{translate(locale, 'outings.past')}</h3>
+          </div>
+          {pastEvents.length > 0 && (
+            <span className="sorties-count">{pastEvents.length}</span>
+          )}
+        </div>
+        {pastState === 'loading' && (
+          <p className="list-view-empty">Chargement…</p>
+        )}
+        {pastState === 'success' && pastEvents.length === 0 ? (
+          <div className="empty-state-card sorties-empty">
+            <span className="empty-state-icon" aria-hidden="true">
+              <SidebarNavIcon kind="evenements" />
+            </span>
+            <p>{translate(locale, 'outings.pastEmpty')}</p>
+          </div>
+        ) : (
+          <EventCarouselRow
+            events={pastEvents}
+            onOpenDetails={onOpenDetails}
+            locale={locale}
+          />
+        )}
+      </section>
     </div>
   );
 }
