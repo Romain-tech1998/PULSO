@@ -3976,9 +3976,10 @@ span.search-result-title {
   padding: 0.6rem 1rem;
   font-size: 0.8rem;
 }
-/* One line for the only two states that decide anything: this organizer can
-   be paid, or cannot yet. */
-.stripe-status {
+/* One line naming which state something is in, for the cases where the
+   answer is the whole message: can this organizer be paid, has this request
+   been decided. Shared, because a second copy of it would drift. */
+.status-pill {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -3989,22 +3990,26 @@ span.search-result-title {
   font-weight: 600;
   line-height: 1.4;
 }
-.stripe-status-dot {
+.status-pill-dot {
   width: 0.5rem;
   height: 0.5rem;
   flex-shrink: 0;
   border-radius: 999px;
   background: currentColor;
 }
-.stripe-status-ready {
+.status-pill-ok {
   color: var(--brand-green);
   background: rgba(0, 210, 133, 0.12);
 }
-/* The amber already used by a pending organizer request: something is being
-   reviewed, and nothing has gone wrong. */
-.stripe-status-pending {
+/* Amber: something is being reviewed and nothing has gone wrong. It is the
+   colour a pending organizer request already used. */
+.status-pill-waiting {
   color: #f5c451;
   background: rgba(245, 196, 81, 0.12);
+}
+.status-pill-no {
+  color: #ff8a8a;
+  background: rgba(255, 138, 138, 0.12);
 }
 
 /* DEC-0022 §2 and §3: tickets, their QR, and the door. */

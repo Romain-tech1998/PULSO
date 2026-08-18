@@ -12250,13 +12250,11 @@ function StripeConnectPanel({
           declined, which read as a refusal rather than as a queue. */}
       {state.configured && state.connected && (
         <p
-          className={`stripe-status ${
-            state.chargesEnabled
-              ? 'stripe-status-ready'
-              : 'stripe-status-pending'
+          className={`status-pill ${
+            state.chargesEnabled ? 'status-pill-ok' : 'status-pill-waiting'
           }`}
         >
-          <span className="stripe-status-dot" aria-hidden="true" />
+          <span className="status-pill-dot" aria-hidden="true" />
           {translate(
             locale,
             state.chargesEnabled ? 'pay.enabled' : 'pay.pending'
@@ -19450,19 +19448,28 @@ function AddressDisclosurePanel({
     <div className="access-panel">
       <strong>{translate(locale, 'access.hiddenTitle')}</strong>
       <p>{translate(locale, 'access.hiddenBody')}</p>
-      {status === 'pending' && (
-        <p className="access-panel-status">
-          {translate(locale, 'access.statusPending')}
-        </p>
-      )}
-      {status === 'approved' && (
-        <p className="access-panel-status">
-          {translate(locale, 'access.statusApproved')}
-        </p>
-      )}
-      {status === 'declined' && (
-        <p className="access-panel-status access-panel-status-declined">
-          {translate(locale, 'access.statusDeclined')}
+      {/* Where the request stands, said the way every other decided
+          state in the app is said. It used to be a line of body text,
+          which is thin for the one thing the reader came back to check. */}
+      {status !== undefined && (
+        <p
+          className={`status-pill ${
+            status === 'approved'
+              ? 'status-pill-ok'
+              : status === 'declined'
+                ? 'status-pill-no'
+                : 'status-pill-waiting'
+          }`}
+        >
+          <span className="status-pill-dot" aria-hidden="true" />
+          {translate(
+            locale,
+            status === 'approved'
+              ? 'access.statusApproved'
+              : status === 'declined'
+                ? 'access.statusDeclined'
+                : 'access.statusPending'
+          )}
         </p>
       )}
       {status === undefined && authToken && !composing && (
