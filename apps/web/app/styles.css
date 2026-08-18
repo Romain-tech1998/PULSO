@@ -9237,7 +9237,9 @@ a.venue-detail-info-row:hover {
   margin: 0;
 }
 
-.card-price {
+/* The date an event starts, on a card. Named for what it holds: it was
+   `.card-price`, and no card here has ever shown a price. */
+.card-when {
   font-weight: 700;
   color: var(--text-primary);
   margin-top: 0.5rem;

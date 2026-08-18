@@ -5819,10 +5819,8 @@ export function ExploreMap({
                     <div className="event-card-content">
                       <h3>{evt.title}</h3>
                       <p>{evt.venue?.name}</p>
-                      <p className="card-price">
-                        {evt.startsAt
-                          ? new Date(evt.startsAt).toLocaleDateString()
-                          : ''}
+                      <p className="card-when">
+                        {eventPreviewFields(evt, locale).dateTime}
                       </p>
                     </div>
                   </div>
@@ -15642,8 +15640,8 @@ function EventCarouselRow({
           <div className="event-card-content">
             <h3>{evt.title}</h3>
             <p>{evt.venue?.name}</p>
-            <p className="card-price">
-              {evt.startsAt ? new Date(evt.startsAt).toLocaleDateString() : ''}
+            <p className="card-when">
+              {eventPreviewFields(evt, locale).dateTime}
             </p>
           </div>
         </div>
