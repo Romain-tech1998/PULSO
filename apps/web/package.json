@@ -12,8 +12,10 @@
   "dependencies": {
     "@pulso/contracts": "workspace:*",
     "@pulso/domain": "workspace:*",
+    "jsqr": "1.4.0",
     "maplibre-gl": "5.24.0",
     "next": "16.2.10",
+    "qrcode-generator": "2.0.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "zod": "4.4.3"

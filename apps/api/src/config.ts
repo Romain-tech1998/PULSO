@@ -22,6 +22,12 @@ export interface ApiConfig {
   publicUploadUrl: string;
   host: string;
   port: number;
+  /**
+   * DEC-0022 §3. Signs the payload inside every ticket QR. It never leaves
+   * this process, and rotating it invalidates every outstanding QR - which is
+   * the intended emergency lever, not an everyday operation.
+   */
+  ticketSigningSecret: string;
 }
 
 export class ConfigError extends Error {
@@ -85,6 +91,26 @@ export function resolveApiConfig(
     if (!env.DATABASE_URL) {
       problems.push('DATABASE_URL is required.');
     }
+    if (!env.TICKET_SIGNING_SECRET) {
+      problems.push(
+        'TICKET_SIGNING_SECRET is required in production: without it every ticket QR would be signed with a key that is published in this repository.'
+      );
+    }
+  }
+
+  // DEC-0022 acceptance criterion 14, and §8's gate. Live keys are refused
+  // everywhere, not only in production - a live key on a developer's machine
+  // moves real money just as well as one on a server, and the accountant and
+  // lawyer reviews §8 requires have not happened.
+  const stripeKeys = [
+    env.STRIPE_SECRET_KEY,
+    env.STRIPE_PUBLISHABLE_KEY,
+    env.STRIPE_WEBHOOK_SECRET
+  ];
+  if (stripeKeys.some((key) => key?.includes('_live_'))) {
+    problems.push(
+      'A live-mode Stripe key is configured. DEC-0022 §8 authorizes test mode only, until the accountant and lawyer reviews are recorded and a commission rate is decided.'
+    );
   }
   if (problems.length > 0) throw new ConfigError(problems);
 
@@ -95,7 +121,11 @@ export function resolveApiConfig(
     uploadDir: env.EVENT_PHOTOS_UPLOAD_DIR ?? `${process.cwd()}/uploads`,
     publicUploadUrl: `${publicUrl}/uploads`,
     host,
-    port
+    port,
+    // Development default, deliberately obvious. Production refuses to start
+    // without a real one above.
+    ticketSigningSecret:
+      env.TICKET_SIGNING_SECRET ?? 'pulso-development-ticket-secret'
   };
 }
 

@@ -1,5 +1,39 @@
 export { createDatabase, createPool } from './client.js';
-export { PostgresEventRepository, type EventRepository } from './repository.js';
+export {
+  PostgresEventRepository,
+  DirectoryVenueCannotHideAddressError,
+  type EventRepository
+} from './repository.js';
+export {
+  refreshSyntheticFixtureSchedule,
+  resolveSyntheticSlot,
+  SYNTHETIC_FIXTURE_SCHEDULE,
+  type SyntheticSlot
+} from './synthetic-fixture.js';
+export {
+  PostgresTicketingRepository,
+  NotTicketOrganizerError,
+  TicketAccessNotApprovedError,
+  TicketLimitReachedError,
+  TicketPaymentNotAvailableError,
+  TicketSalesClosedError,
+  TicketsSoldOutError,
+  type HeldTicket,
+  type RedemptionOutcome,
+  type TicketingRepository,
+  type TicketStatus,
+  type TicketType,
+  type TicketTypeInput
+} from './ticketing-repository.js';
+export {
+  PostgresEventAccessRepository,
+  CannotRequestOwnEventError,
+  EventAccessDeclinedError,
+  EventNotOnApprovalError,
+  type EventAccessRepository,
+  type EventAccessRequester,
+  type EventAccessStatus
+} from './event-access-repository.js';
 export {
   PostgresAuthRepository,
   type AuthRepository,

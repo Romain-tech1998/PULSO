@@ -17,7 +17,10 @@ export type StoredNotificationKind =
   | 'group_verification_received'
   | 'group_verification_resolved'
   | 'group_join_request_received'
-  | 'group_join_request_accepted';
+  | 'group_join_request_accepted'
+  | 'event_access_requested'
+  | 'event_access_approved'
+  | 'event_access_declined';
 
 export interface NotificationsRepository {
   list(userId: string, limit: number): Promise<Notification[]>;
@@ -28,6 +31,18 @@ export interface NotificationsRepository {
   notifyFriendRequestReceived(
     recipientUserId: string,
     actorUserId: string
+  ): Promise<void>;
+  // DEC-0022 §6. The organizer hears the request; the requester hears the
+  // decision, whichever way it went.
+  notifyEventAccessRequested(
+    organizerUserId: string,
+    actorUserId: string,
+    eventId: string
+  ): Promise<void>;
+  notifyEventAccessResolved(
+    recipientUserId: string,
+    eventId: string,
+    approved: boolean
   ): Promise<void>;
   notifyFriendRequestAccepted(
     recipientUserId: string,
@@ -357,6 +372,36 @@ export class PostgresNotificationsRepository implements NotificationsRepository 
     );
   }
 
+  async notifyEventAccessRequested(
+    organizerUserId: string,
+    actorUserId: string,
+    eventId: string
+  ): Promise<void> {
+    if (organizerUserId === actorUserId) return;
+    await this.pool.query(
+      `INSERT INTO notifications (id, user_id, kind, actor_user_id, event_id)
+       VALUES ($1, $2, 'event_access_requested', $3, $4)`,
+      [randomUUID(), organizerUserId, actorUserId, eventId]
+    );
+  }
+
+  async notifyEventAccessResolved(
+    recipientUserId: string,
+    eventId: string,
+    approved: boolean
+  ): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO notifications (id, user_id, kind, event_id)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        randomUUID(),
+        recipientUserId,
+        approved ? 'event_access_approved' : 'event_access_declined',
+        eventId
+      ]
+    );
+  }
+
   async notifyGroupJoinRequestAccepted(
     recipientUserId: string,
     groupId: string
@@ -423,6 +468,21 @@ function toNotification(row: StoredRow): Notification | undefined {
     };
   }
 
+  if (
+    row.kind === 'event_access_approved' ||
+    row.kind === 'event_access_declined'
+  ) {
+    if (!row.event_id || !row.event_title) return undefined;
+    return {
+      kind: row.kind,
+      id: row.id,
+      createdAt,
+      readAt,
+      eventId: row.event_id,
+      eventTitle: row.event_title
+    };
+  }
+
   if (row.kind === 'group_join_request_accepted') {
     if (!row.group_id || !row.group_name) return undefined;
     return {
@@ -481,6 +541,19 @@ function toNotification(row: StoredRow): Notification | undefined {
       ...actor,
       venueId: row.venue_id,
       venueName: row.venue_name
+    };
+  }
+
+  if (row.kind === 'event_access_requested') {
+    if (!row.event_id || !row.event_title) return undefined;
+    return {
+      kind: 'event_access_requested',
+      id: row.id,
+      createdAt,
+      readAt,
+      ...actor,
+      eventId: row.event_id,
+      eventTitle: row.event_title
     };
   }
 

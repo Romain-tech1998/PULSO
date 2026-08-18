@@ -5,6 +5,8 @@ import type {
   AttendanceRepository,
   AuthRepository,
   EventPhoto,
+  EventAccessRepository,
+  TicketingRepository,
   EventPhotosRepository,
   UserPhotosRepository,
   ImageModerationRepository,
@@ -295,6 +297,8 @@ export function fakeNotificationsRepository(
     notifyGroupJoinRequestAccepted: async () => undefined,
     notifyFriendRequestReceived: async () => undefined,
     notifyFriendRequestAccepted: async () => undefined,
+    notifyEventAccessRequested: async () => undefined,
+    notifyEventAccessResolved: async () => undefined,
     notifyMessageReceived: async () => undefined,
     notifyForumReply: async () => undefined,
     notifyVenueFollowersOfNewEvent: async () => 0,
@@ -493,6 +497,38 @@ export function fakeEventPhoto(
   };
 }
 
+export function fakeEventAccessRepository(
+  overrides: Partial<EventAccessRepository> = {}
+): EventAccessRepository {
+  return {
+    findOrganizerId: async () => undefined,
+    request: async () => 'pending',
+    list: async () => [],
+    resolve: async () => false,
+    countPendingForOrganizer: async () => 0,
+    ...overrides
+  };
+}
+
+export function fakeTicketingRepository(
+  overrides: Partial<TicketingRepository> = {}
+): TicketingRepository {
+  return {
+    listTicketTypes: async () => [],
+    createTicketType: async () => {
+      throw new Error('not stubbed');
+    },
+    deleteTicketType: async () => false,
+    issueTickets: async () => [],
+    listMyTickets: async () => [],
+    findTicketById: async () => undefined,
+    redeem: async () => ({ result: 'unknown' }),
+    isEventOrganizer: async () => false,
+    countAdmissions: async () => ({ used: 0, valid: 0 }),
+    ...overrides
+  };
+}
+
 export function fakeEventPhotosRepository(
   overrides: Partial<EventPhotosRepository> = {}
 ): EventPhotosRepository {
@@ -590,6 +626,8 @@ export function accountRepositories(
     reportsRepository?: ReportsRepository;
     groupsRepository?: GroupsRepository;
     profileRepository?: ProfileRepository;
+    eventAccessRepository?: EventAccessRepository;
+    ticketingRepository?: TicketingRepository;
     eventPhotosRepository?: EventPhotosRepository;
     userPhotosRepository?: UserPhotosRepository;
     imageModerationRepository?: ImageModerationRepository;
@@ -615,6 +653,10 @@ export function accountRepositories(
     reportsRepository: overrides.reportsRepository ?? fakeReportsRepository(),
     groupsRepository: overrides.groupsRepository ?? fakeGroupsRepository(),
     profileRepository: overrides.profileRepository ?? fakeProfileRepository(),
+    eventAccessRepository:
+      overrides.eventAccessRepository ?? fakeEventAccessRepository(),
+    ticketingRepository:
+      overrides.ticketingRepository ?? fakeTicketingRepository(),
     eventPhotosRepository:
       overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
     userPhotosRepository:

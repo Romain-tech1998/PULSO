@@ -1333,7 +1333,12 @@ function EventDetails({
       />
       <Detail
         label={translate(locale, 'details.address')}
-        value={event.venue.address}
+        // DEC-0022 §6. Mobile is the anonymous surface and never receives a
+        // created event (DEC-0017), so it never receives a withheld address
+        // either - but the contract now allows one, and rendering `undefined`
+        // as a blank line would be the same silent gap the redaction exists
+        // to avoid.
+        value={event.venue.address ?? translate(locale, 'access.approximate')}
       />
       <Detail
         label={translate(locale, 'details.price')}

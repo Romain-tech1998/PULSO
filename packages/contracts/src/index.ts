@@ -496,6 +496,39 @@ export const notificationSchema = z.discriminatedUnion('kind', [
     groupId: z.uuid(),
     groupName: z.string().min(1)
   }),
+  // DEC-0022 §6. Someone is asking an organizer for the exact location of a
+  // withheld event.
+  z.object({
+    kind: z.literal('event_access_requested'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    actorUserId: z.uuid(),
+    actorDisplayName: z.string().min(1),
+    actorAvatarUrl: z.string().optional(),
+    eventId: z.uuid(),
+    eventTitle: z.string().min(1)
+  }),
+  // Both outcomes are announced. A refusal that notified nobody would leave
+  // someone waiting on an answer that already exists (acceptance criterion
+  // 12), and an approval nobody hears about discloses an address to a person
+  // who never looks again.
+  z.object({
+    kind: z.literal('event_access_approved'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    eventId: z.uuid(),
+    eventTitle: z.string().min(1)
+  }),
+  z.object({
+    kind: z.literal('event_access_declined'),
+    id: z.uuid(),
+    createdAt: z.iso.datetime(),
+    readAt: z.iso.datetime().nullable(),
+    eventId: z.uuid(),
+    eventTitle: z.string().min(1)
+  }),
   z.object({
     kind: z.literal('upcoming_event'),
     createdAt: z.iso.datetime(),
@@ -1213,7 +1246,11 @@ export const publicEventSchema = z.object({
   venue: z.object({
     id: z.uuid(),
     name: z.string().min(1),
-    address: z.string().min(1),
+    // DEC-0022 §6: absent when the organizer withholds it and the reader is
+    // not approved. Optional rather than a coarse placeholder string, so a
+    // consumer that forgot the case fails to compile instead of rendering a
+    // fabricated address.
+    address: z.string().min(1).optional(),
     point: geographicPointSchema,
     category: z.enum(VENUE_CATEGORIES).optional(),
     secondaryCategories: z.array(z.enum(VENUE_CATEGORIES)).optional(),
@@ -1264,9 +1301,18 @@ export const publicEventSchema = z.object({
   // matches on start time, so an ingested late-night event qualifies
   // without carrying this flag.
   isAfter: z.boolean().optional(),
-  // True when the organizer withheld the street address. The venue's
-  // `address` then carries a coarse label instead of the exact line.
-  addressHidden: z.boolean().optional(),
+  // DEC-0022 §6. Absent means 'public', which is every ingested event and
+  // every fixture. Present means the organizer withholds the exact location
+  // until they approve a request - it says nothing about whether *this*
+  // reader is approved, which `locationPrecision` answers.
+  addressDisclosure: z.literal('on_approval').optional(),
+  // Present, and 'approximate', when the point in `venue.point` is the ~300 m
+  // offset rather than the real one. A client must not draw an offset point
+  // the way it draws an exact one.
+  locationPrecision: z.literal('approximate').optional(),
+  // Where the reader stands with this event's organizer, when they have asked
+  // at all. Absent for an anonymous reader and for anyone who never asked.
+  myAccessStatus: z.enum(['pending', 'approved', 'declined']).optional(),
   // DEC-0017 v1.2: pinned by its creator into the sidebar's Raccourcis.
   pinned: z.boolean().optional(),
   externalDestination: z
@@ -1300,10 +1346,12 @@ export const createEventRequestSchema = z.object({
   // the same "clearly identified external destination" treatment every
   // ingested ticketing link already gets (UX-0001).
   ticketingUrl: z.url().optional(),
-  // DEC-0017 v1.2: a "select" after can withhold its street address. The
-  // event still carries real coordinates - it is a map pin either way -
-  // but the exact line is shown only to its organizer.
-  addressHidden: z.boolean().optional(),
+  // DEC-0022 §6, replacing DEC-0017 v1.2's addressHidden. The event still
+  // carries a real pin - it is on the map either way - but non-approved
+  // readers get a ~300 m offset of it and no street line. Only valid with a
+  // newly typed venue: an existing directory venue's address is already
+  // published and cannot be taken back.
+  addressDisclosure: z.literal('on_approval').optional(),
   price: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('free') }),
     z.object({
@@ -1323,6 +1371,136 @@ export const createEventRequestSchema = z.object({
   ])
 });
 export type CreateEventRequest = z.infer<typeof createEventRequestSchema>;
+
+// DEC-0022 §6. Asking an organizer for the exact location of an event they
+// chose to withhold.
+//
+// The optional note exists because an organizer deciding who comes to their
+// home has a weak basis for it in a display name alone.
+export const eventAccessRequestSchema = z.object({
+  message: z.string().min(1).max(500).optional()
+});
+export type EventAccessRequestInput = z.infer<typeof eventAccessRequestSchema>;
+
+// One entry of the organizer's queue for one event.
+export const eventAccessRequesterSchema = z.object({
+  user: publicUserSchema,
+  status: z.enum(['pending', 'approved', 'declined']),
+  requestedAt: z.iso.datetime(),
+  resolvedAt: z.iso.datetime().optional(),
+  message: z.string().min(1).optional()
+});
+
+export const eventAccessRequestsResponseSchema = z.object({
+  data: z.array(eventAccessRequesterSchema)
+});
+export type EventAccessRequester = z.infer<typeof eventAccessRequesterSchema>;
+
+// A decision an organizer takes on one requester. 'declined' also revokes an
+// approval already granted, which is why this is not a boolean: DEC-0022
+// acceptance criterion 10 requires revocation to return the person to the
+// offset point, and criterion 11 makes the refusal final either way.
+export const resolveEventAccessRequestSchema = z.object({
+  decision: z.enum(['approved', 'declined'])
+});
+
+// DEC-0022 §2. Ticket types, tickets, and the door.
+//
+// Money is integer minor units in CAD everywhere it appears (DEC-0022 §1).
+// A float would be a rounding bug waiting for a busy night.
+export const ticketTypeSchema = z.object({
+  id: z.uuid(),
+  eventId: z.uuid(),
+  name: z.string().min(1).max(80),
+  priceCents: z.number().int().nonnegative(),
+  // Absent means unlimited, which is a real answer for a door with no cap.
+  quantity: z.number().int().positive().optional(),
+  maxPerAccount: z.number().int().positive(),
+  salesOpenAt: z.iso.datetime().optional(),
+  salesCloseAt: z.iso.datetime().optional(),
+  issuedCount: z.number().int().nonnegative()
+});
+export type TicketType = z.infer<typeof ticketTypeSchema>;
+
+export const ticketTypesResponseSchema = z.object({
+  data: z.array(ticketTypeSchema)
+});
+
+export const createTicketTypeRequestSchema = z.object({
+  name: z.string().min(1).max(80),
+  priceCents: z.number().int().nonnegative(),
+  quantity: z.number().int().positive().optional(),
+  maxPerAccount: z.number().int().positive().max(20).default(4),
+  salesOpenAt: z.iso.datetime().optional(),
+  salesCloseAt: z.iso.datetime().optional()
+});
+
+export const claimTicketsRequestSchema = z.object({
+  ticketTypeId: z.uuid(),
+  quantity: z.number().int().positive().max(20)
+});
+
+// The ticket as its holder sees it. `token` is the signed QR payload
+// (DEC-0022 §3), produced by the API and never stored - the secret does not
+// leave the server and the token is derived on read.
+export const heldTicketSchema = z.object({
+  id: z.uuid(),
+  eventId: z.uuid(),
+  eventTitle: z.string().min(1),
+  eventStartsAt: z.iso.datetime(),
+  venueName: z.string().min(1),
+  ticketTypeName: z.string().min(1),
+  priceCents: z.number().int().nonnegative(),
+  status: z.enum(['valid', 'used', 'refunded', 'cancelled']),
+  issuedAt: z.iso.datetime(),
+  usedAt: z.iso.datetime().optional(),
+  token: z.string().min(1)
+});
+export type HeldTicket = z.infer<typeof heldTicketSchema>;
+
+export const myTicketsResponseSchema = z.object({
+  data: z.array(heldTicketSchema)
+});
+
+export const scanTicketRequestSchema = z.object({
+  token: z.string().min(1).max(500)
+});
+
+// Every way a scan can end, named. A door needs to tell a duplicate apart
+// from a wrong night, and a boolean cannot.
+export const scanTicketResponseSchema = z.object({
+  data: z.discriminatedUnion('result', [
+    z.object({
+      result: z.literal('admitted'),
+      holderName: z.string().min(1),
+      ticketTypeName: z.string().min(1)
+    }),
+    z.object({
+      result: z.literal('already_used'),
+      holderName: z.string().min(1),
+      usedAt: z.iso.datetime()
+    }),
+    z.object({
+      result: z.literal('not_valid'),
+      status: z.enum(['valid', 'used', 'refunded', 'cancelled'])
+    }),
+    z.object({ result: z.literal('wrong_event') }),
+    z.object({ result: z.literal('unknown') }),
+    // The signature did not verify: this QR was not issued by Pulso, or not
+    // for this deployment. Deliberately distinct from 'unknown', which means
+    // a well-signed token for a ticket that no longer exists.
+    z.object({ result: z.literal('forged') })
+  ])
+});
+
+export type ScanVerdict = z.infer<typeof scanTicketResponseSchema>['data'];
+
+export const eventAdmissionsResponseSchema = z.object({
+  data: z.object({
+    used: z.number().int().nonnegative(),
+    valid: z.number().int().nonnegative()
+  })
+});
 
 export const createdEventResponseSchema = z.object({
   data: publicEventSchema

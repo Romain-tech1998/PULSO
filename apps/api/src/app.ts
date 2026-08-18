@@ -13,6 +13,8 @@ import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
 import type {
   AttendanceRepository,
   AuthRepository,
+  EventAccessRepository,
+  TicketingRepository,
   EventPhotosRepository,
   UserPhotosRepository,
   ImageModerationRepository,
@@ -54,6 +56,8 @@ import {
 } from './auth.js';
 import { resolveAllowedOrigin, resolveApiConfig } from './config.js';
 import { registerCreatedEventsRoutes } from './created-events.js';
+import { registerEventAccessRoutes } from './event-access.js';
+import { registerTicketingRoutes } from './ticketing.js';
 import { registerEventPhotosRoutes } from './event-photos.js';
 import { registerUserPhotosRoutes } from './user-photos.js';
 import type { ImageModerationProvider } from './image-moderation.js';
@@ -101,6 +105,8 @@ export function buildApp(
     profileRepository?: ProfileRepository;
     notificationsRepository?: NotificationsRepository;
     organizerRepository?: OrganizerRepository;
+    eventAccessRepository?: EventAccessRepository;
+    ticketingRepository?: TicketingRepository;
     eventPhotosRepository?: EventPhotosRepository;
     userPhotosRepository?: UserPhotosRepository;
     imageModerationRepository?: ImageModerationRepository;
@@ -157,6 +163,8 @@ export function buildApp(
     options.reportsRepository &&
     options.groupsRepository &&
     options.profileRepository &&
+    options.eventAccessRepository &&
+    options.ticketingRepository &&
     options.eventPhotosRepository &&
     options.userPhotosRepository &&
     options.imageModerationRepository &&
@@ -269,6 +277,19 @@ export function buildApp(
       options.uploadDir,
       options.publicUploadUrl
     );
+    registerEventAccessRoutes(
+      app,
+      options.authRepository,
+      options.eventAccessRepository,
+      repository,
+      options.notificationsRepository
+    );
+    registerTicketingRoutes(
+      app,
+      options.authRepository,
+      options.ticketingRepository,
+      apiConfig.ticketSigningSecret
+    );
   }
 
   app.setErrorHandler((error, request, reply) => {
@@ -319,9 +340,10 @@ export function buildApp(
   // the sourced directory and nothing else.
   app.get('/events', async (request) => {
     const query = mapBoundsQuerySchema.parse(request.query);
-    const signedIn = options.authRepository
-      ? Boolean(await resolveBearerUser(request, options.authRepository))
-      : false;
+    const viewer = options.authRepository
+      ? await resolveBearerUser(request, options.authRepository)
+      : undefined;
+    const signedIn = Boolean(viewer);
     return eventListResponseSchema.parse({
       data: await repository.findInBounds(
         query,
@@ -330,13 +352,24 @@ export function buildApp(
           ...(query.dateStart ? { customStartDate: query.dateStart } : {}),
           ...(query.dateEnd ? { customEndDate: query.dateEnd } : {})
         }),
-        { includeCreated: signedIn, after: signedIn && query.after === 'true' }
+        {
+          includeCreated: signedIn,
+          after: signedIn && query.after === 'true',
+          viewerId: viewer?.id ?? null
+        }
       )
     });
   });
 
   app.post('/search', async (request) => {
     const search = intelligentSearchRequestSchema.parse(request.body);
+    // DEC-0022 §6. Search does not opt into created events today, so nothing
+    // it returns is withheld - but the reader is resolved anyway rather than
+    // hard-coding null, so that turning `includeCreated` on here later is a
+    // one-line change instead of a disclosure.
+    const viewerId = options.authRepository
+      ? ((await resolveBearerUser(request, options.authRepository))?.id ?? null)
+      : null;
     let interpreted;
     try {
       if (options.interpretQuery) {
@@ -472,10 +505,19 @@ export function buildApp(
       });
     }
 
+    // A named neighbourhood changes where the request is about. The client
+    // used to fly there only after the server had searched the old viewport,
+    // producing the contradictory "Plateau" + "current map area" result.
+    const effectiveBounds = interpreted.suggestedLocation
+      ? boundsAround(interpreted.suggestedLocation)
+      : search.bounds;
+    const effectiveNear = interpreted.suggestedLocation
+      ? undefined
+      : search.near;
     const boundsQuery = toMapBoundsQuery(
-      search.bounds,
+      effectiveBounds,
       effectiveFilters,
-      search.near
+      effectiveNear
     );
     const now = options.now?.() ?? new Date();
 
@@ -518,7 +560,10 @@ export function buildApp(
                 price: effectiveFilters.price
               },
               namedWindow,
-              { excludedCategories: interpreted.excludedCategories }
+              {
+                excludedCategories: interpreted.excludedCategories,
+                viewerId
+              }
             ),
         repository.searchVenues(
           {
@@ -604,7 +649,10 @@ export function buildApp(
         const fallbackEvents = await repository.findInBounds(
           boundsQuery,
           fallbackWindow,
-          { excludedCategories: interpreted.excludedCategories }
+          {
+            excludedCategories: interpreted.excludedCategories,
+            viewerId
+          }
         );
         if (fallbackEvents.length > 0) {
           return intelligentSearchResponseSchema.parse({
@@ -646,7 +694,8 @@ export function buildApp(
 
     const window = createFilteredDiscoveryWindow(now, effectiveFilters);
     const exactEvents = await repository.findInBounds(boundsQuery, window, {
-      excludedCategories: interpreted.excludedCategories
+      excludedCategories: interpreted.excludedCategories,
+      viewerId
     });
     if (exactEvents.length > 0) {
       return intelligentSearchResponseSchema.parse({
@@ -662,12 +711,13 @@ export function buildApp(
 
     const alternative = await findExplainedAlternative(
       repository,
-      search.bounds,
+      effectiveBounds,
       manualFilters,
       effectiveFilters,
       interpreted,
       now,
-      search.near
+      viewerId,
+      effectiveNear
     );
     if (alternative) {
       return intelligentSearchResponseSchema.parse({
@@ -693,7 +743,10 @@ export function buildApp(
 
   app.get('/events/:id', async (request, reply) => {
     const { id } = eventParamsSchema.parse(request.params);
-    const event = await repository.findById(id);
+    const viewer = options.authRepository
+      ? await resolveBearerUser(request, options.authRepository)
+      : undefined;
+    const event = await repository.findById(id, viewer?.id ?? null);
     if (!event) {
       return reply.status(404).send({
         error: { code: 'EVENT_NOT_FOUND', message: 'The event was not found.' }
@@ -731,15 +784,21 @@ export function buildApp(
 
   app.get('/events/near', async (request) => {
     const query = directDistanceQuerySchema.parse(request.query);
+    const viewer = options.authRepository
+      ? await resolveBearerUser(request, options.authRepository)
+      : undefined;
     return eventListResponseSchema.parse({
-      data: await repository.findWithinDirectDistance(query)
+      data: await repository.findWithinDirectDistance(query, viewer?.id ?? null)
     });
   });
 
   app.get('/events/by-ids', async (request) => {
     const query = eventIdsQuerySchema.parse(request.query);
+    const viewer = options.authRepository
+      ? await resolveBearerUser(request, options.authRepository)
+      : undefined;
     return eventListResponseSchema.parse({
-      data: await repository.findByIds(query.ids)
+      data: await repository.findByIds(query.ids, viewer?.id ?? null)
     });
   });
 
@@ -808,6 +867,20 @@ const NAMED_SEARCH_HORIZON_DAYS = 120;
  */
 const VENUE_LED_RESULT_LIMIT = 40;
 
+function boundsAround(point: { longitude: number; latitude: number }): {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+} {
+  return {
+    west: point.longitude - 0.045,
+    south: point.latitude - 0.035,
+    east: point.longitude + 0.045,
+    north: point.latitude + 0.035
+  };
+}
+
 function addDays(from: Date, days: number): Date {
   return new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
 }
@@ -841,6 +914,7 @@ async function findExplainedAlternative(
   effectiveFilters: DiscoveryFilters,
   interpreted: ReturnType<typeof interpretDeterministicSearch>,
   now: Date,
+  viewerId: string | null,
   near?: { longitude: number; latitude: number; radiusMeters: number }
 ): Promise<
   | {
@@ -884,7 +958,7 @@ async function findExplainedAlternative(
     const events = await repository.findInBounds(
       toMapBoundsQuery(bounds, plan.filters, near),
       createFilteredDiscoveryWindow(now, plan.filters),
-      { excludedCategories: plan.excludedCategories }
+      { excludedCategories: plan.excludedCategories, viewerId }
     );
     if (events.length > 0) return { events, differences: plan.differences };
   }
