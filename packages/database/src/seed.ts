@@ -1,7 +1,11 @@
 import type { EventCategory, EventStatus, TrustLabel } from '@pulso/domain';
 
 import { createPool } from './client.js';
-import { createSyntheticFilterFixtureTimes } from './synthetic-fixture.js';
+import {
+  createSyntheticFilterFixtureTimes,
+  resolveSyntheticSlot
+} from './synthetic-fixture.js';
+import type { SyntheticSlot } from './synthetic-fixture.js';
 
 const pool = createPool();
 const clock = new Date();
@@ -13,7 +17,12 @@ interface Fixture {
   title: string;
   category: EventCategory;
   status: EventStatus;
-  startsAt: Date;
+  /**
+   * Which discovery window this fixture belongs to. Named rather than
+   * computed here so `refreshSyntheticFixtureSchedule` can move the row back
+   * into the same window later without a second copy of the mapping.
+   */
+  slot: SyntheticSlot;
   priceKind: 'free' | 'paid' | 'unknown';
   venueName: string;
   address: string;
@@ -34,7 +43,7 @@ const fixtures: Fixture[] = [
     title: 'Synthetic Montréal Pulse',
     category: 'music',
     status: 'scheduled',
-    startsAt: times.tonight,
+    slot: 'tonight',
     priceKind: 'free',
     venueName: 'Synthetic Montréal Venue',
     address: '1000 Rue Synthétique, Montréal, QC',
@@ -54,7 +63,7 @@ const fixtures: Fixture[] = [
     title: 'Fictional Tomorrow DJ Session',
     category: 'nightlife',
     status: 'scheduled',
-    startsAt: times.tomorrow,
+    slot: 'tomorrow',
     priceKind: 'paid',
     venueName: 'Imaginary Night Hall',
     address: '1100 Rue Fictive, Montréal, QC',
@@ -73,7 +82,7 @@ const fixtures: Fixture[] = [
     title: 'Invented Weekend Festival',
     category: 'festival',
     status: 'postponed',
-    startsAt: times.weekend,
+    slot: 'weekend',
     priceKind: 'unknown',
     venueName: 'Fictional Festival Yard',
     address: '1200 Avenue Imaginaire, Montréal, QC',
@@ -90,7 +99,7 @@ const fixtures: Fixture[] = [
     title: 'Fictional Lantern Show',
     category: 'show',
     status: 'scheduled',
-    startsAt: times.later[0]!,
+    slot: 'later0',
     priceKind: 'paid',
     venueName: 'Made-up Performance Room',
     address: '1300 Boulevard Fictif, Montréal, QC',
@@ -108,7 +117,7 @@ const fixtures: Fixture[] = [
     title: 'Imaginary Montréal Comedy Hour',
     category: 'comedy',
     status: 'scheduled',
-    startsAt: times.later[1]!,
+    slot: 'later1',
     priceKind: 'free',
     venueName: 'Invented Comedy Room',
     address: '1400 Rue Inventée, Montréal, QC',
@@ -127,7 +136,7 @@ const fixtures: Fixture[] = [
     title: 'Synthetic Scheduled Gathering',
     category: 'other',
     status: 'scheduled',
-    startsAt: times.later[2]!,
+    slot: 'later2',
     priceKind: 'unknown',
     venueName: 'Fictional Community Stage',
     address: '1500 Rue Exemple, Montréal, QC',
@@ -143,7 +152,7 @@ const fixtures: Fixture[] = [
     title: 'Cancelled Fictional Music Night',
     category: 'music',
     status: 'cancelled',
-    startsAt: times.later[3]!,
+    slot: 'later3',
     priceKind: 'paid',
     venueName: 'Imaginary Cancelled Hall',
     address: '1600 Rue Annulée, Montréal, QC',
@@ -211,8 +220,11 @@ try {
         fixture.title,
         fixture.category,
         fixture.status,
-        fixture.startsAt,
-        new Date(fixture.startsAt.getTime() + 3 * 60 * 60 * 1000),
+        resolveSyntheticSlot(times, fixture.slot),
+        new Date(
+          resolveSyntheticSlot(times, fixture.slot).getTime() +
+            3 * 60 * 60 * 1000
+        ),
         `https://example.com/${fixture.externalDestination ?? `source-${fixture.id}`}`,
         times.observedAt,
         fixture.locationConfidence,
