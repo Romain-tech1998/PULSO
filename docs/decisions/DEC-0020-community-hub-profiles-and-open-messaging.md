@@ -1,7 +1,7 @@
 # DEC-0020 — Community Hub, Personal Profiles, and Open Messaging
 
 **Identifier:** DEC-0020
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Accepted
 **Date:** 2026-08-13
 **Dependencies:** PDR-0001, PDR-0002, DEC-0003, DEC-0010, DEC-0011, DEC-0012, DEC-0013, DEC-0016, DEC-0017, UX-0001, PRD-0001, RFC-0001
@@ -164,3 +164,27 @@ is already displayed (a profile, a friends list, an event's participants).
 9. Messaging is reachable from every connected screen without navigating to
    the Communauté section.
 10. The i18n ratchet does not rise for any file touched by this work.
+
+## v1.1 addendum — event discussions return to events
+
+The connected interface no longer presents **Forums** as a standalone
+destination inside Communauté. The per-event discussion model from DEC-0012
+is unchanged: its categories, posts, replies, likes, photos and reporting all
+remain available from the relevant event. Only the global navigation and the
+separate forum-directory page are removed.
+
+Communauté now contains **Groupes, Messages and Amis**, with Groupes first
+because groups are the main connected-product surface established by
+DEC-0015. Messages remains directly reachable from every connected screen
+through the docked panel, and on mobile Groupes and Messages each receive a
+top-level bottom-navigation slot. Amis remains available in the Communauté
+sub-navigation.
+
+The dashboard may still preview recent event discussions, but the preview
+must open the event discussion itself and its “see all” action returns to the
+event directory. It must not recreate a global Forums category under another
+name.
+
+This addendum supersedes v1.0 Decision §1 and acceptance criteria 1–2 only to
+the extent required to remove Forums as a Communauté sub-section. It does not
+change any event-forum API, storage, privacy or moderation boundary.

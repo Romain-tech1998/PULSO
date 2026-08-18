@@ -61,11 +61,9 @@ import {
  */
 
 // Full-page home for "Groupes" (Sidebar nav item), redesigned (Phase 4.10
-// follow-up) as a real split view instead of a list that pops a modal:
-// the same list+sub-tabs already built for Messages' Groupes tab on the
-// left, GroupDetailContent as a genuine inline panel on the right - no
-// GroupModal here. GroupsBlock (still a modal) stays as-is for the
-// narrower contexts that still use it (sidebar mini-list, Profil tab).
+// follow-up) as a real split view: a searchable directory on the left and
+// GroupDetailContent inline on the right. GroupsBlock (still a modal) stays
+// for the narrower contexts that use it (sidebar shortcuts, profile tab).
 export function GroupsPage({
   authToken,
   userId,
@@ -117,36 +115,10 @@ export function GroupsPage({
       .finally(() => setCreating(false));
   };
 
-  if (selectedGroup) {
-    return (
-      <div className="groups-page groups-page-open">
-        <div className="groups-open-bar">
-          <button
-            type="button"
-            className="groups-open-back"
-            onClick={() => setSelectedGroup(undefined)}
-          >
-            <span aria-hidden="true">←</span>
-            {t('groups.back')}
-          </button>
-        </div>
-        <div className="groups-open-workspace">
-          <GroupDetailContent
-            group={selectedGroup}
-            authToken={authToken}
-            userId={userId}
-            locale={locale}
-            onGroupUpdated={setSelectedGroup}
-            onLeave={() => setSelectedGroup(undefined)}
-            onOpenEventForum={onOpenEventForum}
-          />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="messages-page groups-page">
+    <div
+      className={`messages-page groups-page ${selectedGroup ? 'has-selection' : ''}`}
+    >
       <div className="messages-list-column groups-directory-column">
         <header className="groups-page-header">
           <div>
@@ -311,19 +283,39 @@ export function GroupsPage({
             </button>
           </form>
         )}
-        <MessagesGroupsTab
+        <GroupsDirectory
           key={listVersion}
           authToken={authToken}
           locale={locale}
-          // Nothing is selected on this branch: picking a group returns the
-          // full-page workspace above instead of highlighting a row here.
-          selectedGroupId={undefined}
+          selectedGroupId={selectedGroup?.id}
           onSelectGroup={setSelectedGroup}
         />
       </div>
 
       <div className="messages-conversation-column groups-workspace-column">
-        {
+        {selectedGroup ? (
+          <>
+            <div className="groups-inline-back-row">
+              <button
+                type="button"
+                className="groups-open-back"
+                onClick={() => setSelectedGroup(undefined)}
+              >
+                <span aria-hidden="true">←</span>
+                {t('groups.back')}
+              </button>
+            </div>
+            <GroupDetailContent
+              group={selectedGroup}
+              authToken={authToken}
+              userId={userId}
+              locale={locale}
+              onGroupUpdated={setSelectedGroup}
+              onLeave={() => setSelectedGroup(undefined)}
+              onOpenEventForum={onOpenEventForum}
+            />
+          </>
+        ) : (
           <div className="groups-workspace-empty">
             <div className="groups-workspace-empty-copy">
               <span className="groups-page-eyebrow">
@@ -357,24 +349,18 @@ export function GroupsPage({
               </span>
             </div>
           </div>
-        }
+        )}
       </div>
     </div>
   );
 }
 
-// "Groupes" tab - same real data as GroupsBlock (GET /me/groups), just a
-// second, convenient entry point into the same GroupModal rather than a
-// separate group-messaging concept.
 type GroupsSubTab = 'mine' | 'event' | 'discover';
 
-// Groupes tab inside Messages (Phase 4.10) - three sub-tabs matching the
-// mockup: "Mes groupes" (already-joined), "Groupes de l'événement" (every
-// event-linked group, joined or not) and "Découvrir" (the permanent-group
-// directory DEC-0013 v1.1 pre-authorized). Selecting a row opens the real
-// group inline in the right column via onSelectGroup, same pattern as
-// picking a conversation.
-export function MessagesGroupsTab({
+// The group directory has three purposeful scopes: joined groups,
+// event-linked groups and public communities. Selecting one keeps the list
+// in place on desktop and opens the real workspace beside it.
+function GroupsDirectory({
   authToken,
   selectedGroupId,
   locale,
@@ -693,7 +679,7 @@ export function GroupsBlock({
 // Phase 4.10 ("Groupes avancés") - the rich detail content shared by the
 // modal chrome (GroupModal, unchanged call sites: sidebar mini-list,
 // GroupsBlock, ForumPanel's meetup flow) and the new inline pane inside
-// Messages' "Groupes" tabs. Everything here is real: member avatars/count,
+// the full Groupes workspace. Everything here is real: member avatars/count,
 // a moderator's real pending-request queue, a meetup point derived from
 // the linked event's actual venue, and member-added schedule/attendance/
 // checklist modules - no online presence, no kick/removal, no content

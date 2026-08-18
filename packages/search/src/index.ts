@@ -125,7 +125,58 @@ const DATE_PATTERNS: ReadonlyArray<{
   {
     date: 'next7',
     pattern:
-      /\b((next|coming) (seven|7) days|(les )?(sept|7) prochains jours|prochains (sept|7) jours)\b/
+      /\b((next|coming) (seven|7) days|(this|coming) week|during the week|in the coming week|(les )?(sept|7) prochains jours|prochains (sept|7) jours|cette semaine(?:-ci)?|dans la semaine|au cours de la semaine)\b/
+  }
+];
+
+/** Common Montréal neighbourhoods people use as natural map constraints. */
+const NEIGHBORHOOD_PATTERNS: ReadonlyArray<{
+  pattern: RegExp;
+  point: { longitude: number; latitude: number };
+}> = [
+  {
+    pattern: /\b(plateau(?:-mont-royal)?)\b/,
+    point: { longitude: -73.58, latitude: 45.5236 }
+  },
+  {
+    pattern: /\b(mile[ -]?end)\b/,
+    point: { longitude: -73.5955, latitude: 45.5267 }
+  },
+  {
+    pattern: /\b(rosemont)\b/,
+    point: { longitude: -73.575, latitude: 45.55 }
+  },
+  {
+    pattern: /\b(hochelaga(?:-maisonneuve)?)\b/,
+    point: { longitude: -73.545, latitude: 45.5415 }
+  },
+  {
+    pattern: /\b(villeray)\b/,
+    point: { longitude: -73.6158, latitude: 45.5486 }
+  },
+  {
+    pattern: /\b(centre[ -]?ville|downtown)\b/,
+    point: { longitude: -73.5673, latitude: 45.5017 }
+  },
+  {
+    pattern: /\b(vieux[ -]?montreal|old montreal)\b/,
+    point: { longitude: -73.554, latitude: 45.5075 }
+  },
+  {
+    pattern: /\b(quartier des spectacles)\b/,
+    point: { longitude: -73.5637, latitude: 45.5098 }
+  },
+  {
+    pattern: /\b(griffintown)\b/,
+    point: { longitude: -73.5618, latitude: 45.489 }
+  },
+  {
+    pattern: /\b(verdun)\b/,
+    point: { longitude: -73.573, latitude: 45.4593 }
+  },
+  {
+    pattern: /\b(le )?village\b/,
+    point: { longitude: -73.5559, latitude: 45.5193 }
   }
 ];
 
@@ -324,6 +375,9 @@ function extractResidualSearchText(normalized: string): string | undefined {
     ...PRICE_PATTERNS,
     ...rankingSignalDefinitions
   ]) {
+    residual = residual.replace(new RegExp(pattern.source, 'gi'), ' ');
+  }
+  for (const { pattern } of NEIGHBORHOOD_PATTERNS) {
     residual = residual.replace(new RegExp(pattern.source, 'gi'), ' ');
   }
   residual = residual
@@ -549,8 +603,12 @@ export function interpretDeterministicSearch(
   const venueCategories = VENUE_CATEGORY_PATTERNS.filter(({ pattern }) =>
     pattern.test(normalized)
   ).map(({ category }) => category);
+  const neighborhood = NEIGHBORHOOD_PATTERNS.find(({ pattern }) =>
+    pattern.test(normalized)
+  );
   const searchText = extractResidualSearchText(normalized);
   const hasExpressedCriterion =
+    neighborhood !== undefined ||
     venueCategories.length > 0 ||
     Object.keys(derivedFilters).length > 0 ||
     activeExclusions.length > 0 ||
@@ -582,6 +640,7 @@ export function interpretDeterministicSearch(
     rankingSignals,
     language,
     engine: 'deterministic',
+    ...(neighborhood ? { suggestedLocation: neighborhood.point } : {}),
     ...(asksNearMe ? { suggestedNearMe: true } : {}),
     ...(searchText ? { searchText } : {}),
     ...(venueCategories.length > 0
@@ -605,7 +664,7 @@ export function detectQueryLanguage(
   const normalized = normalizeQuery(query);
   const french = (
     normalized.match(
-      /\b(ce soir|demain|cette fin de semaine|prochains jours|musique|vie nocturne|boite|soiree|evenement|spectacle|humour|gratuit|payant|bientot|abordable|fiable|sans|pres de moi|proche de moi|moins de|jusqu'a)\b/g
+      /\b(ce soir|demain|cette fin de semaine|cette semaine|dans la semaine|prochains jours|plateau|musique|vie nocturne|boite|soiree|evenement|spectacle|humour|gratuit|payant|bientot|abordable|fiable|sans|pres de moi|proche de moi|moins de|jusqu'a)\b/g
     ) ?? []
   ).length;
   const english = (

@@ -19,6 +19,7 @@ describe('deterministic intelligent-search interpretation', () => {
     ['ce soir', 'tonight'],
     ['DEMAIN', 'tomorrow'],
     ['cette fin de semaine', 'weekend'],
+    ['dans la semaine', 'next7'],
     ['les sept prochains jours', 'next7']
   ])('maps the equivalent French date phrase %s', (query, expected) => {
     const result = interpretDeterministicSearch(query, [], 'fr');
@@ -167,6 +168,33 @@ describe('deterministic intelligent-search interpretation', () => {
       interpretDeterministicSearch('humour proche de moi', [], 'fr')
         .suggestedNearMe
     ).toBe(true);
+  });
+
+  it('understands a Montréal neighbourhood as a map location, not a name to match', () => {
+    const result = interpretDeterministicSearch(
+      'je veux sortir sur le plateau dans la semaine',
+      [],
+      'fr'
+    );
+
+    expect(result.resolution).toBe('ready');
+    expect(result.derivedFilters.date).toBe('next7');
+    expect(result.suggestedLocation).toEqual({
+      longitude: -73.58,
+      latitude: 45.5236
+    });
+    expect(result.searchText).toBeUndefined();
+  });
+
+  it('supports the same neighbourhood intent in English', () => {
+    const result = interpretDeterministicSearch('this week in Mile End');
+
+    expect(result.derivedFilters.date).toBe('next7');
+    expect(result.suggestedLocation).toEqual({
+      longitude: -73.5955,
+      latitude: 45.5267
+    });
+    expect(result.searchText).toBeUndefined();
   });
 
   it('does not claim a radius it cannot carry, even alongside "near me"', () => {
