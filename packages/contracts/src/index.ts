@@ -1461,7 +1461,12 @@ export const heldTicketSchema = z.object({
   status: z.enum(['valid', 'used', 'refunded', 'cancelled']),
   issuedAt: z.iso.datetime(),
   usedAt: z.iso.datetime().optional(),
-  token: z.string().min(1)
+  token: z.string().min(1),
+  // DEC-0022 §4. Present only where a wallet provider is actually
+  // configured. Absent means no "Add to Wallet" affordance is rendered
+  // anywhere - a button that produces a broken pass is worse than no button
+  // (acceptance criterion 7).
+  wallet: z.enum(['apple', 'google']).optional()
 });
 export type HeldTicket = z.infer<typeof heldTicketSchema>;
 

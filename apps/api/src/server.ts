@@ -24,6 +24,7 @@ import { lookupVenueByName } from '@pulso/ingestion';
 import { buildApp } from './app.js';
 import { createOpenAiModerationProvider } from './image-moderation-openai.js';
 import { createStripePaymentProvider } from './payments-stripe.js';
+import { resolveGoogleWalletProvider } from './wallet-google.js';
 import { resolveApiConfig } from './config.js';
 
 // Throws before anything else happens if the deployment configuration is
@@ -92,6 +93,16 @@ const app = buildApp(new PostgresEventRepository(pool), {
               )
             }
           : {}),
+        // DEC-0022 §4. Absent unless every Google Wallet variable is set:
+        // a half-configured issuer renders a button that produces a broken
+        // pass, which the decision calls worse than no button.
+        ...(() => {
+          const wallet = resolveGoogleWalletProvider(
+            process.env,
+            config.webUrl
+          );
+          return wallet ? { walletProvider: wallet } : {};
+        })(),
         ratingsRepository: new PostgresRatingsRepository(pool),
         notificationsRepository: new PostgresNotificationsRepository(pool),
         organizerRepository: new PostgresOrganizerRepository(pool),

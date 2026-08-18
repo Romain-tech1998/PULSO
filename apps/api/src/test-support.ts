@@ -1,4 +1,5 @@
 import type { PaymentProvider } from './payments.js';
+import type { WalletPassProvider } from './wallet.js';
 import type { ImageModerationProvider } from './image-moderation.js';
 import type { PublicUser, User } from '@pulso/contracts';
 import { defaultModulesForGroupType } from '@pulso/domain';
@@ -642,6 +643,7 @@ export function accountRepositories(
     eventAccessRepository?: EventAccessRepository;
     ticketingRepository?: TicketingRepository;
     paymentProvider?: PaymentProvider;
+    walletProvider?: WalletPassProvider;
     eventPhotosRepository?: EventPhotosRepository;
     userPhotosRepository?: UserPhotosRepository;
     imageModerationRepository?: ImageModerationRepository;
@@ -673,6 +675,9 @@ export function accountRepositories(
       overrides.ticketingRepository ?? fakeTicketingRepository(),
     ...(overrides.paymentProvider
       ? { paymentProvider: overrides.paymentProvider }
+      : {}),
+    ...(overrides.walletProvider
+      ? { walletProvider: overrides.walletProvider }
       : {}),
     eventPhotosRepository:
       overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),

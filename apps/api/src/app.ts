@@ -60,6 +60,7 @@ import { registerEventAccessRoutes } from './event-access.js';
 import { registerTicketingRoutes } from './ticketing.js';
 import { registerPaymentsRoutes } from './payments-routes.js';
 import type { PaymentProvider } from './payments.js';
+import type { WalletPassProvider } from './wallet.js';
 import { registerEventPhotosRoutes } from './event-photos.js';
 import { registerUserPhotosRoutes } from './user-photos.js';
 import type { ImageModerationProvider } from './image-moderation.js';
@@ -113,6 +114,8 @@ export function buildApp(
     // keeps working and a priced type stays unbuyable, which is the correct
     // answer for a deployment with no Stripe keys.
     paymentProvider?: PaymentProvider;
+    // DEC-0022 §4. Absent means no wallet export and no button anywhere.
+    walletProvider?: WalletPassProvider;
     eventPhotosRepository?: EventPhotosRepository;
     userPhotosRepository?: UserPhotosRepository;
     imageModerationRepository?: ImageModerationRepository;
@@ -295,7 +298,8 @@ export function buildApp(
       options.authRepository,
       options.ticketingRepository,
       apiConfig.ticketSigningSecret,
-      apiConfig.applicationFeeBps
+      apiConfig.applicationFeeBps,
+      options.walletProvider
     );
     registerPaymentsRoutes(
       app,

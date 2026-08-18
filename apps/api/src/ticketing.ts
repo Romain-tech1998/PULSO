@@ -26,9 +26,11 @@ import { z } from 'zod';
 
 import { resolveBearerUser, sendUnauthenticated } from './auth.js';
 import { issueTicketToken, verifyTicketToken } from './ticket-token.js';
+import type { WalletPassProvider } from './wallet.js';
 
 const eventParamsSchema = z.object({ eventId: z.uuid() });
 const ticketTypeParamsSchema = z.object({ ticketTypeId: z.uuid() });
+const ticketParamsSchema = z.object({ ticketId: z.uuid() });
 
 /**
  * DEC-0022 §2 and §3. Ticket types, claiming, "Mes billets", and the door.
@@ -43,7 +45,8 @@ export function registerTicketingRoutes(
   authRepository: AuthRepository,
   ticketingRepository: TicketingRepository,
   ticketSigningSecret: string,
-  applicationFeeBps: number
+  applicationFeeBps: number,
+  walletProvider?: WalletPassProvider
 ) {
   /**
    * DEC-0022 §1. The commission sits on top of the organizer's price, so the
@@ -63,6 +66,9 @@ export function registerTicketingRoutes(
   };
   const withToken = (ticket: HeldTicket) => ({
     ...ticket,
+    // DEC-0022 §4: the wallet flag exists only when a provider does, so a
+    // client cannot render a button that leads nowhere.
+    ...(walletProvider ? { wallet: walletProvider.platform } : {}),
     token: issueTicketToken(
       {
         ticketId: ticket.id,
@@ -157,6 +163,89 @@ export function registerTicketingRoutes(
       if (refusal) return reply.status(refusal.status).send(refusal.body);
       throw error;
     }
+  });
+
+  /**
+   * DEC-0022 §4. Exports one ticket as a wallet pass.
+   *
+   * The pass is built from the same signed token the in-app ticket carries,
+   * so a door cannot tell them apart. A provider failure answers 503 and
+   * changes nothing about the ticket: the QR was always the real one.
+   */
+  app.get('/me/tickets/:ticketId/wallet', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    if (!walletProvider) {
+      return reply.status(404).send({
+        error: {
+          code: 'WALLET_NOT_CONFIGURED',
+          message: 'No wallet provider is configured.'
+        }
+      });
+    }
+    const { ticketId } = ticketParamsSchema.parse(request.params);
+    const ticket = await ticketingRepository.findTicketById(ticketId);
+    // Someone else's ticket is answered as a missing one: a 403 would confirm
+    // which ticket ids exist.
+    if (!ticket) {
+      return reply.status(404).send({
+        error: {
+          code: 'TICKET_NOT_FOUND',
+          message: 'The ticket was not found.'
+        }
+      });
+    }
+    const mine = await ticketingRepository.listMyTickets(user.id);
+    if (!mine.some((held) => held.id === ticketId)) {
+      return reply.status(404).send({
+        error: {
+          code: 'TICKET_NOT_FOUND',
+          message: 'The ticket was not found.'
+        }
+      });
+    }
+
+    let pass;
+    try {
+      pass = await walletProvider.issue(
+        ticket,
+        issueTicketToken(
+          {
+            ticketId: ticket.id,
+            eventId: ticket.eventId,
+            issuedAt: new Date(ticket.issuedAt).getTime()
+          },
+          ticketSigningSecret
+        )
+      );
+    } catch {
+      // Never fatal to the ticket (DEC-0022 §4).
+      return reply.status(503).send({
+        error: {
+          code: 'WALLET_UNAVAILABLE',
+          message: 'The wallet pass could not be built right now.'
+        }
+      });
+    }
+
+    if (pass.kind === 'link' && pass.url) {
+      return { data: { kind: 'link', url: pass.url } };
+    }
+    if (pass.body) {
+      return reply
+        .header('content-type', pass.contentType)
+        .header(
+          'content-disposition',
+          `attachment; filename="${pass.fileName ?? 'pulso.pkpass'}"`
+        )
+        .send(pass.body);
+    }
+    return reply.status(503).send({
+      error: {
+        code: 'WALLET_UNAVAILABLE',
+        message: 'The wallet pass could not be built right now.'
+      }
+    });
   });
 
   app.get('/me/tickets', async (request, reply) => {

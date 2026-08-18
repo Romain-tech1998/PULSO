@@ -797,6 +797,9 @@ const en = {
   'tickets.free': 'Free',
   'tickets.used': 'Used',
   'tickets.refunded': 'Refunded',
+  'tickets.addToWallet': 'Add to Wallet',
+  'tickets.walletFailed':
+    'The pass could not be created. Your QR is still valid.',
   'tickets.showQr': 'Show the QR',
   'tickets.hideQr': 'Hide',
   'tickets.qrHint': 'Show this at the door. It is checked against Pulso.',
@@ -1857,6 +1860,8 @@ const fr = {
   'tickets.free': 'Gratuit',
   'tickets.used': 'Utilisé',
   'tickets.refunded': 'Remboursé',
+  'tickets.addToWallet': 'Ajouter au Wallet',
+  'tickets.walletFailed': 'Le passe n’a pas pu être créé. Ton QR reste valide.',
   'tickets.showQr': 'Afficher le QR',
   'tickets.hideQr': 'Masquer',
   'tickets.qrHint': 'Présente-le à l’entrée. Il est vérifié auprès de Pulso.',

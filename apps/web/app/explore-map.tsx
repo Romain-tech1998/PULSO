@@ -11838,6 +11838,60 @@ function TicketQr({ token, label }: { token: string; label: string }) {
   );
 }
 
+/**
+ * DEC-0022 §4. The wallet export, which exists only when a provider does.
+ *
+ * A failure here says so and leaves the QR alone: the pass is an export, and
+ * the ticket was never the pass.
+ */
+function WalletButton({
+  ticket,
+  locale
+}: {
+  ticket: HeldTicket;
+  locale: SupportedLocale;
+}) {
+  const [error, setError] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const authToken =
+    typeof window === 'undefined'
+      ? undefined
+      : (localStorage.getItem(AUTH_TOKEN_KEY) ?? undefined);
+
+  const open = () => {
+    if (!authToken) return;
+    setBusy(true);
+    setError(false);
+    fetch(`${API_BASE_URL}/me/tickets/${ticket.id}/wallet`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        window.open(json.data.url, '_blank', 'noopener');
+      })
+      .catch(() => setError(true))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className="btn-secondary ticket-card-toggle"
+        disabled={busy}
+        onClick={open}
+      >
+        {translate(locale, 'tickets.addToWallet')}
+      </button>
+      {error && (
+        <small className="access-panel-status-declined">
+          {translate(locale, 'tickets.walletFailed')}
+        </small>
+      )}
+    </>
+  );
+}
+
 /** One ticket in "Mes sorties", with its QR behind a deliberate tap. */
 function TicketCard({
   ticket,
@@ -11890,6 +11944,10 @@ function TicketCard({
         <div className="ticket-card-qr">
           <TicketQr token={ticket.token} label={ticket.eventTitle} />
           <small>{translate(locale, 'tickets.qrHint')}</small>
+          {/* DEC-0022 §4: rendered only where a provider is configured. The
+              server omits `wallet` otherwise, so there is no button to press
+              that could lead to a broken pass. */}
+          {ticket.wallet && <WalletButton ticket={ticket} locale={locale} />}
         </div>
       )}
     </div>
