@@ -17345,6 +17345,7 @@ a.venue-detail-info-row:hover {
 
   .app-container-anonymous .info-item-venue,
   .app-container-anonymous .info-item-access,
+  .app-container-anonymous .info-item-trust,
   .app-container-anonymous .details-info-list > :not(.info-item) {
     grid-column: 1 / -1;
   }
@@ -17425,11 +17426,6 @@ a.venue-detail-info-row:hover {
 .app-container-anonymous .event-preview-card {
   background: rgba(21, 18, 30, 0.97);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.62);
-}
-
-.anonymous-content-column > .bottom-section,
-.app-container-anonymous .bottom-section {
-  display: none;
 }
 
 .anonymous-content-column .favoris-section {

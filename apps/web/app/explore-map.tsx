@@ -19822,6 +19822,57 @@ function EventAboutContent({
             <p>{event.accessInformation}</p>
           </div>
         </div>
+        {/* DATA-0001's verdict on a sourced record, or - for one created
+            through the account layer, which carries no such verdict - its
+            provenance instead (DEC-0017). Never a placeholder that would
+            read like a downgraded trust label.
+
+            Restored: the anonymous shell rework dropped this item, and with
+            it the freshness statement UJ-0001 requires a visitor be given
+            before they decide. It had already been lost once before. */}
+        <div className="info-item info-item-trust">
+          <span className="info-icon">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6z" />
+              <path d="M9 12l2 2 4-4" />
+            </svg>
+          </span>
+          <div>
+            <strong>
+              {translate(
+                locale,
+                presentation.trust ? 'details.trust' : 'details.origin'
+              )}
+            </strong>
+            {presentation.trust ? (
+              <>
+                <p>{presentation.trust}</p>
+                <p className="info-sub">
+                  {[presentation.freshness, presentation.location]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              </>
+            ) : (
+              <p>
+                {translate(
+                  locale,
+                  `details.origin.${event.origin ?? 'directory'}` as MessageKey
+                )}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
       {presentation.materialWarning && (
