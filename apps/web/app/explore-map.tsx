@@ -2192,7 +2192,17 @@ export function ExploreMap({
     }
     setDetails({ kind: 'loading', eventId });
     try {
-      const response = await fetch(`${API_BASE_URL}/events/${eventId}`);
+      // DEC-0022 §6: the record has to be read as *this* reader. Without
+      // the token the API answers as if nobody were signed in, so an
+      // approved visitor is handed the withheld version - no address, no
+      // access status - and the panel offers them a request they already
+      // made and already had granted. An organizer got the same treatment
+      // on an event they own.
+      const detailsHeaders = authHeaders(authTokenRef.current);
+      const response = await fetch(
+        `${API_BASE_URL}/events/${eventId}`,
+        detailsHeaders ? { headers: detailsHeaders } : {}
+      );
       if (!response.ok) throw new Error('Event details unavailable');
       const result = eventDetailsResponseSchema.parse(await response.json());
       setDetails({ kind: 'success', event: result.data });
