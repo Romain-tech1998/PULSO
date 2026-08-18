@@ -46,6 +46,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+# Chromium writes this one from the Electron shell the map runs in - GPU
+# driver chatter, regenerated on every run, never worth reading twice.
+debug.log
 
 # Environment files
 .env*
