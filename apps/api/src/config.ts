@@ -28,6 +28,16 @@ export interface ApiConfig {
    * the intended emergency lever, not an everyday operation.
    */
   ticketSigningSecret: string;
+  /**
+   * DEC-0022 §1. Pulso's cut of a ticket, in basis points of the total.
+   *
+   * Defaults to zero, and that is the honest default: §8 makes "a decided
+   * commission rate" a prerequisite for live mode, and inventing one here
+   * would put a number nobody chose into every test-mode charge.
+   */
+  applicationFeeBps: number;
+  /** How long an open checkout holds its seats (DEC-0022 §2). */
+  checkoutHoldMinutes: number;
 }
 
 export class ConfigError extends Error {
@@ -125,7 +135,15 @@ export function resolveApiConfig(
     // Development default, deliberately obvious. Production refuses to start
     // without a real one above.
     ticketSigningSecret:
-      env.TICKET_SIGNING_SECRET ?? 'pulso-development-ticket-secret'
+      env.TICKET_SIGNING_SECRET ?? 'pulso-development-ticket-secret',
+    applicationFeeBps: Math.max(
+      0,
+      Math.min(10_000, Number(env.PULSO_APPLICATION_FEE_BPS ?? 0) || 0)
+    ),
+    checkoutHoldMinutes: Math.max(
+      1,
+      Number(env.PULSO_CHECKOUT_HOLD_MINUTES ?? 20) || 20
+    )
   };
 }
 

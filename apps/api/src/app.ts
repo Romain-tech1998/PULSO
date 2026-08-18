@@ -58,6 +58,8 @@ import { resolveAllowedOrigin, resolveApiConfig } from './config.js';
 import { registerCreatedEventsRoutes } from './created-events.js';
 import { registerEventAccessRoutes } from './event-access.js';
 import { registerTicketingRoutes } from './ticketing.js';
+import { registerPaymentsRoutes } from './payments-routes.js';
+import type { PaymentProvider } from './payments.js';
 import { registerEventPhotosRoutes } from './event-photos.js';
 import { registerUserPhotosRoutes } from './user-photos.js';
 import type { ImageModerationProvider } from './image-moderation.js';
@@ -107,6 +109,10 @@ export function buildApp(
     organizerRepository?: OrganizerRepository;
     eventAccessRepository?: EventAccessRepository;
     ticketingRepository?: TicketingRepository;
+    // DEC-0022 §1. Absent means this instance does not sell: free ticketing
+    // keeps working and a priced type stays unbuyable, which is the correct
+    // answer for a deployment with no Stripe keys.
+    paymentProvider?: PaymentProvider;
     eventPhotosRepository?: EventPhotosRepository;
     userPhotosRepository?: UserPhotosRepository;
     imageModerationRepository?: ImageModerationRepository;
@@ -289,6 +295,17 @@ export function buildApp(
       options.authRepository,
       options.ticketingRepository,
       apiConfig.ticketSigningSecret
+    );
+    registerPaymentsRoutes(
+      app,
+      options.authRepository,
+      options.ticketingRepository,
+      {
+        webUrl: apiConfig.webUrl,
+        applicationFeeBps: apiConfig.applicationFeeBps,
+        checkoutHoldMinutes: apiConfig.checkoutHoldMinutes
+      },
+      options.paymentProvider
     );
   }
 

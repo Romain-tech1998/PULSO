@@ -1,3 +1,4 @@
+import type { PaymentProvider } from './payments.js';
 import type { ImageModerationProvider } from './image-moderation.js';
 import type { PublicUser, User } from '@pulso/contracts';
 import { defaultModulesForGroupType } from '@pulso/domain';
@@ -525,6 +526,18 @@ export function fakeTicketingRepository(
     redeem: async () => ({ result: 'unknown' }),
     isEventOrganizer: async () => false,
     countAdmissions: async () => ({ used: 0, valid: 0 }),
+    findStripeAccount: async () => undefined,
+    saveStripeAccount: async () => undefined,
+    updateStripeStatus: async () => undefined,
+    startPaidOrder: async () => {
+      throw new Error('not stubbed');
+    },
+    attachCheckoutSession: async () => undefined,
+    completePaidOrder: async () => [],
+    releaseOrder: async () => false,
+    recordWebhookEvent: async () => true,
+    findOrderForRefund: async () => undefined,
+    markOrderRefunded: async () => undefined,
     ...overrides
   };
 }
@@ -628,6 +641,7 @@ export function accountRepositories(
     profileRepository?: ProfileRepository;
     eventAccessRepository?: EventAccessRepository;
     ticketingRepository?: TicketingRepository;
+    paymentProvider?: PaymentProvider;
     eventPhotosRepository?: EventPhotosRepository;
     userPhotosRepository?: UserPhotosRepository;
     imageModerationRepository?: ImageModerationRepository;
@@ -657,6 +671,9 @@ export function accountRepositories(
       overrides.eventAccessRepository ?? fakeEventAccessRepository(),
     ticketingRepository:
       overrides.ticketingRepository ?? fakeTicketingRepository(),
+    ...(overrides.paymentProvider
+      ? { paymentProvider: overrides.paymentProvider }
+      : {}),
     eventPhotosRepository:
       overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
     userPhotosRepository:

@@ -23,6 +23,7 @@ import {
 import { lookupVenueByName } from '@pulso/ingestion';
 import { buildApp } from './app.js';
 import { createOpenAiModerationProvider } from './image-moderation-openai.js';
+import { createStripePaymentProvider } from './payments-stripe.js';
 import { resolveApiConfig } from './config.js';
 
 // Throws before anything else happens if the deployment configuration is
@@ -78,6 +79,16 @@ const app = buildApp(new PostgresEventRepository(pool), {
           ? {
               imageModerationProvider: createOpenAiModerationProvider(
                 process.env.OPENAI_API_KEY
+              )
+            }
+          : {}),
+        // DEC-0022 §1 and §8. Both halves required: a secret key with no
+        // webhook secret could open a checkout it could never confirm.
+        ...(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET
+          ? {
+              paymentProvider: createStripePaymentProvider(
+                process.env.STRIPE_SECRET_KEY,
+                process.env.STRIPE_WEBHOOK_SECRET
               )
             }
           : {}),

@@ -824,6 +824,22 @@ const en = {
   'tickets.create': 'Create',
   'tickets.deleteType': 'Delete',
   'tickets.typeInUse': 'Tickets have already been issued for this type.',
+  'pay.title': 'Payments',
+  'pay.unavailable':
+    'This Pulso instance has no payment provider, so only free tickets can be issued.',
+  'pay.connect': 'Connect Stripe',
+  'pay.connecting': 'Opening…',
+  'pay.continue': 'Finish the Stripe setup',
+  'pay.refresh': 'Refresh the status',
+  'pay.enabled': 'Stripe is ready: you can sell tickets.',
+  'pay.pending':
+    'Stripe has not enabled charges yet. Finish the setup, then refresh.',
+  'pay.explain':
+    'You are the merchant: the money goes to your Stripe account, and you own refunds and disputes. Pulso takes a commission.',
+  'pay.buy': 'Buy',
+  'pay.buying': 'Opening the checkout…',
+  'pay.organizerNotPayable': 'This organizer cannot accept payments yet.',
+  'pay.failed': 'The checkout could not be opened. Try again.',
   'tickets.door': 'Door',
   'tickets.doorHint':
     'Scan a QR, or paste it if the camera is unavailable. Pulso decides, not the phone.',
@@ -1866,6 +1882,22 @@ const fr = {
   'tickets.create': 'Créer',
   'tickets.deleteType': 'Supprimer',
   'tickets.typeInUse': 'Des billets ont déjà été émis pour ce type.',
+  'pay.title': 'Paiements',
+  'pay.unavailable':
+    'Cette instance Pulso n’a pas de fournisseur de paiement : seuls des billets gratuits peuvent être émis.',
+  'pay.connect': 'Connecter Stripe',
+  'pay.connecting': 'Ouverture…',
+  'pay.continue': 'Terminer la configuration Stripe',
+  'pay.refresh': 'Actualiser le statut',
+  'pay.enabled': 'Stripe est prêt : tu peux vendre des billets.',
+  'pay.pending':
+    'Stripe n’a pas encore activé les encaissements. Termine la configuration, puis actualise.',
+  'pay.explain':
+    'C’est toi le marchand : l’argent va sur ton compte Stripe, et les remboursements et litiges t’appartiennent. Pulso prélève une commission.',
+  'pay.buy': 'Acheter',
+  'pay.buying': 'Ouverture du paiement…',
+  'pay.organizerNotPayable': 'Cet organisateur ne peut pas encore encaisser.',
+  'pay.failed': 'Le paiement n’a pas pu être ouvert. Réessaie.',
   'tickets.door': 'Porte',
   'tickets.doorHint':
     'Scanne un QR, ou colle-le si la caméra n’est pas disponible. C’est Pulso qui tranche, pas le téléphone.',

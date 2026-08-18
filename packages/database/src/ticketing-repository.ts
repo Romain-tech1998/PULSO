@@ -50,6 +50,18 @@ export class TicketPaymentNotAvailableError extends Error {
 }
 
 /**
+ * DEC-0022 §1: "An organizer cannot publish a paid event until their Connect
+ * account reports `charges_enabled`." Refusal rather than a checkout that
+ * fails at the card form, which is where the buyer would otherwise find out.
+ */
+export class OrganizerCannotAcceptPaymentsError extends Error {
+  constructor() {
+    super('This organizer cannot accept payments yet.');
+    this.name = 'OrganizerCannotAcceptPaymentsError';
+  }
+}
+
+/**
  * DEC-0022 §6 meeting §2: an event that withholds its address also withholds
  * admission. Claiming a ticket to a private after would otherwise be a way
  * around the organizer's decision.
@@ -84,6 +96,31 @@ export interface TicketType {
 }
 
 export type TicketStatus = 'valid' | 'used' | 'refunded' | 'cancelled';
+
+/** DEC-0022 §1. The organizer's Stripe Connect Express account. */
+export interface StripeAccount {
+  stripeAccountId: string;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  requirements?: unknown;
+}
+
+/**
+ * A checkout that has been opened but not paid. Holds its seats until
+ * `expiresAt`, so an abandoned payment releases them instead of taking them
+ * out of sale forever.
+ */
+export interface PendingOrder {
+  orderId: string;
+  eventId: string;
+  ticketTypeId: string;
+  quantity: number;
+  unitAmountCents: number;
+  totalCents: number;
+  applicationFeeCents: number;
+  stripeAccountId: string;
+  ticketTypeName: string;
+}
 
 export interface HeldTicket {
   id: string;
@@ -132,6 +169,62 @@ export interface TicketingRepository {
     scannerUserId: string
   ): Promise<RedemptionOutcome>;
   isEventOrganizer(eventId: string, userId: string): Promise<boolean>;
+
+  // DEC-0022 §1. Connect Express.
+  findStripeAccount(userId: string): Promise<StripeAccount | undefined>;
+  saveStripeAccount(userId: string, stripeAccountId: string): Promise<void>;
+  updateStripeStatus(
+    stripeAccountId: string,
+    status: {
+      chargesEnabled: boolean;
+      payoutsEnabled: boolean;
+      requirements: unknown;
+    }
+  ): Promise<void>;
+
+  /**
+   * Reserves seats and opens a pending order, or throws for the same reasons
+   * free issuance throws. The seats are held until the order expires, so the
+   * count that decides "sold out" has to include them - a checkout that holds
+   * nothing is an oversell waiting for two people to pay at once.
+   */
+  startPaidOrder(
+    userId: string,
+    ticketTypeId: string,
+    quantity: number,
+    applicationFeeBps: number,
+    holdMinutes: number
+  ): Promise<PendingOrder>;
+  attachCheckoutSession(orderId: string, sessionId: string): Promise<void>;
+  /**
+   * Marks the order paid and issues its tickets, exactly once.
+   *
+   * Returns the tickets issued, or an empty array when the order was already
+   * paid - which is what makes a replayed webhook harmless (DEC-0022
+   * acceptance criterion 2).
+   */
+  completePaidOrder(
+    orderId: string,
+    paymentIntentId: string | undefined
+  ): Promise<HeldTicket[]>;
+  releaseOrder(orderId: string): Promise<boolean>;
+  /**
+   * Records a webhook delivery, returning false when it has been seen before.
+   * The record is written before the work and in the same transaction, so a
+   * redelivery cannot slip between the check and the effect.
+   */
+  recordWebhookEvent(eventId: string, type: string): Promise<boolean>;
+  findOrderForRefund(
+    organizerId: string,
+    orderId: string
+  ): Promise<
+    | {
+        stripeAccountId: string;
+        paymentIntentId: string;
+      }
+    | undefined
+  >;
+  markOrderRefunded(orderId: string): Promise<void>;
   countAdmissions(eventId: string): Promise<{ used: number; valid: number }>;
 }
 
@@ -192,6 +285,36 @@ function toHeldTicket(row: HeldTicketRow): HeldTicket {
     ...(row.used_at !== null ? { usedAt: row.used_at.toISOString() } : {})
   };
 }
+
+/**
+ * Issued tickets plus the seats an open checkout is holding.
+ *
+ * The held half is what makes a paid sale safe: between opening a Stripe
+ * session and the webhook coming back, those seats are neither tickets nor
+ * available, and counting only `tickets` would sell them twice. Expired holds
+ * fall out of the count on their own, so an abandoned checkout releases its
+ * seats without anything having to sweep it.
+ */
+const countIssuedAndHeld = `
+  SELECT
+    (
+      (SELECT count(*) FROM tickets
+       WHERE ticket_type_id = $1 AND status <> 'cancelled')
+      + coalesce((SELECT sum(quantity) FROM ticket_orders
+                  WHERE ticket_type_id = $1
+                    AND status = 'pending'
+                    AND expires_at > now()), 0)
+    ) AS total,
+    (
+      (SELECT count(*) FROM tickets
+       WHERE ticket_type_id = $1 AND status <> 'cancelled' AND user_id = $2)
+      + coalesce((SELECT sum(quantity) FROM ticket_orders
+                  WHERE ticket_type_id = $1
+                    AND user_id = $2
+                    AND status = 'pending'
+                    AND expires_at > now()), 0)
+    ) AS mine
+`;
 
 const heldTicketSelect = `
   SELECT t.id, t.event_id, e.title AS event_title, e.starts_at AS event_starts_at,
@@ -346,10 +469,7 @@ export class PostgresTicketingRepository implements TicketingRepository {
       }
 
       const counts = await client.query<{ total: string; mine: string }>(
-        `SELECT
-           count(*) FILTER (WHERE status <> 'cancelled') AS total,
-           count(*) FILTER (WHERE status <> 'cancelled' AND user_id = $2) AS mine
-         FROM tickets WHERE ticket_type_id = $1`,
+        countIssuedAndHeld,
         [ticketTypeId, userId]
       );
       const total = Number(counts.rows[0]?.total ?? 0);
@@ -475,6 +595,330 @@ export class PostgresTicketingRepository implements TicketingRepository {
       };
     }
     return { result: 'not_valid', status: ticket.status };
+  }
+
+  async findStripeAccount(userId: string): Promise<StripeAccount | undefined> {
+    const result = await this.pool.query<{
+      stripe_account_id: string;
+      charges_enabled: boolean;
+      payouts_enabled: boolean;
+      requirements: unknown;
+    }>(
+      `SELECT stripe_account_id, charges_enabled, payouts_enabled, requirements
+       FROM stripe_accounts WHERE user_id = $1`,
+      [userId]
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      stripeAccountId: row.stripe_account_id,
+      chargesEnabled: row.charges_enabled,
+      payoutsEnabled: row.payouts_enabled,
+      ...(row.requirements !== null ? { requirements: row.requirements } : {})
+    };
+  }
+
+  async saveStripeAccount(
+    userId: string,
+    stripeAccountId: string
+  ): Promise<void> {
+    // The account starts disabled whatever Stripe will later say. Defaulting
+    // to enabled would let an organizer publish a paid event in the window
+    // before the first status refresh.
+    await this.pool.query(
+      `INSERT INTO stripe_accounts (user_id, stripe_account_id)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE
+         SET stripe_account_id = EXCLUDED.stripe_account_id,
+             charges_enabled = false,
+             payouts_enabled = false,
+             refreshed_at = now()`,
+      [userId, stripeAccountId]
+    );
+  }
+
+  async updateStripeStatus(
+    stripeAccountId: string,
+    status: {
+      chargesEnabled: boolean;
+      payoutsEnabled: boolean;
+      requirements: unknown;
+    }
+  ): Promise<void> {
+    await this.pool.query(
+      `UPDATE stripe_accounts
+       SET charges_enabled = $2, payouts_enabled = $3,
+           requirements = $4, refreshed_at = now()
+       WHERE stripe_account_id = $1`,
+      [
+        stripeAccountId,
+        status.chargesEnabled,
+        status.payoutsEnabled,
+        status.requirements === undefined
+          ? null
+          : JSON.stringify(status.requirements)
+      ]
+    );
+  }
+
+  /**
+   * DEC-0022 §1 and §2. Opens a checkout and holds its seats.
+   *
+   * Same lock as free issuance, and deliberately the same refusals in the
+   * same order: an organizer whose Stripe account is not enabled is refused
+   * here, before the buyer ever sees a card form.
+   */
+  async startPaidOrder(
+    userId: string,
+    ticketTypeId: string,
+    quantity: number,
+    applicationFeeBps: number,
+    holdMinutes: number
+  ): Promise<PendingOrder> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query<{
+        id: string;
+        event_id: string;
+        name: string;
+        price_cents: number;
+        quantity: number | null;
+        max_per_account: number;
+        sales_open_at: Date | null;
+        sales_close_at: Date | null;
+        address_disclosure: string;
+        organizer_id: string | null;
+        stripe_account_id: string | null;
+        charges_enabled: boolean | null;
+      }>(
+        `SELECT tt.id, tt.event_id, tt.name, tt.price_cents, tt.quantity,
+                tt.max_per_account, tt.sales_open_at, tt.sales_close_at,
+                e.address_disclosure, e.created_by_user_id AS organizer_id,
+                sa.stripe_account_id, sa.charges_enabled
+         FROM event_ticket_types tt
+         JOIN events e ON e.id = tt.event_id
+         LEFT JOIN stripe_accounts sa ON sa.user_id = e.created_by_user_id
+         WHERE tt.id = $1
+         FOR UPDATE OF tt`,
+        [ticketTypeId]
+      );
+      const type = locked.rows[0];
+      if (!type) throw new TicketSalesClosedError();
+      if (type.price_cents <= 0) throw new TicketSalesClosedError();
+      if (!type.stripe_account_id || type.charges_enabled !== true)
+        throw new OrganizerCannotAcceptPaymentsError();
+
+      const now = new Date();
+      if (type.sales_open_at && now < type.sales_open_at)
+        throw new TicketSalesClosedError();
+      if (type.sales_close_at && now > type.sales_close_at)
+        throw new TicketSalesClosedError();
+
+      if (
+        type.address_disclosure !== 'public' &&
+        type.organizer_id !== userId
+      ) {
+        const approved = await client.query(
+          `SELECT 1 FROM event_access_requests
+           WHERE event_id = $1 AND user_id = $2 AND status = 'approved'`,
+          [type.event_id, userId]
+        );
+        if ((approved.rowCount ?? 0) === 0)
+          throw new TicketAccessNotApprovedError();
+      }
+
+      const counts = await client.query<{ total: string; mine: string }>(
+        countIssuedAndHeld,
+        [ticketTypeId, userId]
+      );
+      const total = Number(counts.rows[0]?.total ?? 0);
+      const mine = Number(counts.rows[0]?.mine ?? 0);
+      if (type.quantity !== null && total + quantity > type.quantity)
+        throw new TicketsSoldOutError();
+      if (mine + quantity > type.max_per_account)
+        throw new TicketLimitReachedError(type.max_per_account);
+
+      const totalCents = type.price_cents * quantity;
+      // Rounded down, so Pulso never takes more than the configured share of
+      // what the buyer actually paid.
+      const applicationFeeCents = Math.floor(
+        (totalCents * applicationFeeBps) / 10_000
+      );
+      const orderId = randomUUID();
+      await client.query(
+        `INSERT INTO ticket_orders
+           (id, event_id, user_id, status, total_cents, stripe_account_id,
+            application_fee_cents, ticket_type_id, quantity, expires_at)
+         VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8,
+                 now() + ($9 || ' minutes')::interval)`,
+        [
+          orderId,
+          type.event_id,
+          userId,
+          totalCents,
+          type.stripe_account_id,
+          applicationFeeCents,
+          ticketTypeId,
+          quantity,
+          String(holdMinutes)
+        ]
+      );
+      await client.query('COMMIT');
+      return {
+        orderId,
+        eventId: type.event_id,
+        ticketTypeId,
+        quantity,
+        unitAmountCents: type.price_cents,
+        totalCents,
+        applicationFeeCents,
+        stripeAccountId: type.stripe_account_id,
+        ticketTypeName: type.name
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async attachCheckoutSession(
+    orderId: string,
+    sessionId: string
+  ): Promise<void> {
+    await this.pool.query(
+      `UPDATE ticket_orders SET stripe_checkout_session_id = $2 WHERE id = $1`,
+      [orderId, sessionId]
+    );
+  }
+
+  /**
+   * DEC-0022 acceptance criterion 2: a replayed or duplicated webhook issues
+   * no extra ticket.
+   *
+   * The status transition is the guard. `WHERE status = 'pending'` means the
+   * second delivery updates nothing, returns no row, and issues nothing -
+   * rather than a check-then-issue that two concurrent deliveries both pass.
+   */
+  async completePaidOrder(
+    orderId: string,
+    paymentIntentId: string | undefined
+  ): Promise<HeldTicket[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const claimed = await client.query<{
+        event_id: string;
+        user_id: string;
+        ticket_type_id: string | null;
+        quantity: number | null;
+      }>(
+        `UPDATE ticket_orders
+         SET status = 'paid', paid_at = now(),
+             stripe_payment_intent_id = coalesce($2, stripe_payment_intent_id),
+             expires_at = NULL
+         WHERE id = $1 AND status = 'pending'
+         RETURNING event_id, user_id, ticket_type_id, quantity`,
+        [orderId, paymentIntentId ?? null]
+      );
+      const order = claimed.rows[0];
+      if (!order || !order.ticket_type_id || !order.quantity) {
+        await client.query('COMMIT');
+        return [];
+      }
+
+      const ids: string[] = [];
+      for (let issued = 0; issued < order.quantity; issued += 1) {
+        const ticketId = randomUUID();
+        ids.push(ticketId);
+        await client.query(
+          `INSERT INTO tickets
+             (id, order_id, ticket_type_id, event_id, user_id, status)
+           VALUES ($1, $2, $3, $4, $5, 'valid')`,
+          [
+            ticketId,
+            orderId,
+            order.ticket_type_id,
+            order.event_id,
+            order.user_id
+          ]
+        );
+      }
+      const created = await client.query<HeldTicketRow>(
+        `${heldTicketSelect} WHERE t.id = ANY($1::uuid[]) ORDER BY t.issued_at`,
+        [ids]
+      );
+      await client.query('COMMIT');
+      return created.rows.map(toHeldTicket);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async releaseOrder(orderId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE ticket_orders SET status = 'cancelled', expires_at = NULL
+       WHERE id = $1 AND status = 'pending'`,
+      [orderId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async recordWebhookEvent(eventId: string, type: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `INSERT INTO stripe_webhook_events (id, type) VALUES ($1, $2)
+       ON CONFLICT (id) DO NOTHING`,
+      [eventId, type]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async findOrderForRefund(
+    organizerId: string,
+    orderId: string
+  ): Promise<{ stripeAccountId: string; paymentIntentId: string } | undefined> {
+    // Joined through the event's creator, so an organizer can only refund
+    // orders placed on their own events.
+    const result = await this.pool.query<{
+      stripe_account_id: string | null;
+      stripe_payment_intent_id: string | null;
+    }>(
+      `SELECT o.stripe_account_id, o.stripe_payment_intent_id
+       FROM ticket_orders o
+       JOIN events e ON e.id = o.event_id
+       WHERE o.id = $1
+         AND e.created_by_user_id = $2
+         AND o.status = 'paid'
+         AND o.refunded_at IS NULL`,
+      [orderId, organizerId]
+    );
+    const row = result.rows[0];
+    if (!row?.stripe_account_id || !row.stripe_payment_intent_id)
+      return undefined;
+    return {
+      stripeAccountId: row.stripe_account_id,
+      paymentIntentId: row.stripe_payment_intent_id
+    };
+  }
+
+  async markOrderRefunded(orderId: string): Promise<void> {
+    // The tickets go with the money. A refunded ticket that still scanned
+    // would admit someone who has been paid back.
+    await this.pool.query(
+      `UPDATE ticket_orders SET status = 'refunded', refunded_at = now()
+       WHERE id = $1`,
+      [orderId]
+    );
+    await this.pool.query(
+      `UPDATE tickets SET status = 'refunded'
+       WHERE order_id = $1 AND status = 'valid'`,
+      [orderId]
+    );
   }
 
   async countAdmissions(

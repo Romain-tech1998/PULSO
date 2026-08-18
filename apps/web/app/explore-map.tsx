@@ -12054,6 +12054,127 @@ function AccessRequestQueue({
 }
 
 /**
+ * DEC-0022 §1. Connecting the organizer's own Stripe account.
+ *
+ * `chargesEnabled` comes from Stripe, never from "did they finish the form":
+ * an organizer can complete onboarding and remain disabled pending
+ * verification, and treating the form as the answer publishes a paid event
+ * whose checkout fails at the card.
+ */
+function StripeConnectPanel({
+  authToken,
+  locale
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+}) {
+  const [state, setState] = useState<{
+    configured: boolean;
+    connected: boolean;
+    chargesEnabled?: boolean;
+  }>();
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/payments/account`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setState(json.data))
+      .catch(() => setState(undefined));
+  }, [authToken]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const onboard = () => {
+    if (!authToken) return;
+    setBusy(true);
+    fetch(`${API_BASE_URL}/me/payments/onboarding`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      // Stripe's onboarding links are single-use and short-lived, so this
+      // leaves Pulso rather than embedding them.
+      .then((json) => {
+        window.location.href = json.data.url;
+      })
+      .catch(() => setBusy(false));
+  };
+
+  const refresh = () => {
+    if (!authToken) return;
+    setBusy(true);
+    fetch(`${API_BASE_URL}/me/payments/refresh`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then(() => reload())
+      .catch(() => {})
+      .finally(() => setBusy(false));
+  };
+
+  if (!state) return null;
+
+  return (
+    <div className="stripe-panel">
+      <strong>{translate(locale, 'pay.title')}</strong>
+      {!state.configured ? (
+        <p className="access-queue-empty">
+          {translate(locale, 'pay.unavailable')}
+        </p>
+      ) : (
+        <>
+          <p className="access-queue-empty">
+            {translate(locale, 'pay.explain')}
+          </p>
+          {state.connected && state.chargesEnabled && (
+            <p className="access-panel-status">
+              {translate(locale, 'pay.enabled')}
+            </p>
+          )}
+          {state.connected && !state.chargesEnabled && (
+            <p className="access-panel-status access-panel-status-declined">
+              {translate(locale, 'pay.pending')}
+            </p>
+          )}
+          <span className="access-queue-actions">
+            <button
+              type="button"
+              className="btn-secondary ticket-card-toggle"
+              disabled={busy}
+              onClick={onboard}
+            >
+              {translate(
+                locale,
+                busy
+                  ? 'pay.connecting'
+                  : state.connected
+                    ? 'pay.continue'
+                    : 'pay.connect'
+              )}
+            </button>
+            {state.connected && (
+              <button
+                type="button"
+                className="text-btn"
+                disabled={busy}
+                onClick={refresh}
+              >
+                {translate(locale, 'pay.refresh')}
+              </button>
+            )}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
  * DEC-0022 §2 and §3. What an organizer needs for one event: what is on sale,
  * and a door that decides.
  *
@@ -12636,6 +12757,10 @@ function OrganisateurPage({
       {actionError && <p className="create-event-error">{actionError}</p>}
 
       <OrganizerStatusBlock authToken={authToken} />
+
+      {/* DEC-0022 §1: the Stripe account belongs to the organizer, not to one
+          event, so it sits once at the top rather than in every panel. */}
+      <StripeConnectPanel authToken={authToken} locale={locale} />
 
       {state === 'success' && events.length === 0 && (
         <div className="empty-state-card organisateur-empty">
@@ -19282,20 +19407,36 @@ function TicketClaimPanel({
     if (!authToken) return;
     setClaiming(ticketTypeId);
     setError(undefined);
-    fetch(`${API_BASE_URL}/events/${event.id}/tickets`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ ticketTypeId, quantity: 1 })
-    })
+    // A priced type goes through Stripe; a free one is issued directly.
+    // Same button, and the difference is the server's to enforce - the client
+    // choosing the endpoint is a convenience, not the guarantee.
+    const paid = (types ?? []).some(
+      (type) => type.id === ticketTypeId && type.priceCents > 0
+    );
+    fetch(
+      `${API_BASE_URL}/events/${event.id}/${paid ? 'checkout' : 'tickets'}`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ ticketTypeId, quantity: 1 })
+      }
+    )
       .then(async (response) => {
         if (response.ok) {
-          const claimedTickets = myTicketsResponseSchema.parse(
-            await response.json()
-          ).data;
-          setIssued((current) => [...current, ...claimedTickets]);
+          const json = await response.json();
+          if (paid) {
+            // Stripe-hosted checkout: no card field ever reaches Pulso
+            // (DEC-0022 §1).
+            window.location.href = json.data.url;
+            return;
+          }
+          setIssued((current) => [
+            ...current,
+            ...myTicketsResponseSchema.parse(json).data
+          ]);
           reload();
           return;
         }
@@ -19313,7 +19454,11 @@ function TicketClaimPanel({
                   ? translate(locale, 'tickets.soldOut')
                   : code === 'SALES_CLOSED'
                     ? translate(locale, 'tickets.salesClosed')
-                    : translate(locale, 'tickets.failed')
+                    : code === 'ORGANIZER_NOT_PAYABLE'
+                      ? translate(locale, 'pay.organizerNotPayable')
+                      : code === 'PAYMENTS_NOT_CONFIGURED'
+                        ? translate(locale, 'pay.unavailable')
+                        : translate(locale, 'tickets.failed')
         );
       })
       .catch((caught: Error) => setError(caught.message))
@@ -19355,10 +19500,15 @@ function TicketClaimPanel({
               >
                 {soldOut
                   ? translate(locale, 'tickets.soldOut')
-                  : translate(
-                      locale,
-                      claiming === type.id ? 'tickets.getting' : 'tickets.get'
-                    )}
+                  : type.priceCents > 0
+                    ? translate(
+                        locale,
+                        claiming === type.id ? 'pay.buying' : 'pay.buy'
+                      )
+                    : translate(
+                        locale,
+                        claiming === type.id ? 'tickets.getting' : 'tickets.get'
+                      )}
               </button>
             </li>
           );
