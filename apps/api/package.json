@@ -19,6 +19,7 @@
     "@pulso/ingestion": "workspace:*",
     "@pulso/search": "workspace:*",
     "fastify": "5.10.0",
+    "stripe": "22.5.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

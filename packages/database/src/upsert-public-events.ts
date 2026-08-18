@@ -31,7 +31,11 @@ export function canonicalizeKnownVenue(
   venue: PublicEvent['venue']
 ): PublicEvent['venue'] {
   const name = normalizeVenueText(venue.name);
-  const address = normalizeVenueText(venue.address);
+  // Ingested events always carry an address - only a DEC-0022 on_approval
+  // event withholds one, and those are never ingested. Falling back to the
+  // empty string simply matches no canonical rule, which is the right answer
+  // for a venue with no address to canonicalize.
+  const address = normalizeVenueText(venue.address ?? '');
   const isStadeIga =
     address.includes('285 rue gary carter') ||
     name === 'rogers court' ||

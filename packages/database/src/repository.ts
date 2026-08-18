@@ -18,6 +18,22 @@ import type { LiveVenueCandidate } from '@pulso/ingestion';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
+/**
+ * DEC-0022 §6. Raised when an organizer asks to withhold the address of an
+ * event held at a venue from the public directory.
+ *
+ * Refused rather than silently downgraded to 'public': the Centre Bell's
+ * address is already published by the Centre Bell, and an interface that
+ * accepted the request would promise a privacy it cannot deliver. Withholding
+ * is only meaningful for an address the organizer typed themselves.
+ */
+export class DirectoryVenueCannotHideAddressError extends Error {
+  constructor() {
+    super('An existing directory venue cannot withhold its address.');
+    this.name = 'DirectoryVenueCannotHideAddressError';
+  }
+}
+
 export interface ExternalDestinationRecord {
   label: string;
   url: string;
@@ -47,6 +63,13 @@ export interface EventQueryOptions {
   excludedCategories?: EventCategory[];
   includeCreated?: boolean;
   after?: boolean;
+  /**
+   * DEC-0022 §6. The account reading these events, or null for an anonymous
+   * surface. Required, and required precisely because it is the field a
+   * caller would otherwise forget: forgetting it here means an unapproved
+   * reader receives an organizer's home address.
+   */
+  viewerId: string | null;
 }
 
 export interface CreateEventInput {
@@ -59,7 +82,8 @@ export interface CreateEventInput {
   imageUrl?: string | undefined;
   isAfter: boolean;
   ticketingUrl?: string | undefined;
-  addressHidden?: boolean | undefined;
+  /** DEC-0022 §6. Absent means 'public'. */
+  addressDisclosure?: 'public' | 'on_approval' | undefined;
   price: {
     kind: 'free' | 'paid' | 'unknown';
     minimumAmount?: number | undefined;
@@ -78,11 +102,17 @@ export interface EventRepository {
   findInBounds(
     bounds: MapBoundsQuery,
     window: DiscoveryWindow,
-    options?: EventQueryOptions
+    options: EventQueryOptions
   ): Promise<PublicEvent[]>;
-  findWithinDirectDistance(query: DirectDistanceQuery): Promise<PublicEvent[]>;
-  findById(id: string): Promise<PublicEvent | undefined>;
-  findByIds(ids: string[]): Promise<PublicEvent[]>;
+  findWithinDirectDistance(
+    query: DirectDistanceQuery,
+    viewerId: string | null
+  ): Promise<PublicEvent[]>;
+  findById(
+    id: string,
+    viewerId: string | null
+  ): Promise<PublicEvent | undefined>;
+  findByIds(ids: string[], viewerId: string | null): Promise<PublicEvent[]>;
   findExternalDestination(
     id: string
   ): Promise<ExternalDestinationRecord | undefined>;
@@ -93,7 +123,7 @@ export interface EventRepository {
   searchEvents(
     query: TextSearchQuery,
     window: DiscoveryWindow,
-    options?: EventQueryOptions
+    options: EventQueryOptions
   ): Promise<PublicEvent[]>;
   searchVenues(
     query: { text?: string; categories?: VenueCategory[] },
@@ -139,8 +169,57 @@ export interface EventRepository {
   ): Promise<boolean>;
 }
 
-const publicEventSelect = `
+/**
+ * DEC-0022 §6. The select list for a `PublicEvent`, parameterised by *who is
+ * asking*.
+ *
+ * A function rather than a constant, and `viewer` has no default, so adding a
+ * query that reads events forces its author to answer the question. That is
+ * the whole correction: DEC-0017 v1.2's `address_hidden` was enforced by one
+ * component declining to render a field the API had already sent, which meant
+ * the exact address and the exact pin of every "hidden" event were available
+ * to anyone who called the endpoint directly. A guarantee has to be made
+ * where the data is produced.
+ *
+ * `viewer` is a placeholder for a parameter carrying the reader's account id,
+ * or the literal `NULL::uuid` for a surface with no reader (anonymous
+ * browsing, ingestion). It is referenced three times; PostgreSQL is happy to
+ * reuse one positional parameter.
+ */
+function publicEventSelect(viewer: string): string {
+  // Approved, or the organizer themselves. `r.user_id = NULL` is NULL rather
+  // than true, so an anonymous reader falls through to the offset point
+  // without a special case.
+  const locationVisible = `(
+    e.address_disclosure = 'public'
+    OR e.created_by_user_id = ${viewer}
+    OR EXISTS (
+      SELECT 1 FROM event_access_requests r
+      WHERE r.event_id = e.id
+        AND r.user_id = ${viewer}
+        AND r.status = 'approved'
+    )
+  )`;
+  return `
   SELECT
+    ${locationVisible} AS location_visible,
+    e.address_disclosure,
+    (
+      SELECT r.status FROM event_access_requests r
+      WHERE r.event_id = e.id AND r.user_id = ${viewer}
+    ) AS my_access_status,
+    -- The street line and the pin are withheld together. Either alone is the
+    -- address: a 10 m pin discloses the door as surely as the text does, and
+    -- the text discloses it as surely as the pin.
+    CASE WHEN ${locationVisible} THEN v.address END AS address,
+    ST_X(
+      CASE WHEN ${locationVisible} THEN v.location
+           ELSE pulso_approximate_point(v.location, e.id) END
+    ) AS longitude,
+    ST_Y(
+      CASE WHEN ${locationVisible} THEN v.location
+           ELSE pulso_approximate_point(v.location, e.id) END
+    ) AS latitude,
     e.id,
     e.title,
     e.category,
@@ -167,19 +246,16 @@ const publicEventSelect = `
     e.additional_sources,
     e.origin,
     e.is_after,
-    e.address_hidden,
     e.pinned,
     e.created_by_user_id,
     creator.display_name AS creator_display_name,
     v.id AS venue_id,
     v.name AS venue_name,
-    v.address,
     v.category AS venue_category,
     v.secondary_categories AS venue_secondary_categories,
-    v.image_url AS venue_image_url,
-    ST_X(v.location) AS longitude,
-    ST_Y(v.location) AS latitude
+    v.image_url AS venue_image_url
 `;
+}
 
 interface EventRow {
   id: string;
@@ -204,7 +280,11 @@ interface EventRow {
   external_destination_kind: 'event_source' | 'ticketing' | null;
   origin: NonNullable<PublicEvent['origin']>;
   is_after: boolean;
-  address_hidden: boolean;
+  address_disclosure: 'public' | 'on_approval';
+  // Computed by publicEventSelect, not stored: whether *this* reader may see
+  // the exact address and pin.
+  location_visible: boolean;
+  my_access_status: 'pending' | 'approved' | 'declined' | null;
   pinned: boolean;
   created_by_user_id: string | null;
   creator_display_name: string | null;
@@ -214,7 +294,9 @@ interface EventRow {
   additional_sources: NonNullable<PublicEvent['additionalSources']>;
   venue_id: string;
   venue_name: string;
-  address: string;
+  // Null when withheld from this reader (DEC-0022 §6). The type is what makes
+  // the redaction impossible to drop silently downstream.
+  address: string | null;
   venue_category: VenueCategory | null;
   venue_secondary_categories: VenueCategory[];
   venue_image_url: string | null;
@@ -245,7 +327,10 @@ function toPublicEvent(row: EventRow): PublicEvent {
     venue: {
       id: row.venue_id,
       name: row.venue_name,
-      address: row.address,
+      // Absent, not blanked: a withheld address is a field that is not there,
+      // which every consumer must handle, rather than an empty string that
+      // renders as a plausible-looking gap.
+      ...(row.address !== null ? { address: row.address } : {}),
       point: {
         longitude: Number(row.longitude),
         latitude: Number(row.latitude)
@@ -276,8 +361,18 @@ function toPublicEvent(row: EventRow): PublicEvent {
   };
   if (row.origin !== 'directory') event.origin = row.origin;
   if (row.is_after) event.isAfter = true;
-  if (row.address_hidden) event.addressHidden = true;
   if (row.pinned) event.pinned = true;
+  // Absence means 'public', the case for every ingested event and every
+  // fixture, so the common path carries no ceremony (same convention as
+  // `origin`).
+  if (row.address_disclosure !== 'public') {
+    event.addressDisclosure = row.address_disclosure;
+    // The client must be able to tell a 300 m circle from a doorway. Without
+    // this it would draw the offset point as an exact one and quietly lie.
+    if (!row.location_visible) event.locationPrecision = 'approximate';
+  }
+  if (row.my_access_status !== null)
+    event.myAccessStatus = row.my_access_status;
   if (row.created_by_user_id && row.creator_display_name) {
     event.createdBy = {
       userId: row.created_by_user_id,
@@ -311,10 +406,10 @@ export class PostgresEventRepository implements EventRepository {
   async findInBounds(
     bounds: MapBoundsQuery,
     window: DiscoveryWindow,
-    options: EventQueryOptions = {}
+    options: EventQueryOptions
   ): Promise<PublicEvent[]> {
     const result = await this.pool.query<EventRow>(
-      `${publicEventSelect}
+      `${publicEventSelect('$17::uuid')}
        FROM events e
        JOIN venues v ON v.id = e.venue_id
        LEFT JOIN users creator ON creator.id = e.created_by_user_id
@@ -356,7 +451,7 @@ export class PostgresEventRepository implements EventRepository {
         bounds.north,
         window.startsAt,
         window.endsAt,
-        bounds.categories.length > 0 ? bounds.categories : null,
+        (bounds.categories?.length ?? 0) > 0 ? bounds.categories : null,
         bounds.price,
         options.excludedCategories && options.excludedCategories.length > 0
           ? options.excludedCategories
@@ -367,7 +462,8 @@ export class PostgresEventRepository implements EventRepository {
         options.includeCreated === true,
         options.after === true,
         AFTER_WINDOW_START_HOUR,
-        AFTER_WINDOW_END_HOUR
+        AFTER_WINDOW_END_HOUR,
+        options.viewerId
       ]
     );
     return result.rows.map(toPublicEvent);
@@ -388,20 +484,29 @@ export class PostgresEventRepository implements EventRepository {
     input: CreateEventInput
   ): Promise<PublicEvent> {
     const eventId = randomUUID();
+    const disclosure = input.addressDisclosure ?? 'public';
     let venueId: string;
     if (input.venue.kind === 'existing') {
+      if (disclosure !== 'public')
+        throw new DirectoryVenueCannotHideAddressError();
       venueId = input.venue.venueId;
     } else {
       venueId = randomUUID();
+      // is_private keeps this row out of venue search, map pins and lookups.
+      // Without it the redaction on the event would be pointless: the venue
+      // row holds the same street line, and `searchVenues` matches free text
+      // against name *and address* over every row in the table - so a private
+      // address stayed findable by typing it in.
       await this.pool.query(
-        `INSERT INTO venues (id, name, address, location)
-         VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326))`,
+        `INSERT INTO venues (id, name, address, location, is_private)
+         VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6)`,
         [
           venueId,
           input.venue.name,
           input.venue.address,
           input.venue.point.longitude,
-          input.venue.point.latitude
+          input.venue.point.latitude,
+          disclosure !== 'public'
         ]
       );
     }
@@ -419,7 +524,7 @@ export class PostgresEventRepository implements EventRepository {
          source_name, source_url, observed_at, freshness, location_confidence,
          price_kind, price_minimum_amount, image_url, description,
          access_information, origin, created_by_user_id, is_after,
-         address_hidden
+         address_disclosure
        ) VALUES (
          $1, $2, $3, $4, 'scheduled', $5, $6, 'America/Toronto',
          $7, $8, now(), NULL, NULL,
@@ -447,14 +552,15 @@ export class PostgresEventRepository implements EventRepository {
         origin,
         userId,
         input.isAfter,
-        input.addressHidden ?? false
+        disclosure
       ]
     );
 
     if (input.ticketingUrl)
       await this.setTicketing(eventId, input.ticketingUrl);
 
-    const created = await this.findById(eventId);
+    // Read back as the author, who always sees their own exact address.
+    const created = await this.findById(eventId, userId);
     if (!created) throw new Error('The created event could not be read back.');
     return created;
   }
@@ -479,12 +585,29 @@ export class PostgresEventRepository implements EventRepository {
     eventId: string,
     input: Omit<CreateEventInput, 'venue'>
   ): Promise<PublicEvent | undefined> {
+    const disclosure = input.addressDisclosure ?? 'public';
+    // The venue has to follow the event: leaving it in the directory would
+    // republish through search exactly the address the event just withheld.
+    //
+    // Guarded on the venue serving this one event, which is the precise
+    // property that makes privatising it safe. A venue shared with any other
+    // event is a directory venue by definition - hiding it would remove
+    // someone else's programming from search, and its address was never the
+    // organizer's to withhold in the first place.
+    const venue = await this.pool.query(
+      `UPDATE venues v SET is_private = $2
+       WHERE v.id = (SELECT venue_id FROM events WHERE id = $1)
+         AND (SELECT count(*) FROM events e WHERE e.venue_id = v.id) = 1`,
+      [eventId, disclosure !== 'public']
+    );
+    if (disclosure !== 'public' && (venue.rowCount ?? 0) === 0)
+      throw new DirectoryVenueCannotHideAddressError();
     const result = await this.pool.query(
       `UPDATE events SET
          title = $3, category = $4, starts_at = $5, ends_at = $6,
          price_kind = $7, price_minimum_amount = $8,
          description = $9, access_information = $10, is_after = $11,
-         address_hidden = $12
+         address_disclosure = $12
        WHERE id = $1 AND created_by_user_id = $2 AND origin <> 'directory'`,
       [
         eventId,
@@ -500,18 +623,20 @@ export class PostgresEventRepository implements EventRepository {
         input.description ?? null,
         input.accessInformation,
         input.isAfter,
-        input.addressHidden ?? false
+        disclosure
       ]
     );
     if ((result.rowCount ?? 0) === 0) return undefined;
     if (input.ticketingUrl)
       await this.setTicketing(eventId, input.ticketingUrl);
-    return this.findById(eventId);
+    return this.findById(eventId, userId);
   }
 
   async listCreatedEvents(userId: string): Promise<PublicEvent[]> {
     const result = await this.pool.query<EventRow>(
-      `${publicEventSelect}
+      // The reader is the author of every row this returns, so they always
+      // see their own exact addresses.
+      `${publicEventSelect('$1::uuid')}
        FROM events e
        JOIN venues v ON v.id = e.venue_id
        LEFT JOIN users creator ON creator.id = e.created_by_user_id
@@ -602,10 +727,11 @@ export class PostgresEventRepository implements EventRepository {
   }
 
   async findWithinDirectDistance(
-    query: DirectDistanceQuery
+    query: DirectDistanceQuery,
+    viewerId: string | null
   ): Promise<PublicEvent[]> {
     const result = await this.pool.query<EventRow>(
-      `${publicEventSelect},
+      `${publicEventSelect('$4::uuid')},
        ST_Distance(
          v.location::geography,
          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
@@ -619,19 +745,22 @@ export class PostgresEventRepository implements EventRepository {
          $3
        )
        ORDER BY distance_meters, e.id`,
-      [query.longitude, query.latitude, query.radiusMeters]
+      [query.longitude, query.latitude, query.radiusMeters, viewerId]
     );
     return result.rows.map(toPublicEvent);
   }
 
-  async findById(id: string): Promise<PublicEvent | undefined> {
+  async findById(
+    id: string,
+    viewerId: string | null
+  ): Promise<PublicEvent | undefined> {
     const result = await this.pool.query<EventRow>(
-      `${publicEventSelect}
+      `${publicEventSelect('$2::uuid')}
        FROM events e
        JOIN venues v ON v.id = e.venue_id
        LEFT JOIN users creator ON creator.id = e.created_by_user_id
        WHERE e.id = $1`,
-      [id]
+      [id, viewerId]
     );
     const row = result.rows[0];
     return row ? toPublicEvent(row) : undefined;
@@ -641,15 +770,18 @@ export class PostgresEventRepository implements EventRepository {
   // client-side only (no account system), so the client already knows
   // which ids it wants regardless of map viewport - this just fetches the
   // full PublicEvent objects.
-  async findByIds(ids: string[]): Promise<PublicEvent[]> {
+  async findByIds(
+    ids: string[],
+    viewerId: string | null
+  ): Promise<PublicEvent[]> {
     if (ids.length === 0) return [];
     const result = await this.pool.query<EventRow>(
-      `${publicEventSelect}
+      `${publicEventSelect('$2::uuid')}
        FROM events e
        JOIN venues v ON v.id = e.venue_id
        LEFT JOIN users creator ON creator.id = e.created_by_user_id
        WHERE e.id = ANY($1)`,
-      [ids]
+      [ids, viewerId]
     );
     return result.rows.map(toPublicEvent);
   }
@@ -700,10 +832,10 @@ export class PostgresEventRepository implements EventRepository {
   async searchEvents(
     query: TextSearchQuery,
     window: DiscoveryWindow,
-    options: EventQueryOptions = {}
+    options: EventQueryOptions
   ): Promise<PublicEvent[]> {
     const result = await this.pool.query<EventRow>(
-      `${publicEventSelect}
+      `${publicEventSelect('$10::uuid')}
        FROM events e
        JOIN venues v ON v.id = e.venue_id
        LEFT JOIN users creator ON creator.id = e.created_by_user_id
@@ -770,7 +902,8 @@ export class PostgresEventRepository implements EventRepository {
         query.limit ?? 60,
         options.excludedCategories && options.excludedCategories.length > 0
           ? options.excludedCategories
-          : null
+          : null,
+        options.viewerId
       ]
     );
     return result.rows.map(toPublicEvent);
@@ -822,27 +955,34 @@ export class PostgresEventRepository implements EventRepository {
                   AND e.status IN ('scheduled', 'postponed')
               ) AS has_upcoming
        FROM venues v
-       WHERE (
-           $1::text IS NOT NULL
-           -- Every word must appear, anywhere, rather than the whole query
-           -- appearing as one contiguous run. The interpreter strips
-           -- stopwords before this runs, so "quai des brumes" arrives as
-           -- "quai brumes" - which is not a substring of "Quai des Brumes",
-           -- and the bar was unfindable by its own full name. Any venue with
-           -- an internal stopword had the same problem: "Café de la Paix",
-           -- "Salle du Théâtre". Matching word by word is also what makes a
-           -- half-remembered name work at all.
-           AND NOT EXISTS (
-             SELECT 1
-             FROM unnest(string_to_array(pulso_fold($1), ' ')) AS token(word)
-             WHERE token.word <> ''
-               AND pulso_fold(v.name || ' ' || v.address)
-                   NOT LIKE '%' || token.word || '%'
+       -- DEC-0022 §6. A private address is not a directory entry. This is the
+       -- surface the redaction on the event would otherwise have missed: it
+       -- matches free text against v.address, so typing the street line found
+       -- it whatever the event said.
+       WHERE NOT v.is_private
+         AND (
+           (
+             $1::text IS NOT NULL
+             -- Every word must appear, anywhere, rather than the whole query
+             -- appearing as one contiguous run. The interpreter strips
+             -- stopwords before this runs, so "quai des brumes" arrives as
+             -- "quai brumes" - which is not a substring of "Quai des Brumes",
+             -- and the bar was unfindable by its own full name. Any venue
+             -- with an internal stopword had the same problem: "Café de la
+             -- Paix", "Salle du Théâtre". Matching word by word is also what
+             -- makes a half-remembered name work at all.
+             AND NOT EXISTS (
+               SELECT 1
+               FROM unnest(string_to_array(pulso_fold($1), ' ')) AS token(word)
+               WHERE token.word <> ''
+                 AND pulso_fold(v.name || ' ' || v.address)
+                     NOT LIKE '%' || token.word || '%'
+             )
            )
-         )
-         OR (
-           $2::text[] IS NOT NULL
-           AND (v.category = ANY($2) OR v.secondary_categories && $2)
+           OR (
+             $2::text[] IS NOT NULL
+             AND (v.category = ANY($2) OR v.secondary_categories && $2)
+           )
          )
        ORDER BY
          (v.review_state = 'published') DESC,
@@ -1164,6 +1304,7 @@ export class PostgresEventRepository implements EventRepository {
          GROUP BY venue_id
        ) r ON r.venue_id = v.id
        WHERE v.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+         AND NOT v.is_private
          AND v.category IS NOT NULL
          -- A map pin asserts Pulso stands behind the record; unreviewed
          -- imports are offered in search instead (DEC-0006).

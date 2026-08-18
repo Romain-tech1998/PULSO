@@ -782,7 +782,7 @@ export function registerGroupsRoutes(
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
     const { eventId } = eventParamsSchema.parse(request.params);
-    const event = await eventRepository.findById(eventId);
+    const event = await eventRepository.findById(eventId, user.id);
     if (!event) {
       return reply.status(404).send({
         error: {

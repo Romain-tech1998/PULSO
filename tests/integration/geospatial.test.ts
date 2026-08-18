@@ -6,7 +6,11 @@ import {
   eventListResponseSchema,
   intelligentSearchResponseSchema
 } from '@pulso/contracts';
-import { createPool, PostgresEventRepository } from '@pulso/database';
+import {
+  createPool,
+  PostgresEventRepository,
+  refreshSyntheticFixtureSchedule
+} from '@pulso/database';
 import { createMontrealDiscoveryWindow } from '@pulso/domain';
 
 // Traceability: PRD-0001 MAP-002/003/005, EVENT-001/005/007/008,
@@ -19,9 +23,14 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
   let pool: ReturnType<typeof createPool>;
   let repository: PostgresEventRepository;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     pool = createPool(databaseUrl);
     repository = new PostgresEventRepository(pool);
+    // The seeded fixture is placed relative to whenever `pnpm db:seed` last
+    // ran, so "tonight" stops being tonight a few hours later and this suite
+    // starts failing on a stale fixture rather than on the code. Recomputing
+    // it here makes the suite self-sufficient.
+    await refreshSyntheticFixtureSchedule(pool);
   });
 
   afterAll(async () => pool.end());
@@ -82,7 +91,10 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
         categories: [],
         price: 'all'
       },
-      createMontrealDiscoveryWindow(new Date())
+      createMontrealDiscoveryWindow(new Date()),
+      // DEC-0022 §6: every event read now states who is asking. Anonymous
+      // browsing is the surface this test stands in for.
+      { viewerId: null }
     );
     expect(events.map((event) => event.id)).toContain(
       '00000000-0000-4000-8000-000000000001'
@@ -105,11 +117,14 @@ describeWithDatabase('PostGIS synthetic Montréal event', () => {
   });
 
   it('uses direct distance in meters and the geography GiST index', async () => {
-    const events = await repository.findWithinDirectDistance({
-      longitude: -73.5673,
-      latitude: 45.5017,
-      radiusMeters: 250
-    });
+    const events = await repository.findWithinDirectDistance(
+      {
+        longitude: -73.5673,
+        latitude: 45.5017,
+        radiusMeters: 250
+      },
+      null
+    );
     expect(events[0]?.distanceMeters).toBeLessThan(1);
 
     const plan = await pool.query<{ 'QUERY PLAN': string }>(

@@ -6,7 +6,8 @@ import {
   updateEventRequestSchema
 } from '@pulso/contracts';
 import type { AuthRepository, EventRepository } from '@pulso/database';
-import type { FastifyInstance } from 'fastify';
+import { DirectoryVenueCannotHideAddressError } from '@pulso/database';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -17,6 +18,22 @@ import { savePhotoUpload, STILL_IMAGE_MIME_TYPES } from './photo-upload.js';
 const eventParamsSchema = z.object({ id: z.uuid() });
 const geocodeQuerySchema = z.object({ address: z.string().min(4).max(300) });
 const pinRequestSchema = z.object({ pinned: z.boolean() });
+
+/**
+ * DEC-0022 §6. Withholding is only meaningful for an address the organizer
+ * typed themselves; a venue already in the directory published its own long
+ * ago. Refused with a reason rather than silently downgraded to 'public',
+ * which would leave the organizer believing an address was hidden.
+ */
+function sendDirectoryVenueRefusal(reply: FastifyReply) {
+  return reply.status(400).send({
+    error: {
+      code: 'DIRECTORY_VENUE_ADDRESS_PUBLIC',
+      message:
+        'The address of a venue already listed in Pulso cannot be withheld. Type the address instead of choosing an existing venue.'
+    }
+  });
+}
 
 /**
  * DEC-0017: an account can publish an event.
@@ -93,16 +110,23 @@ export function registerCreatedEventsRoutes(
     if (!user) return sendUnauthenticated(reply);
     const { id } = eventParamsSchema.parse(request.params);
     const input = updateEventRequestSchema.parse(request.body);
-    const updated = await eventRepository.updateCreatedEvent(user.id, id, {
-      ...input,
-      ticketingUrl: input.ticketingUrl,
-      addressHidden: input.addressHidden ?? false,
-      isAfter: input.isAfter ?? false,
-      price:
-        input.price.kind === 'paid'
-          ? { kind: 'paid', minimumAmount: input.price.minimumAmount }
-          : { kind: input.price.kind }
-    });
+    let updated;
+    try {
+      updated = await eventRepository.updateCreatedEvent(user.id, id, {
+        ...input,
+        ticketingUrl: input.ticketingUrl,
+        addressDisclosure: input.addressDisclosure ?? 'public',
+        isAfter: input.isAfter ?? false,
+        price:
+          input.price.kind === 'paid'
+            ? { kind: 'paid', minimumAmount: input.price.minimumAmount }
+            : { kind: input.price.kind }
+      });
+    } catch (error) {
+      if (error instanceof DirectoryVenueCannotHideAddressError)
+        return sendDirectoryVenueRefusal(reply);
+      throw error;
+    }
     if (!updated) {
       return reply.status(404).send({
         error: { code: 'EVENT_NOT_FOUND', message: 'The event was not found.' }
@@ -169,23 +193,30 @@ export function registerCreatedEventsRoutes(
       });
     }
 
-    const created = await eventRepository.createEvent(user.id, {
-      title: input.title,
-      category: input.category,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
-      accessInformation: input.accessInformation,
-      description: input.description,
-      imageUrl: input.imageUrl,
-      ticketingUrl: input.ticketingUrl,
-      addressHidden: input.addressHidden ?? false,
-      isAfter: input.isAfter ?? false,
-      price:
-        input.price.kind === 'paid'
-          ? { kind: 'paid', minimumAmount: input.price.minimumAmount }
-          : { kind: input.price.kind },
-      venue: input.venue
-    });
+    let created;
+    try {
+      created = await eventRepository.createEvent(user.id, {
+        title: input.title,
+        category: input.category,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        accessInformation: input.accessInformation,
+        description: input.description,
+        imageUrl: input.imageUrl,
+        ticketingUrl: input.ticketingUrl,
+        addressDisclosure: input.addressDisclosure ?? 'public',
+        isAfter: input.isAfter ?? false,
+        price:
+          input.price.kind === 'paid'
+            ? { kind: 'paid', minimumAmount: input.price.minimumAmount }
+            : { kind: input.price.kind },
+        venue: input.venue
+      });
+    } catch (error) {
+      if (error instanceof DirectoryVenueCannotHideAddressError)
+        return sendDirectoryVenueRefusal(reply);
+      throw error;
+    }
     return reply
       .status(201)
       .send(createdEventResponseSchema.parse({ data: created }));

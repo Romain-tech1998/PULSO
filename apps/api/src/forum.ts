@@ -167,7 +167,8 @@ export function registerForumRoutes(
     );
     const activity = await forumRepository.getRecentActivityForEvents(eventIds);
     const events = await eventRepository.findByIds(
-      activity.map((entry) => entry.eventId)
+      activity.map((entry) => entry.eventId),
+      user.id
     );
     const eventTitleById = new Map(
       events.map((event) => [event.id, event.title])
@@ -261,7 +262,8 @@ export function registerForumRoutes(
           date: 'custom',
           customStartDate: getMontrealCalendarDate(now),
           customEndDate: getMontrealCalendarDate(windowEnd)
-        })
+        }),
+        { viewerId: user.id }
       ),
       scope === 'mine'
         ? favoritesRepository.getFavoriteEventIds(user.id)

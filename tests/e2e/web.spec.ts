@@ -98,6 +98,18 @@ async function landAnonymously(page: Page, locale: 'en' | 'fr') {
       { name: 'pulso-locale', value: locale, url: 'http://127.0.0.1:3000' }
     ]);
   await page.reload();
+  // The first-visit tour is orientation, not a gate: every step can be
+  // skipped immediately and the map is already mounted behind it.
+  const skipTour = page.getByRole('button', {
+    name: locale === 'fr' ? 'Passer' : 'Skip'
+  });
+  const tourOpened = await skipTour
+    .waitFor({ state: 'visible', timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (tourOpened) {
+    await skipTour.click();
+  }
   // Readiness has to be something both viewports show. The results count
   // lives in the sidebar, which mobile hides, so waiting on it passed on
   // desktop and hung on Pixel 7. The map and the first record are common to
@@ -111,6 +123,23 @@ async function landAnonymously(page: Page, locale: 'en' | 'fr') {
     page.getByRole('heading', { name: SYNTHETIC_EVENT }).first()
   ).toBeVisible({ timeout: 30_000 });
 }
+
+test('offers a skippable first-visit tour and remembers completion', async ({
+  page
+}) => {
+  await page.goto('/');
+  await page.evaluate(() => window.localStorage.clear());
+  await page.reload();
+
+  const tour = page.getByRole('dialog');
+  await expect(tour).toBeVisible();
+  await expect(tour.getByRole('button', { name: /Passer|Skip/ })).toBeVisible();
+  await tour.getByRole('button', { name: /Passer|Skip/ }).click();
+  await expect(tour).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
 
 test('completes anonymous UJ-0001 and preserves map context', async ({
   page

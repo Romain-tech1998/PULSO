@@ -13,7 +13,8 @@ const productionEnv = {
   EVENT_PHOTOS_UPLOAD_DIR: '/data/uploads',
   GOOGLE_CLIENT_ID: 'id',
   GOOGLE_CLIENT_SECRET: 'secret',
-  DATABASE_URL: 'postgresql://x'
+  DATABASE_URL: 'postgresql://x',
+  TICKET_SIGNING_SECRET: 'a-real-secret'
 } satisfies NodeJS.ProcessEnv;
 
 describe('deployment configuration', () => {
@@ -27,6 +28,32 @@ describe('deployment configuration', () => {
     const config = resolveApiConfig(productionEnv);
     expect(config.publicUrl).toBe('https://api.pulso.example');
     expect(config.publicUploadUrl).toBe('https://api.pulso.example/uploads');
+  });
+
+  it('refuses to start in production without a ticket signing secret', () => {
+    const { TICKET_SIGNING_SECRET: _omitted, ...env } = productionEnv;
+    expect(() => resolveApiConfig(env)).toThrow(ConfigError);
+  });
+
+  // DEC-0022 acceptance criterion 14. Refused outside production too: a live
+  // key on a laptop moves real money exactly as well as one on a server, and
+  // §8's accountant and lawyer reviews have not happened.
+  it('refuses to start with a live-mode Stripe key, in any environment', () => {
+    expect(() =>
+      resolveApiConfig({ ...productionEnv, STRIPE_SECRET_KEY: 'sk_live_abc' })
+    ).toThrow(ConfigError);
+    expect(() =>
+      resolveApiConfig({ STRIPE_SECRET_KEY: 'sk_live_abc' })
+    ).toThrow(ConfigError);
+    expect(() =>
+      resolveApiConfig({ STRIPE_WEBHOOK_SECRET: 'whsec_live_abc' })
+    ).toThrow(ConfigError);
+  });
+
+  it('accepts a test-mode Stripe key', () => {
+    expect(() =>
+      resolveApiConfig({ STRIPE_SECRET_KEY: 'sk_test_abc' })
+    ).not.toThrow();
   });
 
   // The whole point: a missing variable used to degrade silently to

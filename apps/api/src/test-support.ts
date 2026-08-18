@@ -1,3 +1,5 @@
+import type { PaymentProvider } from './payments.js';
+import type { WalletPassProvider } from './wallet.js';
 import type { ImageModerationProvider } from './image-moderation.js';
 import type { PublicUser, User } from '@pulso/contracts';
 import { defaultModulesForGroupType } from '@pulso/domain';
@@ -5,6 +7,8 @@ import type {
   AttendanceRepository,
   AuthRepository,
   EventPhoto,
+  EventAccessRepository,
+  TicketingRepository,
   EventPhotosRepository,
   UserPhotosRepository,
   ImageModerationRepository,
@@ -295,6 +299,8 @@ export function fakeNotificationsRepository(
     notifyGroupJoinRequestAccepted: async () => undefined,
     notifyFriendRequestReceived: async () => undefined,
     notifyFriendRequestAccepted: async () => undefined,
+    notifyEventAccessRequested: async () => undefined,
+    notifyEventAccessResolved: async () => undefined,
     notifyMessageReceived: async () => undefined,
     notifyForumReply: async () => undefined,
     notifyVenueFollowersOfNewEvent: async () => 0,
@@ -493,6 +499,50 @@ export function fakeEventPhoto(
   };
 }
 
+export function fakeEventAccessRepository(
+  overrides: Partial<EventAccessRepository> = {}
+): EventAccessRepository {
+  return {
+    findOrganizerId: async () => undefined,
+    request: async () => 'pending',
+    list: async () => [],
+    resolve: async () => false,
+    countPendingForOrganizer: async () => 0,
+    ...overrides
+  };
+}
+
+export function fakeTicketingRepository(
+  overrides: Partial<TicketingRepository> = {}
+): TicketingRepository {
+  return {
+    listTicketTypes: async () => [],
+    createTicketType: async () => {
+      throw new Error('not stubbed');
+    },
+    deleteTicketType: async () => false,
+    issueTickets: async () => [],
+    listMyTickets: async () => [],
+    findTicketById: async () => undefined,
+    redeem: async () => ({ result: 'unknown' }),
+    isEventOrganizer: async () => false,
+    countAdmissions: async () => ({ used: 0, valid: 0 }),
+    findStripeAccount: async () => undefined,
+    saveStripeAccount: async () => undefined,
+    updateStripeStatus: async () => undefined,
+    startPaidOrder: async () => {
+      throw new Error('not stubbed');
+    },
+    attachCheckoutSession: async () => undefined,
+    completePaidOrder: async () => [],
+    releaseOrder: async () => false,
+    recordWebhookEvent: async () => true,
+    findOrderForRefund: async () => undefined,
+    markOrderRefunded: async () => undefined,
+    ...overrides
+  };
+}
+
 export function fakeEventPhotosRepository(
   overrides: Partial<EventPhotosRepository> = {}
 ): EventPhotosRepository {
@@ -590,6 +640,10 @@ export function accountRepositories(
     reportsRepository?: ReportsRepository;
     groupsRepository?: GroupsRepository;
     profileRepository?: ProfileRepository;
+    eventAccessRepository?: EventAccessRepository;
+    ticketingRepository?: TicketingRepository;
+    paymentProvider?: PaymentProvider;
+    walletProvider?: WalletPassProvider;
     eventPhotosRepository?: EventPhotosRepository;
     userPhotosRepository?: UserPhotosRepository;
     imageModerationRepository?: ImageModerationRepository;
@@ -615,6 +669,16 @@ export function accountRepositories(
     reportsRepository: overrides.reportsRepository ?? fakeReportsRepository(),
     groupsRepository: overrides.groupsRepository ?? fakeGroupsRepository(),
     profileRepository: overrides.profileRepository ?? fakeProfileRepository(),
+    eventAccessRepository:
+      overrides.eventAccessRepository ?? fakeEventAccessRepository(),
+    ticketingRepository:
+      overrides.ticketingRepository ?? fakeTicketingRepository(),
+    ...(overrides.paymentProvider
+      ? { paymentProvider: overrides.paymentProvider }
+      : {}),
+    ...(overrides.walletProvider
+      ? { walletProvider: overrides.walletProvider }
+      : {}),
     eventPhotosRepository:
       overrides.eventPhotosRepository ?? fakeEventPhotosRepository(),
     userPhotosRepository:

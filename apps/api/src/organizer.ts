@@ -212,7 +212,12 @@ export function registerOrganizerRoutes(
       {
         startsAt: now,
         endsAt: new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000)
-      }
+      },
+      // An administrator reads as themselves. `is_admin` governs the console,
+      // not an organizer's disclosure choice - DEC-0022 §6 lists no exemption
+      // for staff, and one would make the guarantee conditional on trusting
+      // whoever holds the flag.
+      { viewerId: user.id }
     );
     return eventListResponseSchema.parse({ data: events.slice(0, 25) });
   });
