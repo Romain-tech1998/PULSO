@@ -12178,31 +12178,24 @@ function StripeConnectPanel({
   if (!state) return null;
 
   return (
-    <div className="stripe-panel">
-      <strong>{translate(locale, 'pay.title')}</strong>
-      {!state.configured ? (
-        <p className="access-queue-empty">
-          {translate(locale, 'pay.unavailable')}
-        </p>
-      ) : (
-        <>
-          <p className="access-queue-empty">
-            {translate(locale, 'pay.explain')}
+    <section className="stripe-panel">
+      <div className="stripe-panel-head">
+        <div>
+          <h2 className="organisateur-group-title">
+            {translate(locale, 'pay.title')}
+          </h2>
+          <p className="organizer-status-line">
+            {translate(
+              locale,
+              state.configured ? 'pay.explain' : 'pay.unavailable'
+            )}
           </p>
-          {state.connected && state.chargesEnabled && (
-            <p className="access-panel-status">
-              {translate(locale, 'pay.enabled')}
-            </p>
-          )}
-          {state.connected && !state.chargesEnabled && (
-            <p className="access-panel-status access-panel-status-declined">
-              {translate(locale, 'pay.pending')}
-            </p>
-          )}
-          <span className="access-queue-actions">
+        </div>
+        {state.configured && (
+          <span className="stripe-panel-actions">
             <button
               type="button"
-              className="btn-secondary ticket-card-toggle"
+              className="btn-secondary"
               disabled={busy}
               onClick={onboard}
             >
@@ -12226,9 +12219,27 @@ function StripeConnectPanel({
               </button>
             )}
           </span>
-        </>
+        )}
+      </div>
+      {/* Waiting on Stripe is an ordinary state of a new account, so it is
+          amber. It used to borrow the red that means a request was
+          declined, which read as a refusal rather than as a queue. */}
+      {state.configured && state.connected && (
+        <p
+          className={`stripe-status ${
+            state.chargesEnabled
+              ? 'stripe-status-ready'
+              : 'stripe-status-pending'
+          }`}
+        >
+          <span className="stripe-status-dot" aria-hidden="true" />
+          {translate(
+            locale,
+            state.chargesEnabled ? 'pay.enabled' : 'pay.pending'
+          )}
+        </p>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -12329,6 +12340,23 @@ function EventTicketingPanel({
             <li key={type.id}>
               <span className="ticketing-type-main">
                 <strong>{type.name}</strong>
+                <span className="ticketing-type-meta">
+                  <span className="ticketing-type-price">
+                    {type.priceCents === 0
+                      ? translate(locale, 'tickets.free')
+                      : formatCadMinor(type.priceCents, locale)}
+                  </span>
+                  {type.quantity !== undefined && (
+                    <span className="ticketing-type-left">
+                      {translate(locale, 'tickets.left').replace(
+                        '{count}',
+                        String(Math.max(type.quantity - type.issuedCount, 0))
+                      )}
+                    </span>
+                  )}
+                </span>
+                {/* The split reads under the price it explains. It used to
+                    sit above a second line repeating the same amount. */}
                 {type.buyerPriceCents !== undefined && (
                   <small>
                     {translate(locale, 'pay.organizerTake')
@@ -12342,16 +12370,6 @@ function EventTicketingPanel({
                       )}
                   </small>
                 )}
-                <small>
-                  {type.priceCents === 0
-                    ? translate(locale, 'tickets.free')
-                    : formatCadMinor(type.priceCents, locale)}
-                  {type.quantity !== undefined &&
-                    ` · ${translate(locale, 'tickets.left').replace(
-                      '{count}',
-                      String(Math.max(type.quantity - type.issuedCount, 0))
-                    )}`}
-                </small>
               </span>
               <button
                 type="button"
@@ -12596,7 +12614,9 @@ function DoorScanner({
         <div className="door-camera">
           {/* muted + playsInline: iOS refuses to play an inline video stream
               without both, and a refused stream reads as a broken camera. */}
-          <video ref={video} muted playsInline />
+          <div className="door-camera-frame">
+            <video ref={video} muted playsInline />
+          </div>
           <small>{translate(locale, 'tickets.cameraPointing')}</small>
         </div>
       )}
@@ -12607,7 +12627,7 @@ function DoorScanner({
       <small className="create-event-hint">
         {translate(locale, 'tickets.orPaste')}
       </small>
-      <div className="create-event-address">
+      <div className="door-scan-paste">
         <input
           value={token}
           onChange={(changeEvent) => setToken(changeEvent.target.value)}
@@ -19539,7 +19559,7 @@ function TicketClaimPanel({
   if (!types || types.length === 0) return null;
 
   return (
-    <div className="access-panel">
+    <div className="access-panel ticket-buy-panel">
       <strong>{translate(locale, 'tickets.mine')}</strong>
       <ul className="ticketing-type-list">
         {types.map((type) => {
@@ -19552,22 +19572,27 @@ function TicketClaimPanel({
             <li key={type.id}>
               <span className="ticketing-type-main">
                 <strong>{type.name}</strong>
-                <small>
-                  {type.priceCents === 0
-                    ? translate(locale, 'tickets.free')
-                    : // DEC-0022 §1: the commission is added on top, so the
-                      // number shown is what the card will be charged - with
-                      // the split spelled out rather than buried.
-                      formatCadMinor(
-                        type.buyerPriceCents ?? type.priceCents,
-                        locale
+                <span className="ticketing-type-meta">
+                  <span className="ticketing-type-price">
+                    {type.priceCents === 0
+                      ? translate(locale, 'tickets.free')
+                      : // DEC-0022 §1: the commission is added on top, so
+                        // the number shown is what the card will be charged
+                        // - with the split spelled out under it, not buried.
+                        formatCadMinor(
+                          type.buyerPriceCents ?? type.priceCents,
+                          locale
+                        )}
+                  </span>
+                  {left !== undefined && (
+                    <span className="ticketing-type-left">
+                      {translate(locale, 'tickets.left').replace(
+                        '{count}',
+                        String(left)
                       )}
-                  {left !== undefined &&
-                    ` · ${translate(locale, 'tickets.left').replace(
-                      '{count}',
-                      String(left)
-                    )}`}
-                </small>
+                    </span>
+                  )}
+                </span>
                 {type.feeCents !== undefined && (
                   <small>
                     {translate(locale, 'pay.buyerFee')

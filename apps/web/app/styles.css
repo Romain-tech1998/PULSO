@@ -3903,6 +3903,78 @@ span.search-result-title {
   gap: 0.4rem;
 }
 
+/* DEC-0022 §1: the organizer's Stripe account. This panel carried no rules
+   at all - an unstyled div of stacked text sitting directly beside "Statut
+   organisateur". It borrows that block's shape on purpose: same surface,
+   same radius, same head row, because they are read as one column. */
+.stripe-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 1rem;
+  background: var(--surface-raised);
+}
+.stripe-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+/* Wide enough to read a sentence in, and allowed to keep the line: the
+   actions drop to their own row instead of crushing the explanation into a
+   column one word wide. */
+.stripe-panel-head > div:first-child {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.stripe-panel-head .organisateur-group-title {
+  margin-bottom: 0;
+}
+.stripe-panel-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.stripe-panel-actions .btn-secondary {
+  padding: 0.6rem 1rem;
+  font-size: 0.8rem;
+}
+/* One line for the only two states that decide anything: this organizer can
+   be paid, or cannot yet. */
+.stripe-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.stripe-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: currentColor;
+}
+.stripe-status-ready {
+  color: var(--brand-green);
+  background: rgba(0, 210, 133, 0.12);
+}
+/* The amber already used by a pending organizer request: something is being
+   reviewed, and nothing has gone wrong. */
+.stripe-status-pending {
+  color: #f5c451;
+  background: rgba(245, 196, 81, 0.12);
+}
+
 /* DEC-0022 §2 and §3: tickets, their QR, and the door. */
 .ticket-list {
   display: flex;
@@ -3910,17 +3982,34 @@ span.search-result-title {
   gap: 0.6rem;
   margin-bottom: 1.5rem;
 }
+/* The gradient edge, and the perforation further down, are the whole
+   disguise: the same box reads as a ticket instead of as one more row. */
 .ticket-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  padding: 0.9rem 1rem;
+  padding: 0.9rem 1rem 0.9rem 1.15rem;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.ticket-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--gradient-primary);
 }
 .ticket-card-spent {
   opacity: 0.55;
+}
+/* A spent ticket keeps the shape and loses the colour. */
+.ticket-card-spent::before {
+  background: rgba(255, 255, 255, 0.2);
 }
 .ticket-card-main {
   display: flex;
@@ -3956,7 +4045,10 @@ span.search-result-title {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.55rem;
+  margin-top: 0.15rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.22);
 }
 .ticket-card-qr small {
   color: var(--text-muted);
@@ -3972,6 +4064,7 @@ span.search-result-title {
   background: #ffffff;
   border-radius: 8px;
   image-rendering: pixelated;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
 }
 .ticket-issued {
   display: flex;
@@ -3993,9 +4086,20 @@ span.search-result-title {
 }
 .ticketing-panel {
   margin: 0 0 0.75rem 3.25rem;
-  padding: 0.75rem 0.9rem;
-  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+/* Both halves of the panel announce themselves the way every other section
+   title in this tab does, rather than as bold body text. */
+.ticketing-panel > strong,
+.door-scanner > strong {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 .ticketing-type-list {
   list-style: none;
@@ -4010,16 +4114,44 @@ span.search-result-title {
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
 }
 .ticketing-type-main {
   display: flex;
   flex-direction: column;
+  gap: 0.15rem;
   flex: 1;
   min-width: 0;
 }
 .ticketing-type-main small {
   color: var(--text-muted);
   font-size: 0.72rem;
+}
+/* The amount is what the row is about - what the organizer keeps, or what
+   the card is about to be charged - so it is the number read at a glance,
+   with what is left of the stock beside it rather than after a dot. */
+.ticketing-type-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.ticketing-type-price {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.ticketing-type-left {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
 }
 .ticketing-type-form {
   display: flex;
@@ -4038,7 +4170,30 @@ span.search-result-title {
   flex-direction: column;
   gap: 0.3rem;
 }
+/* A target to hold the phone against. Detection reads the whole frame, so
+   this decides nothing - it only stops people guessing where to aim. */
+.door-camera-frame {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  line-height: 0;
+}
+.door-camera-frame::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  height: 68%;
+  max-width: 68%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 0.9rem;
+  box-shadow: 0 0 0 100vmax rgba(12, 10, 18, 0.4);
+  pointer-events: none;
+}
 .door-camera video {
+  display: block;
   width: 100%;
   max-height: 260px;
   border-radius: 10px;
@@ -4054,17 +4209,59 @@ span.search-result-title {
   color: var(--text-muted);
   font-size: 0.75rem;
 }
+/* Read in a doorway, at arm's length, often in the dark: a glyph and a
+   colour decide before the sentence is read. */
 .door-verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
   margin: 0;
-  padding: 0.5rem 0.7rem;
-  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.7rem;
+  font-size: 0.85rem;
   font-weight: 600;
+  line-height: 1.4;
+}
+.door-verdict::before {
+  font-size: 1rem;
+  line-height: 1.2;
 }
 .door-verdict-ok {
-  background: rgba(80, 200, 120, 0.18);
+  color: #7ce0aa;
+  background: rgba(80, 200, 120, 0.16);
+  border: 1px solid rgba(80, 200, 120, 0.32);
+}
+.door-verdict-ok::before {
+  content: '✓';
 }
 .door-verdict-no {
-  background: rgba(255, 138, 138, 0.18);
+  color: #ff8a8a;
+  background: rgba(255, 138, 138, 0.16);
+  border: 1px solid rgba(255, 138, 138, 0.32);
+}
+.door-verdict-no::before {
+  content: '✕';
+}
+/* The paste-a-token row was borrowing the address field's class. Same
+   shape, but it can now be spaced for a thumb at a door without moving
+   anything in the event creation form. */
+.door-scan-paste {
+  display: flex;
+  gap: 0.5rem;
+}
+.door-scan-paste input {
+  flex: 1;
+  min-width: 0;
+}
+.door-scan-paste .btn-secondary {
+  flex-shrink: 0;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.8rem;
+}
+/* The buyer's counter keeps the access panel's frame and breathes a little
+   more: every row in it is a decision with a price on it. */
+.ticket-buy-panel {
+  gap: 0.7rem;
 }
 
 /* DEC-0022 §5: the confirmable pin inside the creation modal. */
