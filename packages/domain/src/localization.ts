@@ -347,7 +347,7 @@ const en = {
   'groups.loadError': 'Groups cannot be loaded right now.',
   'groups.noMatch': 'No group matches your search.',
   'groups.emptyMine':
-    'No group yet. Find one in the Discover tab, or join one from “Meet before the event” on a forum.',
+    'No group yet. Find one in the Discover tab, or create one for your circle.',
   'groups.emptyEvents': 'No event group yet.',
   'groups.emptyDiscover': 'No permanent group yet.',
   'groups.accessOpen': 'Open',
@@ -1457,7 +1457,7 @@ const fr = {
   'groups.loadError': 'Impossible de charger les groupes pour le moment.',
   'groups.noMatch': 'Aucun groupe ne correspond à ta recherche.',
   'groups.emptyMine':
-    'Aucun groupe pour le moment. Découvre-en un dans l’onglet Découvrir, ou rejoins-en un depuis « Rencontrer avant l’événement » sur un forum.',
+    'Aucun groupe pour le moment. Découvre-en un dans l’onglet Découvrir, ou crée le tien pour ta bande.',
   'groups.emptyEvents': 'Aucun groupe d’événement pour le moment.',
   'groups.emptyDiscover': 'Aucun groupe permanent pour le moment.',
   'groups.accessOpen': 'Libre',

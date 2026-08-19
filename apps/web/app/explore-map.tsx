@@ -30,7 +30,6 @@ import {
   friendsMapResponseSchema,
   friendsResponseSchema,
   friendSuggestionsResponseSchema,
-  groupResponseSchema,
   adminGroupPlacementsResponseSchema,
   adminGroupSummariesResponseSchema,
   groupVerificationRequestsResponseSchema,
@@ -20757,20 +20756,18 @@ function ForumPanel({
       .catch(() => setMembersState('error'));
   }, [authToken, event.id]);
 
-  const [meetupGroup, setMeetupGroup] = useState<Group>();
-  const [meetupLoading, setMeetupLoading] = useState(false);
-  const openMeetupGroup = () => {
-    if (!authToken || meetupLoading) return;
-    setMeetupLoading(true);
-    fetch(`${API_BASE_URL}/events/${event.id}/meetup-group`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setMeetupGroup(groupResponseSchema.parse(json).data))
-      .catch(() => {})
-      .finally(() => setMeetupLoading(false));
-  };
+  /**
+   * "Rencontrer avant l'événement" used to create a group and open its whole
+   * workspace over the event - a heavy machine for four friends going to the
+   * same night, and a second place to talk about an event that already has a
+   * forum.
+   *
+   * It now moves to that forum. The two surfaces complement each other rather
+   * than compete: the forum is where an event is discussed, and Groups stay
+   * for what they were built for - friend circles and durable organisation.
+   * The button is a shortcut to somewhere already on this page, which is the
+   * whole of what it should ever have been.
+   */
 
   // "Suivre ce forum" (Phase 4.8 follow-up) - a real, explicit bookmark
   // distinct from posting or favoriting/attending the event, so someone
@@ -20861,13 +20858,9 @@ function ForumPanel({
             <button
               type="button"
               className="meetup-btn"
-              onClick={openMeetupGroup}
-              disabled={meetupLoading}
+              onClick={() => setTab('discussion')}
             >
-              🤝{' '}
-              {meetupLoading
-                ? translate(locale, 'forum.meetupLoading')
-                : translate(locale, 'forum.meetupCta')}
+              🤝 {translate(locale, 'forum.meetupCta')}
             </button>
           </div>
         )}
@@ -21033,17 +21026,6 @@ function ForumPanel({
               </div>
             </div>
           </div>
-        )}
-
-        {meetupGroup && user && (
-          <GroupModal
-            locale={locale}
-            group={meetupGroup}
-            authToken={authToken}
-            userId={user.id}
-            onClose={() => setMeetupGroup(undefined)}
-            onLeft={() => setMeetupGroup(undefined)}
-          />
         )}
       </div>
 
