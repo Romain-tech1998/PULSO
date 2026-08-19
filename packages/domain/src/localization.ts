@@ -1059,6 +1059,9 @@ const en = {
   'attendance.visibilityLabel': 'Who can see your attendance',
   'attendance.private': 'Only you',
   'attendance.friends': 'Your friends',
+  // DEC-0024 candidate: a third answer, worded to the person choosing it.
+  'attendance.public': 'Everyone',
+  'attendance.publicHint': 'Everyone will see you are going.',
   // The friends page, the friend panel and the two invite modals.
   'friends.title': 'My friends',
   'friends.eyebrow': 'Your Pulso circle',
@@ -2157,6 +2160,8 @@ const fr = {
   'attendance.visibilityLabel': 'Visibilité de ta participation',
   'attendance.private': 'Toi uniquement',
   'attendance.friends': 'Tes amis',
+  'attendance.public': 'Tout le monde',
+  'attendance.publicHint': 'Tout le monde verra que tu participes.',
   // The friends page, the friend panel and the two invite modals.
   'friends.title': 'Mes amis',
   'friends.eyebrow': 'Ton cercle Pulso',

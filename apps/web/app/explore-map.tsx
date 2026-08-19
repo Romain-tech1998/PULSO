@@ -338,9 +338,9 @@ interface ActiveSearch {
 // thing organizers create.
 const CREATED_EVENT_PIN_COLOR = '#7c3aed';
 
-// A native <select> for a two-option choice renders the OS dropdown, which
-// is unstyleable and looked pasted-on next to the brand controls beside it.
-// Two options is a toggle, not a menu.
+// A native <select> renders the OS dropdown, which is unstyleable and looked
+// pasted-on next to the brand controls beside it. Three options is still a
+// toggle, not a menu.
 function AttendanceVisibilityToggle({
   value,
   onChange,
@@ -351,27 +351,37 @@ function AttendanceVisibilityToggle({
   locale: SupportedLocale;
 }) {
   return (
-    <div
-      className="attendance-visibility-toggle"
-      role="group"
-      aria-label={translate(locale, 'attendance.visibilityLabel')}
-    >
-      {(
-        [
-          ['private', translate(locale, 'attendance.private')],
-          ['friends', translate(locale, 'attendance.friends')]
-        ] as Array<[AttendanceVisibility, string]>
-      ).map(([option, label]) => (
-        <button
-          type="button"
-          key={option}
-          className={value === option ? 'active' : ''}
-          aria-pressed={value === option}
-          onClick={() => onChange(option)}
-        >
-          {label}
-        </button>
-      ))}
+    <div className="attendance-visibility">
+      <div
+        className="attendance-visibility-toggle"
+        role="group"
+        aria-label={translate(locale, 'attendance.visibilityLabel')}
+      >
+        {(
+          [
+            ['private', translate(locale, 'attendance.private')],
+            ['friends', translate(locale, 'attendance.friends')],
+            ['public', translate(locale, 'attendance.public')]
+          ] as Array<[AttendanceVisibility, string]>
+        ).map(([option, label]) => (
+          <button
+            type="button"
+            key={option}
+            className={value === option ? 'active' : ''}
+            aria-pressed={value === option}
+            onClick={() => onChange(option)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {/* The only one of the three that names you to a stranger says so
+          where it is chosen, not in a settings page nobody opens. */}
+      {value === 'public' && (
+        <small className="attendance-visibility-hint">
+          {translate(locale, 'attendance.publicHint')}
+        </small>
+      )}
     </div>
   );
 }
@@ -4208,12 +4218,11 @@ export function ExploreMap({
           <OrganisateurPage
             authToken={authToken}
             locale={locale}
-            onOpenEvent={(eventId) =>
-              void openDetails(eventId, {
-                asForumPanel: true,
-                forumEventFirst: true
-              })
-            }
+            // DEC-0023 §1. An organizer opening their own event lands on its
+            // console. This used to open the forum panel - the visitor's
+            // surface, tab for tab - which is why the console shipped and
+            // nobody could reach it from the one list that leads to it.
+            onOpenEvent={(eventId) => void openDetails(eventId)}
           />
         ) : user && section === 'evenement' ? (
           <EventsPage
@@ -13033,18 +13042,6 @@ function OrganisateurPage({
                       </button>
                     </span>
                   </div>
-                  {event.addressDisclosure === 'on_approval' && (
-                    <AccessRequestQueue
-                      eventId={event.id}
-                      authToken={authToken}
-                      locale={locale}
-                    />
-                  )}
-                  <EventTicketingPanel
-                    eventId={event.id}
-                    authToken={authToken}
-                    locale={locale}
-                  />
                 </div>
               ))}
             </div>

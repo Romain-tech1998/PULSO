@@ -7,7 +7,11 @@ import {
   type PublicUserRow
 } from './public-user.js';
 
-export type AttendanceVisibility = 'private' | 'friends';
+/**
+ * Who may know this account is going. Per event, never a profile setting:
+ * saying yes publicly to one night is not saying yes to every night.
+ */
+export type AttendanceVisibility = 'private' | 'friends' | 'public';
 
 export class EventNotFoundError extends Error {
   constructor() {
@@ -33,8 +37,18 @@ export interface AttendanceRepository {
     userId: string
   ): Promise<Array<{ eventId: string; visibility: AttendanceVisibility }>>;
   // Only ever returns friends of `viewerId` - never a stranger, regardless
-  // of what visibility other attendees chose.
+  // of what visibility other attendees chose. A friend who chose 'public' is
+  // included: public is strictly wider than friends, never narrower.
   getFriendsAttending(viewerId: string, eventId: string): Promise<PublicUser[]>;
+  /**
+   * The accounts who chose to be named to everyone for this event.
+   *
+   * Takes no viewer, and that is the point: the answer is the same for a
+   * signed-out reader as for a friend, because 'public' was described to the
+   * account choosing it as "tout le monde saura que tu participes". Nothing
+   * else in this repository names a person without a viewer.
+   */
+  getPublicAttendees(eventId: string): Promise<PublicUser[]>;
   // Real total attendance per event (both visibilities counted - only an
   // aggregate number is exposed, never who) - the Événements page's "🔥"
   // signal (Phase 4.11), batched for a whole grid of events in one query.
@@ -188,9 +202,22 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
         AND ((f.requester_id = $1 AND f.addressee_id = ea.user_id)
           OR (f.addressee_id = $1 AND f.requester_id = ea.user_id))
        JOIN users u ON u.id = ea.user_id
-       WHERE ea.event_id = $2 AND ea.visibility = 'friends'
+       WHERE ea.event_id = $2
+         AND ea.visibility IN ('friends', 'public')
        ORDER BY u.display_name ASC`,
       [viewerId, eventId]
+    );
+    return result.rows.map(toPublicUser);
+  }
+
+  async getPublicAttendees(eventId: string): Promise<PublicUser[]> {
+    const result = await this.pool.query<PublicUserRow>(
+      `SELECT ${publicUserColumns('u')}
+       FROM event_attendance ea
+       JOIN users u ON u.id = ea.user_id
+       WHERE ea.event_id = $1 AND ea.visibility = 'public'
+       ORDER BY u.display_name ASC`,
+      [eventId]
     );
     return result.rows.map(toPublicUser);
   }

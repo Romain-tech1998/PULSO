@@ -3903,6 +3903,19 @@ span.search-result-title {
   gap: 0.4rem;
 }
 
+/* The third visibility option is the only one that names you to somebody
+   you have never met, so the sentence saying so sits under the choice. */
+.attendance-visibility {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.attendance-visibility-hint {
+  color: #f5c451;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
 /* DEC-0023 §1 and §2: the organizer's own event. A back office, so it reads
    as one - numbers first, controls under them, and the public page a link
    away rather than the thing you landed on. */

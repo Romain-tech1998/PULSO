@@ -173,6 +173,7 @@ export function fakeAttendanceRepository(
     clearAttendance: async () => undefined,
     getMyAttendance: async () => [],
     getFriendsAttending: async () => [],
+    getPublicAttendees: async () => [],
     getAttendanceCountsForEvents: async () => new Map(),
     getFriendsAttendingForEvents: async () => new Map(),
     getMutualEventIds: async () => [],

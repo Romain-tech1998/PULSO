@@ -676,7 +676,11 @@ export const friendsMapResponseSchema = z.object({
 
 // Private by default (DEC-0011): nothing about a user's plans is shared
 // until they explicitly set visibility to "friends" for that event.
-export const attendanceVisibilitySchema = z.enum(['private', 'friends']);
+export const attendanceVisibilitySchema = z.enum([
+  'private',
+  'friends',
+  'public'
+]);
 
 export const setAttendanceRequestSchema = z.object({
   visibility: attendanceVisibilitySchema
