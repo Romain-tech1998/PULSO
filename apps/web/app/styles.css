@@ -3916,6 +3916,153 @@ span.search-result-title {
   line-height: 1.4;
 }
 
+/* DEC-0025. The inbox, deliberately the shape people already know: a list
+   with pinned above newest, a thread of bubbles, a composer at the bottom.
+   §Context is explicit that carrying over habits is the point, so this
+   borrows the arrangement rather than inventing one. */
+.rooms-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+}
+.rooms-inbox-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.rooms-inbox-head .messages-search {
+  flex: 1;
+  min-width: 0;
+}
+/* The row is a button with actions beside it rather than inside it: a click
+   anywhere on the conversation opens it, and pin/mute/leave never swallow
+   that click by accident. */
+.rooms-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.rooms-row-open {
+  flex: 1;
+  min-width: 0;
+}
+.rooms-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+/* Shown on hover and on keyboard focus alike - a control reachable only by
+   pointer is a control half the people cannot use. */
+.rooms-row:hover .rooms-row-actions,
+.rooms-row:focus-within .rooms-row-actions {
+  opacity: 1;
+}
+.rooms-row-actions .text-btn {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.3rem;
+}
+/* Two faces, overlapped, for a group; one for a pair. The cue that says
+   which it is before a single name is read. */
+.rooms-avatars {
+  display: flex;
+  flex-shrink: 0;
+}
+.rooms-avatars > * + * {
+  margin-left: -0.9rem;
+  border: 2px solid var(--surface-base);
+}
+.rooms-flag {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+.rooms-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--brand-border);
+}
+.rooms-hits > strong {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.rooms-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.rooms-hit small {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+/* In a room of several a bubble without a name is a bubble from nobody. */
+.rooms-author {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--brand-purple);
+}
+.rooms-attachment {
+  display: block;
+  max-width: 240px;
+  width: 100%;
+  height: auto;
+  border-radius: 0.6rem;
+  margin-top: 0.3rem;
+}
+.rooms-attach {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 1.1rem;
+  opacity: 0.75;
+}
+.rooms-attach:hover {
+  opacity: 1;
+}
+.rooms-attach input {
+  display: none;
+}
+.rooms-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-width: 26rem;
+}
+.rooms-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 15rem;
+  overflow-y: auto;
+}
+.rooms-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.rooms-picker-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 /* DEC-0024 §2: the discovery row, and the sentence that explains its
    order. */
 .trending-row {

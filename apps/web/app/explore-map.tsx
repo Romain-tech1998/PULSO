@@ -11,7 +11,10 @@ import {
   DATE_FILTER_OPTIONS,
   discoverForumsResponseSchema,
   discoverGroupsResponseSchema,
+  conversationRoomsResponseSchema,
+  conversationSearchResponseSchema,
   eventConsoleResponseSchema,
+  roomMessagesResponseSchema,
   eventDetailsResponseSchema,
   eventEngagementResponseSchema,
   eventListResponseSchema,
@@ -90,7 +93,9 @@ import {
   type HeldTicket,
   type ScanVerdict,
   type TicketType,
+  type ConversationRoom,
   type EventConsoleCounts,
+  type RoomMessage,
   type PublicEvent,
   type PublicUser,
   type PublicVenue,
@@ -4188,7 +4193,11 @@ export function ExploreMap({
                 }
               />
             ) : section === 'messages' ? (
-              <MessagesPage authToken={authToken} locale={locale} />
+              <MessagesPage
+                authToken={authToken}
+                userId={user.id}
+                locale={locale}
+              />
             ) : (
               <AmisPage
                 authToken={authToken}
@@ -14570,21 +14579,649 @@ type MessagesTab = 'discussions' | 'demandes';
 // type: none of those are real capabilities Pulso has today, so they're
 // left out rather than faked (same principle applied to Forums' "membres
 // en ligne" earlier).
-function MessagesPage({
+/**
+ * DEC-0025. The inbox, and a room in it.
+ *
+ * Deliberately the shape people already know from Instagram: a list on the
+ * left with the newest first and pinned above it, a thread on the right with
+ * my words on one side and everyone else's on the other. §Context is explicit
+ * that the point is carrying over habits, so the interface borrows them
+ * rather than inventing.
+ *
+ * A pair and a group are the same row and the same thread, because they are
+ * the same object - there is no second component here for "group chat".
+ */
+function roomName(
+  room: ConversationRoom,
+  selfId: string,
+  locale: SupportedLocale
+): string {
+  if (room.title) return room.title;
+  const others = room.participants.filter((person) => person.id !== selfId);
+  if (others.length === 0) return '…';
+  if (others.length <= 3)
+    return others.map((person) => person.displayName).join(', ');
+  return translate(locale, 'rooms.people').replace(
+    '{count}',
+    String(others.length)
+  );
+}
+
+function RoomsInbox({
   authToken,
-  locale
+  userId,
+  locale,
+  openRoomId,
+  onOpenRoom,
+  refreshKey,
+  onCounts
 }: {
   authToken: string | undefined;
+  userId: string;
   locale: SupportedLocale;
+  openRoomId: string | undefined;
+  onOpenRoom: (room: ConversationRoom | undefined) => void;
+  // The header above this list counts what is in it. Reported rather than
+  // recomputed from the pair inbox, which would leave every group out.
+  onCounts: (counts: { rooms: number; unread: number }) => void;
+  // Bumped by the thread after it sends, so the row's preview and unread
+  // badge follow without this component knowing anything about the thread.
+  refreshKey: number;
 }) {
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [rooms, setRooms] = useState<ConversationRoom[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
   );
-  const [tab, setTab] = useState<MessagesTab>('discussions');
   const [query, setQuery] = useState('');
+  const [hits, setHits] = useState<RoomMessage[]>([]);
+  const [composing, setComposing] = useState(false);
+
+  const headers = authToken
+    ? { authorization: `Bearer ${authToken}` }
+    : undefined;
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/rooms`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setRooms(conversationRoomsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh, refreshKey]);
+
+  useEffect(() => {
+    onCounts({
+      rooms: rooms.length,
+      unread: rooms.reduce((sum, room) => sum + room.unreadCount, 0)
+    });
+  }, [rooms, onCounts]);
+
+  // Two searches at once, which is what the single field means: a name is
+  // matched here, and the words inside messages are matched by the API - §9
+  // scopes that to the reader's own rooms, so there is nothing to filter out.
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!authToken || trimmed.length < 2) {
+      setHits([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetch(
+        `${API_BASE_URL}/me/rooms/search?q=${encodeURIComponent(trimmed)}`,
+        { headers: { authorization: `Bearer ${authToken}` } }
+      )
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) =>
+          setHits(
+            conversationSearchResponseSchema
+              .parse(json)
+              .data.map((hit) => hit.message)
+          )
+        )
+        .catch(() => setHits([]));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [authToken, query]);
+
+  const flag = (roomId: string, kind: 'muted' | 'pinned', value: boolean) => {
+    if (!headers) return;
+    fetch(`${API_BASE_URL}/me/rooms/${roomId}/${kind}`, {
+      method: 'PUT',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ value })
+    })
+      .then(() => refresh())
+      .catch(() => {});
+  };
+
+  const leave = (roomId: string) => {
+    if (!headers) return;
+    if (!window.confirm(translate(locale, 'rooms.leaveConfirm'))) return;
+    fetch(`${API_BASE_URL}/me/rooms/${roomId}/participants`, {
+      method: 'DELETE',
+      headers
+    })
+      .then(() => {
+        onOpenRoom(undefined);
+        refresh();
+      })
+      .catch(() => {});
+  };
+
+  const nameMatches = rooms.filter((room) =>
+    roomName(room, userId, locale)
+      .toLowerCase()
+      .includes(query.trim().toLowerCase())
+  );
+  const visible = query.trim().length === 0 ? rooms : nameMatches;
+
+  // The open room's own row is the freshest copy of it, so the thread is fed
+  // from the list rather than holding a second, staler one.
+  useEffect(() => {
+    if (!openRoomId) return;
+    const found = rooms.find((room) => room.id === openRoomId);
+    if (found) onOpenRoom(found);
+  }, [rooms, openRoomId, onOpenRoom]);
+
+  return (
+    <>
+      <div className="rooms-inbox">
+        <div className="rooms-inbox-head">
+          <label className="messages-search">
+            <span aria-hidden="true">⌕</span>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={translate(locale, 'rooms.searchPlaceholder')}
+              aria-label={translate(locale, 'rooms.searchPlaceholder')}
+            />
+          </label>
+          <button
+            type="button"
+            className="text-btn"
+            onClick={() => setComposing(true)}
+          >
+            {translate(locale, 'rooms.newGroup')}
+          </button>
+        </div>
+
+        {state === 'loading' && (
+          <p className="list-view-empty">
+            {translate(locale, 'common.loading')}
+          </p>
+        )}
+        {state === 'success' && rooms.length === 0 && (
+          <p className="list-view-empty">{translate(locale, 'rooms.empty')}</p>
+        )}
+        {state === 'success' &&
+          rooms.length > 0 &&
+          visible.length === 0 &&
+          hits.length === 0 && (
+            <p className="list-view-empty">
+              {translate(locale, 'rooms.noResult')}
+            </p>
+          )}
+
+        <div className="conversation-list">
+          {visible.map((room) => {
+            const others = room.participants.filter(
+              (person) => person.id !== userId
+            );
+            return (
+              <div
+                className={`rooms-row ${room.unreadCount > 0 ? 'unread' : ''} ${
+                  openRoomId === room.id ? 'selected' : ''
+                }`}
+                key={room.id}
+              >
+                <button
+                  type="button"
+                  className="conversation-list-row rooms-row-open"
+                  onClick={() => {
+                    onOpenRoom(room);
+                    if (headers) {
+                      void fetch(`${API_BASE_URL}/me/rooms/${room.id}/read`, {
+                        method: 'POST',
+                        headers
+                      }).then(() => refresh());
+                    }
+                  }}
+                >
+                  {/* Stacked faces for a group, one for a pair - the cue that
+                      says which it is before any name is read. */}
+                  <span className="rooms-avatars">
+                    {others.slice(0, 2).map((person) => (
+                      <span
+                        className="friends-row-avatar friends-row-avatar-lg"
+                        key={person.id}
+                      >
+                        {renderAvatarContent(person)}
+                      </span>
+                    ))}
+                  </span>
+                  <span className="conversation-list-info">
+                    <span className="conversation-list-row-top">
+                      <strong>{roomName(room, userId, locale)}</strong>
+                      {room.lastMessage && (
+                        <span className="conversation-list-time">
+                          {formatMessageTimestamp(room.lastMessage.createdAt)}
+                        </span>
+                      )}
+                    </span>
+                    <span className="conversation-list-preview">
+                      {room.lastMessage
+                        ? `${room.lastMessage.senderId === userId ? translate(locale, 'rooms.you') : ''}${room.lastMessage.body || '📷'}`
+                        : translate(locale, 'rooms.startWriting')}
+                    </span>
+                  </span>
+                  {room.pinned && (
+                    <span className="rooms-flag" aria-hidden="true">
+                      📌
+                    </span>
+                  )}
+                  {room.muted && (
+                    <span className="rooms-flag" aria-hidden="true">
+                      🔕
+                    </span>
+                  )}
+                  {room.unreadCount > 0 && (
+                    <span className="conversation-list-badge">
+                      {room.unreadCount}
+                    </span>
+                  )}
+                </button>
+                <span className="rooms-row-actions">
+                  <button
+                    type="button"
+                    className="text-btn"
+                    onClick={() => flag(room.id, 'pinned', !room.pinned)}
+                  >
+                    {translate(
+                      locale,
+                      room.pinned ? 'rooms.unpin' : 'rooms.pin'
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-btn"
+                    onClick={() => flag(room.id, 'muted', !room.muted)}
+                  >
+                    {translate(
+                      locale,
+                      room.muted ? 'rooms.unmute' : 'rooms.mute'
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-btn organisateur-delete"
+                    onClick={() => leave(room.id)}
+                  >
+                    {translate(locale, 'rooms.leave')}
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {hits.length > 0 && (
+          <div className="rooms-hits">
+            <strong>{translate(locale, 'rooms.searchResults')}</strong>
+            {hits.map((hit) => (
+              <button
+                type="button"
+                className="rooms-hit"
+                key={hit.id}
+                onClick={() =>
+                  onOpenRoom(
+                    rooms.find((room) => room.id === hit.conversationId)
+                  )
+                }
+              >
+                <span>{hit.body}</span>
+                <small>{formatMessageTimestamp(hit.createdAt)}</small>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {composing && (
+        <NewRoomModal
+          authToken={authToken}
+          locale={locale}
+          onClose={() => setComposing(false)}
+          onCreated={() => {
+            setComposing(false);
+            refresh();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function RoomPane({
+  room,
+  authToken,
+  userId,
+  locale,
+  onActivity
+}: {
+  room: ConversationRoom;
+  authToken: string | undefined;
+  userId: string;
+  locale: SupportedLocale;
+  onActivity: () => void;
+}) {
+  const [messages, setMessages] = useState<RoomMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const load = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/rooms/${room.id}/messages`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setMessages(roomMessagesResponseSchema.parse(json).data))
+      .catch(() => setMessages([]));
+  }, [authToken, room.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const send = () => {
+    if (!authToken || sending || draft.trim().length === 0) return;
+    setSending(true);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/me/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${authToken}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ body: draft.trim() })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => {
+        setDraft('');
+        load();
+        onActivity();
+      })
+      .catch(() => setError(translate(locale, 'messages.loadError')))
+      .finally(() => setSending(false));
+  };
+
+  const attach = (file: File) => {
+    if (!authToken) return;
+    const form = new FormData();
+    form.append('file', file);
+    setError(undefined);
+    // DEC-0021 screens it server-side; a refusal comes back as a 422 and the
+    // photo is never stored, so there is no "pending" state to draw.
+    fetch(`${API_BASE_URL}/me/rooms/${room.id}/attachments`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` },
+      body: form
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => {
+        load();
+        onActivity();
+      })
+      .catch(() => setError(translate(locale, 'rooms.attachFailed')));
+  };
+
+  const byId = new Map(room.participants.map((person) => [person.id, person]));
+
+  return (
+    <div className="conversation-pane">
+      <div className="conversation-pane-header">
+        <span className="conversation-modal-friend">
+          <span className="conversation-pane-identity">
+            <strong>{roomName(room, userId, locale)}</strong>
+            <small>
+              {room.participants
+                .map((person) => person.displayName)
+                .join(' · ')}
+            </small>
+          </span>
+        </span>
+      </div>
+
+      <div className="conversation-messages">
+        {messages.map((message) => {
+          const incoming = message.senderId !== userId;
+          const author = byId.get(message.senderId);
+          return (
+            <div
+              className={`conversation-message-row ${incoming ? 'incoming' : 'outgoing'}`}
+              key={message.id}
+            >
+              {incoming && author && (
+                <span className="friends-row-avatar conversation-message-avatar">
+                  {renderAvatarContent(author)}
+                </span>
+              )}
+              <div
+                className={`conversation-message ${incoming ? 'incoming' : 'outgoing'}`}
+              >
+                {/* In a room of several, a bubble without a name is a bubble
+                    from nobody. A pair does not need it. */}
+                {incoming && room.participants.length > 2 && author && (
+                  <span className="rooms-author">{author.displayName}</span>
+                )}
+                {message.body && (
+                  <span className="conversation-message-body">
+                    {message.body}
+                  </span>
+                )}
+                {message.attachments.map((attachment) => (
+                  <img
+                    className="rooms-attachment"
+                    key={attachment.id}
+                    src={attachment.url}
+                    alt=""
+                  />
+                ))}
+                <span className="conversation-message-meta">
+                  {formatMessageTimestamp(message.createdAt)}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {error && <p className="access-panel-status-declined">{error}</p>}
+
+      <form
+        className="forum-composer message-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          send();
+        }}
+      >
+        <div className="message-composer-box">
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={translate(locale, 'rooms.startWriting')}
+            rows={2}
+            maxLength={2000}
+          />
+          <label
+            className="rooms-attach"
+            title={translate(locale, 'rooms.attach')}
+          >
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) attach(file);
+                event.target.value = '';
+              }}
+            />
+            <span aria-hidden="true">📎</span>
+          </label>
+          <button type="submit" className="btn-primary" disabled={sending}>
+            {translate(locale, 'rooms.send')}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/** DEC-0025 §3 and §6: the picker only offers people already reachable. */
+function NewRoomModal({
+  authToken,
+  locale,
+  onClose,
+  onCreated
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const [friends, setFriends] = useState<PublicUser[]>([]);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [title, setTitle] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/friends`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setFriends(friendsResponseSchema.parse(json).data))
+      .catch(() => setFriends([]));
+  }, [authToken]);
+
+  const create = () => {
+    if (!authToken || chosen.length === 0 || busy) return;
+    setBusy(true);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/me/rooms`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${authToken}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        participantIds: chosen,
+        ...(title.trim() ? { title: title.trim() } : {})
+      })
+    })
+      .then((response) => {
+        if (response.status === 409) throw new Error('full');
+        if (response.status === 403) throw new Error('reach');
+        if (!response.ok) throw new Error('failed');
+        return response.json();
+      })
+      .then((json) => onCreated(json.data.id))
+      .catch((caught: Error) =>
+        setError(
+          translate(
+            locale,
+            caught.message === 'full'
+              ? 'rooms.full'
+              : caught.message === 'reach'
+                ? 'rooms.notReachable'
+                : 'messages.loadError'
+          )
+        )
+      )
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="modal-card rooms-modal">
+        <h2>{translate(locale, 'rooms.newGroup')}</h2>
+        <label className="create-event-field">
+          <span>{translate(locale, 'rooms.groupTitle')}</span>
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            maxLength={80}
+          />
+        </label>
+        <strong>{translate(locale, 'rooms.pick')}</strong>
+        <div className="rooms-picker">
+          {friends.map((friend) => (
+            <label className="rooms-picker-row" key={friend.id}>
+              <input
+                type="checkbox"
+                checked={chosen.includes(friend.id)}
+                onChange={(event) =>
+                  setChosen((current) =>
+                    event.target.checked
+                      ? [...current, friend.id]
+                      : current.filter((id) => id !== friend.id)
+                  )
+                }
+              />
+              <span className="friends-row-avatar">
+                {renderAvatarContent(friend)}
+              </span>
+              {friend.displayName}
+            </label>
+          ))}
+        </div>
+        {error && <p className="access-panel-status-declined">{error}</p>}
+        <div className="access-panel-actions">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            {translate(locale, 'access.cancel')}
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy || chosen.length === 0}
+            onClick={create}
+          >
+            {translate(locale, busy ? 'rooms.creating' : 'rooms.create')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessagesPage({
+  authToken,
+  userId,
+  locale
+}: {
+  authToken: string | undefined;
+  userId: string;
+  locale: SupportedLocale;
+}) {
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [tab, setTab] = useState<MessagesTab>('discussions');
+  const [roomCounts, setRoomCounts] = useState({ rooms: 0, unread: 0 });
   const [selectedFriend, setSelectedFriend] = useState<PublicUser>();
   const [composeOpen, setComposeOpen] = useState(false);
+  // DEC-0025. The room the thread is showing, held here because the list and
+  // the thread are two columns of one page.
+  const [openRoom, setOpenRoom] = useState<ConversationRoom>();
+  const [roomsRefresh, setRoomsRefresh] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
 
   const refresh = useCallback(() => {
@@ -14614,20 +15251,13 @@ function MessagesPage({
     refresh();
   }, [refresh]);
 
-  const filtered = query.trim()
-    ? conversations.filter((entry) =>
-        entry.friend.displayName
-          .toLowerCase()
-          .includes(query.trim().toLowerCase())
-      )
-    : conversations;
   const existingFriendIds = new Set(
     conversations.map((entry) => entry.friend.id)
   );
-  const unreadTotal = conversations.reduce(
-    (sum, conversation) => sum + conversation.unreadCount,
-    0
-  );
+  // DEC-0025: both numbers describe the rooms actually listed below, which
+  // is where a group lives too. Counting the pair inbox here would report a
+  // total that visibly disagreed with the list under it.
+  const unreadTotal = roomCounts.unread;
 
   return (
     <div className="messages-page messaging-page">
@@ -14653,10 +15283,10 @@ function MessagesPage({
         </header>
         <div className="messages-inbox-stats">
           <span>
-            <b>{conversations.length}</b>
+            <b>{roomCounts.rooms}</b>
             {translatePlural(
               locale,
-              conversations.length,
+              roomCounts.rooms,
               'messages.conversationWord',
               'messages.conversationWordPlural'
             )}
@@ -14691,84 +15321,15 @@ function MessagesPage({
         </div>
 
         {tab === 'discussions' && (
-          <>
-            <label className="messages-search">
-              <span aria-hidden="true">⌕</span>
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={translate(locale, 'messages.search')}
-                aria-label={translate(locale, 'messages.search')}
-              />
-            </label>
-            {state === 'loading' && (
-              <p className="list-view-empty">Chargement…</p>
-            )}
-            {state === 'error' && (
-              <p className="list-view-empty">
-                {translate(locale, 'messages.loadError')}
-              </p>
-            )}
-            {state === 'success' && conversations.length === 0 && (
-              <div className="messages-inbox-empty">
-                <span aria-hidden="true">◌</span>
-                <strong>{translate(locale, 'messages.readyTitle')}</strong>
-                <p>{translate(locale, 'messages.readyBody')}</p>
-                <button
-                  type="button"
-                  className="messages-empty-cta"
-                  onClick={() => setComposeOpen(true)}
-                >
-                  {translate(locale, 'messages.compose')}
-                </button>
-              </div>
-            )}
-            {state === 'success' &&
-              conversations.length > 0 &&
-              filtered.length === 0 && (
-                <p className="list-view-empty">
-                  {translate(locale, 'messages.noResult')}
-                </p>
-              )}
-            <div className="conversation-list">
-              {filtered.map((conversation) => (
-                <button
-                  type="button"
-                  className={`conversation-list-row ${conversation.unreadCount > 0 ? 'unread' : ''} ${selectedFriend?.id === conversation.friend.id ? 'selected' : ''}`}
-                  key={conversation.friend.id}
-                  onClick={() => {
-                    setSelectedFriend(conversation.friend);
-                  }}
-                >
-                  <span className="friends-row-avatar friends-row-avatar-lg">
-                    {renderAvatarContent(conversation.friend)}
-                  </span>
-                  <span className="conversation-list-info">
-                    <span className="conversation-list-row-top">
-                      <strong>{conversation.friend.displayName}</strong>
-                      {conversation.lastMessage && (
-                        <span className="conversation-list-time">
-                          {formatMessageTimestamp(
-                            conversation.lastMessage.createdAt
-                          )}
-                        </span>
-                      )}
-                    </span>
-                    <span className="conversation-list-preview">
-                      {conversation.lastMessage
-                        ? `${conversation.lastMessage.senderId === conversation.friend.id ? '' : 'Vous : '}${conversation.lastMessage.body}`
-                        : 'Commencez la conversation'}
-                    </span>
-                  </span>
-                  {conversation.unreadCount > 0 && (
-                    <span className="conversation-list-badge">
-                      {conversation.unreadCount}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </>
+          <RoomsInbox
+            authToken={authToken}
+            userId={userId}
+            locale={locale}
+            openRoomId={openRoom?.id}
+            onOpenRoom={setOpenRoom}
+            refreshKey={roomsRefresh}
+            onCounts={setRoomCounts}
+          />
         )}
 
         {tab === 'demandes' && (
@@ -14785,7 +15346,21 @@ function MessagesPage({
       </div>
 
       <div className="messages-conversation-column messaging-conversation-column">
-        {selectedFriend ? (
+        {tab === 'discussions' ? (
+          openRoom ? (
+            <RoomPane
+              room={openRoom}
+              authToken={authToken}
+              userId={userId}
+              locale={locale}
+              onActivity={() => setRoomsRefresh((count) => count + 1)}
+            />
+          ) : (
+            <div className="conversation-placeholder">
+              <p>{translate(locale, 'rooms.startWriting')}</p>
+            </div>
+          )
+        ) : selectedFriend ? (
           <ConversationPane
             friend={selectedFriend}
             authToken={authToken}
