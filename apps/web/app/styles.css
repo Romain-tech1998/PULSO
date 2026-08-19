@@ -3903,6 +3903,109 @@ span.search-result-title {
   gap: 0.4rem;
 }
 
+/* DEC-0023 §1 and §2: the organizer's own event. A back office, so it reads
+   as one - numbers first, controls under them, and the public page a link
+   away rather than the thing you landed on. */
+.event-console {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem 1.25rem;
+}
+.event-console-lead {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+/* Auto-fit rather than a fixed column count: two of the four tiles only
+   exist on some events (tickets, address requests), and a grid that reserved
+   their space would leave holes on the ordinary one. */
+.console-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.6rem;
+}
+.console-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--brand-border);
+  background: var(--surface-raised);
+}
+.console-stat-value {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.console-stat-value small {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.console-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.console-stat small {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+.console-stat-flag {
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  color: #f5c451;
+  background: rgba(245, 196, 81, 0.16);
+}
+/* The sentence that keeps the number honest. Muted, but never hidden behind
+   a tooltip: DEC-0023 §3 allows the counter precisely because it says what
+   it is. */
+.console-views-hint {
+  margin-top: -0.35rem;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+/* Both panels are written for the Organisateur list, where they hang under a
+   row's cover image. Inside the console they are the content. */
+.event-console .access-queue,
+.event-console .ticketing-panel {
+  margin-left: 0;
+  margin-right: 0;
+}
+/* DEC-0023 §4: what is left, and the full state that replaces it. */
+.attendance-capacity {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.card-full {
+  margin: 0.35rem 0 0;
+  align-self: flex-start;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #f5c451;
+  background: rgba(245, 196, 81, 0.16);
+}
+
 /* DEC-0022 §2: "Mes sorties" - the tickets held, and the outings said
    yes to. Its three blocks were bare uppercase labels stacked on the page
    background, while the Aperçu tab beside it presents the same kind of
@@ -7358,12 +7461,28 @@ a.venue-detail-info-row:hover {
   justify-content: center;
   gap: 1.5rem;
 }
+/* DEC-0023 §1 added a fourth tab for the organizer, and four labels stopped
+   fitting the panel: "À propos" broke across two lines and pushed the strip
+   taller than the row beside it. The labels keep their line and the strip
+   scrolls instead, which is what it already does on a phone. */
+.details-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.details-tabs::-webkit-scrollbar {
+  display: none;
+}
+.details-tabs-centered {
+  gap: clamp(0.5rem, 3vw, 1.5rem);
+}
 .details-tabs button {
   padding: 0.85rem 1rem;
   color: var(--text-secondary);
   font-weight: 600;
   font-size: 0.9rem;
   position: relative;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .details-tabs button:hover {
   color: var(--text-primary);

@@ -11,6 +11,7 @@ import {
   DATE_FILTER_OPTIONS,
   discoverForumsResponseSchema,
   discoverGroupsResponseSchema,
+  eventConsoleResponseSchema,
   eventDetailsResponseSchema,
   eventEngagementResponseSchema,
   eventListResponseSchema,
@@ -90,6 +91,7 @@ import {
   type HeldTicket,
   type ScanVerdict,
   type TicketType,
+  type EventConsoleCounts,
   type PublicEvent,
   type PublicUser,
   type PublicVenue,
@@ -316,7 +318,10 @@ type DetailsState =
 // right (matches the mockup exactly) and the extra ones didn't read as
 // meaningful - reverted back to the original 3, with the forum member list
 // folded inline into the Forum tab instead of living as its own tab.
-type EventDetailsTab = 'about' | 'participants' | 'forum';
+// DEC-0023 §1: 'console' exists only for the account that created the
+// event, and is where that account lands. The public tabs stay reachable
+// beside it - the document asks for a link back, not for a hidden page.
+type EventDetailsTab = 'console' | 'about' | 'participants' | 'forum';
 
 interface ActiveSearch {
   query: string;
@@ -369,6 +374,26 @@ function AttendanceVisibilityToggle({
       ))}
     </div>
   );
+}
+
+/**
+ * DEC-0023 §4. Full, and how much room is left.
+ *
+ * `taken` may exceed `limit`: a cap can be lowered under the number already
+ * committed and evicts nobody, so "full" is >=, and what is left never goes
+ * below zero.
+ */
+function readCapacity(event: PublicEvent):
+  | {
+      full: boolean;
+      left: number;
+    }
+  | undefined {
+  if (!event.capacity) return undefined;
+  return {
+    full: event.capacity.taken >= event.capacity.limit,
+    left: Math.max(event.capacity.limit - event.capacity.taken, 0)
+  };
 }
 
 function authHeaders(
@@ -5832,6 +5857,11 @@ export function ExploreMap({
                       <p className="card-when">
                         {eventPreviewFields(evt, locale).dateTime}
                       </p>
+                      {readCapacity(evt)?.full && (
+                        <p className="card-full">
+                          {translate(locale, 'console.full')}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -10250,6 +10280,12 @@ function EventEditor({
   const [addressOnApproval, setAddressOnApproval] = useState(
     existing?.addressDisclosure === 'on_approval'
   );
+  // DEC-0023 §4. Held as a string so the field can be emptied, which is how
+  // a limit is removed - `0` and "" are different answers and only one of
+  // them means "no cap".
+  const [attendanceLimit, setAttendanceLimit] = useState(
+    existing?.capacity ? String(existing.capacity.limit) : ''
+  );
   // DEC-0022 §5. The geocoder proposes; the organizer confirms or moves it.
   // Distinct from `resolved` so that dragging the pin does not look like a
   // second geocoding result, and so a moved pin survives a re-render.
@@ -10347,6 +10383,11 @@ function EventEditor({
       ...(ticketingUrl.trim() ? { ticketingUrl: ticketingUrl.trim() } : {}),
       ...(addressOnApproval
         ? { addressDisclosure: 'on_approval' as const }
+        : {}),
+      // Omitted when the field is empty or unreadable, which the API reads as
+      // "no cap" - the default, and what removing a limit sends.
+      ...(Number(attendanceLimit) > 0
+        ? { attendanceLimit: Number(attendanceLimit) }
         : {}),
       isAfter,
       price: { kind: priceKind }
@@ -10645,6 +10686,23 @@ function EventEditor({
             </span>
           </label>
         )}
+
+        {/* DEC-0023 §4. Optional, and empty by default: a required field
+            here would make every organizer invent a number. */}
+        <label className="create-event-field">
+          <span>{translate(locale, 'create.attendanceLimit')}</span>
+          <input
+            type="number"
+            min={1}
+            value={attendanceLimit}
+            onChange={(changeEvent) =>
+              setAttendanceLimit(changeEvent.target.value)
+            }
+          />
+          <small className="create-event-hint">
+            {translate(locale, 'create.attendanceLimitHelp')}
+          </small>
+        </label>
       </section>
 
       <section className="event-editor-section">
@@ -15651,6 +15709,9 @@ function EventCarouselRow({
             <p className="card-when">
               {eventPreviewFields(evt, locale).dateTime}
             </p>
+            {readCapacity(evt)?.full && (
+              <p className="card-full">{translate(locale, 'console.full')}</p>
+            )}
           </div>
         </div>
       ))}
@@ -19933,6 +19994,157 @@ function EventAboutContent({
   );
 }
 
+/**
+ * DEC-0023 §1 and §2. The organizer's own event: what it is doing, and the
+ * controls for it, in one place.
+ *
+ * Every number here is an aggregate. Nothing in this panel names a person,
+ * and the API it reads cannot return one - which is what makes the view
+ * count allowed to exist at all (§3).
+ */
+function EventConsole({
+  event,
+  authToken,
+  locale,
+  onSeePublic
+}: {
+  event: PublicEvent;
+  authToken: string | undefined;
+  locale: SupportedLocale;
+  onSeePublic: () => void;
+}) {
+  const [counts, setCounts] = useState<EventConsoleCounts>();
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!authToken) return;
+    setFailed(false);
+    fetch(`${API_BASE_URL}/me/events/${event.id}/console`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setCounts(eventConsoleResponseSchema.parse(json).data))
+      .catch(() => setFailed(true));
+  }, [authToken, event.id]);
+
+  const full =
+    counts?.attendanceLimit !== null &&
+    counts !== undefined &&
+    counts.coming >= counts.attendanceLimit;
+
+  return (
+    <div className="event-console">
+      <p className="event-console-lead">{translate(locale, 'console.lead')}</p>
+
+      {failed && (
+        <p className="status-pill status-pill-no">
+          <span className="status-pill-dot" aria-hidden="true" />
+          {translate(locale, 'console.failed')}
+        </p>
+      )}
+
+      {counts && (
+        <>
+          <div className="console-stats">
+            <div className="console-stat">
+              <span className="console-stat-value">
+                {counts.coming}
+                {counts.attendanceLimit !== null && (
+                  <small>
+                    {translate(locale, 'console.comingOf').replace(
+                      '{limit}',
+                      String(counts.attendanceLimit)
+                    )}
+                  </small>
+                )}
+              </span>
+              <span className="console-stat-label">
+                {translate(locale, 'console.coming')}
+                {full && (
+                  <span className="console-stat-flag">
+                    {translate(locale, 'console.full')}
+                  </span>
+                )}
+              </span>
+            </div>
+
+            <div className="console-stat">
+              <span className="console-stat-value">{counts.views.total}</span>
+              <span className="console-stat-label">
+                {translate(locale, 'console.views')}
+              </span>
+              <small>
+                {translate(locale, 'console.viewsToday').replace(
+                  '{count}',
+                  String(counts.views.today)
+                )}
+              </small>
+            </div>
+
+            {counts.tickets && (
+              <div className="console-stat">
+                <span className="console-stat-value">
+                  {counts.tickets.issued}
+                </span>
+                <span className="console-stat-label">
+                  {translate(locale, 'console.tickets')}
+                </span>
+                <small>
+                  {translate(locale, 'console.ticketsDetail')
+                    .replace('{valid}', String(counts.tickets.valid))
+                    .replace('{used}', String(counts.tickets.used))}
+                </small>
+              </div>
+            )}
+
+            {counts.accessRequests && (
+              <div className="console-stat">
+                <span className="console-stat-value">
+                  {counts.accessRequests.pending}
+                </span>
+                <span className="console-stat-label">
+                  {translate(locale, 'console.requests')}
+                </span>
+                <small>
+                  {translate(locale, 'console.requestsDetail')
+                    .replace('{pending}', String(counts.accessRequests.pending))
+                    .replace(
+                      '{approved}',
+                      String(counts.accessRequests.approved)
+                    )}
+                </small>
+              </div>
+            )}
+          </div>
+
+          {/* DEC-0023 §3. The sentence that keeps the number honest, next to
+              the number rather than in a help page nobody opens. */}
+          <small className="console-views-hint">
+            {translate(locale, 'console.viewsHint')}
+          </small>
+        </>
+      )}
+
+      {event.addressDisclosure === 'on_approval' && (
+        <AccessRequestQueue
+          eventId={event.id}
+          authToken={authToken}
+          locale={locale}
+        />
+      )}
+      <EventTicketingPanel
+        eventId={event.id}
+        authToken={authToken}
+        locale={locale}
+      />
+
+      <button type="button" className="text-btn" onClick={onSeePublic}>
+        {translate(locale, 'console.publicView')}
+      </button>
+    </div>
+  );
+}
+
 function EventDetails({
   event,
   headingRef,
@@ -19973,14 +20185,18 @@ function EventDetails({
   // anywhere gets a way to be written to.
   onMessageUser: (user: PublicUser) => void;
 }) {
-  const [tab, setTab] = useState<EventDetailsTab>(initialTab ?? 'about');
+  // DEC-0023 §1. The account that created this event lands on its console;
+  // everyone else lands where they always did.
+  const isOwner = user !== undefined && event.createdBy?.userId === user.id;
+  const landingTab: EventDetailsTab = isOwner ? 'console' : 'about';
+  const [tab, setTab] = useState<EventDetailsTab>(initialTab ?? landingTab);
   // EventDetails stays mounted across different events (see rightPanelMount)
   // rather than remounting per open, so the tab has to be reset explicitly
   // whenever a new event is opened - a plain useState initializer alone
   // would only apply on the very first mount.
   useEffect(() => {
-    setTab(initialTab ?? 'about');
-  }, [event.id, initialTab]);
+    setTab(initialTab ?? landingTab);
+  }, [event.id, initialTab, landingTab]);
   const { presentation } = eventDetailsFields(event, locale);
   const externalHref = `${API_BASE_URL}/events/${event.id}/external`;
 
@@ -20018,6 +20234,15 @@ function EventDetails({
       />
 
       <div className="details-tabs details-tabs-centered">
+        {isOwner && (
+          <button
+            type="button"
+            className={tab === 'console' ? 'active' : ''}
+            onClick={() => setTab('console')}
+          >
+            {translate(locale, 'console.tab')}
+          </button>
+        )}
         <button
           type="button"
           className={tab === 'about' ? 'active' : ''}
@@ -20040,6 +20265,15 @@ function EventDetails({
           Forum
         </button>
       </div>
+
+      {tab === 'console' && isOwner && (
+        <EventConsole
+          event={event}
+          authToken={authToken}
+          locale={locale}
+          onSeePublic={() => setTab('about')}
+        />
+      )}
 
       {tab === 'about' && (
         <EventAboutContent
@@ -20066,6 +20300,12 @@ function EventDetails({
                 <button
                   type="button"
                   className={`forum-follow-cta attendance-cta ${attendanceVisibility ? 'active' : ''}`}
+                  // DEC-0023 §4. Closed only to someone not already coming:
+                  // a full event never blocks the people in it from leaving,
+                  // or from changing how visible they are.
+                  disabled={
+                    !attendanceVisibility && readCapacity(event)?.full === true
+                  }
                   onClick={() =>
                     attendanceVisibility
                       ? onClearAttendance()
@@ -20084,6 +20324,25 @@ function EventDetails({
                   />
                 )}
               </div>
+              {(() => {
+                const capacity = readCapacity(event);
+                if (!capacity) return null;
+                // There is no waiting list to offer (DEC-0023 forbids one),
+                // so a full event says so and offers nothing.
+                return capacity.full ? (
+                  <p className="status-pill status-pill-no">
+                    <span className="status-pill-dot" aria-hidden="true" />
+                    {translate(locale, 'capacity.full')}
+                  </p>
+                ) : (
+                  <small className="attendance-capacity">
+                    {translate(locale, 'capacity.left').replace(
+                      '{count}',
+                      String(capacity.left)
+                    )}
+                  </small>
+                );
+              })()}
               {friendsAttending.length > 0 ? (
                 <div className="attendance-friends">
                   {friendsAttending.map((attendee) => (
