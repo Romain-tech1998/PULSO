@@ -49,6 +49,24 @@ export interface AttendanceRepository {
    * else in this repository names a person without a viewer.
    */
   getPublicAttendees(eventId: string): Promise<PublicUser[]>;
+  /**
+   * DEC-0024 §2 and §4. The ids of the events being decided on right now,
+   * most-committed first.
+   *
+   * Returns ids and counts, not events: what may be *shown* about an event is
+   * the event repository's business, and this one has no idea who is asking.
+   *
+   * Never views. DEC-0024 §3 refuses them as a ranking input, because the
+   * counter DEC-0023 authorised has no identifier to deduplicate by, no way
+   * to rate-limit, and no way to exclude the organizer's own openings.
+   */
+  getMostAttendedEventIds(options: {
+    /** How far back attendance counts. DEC-0024 §4: 48 hours, not a total. */
+    sinceHours: number;
+    /** Below this, an event is not ranked at all. */
+    floor: number;
+    limit: number;
+  }): Promise<Array<{ eventId: string; count: number }>>;
   // Real total attendance per event (both visibilities counted - only an
   // aggregate number is exposed, never who) - the Événements page's "🔥"
   // signal (Phase 4.11), batched for a whole grid of events in one query.
@@ -220,6 +238,33 @@ export class PostgresAttendanceRepository implements AttendanceRepository {
       [eventId]
     );
     return result.rows.map(toPublicUser);
+  }
+
+  async getMostAttendedEventIds(options: {
+    sinceHours: number;
+    floor: number;
+    limit: number;
+  }): Promise<Array<{ eventId: string; count: number }>> {
+    const result = await this.pool.query<{ event_id: string; count: string }>(
+      // Only events that have not started: a ranking of what is being decided
+      // now is useless if it leads with last night. Ties break on start time
+      // then id, so the same data always produces the same page (DEC-0024 §4).
+      `SELECT ea.event_id, count(*)::int AS count
+       FROM event_attendance ea
+       JOIN events e ON e.id = ea.event_id
+       WHERE ea.created_at >= now() - make_interval(hours => $1)
+         AND e.starts_at >= now()
+         AND e.status <> 'cancelled'
+       GROUP BY ea.event_id, e.starts_at
+       HAVING count(*) >= $2
+       ORDER BY count DESC, e.starts_at ASC, ea.event_id ASC
+       LIMIT $3`,
+      [options.sinceHours, options.floor, options.limit]
+    );
+    return result.rows.map((row) => ({
+      eventId: row.event_id,
+      count: Number(row.count)
+    }));
   }
 
   async getAttendanceCountsForEvents(

@@ -174,6 +174,7 @@ export function fakeAttendanceRepository(
     getMyAttendance: async () => [],
     getFriendsAttending: async () => [],
     getPublicAttendees: async () => [],
+    getMostAttendedEventIds: async () => [],
     getAttendanceCountsForEvents: async () => new Map(),
     getFriendsAttendingForEvents: async () => new Map(),
     getMutualEventIds: async () => [],

@@ -3916,6 +3916,19 @@ span.search-result-title {
   line-height: 1.4;
 }
 
+/* DEC-0024 §2: the discovery row, and the sentence that explains its
+   order. */
+.trending-row {
+  margin-bottom: 1.5rem;
+}
+.trending-hint {
+  display: block;
+  margin: -0.5rem 0 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 /* A settled status is one line, and two of them share a row. The full
    panels come back the moment either needs something, so the page is only
    as tall as it has questions to ask. */

@@ -88,6 +88,17 @@ const venueSearchQuerySchema = z.object({
   query: z.string().trim().min(3).max(120)
 });
 
+/**
+ * DEC-0024 §4. The ranking's three numbers, together and named, because they
+ * are product decisions rather than implementation details: a window short
+ * enough to describe tonight, a floor under which a count is noise, and a
+ * minimum below which the surface renders nothing at all.
+ */
+const TRENDING_WINDOW_HOURS = 48;
+const TRENDING_FLOOR = 3;
+const TRENDING_MINIMUM = 3;
+const TRENDING_LIMIT = 12;
+
 export function buildApp(
   repository: EventRepository,
   options: {
@@ -811,6 +822,43 @@ export function buildApp(
       });
     }
     return reply.redirect(url.toString());
+  });
+
+  /**
+   * DEC-0024 §2 and §4. What is being decided right now.
+   *
+   * Ordered by attendance recorded in the last 48 hours - never by views,
+   * which §3 refuses as a ranking input because the DEC-0023 counter has no
+   * identifier to deduplicate by and no way to rate-limit.
+   */
+  app.get('/events/trending', async (request) => {
+    const viewer = options.authRepository
+      ? await resolveBearerUser(request, options.authRepository)
+      : undefined;
+    const ranked = options.attendanceRepository
+      ? await options.attendanceRepository.getMostAttendedEventIds({
+          sinceHours: TRENDING_WINDOW_HOURS,
+          floor: TRENDING_FLOOR,
+          limit: TRENDING_LIMIT
+        })
+      : [];
+    // §4: too few qualifying events is not a short ranking, it is no
+    // ranking. A top of two says more about how quiet the week was than
+    // about the two.
+    if (ranked.length < TRENDING_MINIMUM) {
+      return eventListResponseSchema.parse({ data: [] });
+    }
+    const events = await repository.findByIds(
+      ranked.map((entry) => entry.eventId),
+      viewer?.id ?? null
+    );
+    // findByIds answers in its own order; the ranking is the point here, so
+    // it is reimposed rather than hoped for.
+    const byId = new Map(events.map((event) => [event.id, event]));
+    const ordered = ranked
+      .map((entry) => byId.get(entry.eventId))
+      .filter((event): event is (typeof events)[number] => event !== undefined);
+    return eventListResponseSchema.parse({ data: ordered });
   });
 
   app.get('/events/near', async (request) => {

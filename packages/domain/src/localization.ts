@@ -861,6 +861,12 @@ const en = {
   'organizer.verifiedShort': 'Verified organizer',
   'organizer.manage': 'Manage',
   'pay.readyShort': 'Stripe ready',
+  // DEC-0024 §2. The heading says what the order is, because an order
+  // nobody can explain is one nobody can trust.
+  'trending.kicker': 'Right now',
+  'trending.title': 'Being decided now',
+  'trending.hint':
+    'Ordered by how many people said they were going in the last 48 hours.',
   'console.lead': 'What this event is doing. Only you see this.',
   'console.coming': 'Coming',
   'console.comingOf': 'of {limit}',
@@ -1961,6 +1967,10 @@ const fr = {
   'organizer.verifiedShort': 'Organisateur vérifié',
   'organizer.manage': 'Gérer',
   'pay.readyShort': 'Stripe est prêt',
+  'trending.kicker': 'En ce moment',
+  'trending.title': 'Ça se décide maintenant',
+  'trending.hint':
+    'Classé par le nombre de personnes qui ont dit y aller ces 48 dernières heures.',
   'console.lead': 'Ce que fait cet événement. Toi seul vois ça.',
   'console.coming': 'Participants',
   'console.comingOf': 'sur {limit}',

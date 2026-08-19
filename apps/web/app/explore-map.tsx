@@ -9608,6 +9608,62 @@ function isEventCategory(value: string): value is EventCategory {
 // real recency threshold on source.observedAt, and "Groupes actifs" reuses
 // the real event-linked group directory from Phase 4.10. No popularity %,
 // no capacity/"presque complet" bar - neither has any real backing data.
+/**
+ * DEC-0024 §2. What is being decided right now.
+ *
+ * Renders nothing at all when the API returns nothing, which it does whenever
+ * too few events clear the floor (§4). A near-empty "trending" row says more
+ * about how quiet the week was than about the events in it, and Pulso would
+ * rather show no order than an order that means nothing.
+ */
+function TrendingRow({
+  authToken,
+  locale,
+  onOpenDetails
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+  onOpenDetails: (eventId: string) => void;
+}) {
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/events/trending`, {
+      ...(authToken
+        ? { headers: { authorization: `Bearer ${authToken}` } }
+        : {})
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setEvents(eventListResponseSchema.parse(json).data))
+      .catch(() => setEvents([]));
+  }, [authToken]);
+
+  if (events.length === 0) return null;
+
+  return (
+    <section className="dashboard-home-section trending-row">
+      <div className="list-view-heading profil-section-heading">
+        <div>
+          <span className="profil-section-kicker">
+            {translate(locale, 'trending.kicker')}
+          </span>
+          <h3>{translate(locale, 'trending.title')}</h3>
+        </div>
+      </div>
+      {/* The order is a count, and the page says which count. An order nobody
+          can explain is one nobody can trust. */}
+      <small className="trending-hint">
+        {translate(locale, 'trending.hint')}
+      </small>
+      <EventCarouselRow
+        events={events}
+        onOpenDetails={onOpenDetails}
+        locale={locale}
+      />
+    </section>
+  );
+}
+
 function EventsPage({
   authToken,
   favorites,
@@ -9879,6 +9935,12 @@ function EventsPage({
         {state === 'success' && filtered.length === 0 && (
           <p className="list-view-empty">Aucun événement trouvé.</p>
         )}
+
+        <TrendingRow
+          authToken={authToken}
+          locale={locale}
+          onOpenDetails={onOpenEventForum}
+        />
 
         {state === 'success' && filtered.length > 0 && (
           <div className="events-results-heading">
