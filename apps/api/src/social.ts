@@ -25,6 +25,7 @@ import type {
 } from '@pulso/database';
 import {
   CannotFriendSelfError,
+  EventFullError,
   EventNotFoundError,
   FriendCodeNotFoundError,
   FriendRequestNotFoundError,
@@ -299,6 +300,14 @@ export function registerSocialRoutes(
       if (error instanceof EventNotFoundError) {
         return reply.status(404).send({
           error: { code: 'EVENT_NOT_FOUND', message: error.message }
+        });
+      }
+      // DEC-0023 §4. A conflict rather than a refusal: nothing about this
+      // caller is wrong, the room filled up. The client says so and offers
+      // nothing, because there is no waiting list to offer (§Not authorized).
+      if (error instanceof EventFullError) {
+        return reply.status(409).send({
+          error: { code: 'EVENT_FULL', message: error.message }
         });
       }
       throw error;

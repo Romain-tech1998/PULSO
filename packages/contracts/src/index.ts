@@ -1313,6 +1313,16 @@ export const publicEventSchema = z.object({
   // Where the reader stands with this event's organizer, when they have asked
   // at all. Absent for an anonymous reader and for anyone who never asked.
   myAccessStatus: z.enum(['pending', 'approved', 'declined']).optional(),
+  // DEC-0023 §4. Present only where the organizer set a cap, which is not
+  // the default and never applies to a ticketed or an ingested event. `taken`
+  // may exceed `limit`: lowering a limit evicts nobody, so a full event and
+  // an over-full one are both ordinary states a client has to render.
+  capacity: z
+    .object({
+      limit: z.number().int().positive(),
+      taken: z.number().int().nonnegative()
+    })
+    .optional(),
   // DEC-0017 v1.2: pinned by its creator into the sidebar's Raccourcis.
   pinned: z.boolean().optional(),
   externalDestination: z
@@ -1327,6 +1337,42 @@ export const publicEventSchema = z.object({
 
 export const eventListResponseSchema = z.object({
   data: z.array(publicEventSchema)
+});
+
+/**
+ * DEC-0023 §2. What an organizer is told about their own event.
+ *
+ * Every field is an aggregate, and that is a boundary rather than a
+ * convenience: no shape here can carry a person, so no future edit can add
+ * one without saying so out loud.
+ */
+export const eventConsoleCountsSchema = z.object({
+  coming: z.number().int().nonnegative(),
+  attendanceLimit: z.number().int().positive().nullable(),
+  // §3. Openings, not people, and named so that nothing downstream can
+  // honestly relabel it: there is no identifier anywhere to deduplicate by.
+  views: z.object({
+    total: z.number().int().nonnegative(),
+    today: z.number().int().nonnegative()
+  }),
+  tickets: z
+    .object({
+      issued: z.number().int().nonnegative(),
+      valid: z.number().int().nonnegative(),
+      used: z.number().int().nonnegative()
+    })
+    .optional(),
+  accessRequests: z
+    .object({
+      pending: z.number().int().nonnegative(),
+      approved: z.number().int().nonnegative(),
+      declined: z.number().int().nonnegative()
+    })
+    .optional()
+});
+
+export const eventConsoleResponseSchema = z.object({
+  data: eventConsoleCountsSchema
 });
 
 // DEC-0017. The venue is either an existing Pulso venue (by id) or a new
@@ -1352,6 +1398,11 @@ export const createEventRequestSchema = z.object({
   // newly typed venue: an existing directory venue's address is already
   // published and cannot be taken back.
   addressDisclosure: z.literal('on_approval').optional(),
+  // DEC-0023 §4. Optional and absent by default: most events have no door
+  // count, and a required field would make every organizer invent one. It is
+  // ignored on a ticketed event, where the ticket type's quantity is already
+  // the answer to whether there is room.
+  attendanceLimit: z.number().int().positive().max(100000).optional(),
   price: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('free') }),
     z.object({
@@ -1765,6 +1816,7 @@ export type UserPhoto = z.infer<typeof userPhotoSchema>;
 export type UserPhotosResponse = z.infer<typeof userPhotosResponseSchema>;
 export type UserPhotoResponse = z.infer<typeof userPhotoResponseSchema>;
 export type EventDetailsResponse = z.infer<typeof eventDetailsResponseSchema>;
+export type EventConsoleCounts = z.infer<typeof eventConsoleCountsSchema>;
 export type MapBoundsQuery = z.infer<typeof mapBoundsQuerySchema>;
 export type DirectDistanceQuery = z.infer<typeof directDistanceQuerySchema>;
 export type EventIdsQuery = z.infer<typeof eventIdsQuerySchema>;

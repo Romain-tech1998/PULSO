@@ -12,6 +12,7 @@ import {
 import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
 import type {
   AttendanceRepository,
+  OrganizerConsoleRepository,
   AuthRepository,
   EventAccessRepository,
   TicketingRepository,
@@ -101,6 +102,7 @@ export function buildApp(
     trendsRepository?: TrendsRepository;
     friendsRepository?: FriendsRepository;
     attendanceRepository?: AttendanceRepository;
+    organizerConsoleRepository?: OrganizerConsoleRepository;
     forumRepository?: ForumRepository;
     messagesRepository?: MessagesRepository;
     reportsRepository?: ReportsRepository;
@@ -284,7 +286,9 @@ export function buildApp(
       options.authRepository,
       repository,
       options.uploadDir,
-      options.publicUploadUrl
+      options.publicUploadUrl,
+      fetch,
+      options.organizerConsoleRepository
     );
     registerEventAccessRoutes(
       app,
@@ -774,6 +778,11 @@ export function buildApp(
         error: { code: 'EVENT_NOT_FOUND', message: 'The event was not found.' }
       });
     }
+    // DEC-0023 §3. Counted here, server-side, on a record that was actually
+    // found and served - never from the client, where the number would be
+    // whatever the caller felt like. Not awaited: an organizer's counter is
+    // not worth a millisecond of somebody else's page.
+    void options.organizerConsoleRepository?.recordEventView(id);
     return eventDetailsResponseSchema.parse({ data: event });
   });
 

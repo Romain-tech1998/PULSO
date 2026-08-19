@@ -853,6 +853,29 @@ const en = {
   'pay.buying': 'Opening the checkout…',
   'pay.organizerNotPayable': 'This organizer cannot accept payments yet.',
   'pay.failed': 'The checkout could not be opened. Try again.',
+  // DEC-0023. The organizer's own event.
+  'console.tab': 'Console',
+  'console.lead': 'What this event is doing. Only you see this.',
+  'console.coming': 'Coming',
+  'console.comingOf': 'of {limit}',
+  'console.full': 'Full',
+  // DEC-0023 §3: openings, and the word is chosen so nothing downstream can
+  // honestly relabel it - there is no identifier to deduplicate by.
+  'console.views': 'Views',
+  'console.viewsToday': '{count} today',
+  'console.viewsHint':
+    'Openings of this page, counted without recording who. The same phone twice counts twice.',
+  'console.tickets': 'Tickets',
+  'console.ticketsDetail': '{valid} valid · {used} admitted',
+  'console.requests': 'Address requests',
+  'console.requestsDetail': '{pending} pending · {approved} approved',
+  'console.publicView': 'See the public page',
+  'console.failed': 'These numbers could not be loaded.',
+  'capacity.left': '{count} places left',
+  'capacity.full': 'This event is full.',
+  'create.attendanceLimit': 'Attendance limit (optional)',
+  'create.attendanceLimitHelp':
+    'Leave empty for no limit. Lowering it later never removes anyone already coming. Ignored on a ticketed event, where the ticket quantity decides.',
   'tickets.door': 'Door',
   'tickets.doorHint':
     'Scan a QR, or paste it if the camera is unavailable. Pulso decides, not the phone.',
@@ -1923,6 +1946,27 @@ const fr = {
   'pay.buying': 'Ouverture du paiement…',
   'pay.organizerNotPayable': 'Cet organisateur ne peut pas encore encaisser.',
   'pay.failed': 'Le paiement n’a pas pu être ouvert. Réessaie.',
+  // DEC-0023. L'événement dont on est l'organisateur.
+  'console.tab': 'Console',
+  'console.lead': 'Ce que fait cet événement. Toi seul vois ça.',
+  'console.coming': 'Participants',
+  'console.comingOf': 'sur {limit}',
+  'console.full': 'Complet',
+  'console.views': 'Vues',
+  'console.viewsToday': '{count} aujourd’hui',
+  'console.viewsHint':
+    'Ouvertures de cette page, comptées sans enregistrer qui. Le même téléphone deux fois compte deux fois.',
+  'console.tickets': 'Billets',
+  'console.ticketsDetail': '{valid} valides · {used} entrées',
+  'console.requests': 'Demandes d’adresse',
+  'console.requestsDetail': '{pending} en attente · {approved} acceptées',
+  'console.publicView': 'Voir la page publique',
+  'console.failed': 'Ces chiffres n’ont pas pu être chargés.',
+  'capacity.left': '{count} places restantes',
+  'capacity.full': 'Cet événement est complet.',
+  'create.attendanceLimit': 'Limite de participants (optionnel)',
+  'create.attendanceLimitHelp':
+    'Laisse vide pour ne pas limiter. La baisser plus tard ne retire jamais personne. Ignorée sur un événement billetté, où c’est la quantité de billets qui décide.',
   'tickets.door': 'Porte',
   'tickets.doorHint':
     'Scanne un QR, ou colle-le si la caméra n’est pas disponible. C’est Pulso qui tranche, pas le téléphone.',

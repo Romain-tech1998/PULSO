@@ -1,11 +1,16 @@
 import {
   createdEventResponseSchema,
   createEventRequestSchema,
+  eventConsoleResponseSchema,
   geocodeResponseSchema,
   myEventsResponseSchema,
   updateEventRequestSchema
 } from '@pulso/contracts';
-import type { AuthRepository, EventRepository } from '@pulso/database';
+import type {
+  AuthRepository,
+  EventRepository,
+  OrganizerConsoleRepository
+} from '@pulso/database';
 import { DirectoryVenueCannotHideAddressError } from '@pulso/database';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { unlink } from 'node:fs/promises';
@@ -49,7 +54,8 @@ export function registerCreatedEventsRoutes(
   eventRepository: EventRepository,
   uploadDir: string,
   publicUploadUrl: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  organizerConsoleRepository?: OrganizerConsoleRepository
 ) {
   app.get('/me/events', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
@@ -57,6 +63,40 @@ export function registerCreatedEventsRoutes(
     return myEventsResponseSchema.parse({
       data: await eventRepository.listCreatedEvents(user.id)
     });
+  });
+
+  /**
+   * DEC-0023 §2. The numbers on the organizer's own event.
+   *
+   * 404 covers both "no such event" and "not yours", because the repository
+   * answers the two the same way on purpose: a 403 here would confirm which
+   * event ids exist, the same reasoning DEC-0022 applies to a wallet export.
+   */
+  app.get('/me/events/:id/console', async (request, reply) => {
+    const user = await resolveBearerUser(request, authRepository);
+    if (!user) return sendUnauthenticated(reply);
+    if (!organizerConsoleRepository) {
+      return reply.status(404).send({
+        error: {
+          code: 'EVENT_NOT_FOUND',
+          message: 'The event was not found.'
+        }
+      });
+    }
+    const { id } = eventParamsSchema.parse(request.params);
+    const counts = await organizerConsoleRepository.getEventConsoleCounts(
+      id,
+      user.id
+    );
+    if (!counts) {
+      return reply.status(404).send({
+        error: {
+          code: 'EVENT_NOT_FOUND',
+          message: 'The event was not found.'
+        }
+      });
+    }
+    return eventConsoleResponseSchema.parse({ data: counts });
   });
 
   // DEC-0017 v1.1: a typed address resolved to real coordinates. Kept here

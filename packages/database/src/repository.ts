@@ -84,6 +84,8 @@ export interface CreateEventInput {
   ticketingUrl?: string | undefined;
   /** DEC-0022 §6. Absent means 'public'. */
   addressDisclosure?: 'public' | 'on_approval' | undefined;
+  /** DEC-0023 §4. Absent means no cap, which is the default. */
+  attendanceLimit?: number | undefined;
   price: {
     kind: 'free' | 'paid' | 'unknown';
     minimumAmount?: number | undefined;
@@ -247,6 +249,14 @@ function publicEventSelect(viewer: string): string {
     e.origin,
     e.is_after,
     e.pinned,
+    e.attendance_limit,
+    -- DEC-0023 §4. The subquery runs only where a cap exists, which is not
+    -- the default: a count per row across a whole map viewport would be paid
+    -- by every event to answer a question almost none of them ask.
+    CASE WHEN e.attendance_limit IS NULL THEN NULL
+         ELSE (
+           SELECT count(*) FROM event_attendance ea WHERE ea.event_id = e.id
+         ) END AS attendance_taken,
     e.created_by_user_id,
     creator.display_name AS creator_display_name,
     v.id AS venue_id,
@@ -285,6 +295,8 @@ interface EventRow {
   // the exact address and pin.
   location_visible: boolean;
   my_access_status: 'pending' | 'approved' | 'declined' | null;
+  attendance_limit: number | null;
+  attendance_taken: string | null;
   pinned: boolean;
   created_by_user_id: string | null;
   creator_display_name: string | null;
@@ -373,6 +385,15 @@ function toPublicEvent(row: EventRow): PublicEvent {
   }
   if (row.my_access_status !== null)
     event.myAccessStatus = row.my_access_status;
+  // Absent unless capped, so the common event carries nothing. `taken` can
+  // exceed `limit`: DEC-0023 §4 lets an organizer lower a cap under the
+  // number already committed, and evicts nobody when they do.
+  if (row.attendance_limit !== null) {
+    event.capacity = {
+      limit: row.attendance_limit,
+      taken: Number(row.attendance_taken ?? 0)
+    };
+  }
   if (row.created_by_user_id && row.creator_display_name) {
     event.createdBy = {
       userId: row.created_by_user_id,
@@ -524,12 +545,12 @@ export class PostgresEventRepository implements EventRepository {
          source_name, source_url, observed_at, freshness, location_confidence,
          price_kind, price_minimum_amount, image_url, description,
          access_information, origin, created_by_user_id, is_after,
-         address_disclosure
+         address_disclosure, attendance_limit
        ) VALUES (
          $1, $2, $3, $4, 'scheduled', $5, $6, 'America/Toronto',
          $7, $8, now(), NULL, NULL,
          $9, $10, $11, $12,
-         $13, $14, $15, $16, $17
+         $13, $14, $15, $16, $17, $18
        )`,
       [
         eventId,
@@ -552,7 +573,8 @@ export class PostgresEventRepository implements EventRepository {
         origin,
         userId,
         input.isAfter,
-        disclosure
+        disclosure,
+        input.attendanceLimit ?? null
       ]
     );
 
@@ -607,7 +629,7 @@ export class PostgresEventRepository implements EventRepository {
          title = $3, category = $4, starts_at = $5, ends_at = $6,
          price_kind = $7, price_minimum_amount = $8,
          description = $9, access_information = $10, is_after = $11,
-         address_disclosure = $12
+         address_disclosure = $12, attendance_limit = $13
        WHERE id = $1 AND created_by_user_id = $2 AND origin <> 'directory'`,
       [
         eventId,
@@ -623,7 +645,12 @@ export class PostgresEventRepository implements EventRepository {
         input.description ?? null,
         input.accessInformation,
         input.isAfter,
-        disclosure
+        disclosure,
+        // DEC-0023 §4: a limit can be raised, lowered, or removed, and none
+        // of those touch `event_attendance`. Lowering it below the number
+        // already committed leaves every one of them in place - the event
+        // simply reads as full.
+        input.attendanceLimit ?? null
       ]
     );
     if ((result.rowCount ?? 0) === 0) return undefined;

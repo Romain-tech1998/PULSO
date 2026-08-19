@@ -66,10 +66,17 @@ export {
 } from './friends-repository.js';
 export {
   PostgresAttendanceRepository,
+  EventFullError,
   EventNotFoundError,
   type AttendanceRepository,
   type AttendanceVisibility
 } from './attendance-repository.js';
+export {
+  PostgresOrganizerConsoleRepository,
+  type EventConsoleCounts,
+  type EventViewCounts,
+  type OrganizerConsoleRepository
+} from './organizer-console-repository.js';
 export {
   PostgresRatingsRepository,
   VenueNotFoundError,
