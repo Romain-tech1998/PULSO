@@ -12,6 +12,7 @@ import {
 import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
 import type {
   AttendanceRepository,
+  ConversationsRepository,
   OrganizerConsoleRepository,
   AuthRepository,
   EventAccessRepository,
@@ -68,6 +69,7 @@ import type { ImageModerationProvider } from './image-moderation.js';
 import { registerImageModerationRoutes } from './image-moderation-routes.js';
 import { registerForumRoutes } from './forum.js';
 import { registerGroupsRoutes } from './groups.js';
+import { registerConversationsRoutes } from './conversations.js';
 import { registerMessagesRoutes } from './messages.js';
 import { registerNotificationsRoutes } from './notifications.js';
 import { registerOrganizerRoutes } from './organizer.js';
@@ -114,6 +116,7 @@ export function buildApp(
     friendsRepository?: FriendsRepository;
     attendanceRepository?: AttendanceRepository;
     organizerConsoleRepository?: OrganizerConsoleRepository;
+    conversationsRepository?: ConversationsRepository;
     forumRepository?: ForumRepository;
     messagesRepository?: MessagesRepository;
     reportsRepository?: ReportsRepository;
@@ -172,6 +175,34 @@ export function buildApp(
       root: options.uploadDir,
       prefix: '/uploads/'
     });
+  }
+
+  /**
+   * DEC-0025. Rooms register on their own requirements rather than inside the
+   * account block below, which demands eighteen repositories a conversation
+   * has nothing to do with. A feature gated on unrelated collaborators is a
+   * feature that disappears for reasons nobody can see - this one shipped
+   * behind that gate once already, answering 404 to every call.
+   *
+   * They live beside the one-to-one routes for the length of the transition:
+   * the schema already treats a pair as a room, and the old routes keep
+   * answering until the client has moved.
+   */
+  if (
+    options.authRepository &&
+    options.conversationsRepository &&
+    options.uploadDir &&
+    options.publicUploadUrl
+  ) {
+    registerConversationsRoutes(
+      app,
+      options.authRepository,
+      options.conversationsRepository,
+      options.uploadDir,
+      options.publicUploadUrl,
+      options.notificationsRepository,
+      options.imageModerationProvider
+    );
   }
 
   if (

@@ -1,6 +1,7 @@
 import {
   createPool,
   PostgresAttendanceRepository,
+  PostgresConversationsRepository,
   PostgresOrganizerConsoleRepository,
   PostgresAuthRepository,
   PostgresEventAccessRepository,
@@ -64,6 +65,7 @@ const app = buildApp(new PostgresEventRepository(pool), {
         trendsRepository: new PostgresTrendsRepository(pool),
         friendsRepository: new PostgresFriendsRepository(pool),
         attendanceRepository: new PostgresAttendanceRepository(pool),
+        conversationsRepository: new PostgresConversationsRepository(pool),
         organizerConsoleRepository: new PostgresOrganizerConsoleRepository(
           pool
         ),

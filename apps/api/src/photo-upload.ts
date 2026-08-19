@@ -39,7 +39,16 @@ export const STILL_IMAGE_MIME_TYPES = [
 ] as const;
 
 export type PhotoUploadResult =
-  | { ok: true; filePath: string; moderation: ImageModerationResult }
+  | {
+      ok: true;
+      filePath: string;
+      // What was actually written. DEC-0025 stores both on a message
+      // attachment, and the caller would otherwise have to re-derive them
+      // from a filename it did not choose.
+      mimeType: string;
+      byteSize: number;
+      moderation: ImageModerationResult;
+    }
   | { ok: false; reply: FastifyReply };
 
 /**
@@ -140,6 +149,8 @@ export async function savePhotoUpload(
   return {
     ok: true,
     filePath: `${subdirectory}/${filename}`,
+    mimeType: file.mimetype,
+    byteSize: buffer.byteLength,
     moderation: verdict
   };
 }
