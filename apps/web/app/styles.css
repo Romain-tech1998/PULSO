@@ -3916,6 +3916,45 @@ span.search-result-title {
   line-height: 1.4;
 }
 
+/* A settled status is one line, and two of them share a row. The full
+   panels come back the moment either needs something, so the page is only
+   as tall as it has questions to ask. */
+.organisateur-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+.organisateur-status-strip > * {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+.organisateur-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.95rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.8rem;
+  background: var(--surface-raised);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+.organisateur-chip strong {
+  color: var(--text-primary);
+}
+.organisateur-chip > span:nth-of-type(2) {
+  flex: 1;
+  min-width: 0;
+}
+.organisateur-chip .status-pill-dot {
+  color: var(--brand-green);
+  flex-shrink: 0;
+}
+.organisateur-chip .text-btn {
+  flex-shrink: 0;
+}
+
 /* DEC-0023 §1 and §2: the organizer's own event. A back office, so it reads
    as one - numbers first, controls under them, and the public page a link
    away rather than the thing you landed on. */

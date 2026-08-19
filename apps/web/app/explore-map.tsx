@@ -10814,9 +10814,11 @@ function EventEditor({
  * entire directory.
  */
 function OrganizerStatusBlock({
-  authToken
+  authToken,
+  locale
 }: {
   authToken: string | undefined;
+  locale: SupportedLocale;
 }) {
   const [status, setStatus] = useState<{
     isAdmin: boolean;
@@ -10888,6 +10890,32 @@ function OrganizerStatusBlock({
   };
 
   if (!status) return null;
+
+  // Nothing left to ask for: a verified organizer with no request in flight
+  // is a fact, and a fact does not need a panel. It becomes one line, and
+  // the panel comes back the moment they want another venue.
+  const settled =
+    status.verifiedVenues.length > 0 &&
+    status.pendingRequests.length === 0 &&
+    !open;
+  if (settled) {
+    return (
+      <div className="organisateur-chip">
+        <span className="status-pill-dot" aria-hidden="true" />
+        <span>
+          <strong>{translate(locale, 'organizer.verifiedShort')}</strong>{' '}
+          {status.verifiedVenues.map((v) => v.venueName).join(', ')}
+        </span>
+        <button
+          type="button"
+          className="text-btn"
+          onClick={() => setOpen(true)}
+        >
+          {translate(locale, 'organizer.manage')}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <section className="organizer-status">
@@ -12273,6 +12301,26 @@ function StripeConnectPanel({
 
   if (!state) return null;
 
+  // Same rule as the block above: an account that can already be paid is a
+  // line. The full panel is for the states that ask something of the reader -
+  // not connected, or waiting on Stripe.
+  if (state.configured && state.connected && state.chargesEnabled) {
+    return (
+      <div className="organisateur-chip organisateur-chip-ok">
+        <span className="status-pill-dot" aria-hidden="true" />
+        <span>{translate(locale, 'pay.readyShort')}</span>
+        <button
+          type="button"
+          className="text-btn"
+          disabled={busy}
+          onClick={refresh}
+        >
+          {translate(locale, 'pay.refresh')}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <section className="stripe-panel">
       <div className="stripe-panel-head">
@@ -12960,11 +13008,17 @@ function OrganisateurPage({
       )}
       {actionError && <p className="create-event-error">{actionError}</p>}
 
-      <OrganizerStatusBlock authToken={authToken} />
+      {/* Both shrink to a chip once settled, so a page about events is not
+          two thirds about the account behind them. They expand back into
+          panels whenever they need something. */}
+      <div className="organisateur-status-strip">
+        <OrganizerStatusBlock authToken={authToken} locale={locale} />
 
-      {/* DEC-0022 §1: the Stripe account belongs to the organizer, not to one
-          event, so it sits once at the top rather than in every panel. */}
-      <StripeConnectPanel authToken={authToken} locale={locale} />
+        {/* DEC-0022 §1: the Stripe account belongs to the organizer, not to
+            one event, so it sits once at the top rather than in every
+            panel. */}
+        <StripeConnectPanel authToken={authToken} locale={locale} />
+      </div>
 
       {state === 'success' && events.length === 0 && (
         <div className="empty-state-card organisateur-empty">

@@ -856,6 +856,11 @@ const en = {
   // DEC-0023. The organizer's own event.
   'console.tab': 'Console',
   'console.back': 'Back to my events',
+  // A settled state is a line, not a panel: these two shrink once they
+  // have nothing left to ask for.
+  'organizer.verifiedShort': 'Verified organizer',
+  'organizer.manage': 'Manage',
+  'pay.readyShort': 'Stripe ready',
   'console.lead': 'What this event is doing. Only you see this.',
   'console.coming': 'Coming',
   'console.comingOf': 'of {limit}',
@@ -1953,6 +1958,9 @@ const fr = {
   // DEC-0023. L'événement dont on est l'organisateur.
   'console.tab': 'Console',
   'console.back': 'Retour à mes événements',
+  'organizer.verifiedShort': 'Organisateur vérifié',
+  'organizer.manage': 'Gérer',
+  'pay.readyShort': 'Stripe est prêt',
   'console.lead': 'Ce que fait cet événement. Toi seul vois ça.',
   'console.coming': 'Participants',
   'console.comingOf': 'sur {limit}',

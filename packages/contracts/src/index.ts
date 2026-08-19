@@ -2366,7 +2366,14 @@ export function presentEvent(
       : {}),
     description:
       event.description ?? translate(locale, 'event.descriptionUnknown'),
-    organizer: event.organizer ?? translate(locale, 'event.organizerUnknown'),
+    // `organizer_name` is an ingestion field: a directory event carries the
+    // name its source published. An event created through the account layer
+    // has none, and its author is in `createdBy` - so Pulso was answering
+    // "unknown" about the one organizer it knows by name.
+    organizer:
+      event.organizer ??
+      event.createdBy?.displayName ??
+      translate(locale, 'event.organizerUnknown'),
     externalUnavailable:
       event.status === 'cancelled'
         ? translate(locale, 'event.external.cancelled')
