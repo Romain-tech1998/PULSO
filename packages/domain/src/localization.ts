@@ -855,6 +855,7 @@ const en = {
   'pay.failed': 'The checkout could not be opened. Try again.',
   // DEC-0023. The organizer's own event.
   'console.tab': 'Console',
+  'console.back': 'Back to my events',
   'console.lead': 'What this event is doing. Only you see this.',
   'console.coming': 'Coming',
   'console.comingOf': 'of {limit}',
@@ -1951,6 +1952,7 @@ const fr = {
   'pay.failed': 'Le paiement n’a pas pu être ouvert. Réessaie.',
   // DEC-0023. L'événement dont on est l'organisateur.
   'console.tab': 'Console',
+  'console.back': 'Retour à mes événements',
   'console.lead': 'Ce que fait cet événement. Toi seul vois ça.',
   'console.coming': 'Participants',
   'console.comingOf': 'sur {limit}',

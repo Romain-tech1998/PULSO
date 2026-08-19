@@ -3925,6 +3925,19 @@ span.search-result-title {
   gap: 0.9rem;
   padding: 1rem 1.1rem 1.25rem;
 }
+/* Standing on its own page, the console has to say which event it is
+   about - as a tab it sat under a hero that already did. */
+.event-console-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.event-console-head h2 {
+  margin: 0;
+  font-size: clamp(1.15rem, 2.4vw, 1.5rem);
+  letter-spacing: -0.02em;
+}
 .event-console-lead {
   margin: 0;
   color: var(--text-muted);

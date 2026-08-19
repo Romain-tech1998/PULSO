@@ -4218,11 +4218,16 @@ export function ExploreMap({
           <OrganisateurPage
             authToken={authToken}
             locale={locale}
-            // DEC-0023 §1. An organizer opening their own event lands on its
-            // console. This used to open the forum panel - the visitor's
-            // surface, tab for tab - which is why the console shipped and
-            // nobody could reach it from the one list that leads to it.
-            onOpenEvent={(eventId) => void openDetails(eventId)}
+            // What the console links out to: the event as everyone else
+            // sees it. The console itself is a destination inside
+            // OrganisateurPage, because this section does not mount the map
+            // shell's right-hand panel where EventDetails lives.
+            onOpenEvent={(eventId) =>
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true
+              })
+            }
           />
         ) : user && section === 'evenement' ? (
           <EventsPage
@@ -12818,6 +12823,11 @@ function OrganisateurPage({
     'loading'
   );
   const [editing, setEditing] = useState<PublicEvent | 'new'>();
+  // DEC-0023 §1. The console is a destination of this section, not a panel of
+  // the map shell: `EventDetails` lives inside the map's right-hand panel,
+  // which is not mounted while Organisateur is the section on screen. Opening
+  // it from here did nothing at all until this.
+  const [consoleEvent, setConsoleEvent] = useState<PublicEvent>();
 
   const reload = useCallback(() => {
     if (!authToken) return;
@@ -12882,6 +12892,20 @@ function OrganisateurPage({
   const past = events.filter(
     (event) => new Date(event.startsAt).getTime() < now
   );
+
+  if (consoleEvent) {
+    return (
+      <div className="map-container-wrapper organisateur-page">
+        <EventConsole
+          event={consoleEvent}
+          authToken={authToken}
+          locale={locale}
+          onBack={() => setConsoleEvent(undefined)}
+          onSeePublic={() => onOpenEvent(consoleEvent.id)}
+        />
+      </div>
+    );
+  }
 
   if (editing) {
     return (
@@ -13014,7 +13038,7 @@ function OrganisateurPage({
                       <button
                         type="button"
                         className="text-btn"
-                        onClick={() => onOpenEvent(event.id)}
+                        onClick={() => setConsoleEvent(event)}
                       >
                         Voir
                       </button>
@@ -20003,12 +20027,16 @@ function EventConsole({
   event,
   authToken,
   locale,
-  onSeePublic
+  onSeePublic,
+  onBack
 }: {
   event: PublicEvent;
   authToken: string | undefined;
   locale: SupportedLocale;
   onSeePublic: () => void;
+  // Given when the console is the page rather than a tab: on Organisateur it
+  // replaces the list, and something has to lead back to it.
+  onBack?: () => void;
 }) {
   const [counts, setCounts] = useState<EventConsoleCounts>();
   const [failed, setFailed] = useState(false);
@@ -20031,6 +20059,14 @@ function EventConsole({
 
   return (
     <div className="event-console">
+      {onBack && (
+        <div className="event-console-head">
+          <button type="button" className="text-btn" onClick={onBack}>
+            {translate(locale, 'console.back')}
+          </button>
+          <h2>{event.title}</h2>
+        </div>
+      )}
       <p className="event-console-lead">{translate(locale, 'console.lead')}</p>
 
       {failed && (
