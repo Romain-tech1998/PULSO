@@ -1,8 +1,8 @@
 # DEC-0023 — The Organizer's Own Event: a Console, an Attendance Limit, and What Pulso Counts
 
 **Identifier:** DEC-0023
-**Version:** 0.1
-**Status:** Draft
+**Version:** 1.0
+**Status:** Accepted
 **Date:** 2026-08-18
 **Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0010, DEC-0011, DEC-0017, DEC-0018, DEC-0020, DEC-0022, UX-0001, PRD-0001, RFC-0001
 **Supersedes:** nothing. It extends DEC-0017's event creation and DEC-0022's ticketing with the surface their author looks at afterwards.
@@ -85,10 +85,12 @@ user agent, and no per-open row**. The increment is a write to a counter; there
 is nothing to join it against, and nothing to subpoena.
 
 The price of that is honesty about the number: without an identifier there is
-no deduplication, so what is displayed is **openings, not people**, and the
-interface says so in those words. An organizer who is told "142 people looked"
-when the truth is "142 openings, some of them the same phone twice" has been
-handed a number that flatters. Pulso does not do that.
+no deduplication, so the same phone opening a record three times counts three
+times. The number is therefore labelled **"vues"** (fr) / **"views"** (en) —
+a word that counts events, not persons — and never "personnes", "visiteurs"
+or "visiteurs uniques". An organizer told "142 personnes ont regardé" when the
+truth is "142 ouvertures, some of them the same phone twice" has been handed a
+number that flatters. Pulso does not do that.
 
 The alternative — a row per view carrying who and when — would give a truer
 number and a behavioural log of every reader in the product. DEC-0020 chose an
@@ -157,8 +159,8 @@ guarantee that only holds where someone remembered a header is not a guarantee.
    of each row's visibility, and no name is shown that DEC-0011 would not show.
 4. Opening a record increments the day's counter by one; the stored row carries
    no account, address, session or agent.
-5. The interface labels that number as openings, never as people or as unique
-   visitors.
+5. The interface labels that number "vues" / "views", never "personnes",
+   "visiteurs" or "visiteurs uniques".
 6. An event at its attendance limit refuses a new "I'm coming" and shows as
    full on both the record and its card.
 7. Lowering the limit below the current count evicts nobody and produces no
