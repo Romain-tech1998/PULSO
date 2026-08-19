@@ -15,6 +15,13 @@ export class EventNotFoundError extends Error {
   }
 }
 
+/** DEC-0023 §4: the attendance limit is reached and this account is not in. */
+export class EventFullError extends Error {
+  constructor() {
+    super('This event has reached its attendance limit.');
+  }
+}
+
 export interface AttendanceRepository {
   setAttendance(
     userId: string,
@@ -69,21 +76,81 @@ function isForeignKeyViolation(error: unknown): boolean {
 export class PostgresAttendanceRepository implements AttendanceRepository {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * DEC-0023 §4. The attendance limit, applied here rather than by a
+   * constraint.
+   *
+   * The event row is locked for the length of the transaction, so two
+   * accounts taking the last place at the same instant are serialised by
+   * PostgreSQL instead of by an application that counted first and inserted
+   * afterwards - the same reasoning, and the same shape, as DEC-0022's ticket
+   * quantity.
+   *
+   * Two things the cap deliberately does not do. It never blocks an account
+   * that is already coming from changing its visibility, which is a different
+   * action that happens to touch the same row. And it is not a CHECK: the
+   * limit can be lowered below the number already committed, and when it is,
+   * nobody is evicted and nothing here complains. That asymmetry is the whole
+   * rule - a limit governs who may join, never who already has.
+   */
   async setAttendance(
     userId: string,
     eventId: string,
     visibility: AttendanceVisibility
   ): Promise<void> {
+    const client = await this.pool.connect();
     try {
-      await this.pool.query(
+      await client.query('BEGIN');
+
+      const locked = await client.query<{
+        attendance_limit: number | null;
+        ticketed: boolean;
+      }>(
+        `SELECT e.attendance_limit,
+                EXISTS (
+                  SELECT 1 FROM event_ticket_types tt WHERE tt.event_id = e.id
+                ) AS ticketed
+         FROM events e
+         WHERE e.id = $1
+         FOR UPDATE`,
+        [eventId]
+      );
+      const event = locked.rows[0];
+      if (!event) throw new EventNotFoundError();
+
+      // A ticketed event answers "is there room" with its ticket quantity
+      // (DEC-0022 §2). Two caps on one event is two answers to one question,
+      // so the limit does not apply where tickets exist.
+      if (event.attendance_limit !== null && !event.ticketed) {
+        const counted = await client.query<{ total: string; mine: string }>(
+          `SELECT count(*) AS total,
+                  count(*) FILTER (WHERE user_id = $2) AS mine
+           FROM event_attendance
+           WHERE event_id = $1`,
+          [eventId, userId]
+        );
+        const row = counted.rows[0];
+        const total = Number(row?.total ?? 0);
+        const mine = Number(row?.mine ?? 0);
+        if (mine === 0 && total >= event.attendance_limit) {
+          throw new EventFullError();
+        }
+      }
+
+      await client.query(
         `INSERT INTO event_attendance (user_id, event_id, visibility)
          VALUES ($1, $2, $3)
          ON CONFLICT (user_id, event_id) DO UPDATE SET visibility = EXCLUDED.visibility`,
         [userId, eventId, visibility]
       );
+
+      await client.query('COMMIT');
     } catch (error) {
+      await client.query('ROLLBACK');
       if (isForeignKeyViolation(error)) throw new EventNotFoundError();
       throw error;
+    } finally {
+      client.release();
     }
   }
 

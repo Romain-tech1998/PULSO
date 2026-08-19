@@ -34,3 +34,10 @@ CREATE TABLE IF NOT EXISTS event_view_counts (
 -- targets a single (event, day) pair the primary key already covers.
 CREATE INDEX IF NOT EXISTS event_view_counts_event_idx
   ON event_view_counts (event_id, on_day DESC);
+
+-- The cap check and the public "is it full" both count attendance by event,
+-- and the table's primary key is (user_id, event_id) - which answers "is this
+-- person coming" and nothing about how many are. Counting a busy event without
+-- this is a scan of every attendance row in the product.
+CREATE INDEX IF NOT EXISTS event_attendance_event_idx
+  ON event_attendance (event_id);
