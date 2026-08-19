@@ -1,7 +1,7 @@
 # DEC-0025 — Group Conversations in Messaging
 
 **Identifier:** DEC-0025
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Accepted
 **Date:** 2026-08-19
 **Dependencies:** PDR-0001, PDR-0002, DEC-0011, DEC-0012, DEC-0013, DEC-0020, DEC-0024, PRD-0001, RFC-0001
@@ -102,6 +102,37 @@ DEC-0012's reporting targets a message and its author, which works unchanged in
 a room. A report never removes the room for the other participants, and never
 tells the room a report was made.
 
+### 8. One notification per room, not one per message
+
+A room notifies a participant when something arrives in it, and stays quiet
+until they have read it. Eight people talking on a Friday would otherwise
+produce seven notifications a sentence, and the first thing anybody does about
+an avalanche is silence the source — which, for a feature whose entire purpose
+is that people stay, would be the exact opposite of the point.
+
+Muting is the participant's own switch on top of that, and it is theirs alone:
+nobody is told a room was muted, and muting changes nothing about what the
+others receive.
+
+### 9. What a conversation carries
+
+Four things beyond its messages, decided together because they are one thing —
+a messaging surface people can live in rather than tolerate — and buildable
+once each because §1 made a pair and a room the same object.
+
+- **Search**, inside the rooms the reader is in and never across the product.
+  It uses the same accent-flattening as the rest of Pulso, so *soiree* finds
+  *soirée*.
+- **Attachments**, screened by DEC-0021 before they are readable by anyone. A
+  file that fails screening is never stored, so an attachment that exists is
+  an attachment that passed. Messaging gets no exemption: DEC-0021's whole
+  premise is that Pulso does not serve an unscreened image from its own domain,
+  and a private room is still Pulso's domain.
+- **Mute** and **pin**, both belonging to the participant rather than the room.
+  Muting is a choice about one's own attention and pinning is an ordering of
+  one's own inbox; neither is visible to anyone else, and neither changes what
+  anybody receives.
+
 ## Not authorized
 
 - Adding an account the adder could not already message directly.
@@ -116,6 +147,9 @@ tells the room a report was made.
 - More than twenty participants.
 - Any notification a rename or an add can generate beyond the ordinary one for
   a new message.
+- Telling anyone that a room was muted, pinned, or searched.
+- Search across conversations the reader is not in, under any circumstance.
+- An attachment served before DEC-0021 has screened it.
 
 ## Acceptance criteria
 
@@ -131,3 +165,8 @@ tells the room a report was made.
 7. A twenty-first participant is refused.
 8. A report from inside a room reaches the same queue as any other, and changes
    nothing about the room.
+9. A room that already has an unread notification for a participant does not
+   produce a second one until they have read it.
+10. A muted room still receives and still counts as unread; it notifies nobody.
+11. Search returns matches only from rooms the searcher is a participant of.
+12. An attachment refused by DEC-0021 is never stored and never served.

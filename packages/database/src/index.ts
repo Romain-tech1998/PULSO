@@ -72,6 +72,17 @@ export {
   type AttendanceVisibility
 } from './attendance-repository.js';
 export {
+  PostgresConversationsRepository,
+  CONVERSATION_PARTICIPANT_LIMIT,
+  ConversationFullError,
+  ConversationNotFoundError,
+  ParticipantNotReachableError,
+  type ConversationMessage,
+  type ConversationRoom,
+  type ConversationSearchHit,
+  type ConversationsRepository
+} from './conversations-repository.js';
+export {
   PostgresOrganizerConsoleRepository,
   type EventConsoleCounts,
   type EventViewCounts,
