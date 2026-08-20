@@ -5,6 +5,7 @@ import type { PublicUser, User } from '@pulso/contracts';
 import { defaultModulesForGroupType } from '@pulso/domain';
 import type {
   AttendanceRepository,
+  ConversationsRepository,
   AuthRepository,
   EventPhoto,
   EventAccessRepository,
@@ -173,6 +174,8 @@ export function fakeAttendanceRepository(
     clearAttendance: async () => undefined,
     getMyAttendance: async () => [],
     getFriendsAttending: async () => [],
+    getPublicAttendees: async () => [],
+    getMostAttendedEventIds: async () => [],
     getAttendanceCountsForEvents: async () => new Map(),
     getFriendsAttendingForEvents: async () => new Map(),
     getMutualEventIds: async () => [],
@@ -635,6 +638,7 @@ export function accountRepositories(
     trendsRepository?: TrendsRepository;
     friendsRepository?: FriendsRepository;
     attendanceRepository?: AttendanceRepository;
+    conversationsRepository?: ConversationsRepository;
     forumRepository?: ForumRepository;
     messagesRepository?: MessagesRepository;
     reportsRepository?: ReportsRepository;
@@ -663,6 +667,11 @@ export function accountRepositories(
     friendsRepository: overrides.friendsRepository ?? fakeFriendsRepository(),
     attendanceRepository:
       overrides.attendanceRepository ?? fakeAttendanceRepository(),
+    // DEC-0025: only supplied when a test asks for it, so the rooms routes
+    // stay absent everywhere they are not the subject.
+    ...(overrides.conversationsRepository
+      ? { conversationsRepository: overrides.conversationsRepository }
+      : {}),
     forumRepository: overrides.forumRepository ?? fakeForumRepository(),
     messagesRepository:
       overrides.messagesRepository ?? fakeMessagesRepository(),

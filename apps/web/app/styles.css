@@ -3903,6 +3903,332 @@ span.search-result-title {
   gap: 0.4rem;
 }
 
+/* The third visibility option is the only one that names you to somebody
+   you have never met, so the sentence saying so sits under the choice. */
+.attendance-visibility {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.attendance-visibility-hint {
+  color: #f5c451;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+/* The thread uses the whole pane. Holding it to a centred column read as an
+   odd inset panel rather than as a conversation - the owner's call, and the
+   right one: the surface *is* the message area, so the composer spans it and
+   the bubbles use their own width inside it. */
+/* A short thread sits on the composer rather than floating at the top of an
+   empty pane. An auto-margin on a pseudo-element rather than justify-content:
+   flex-end, which makes the top of a long thread unreachable once it scrolls. */
+.conversation-messages::before {
+  content: '';
+  margin-top: auto;
+}
+
+/* The composer is one line that grows, not a panel. It was a 54px textarea
+   with the clip and the send stacked underneath, which turned the bottom
+   quarter of the thread into empty box. */
+.room-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border-top: 1px solid var(--brand-border);
+}
+.room-composer textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.1rem;
+  max-height: 8rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 1.2rem;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  resize: none;
+}
+.room-composer textarea:focus {
+  outline: 0;
+  border-color: rgba(135, 83, 235, 0.5);
+}
+.room-composer-attach {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  font-size: 1.05rem;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.room-composer-attach:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.06);
+}
+.room-composer-attach input {
+  display: none;
+}
+.room-composer-send {
+  flex-shrink: 0;
+  height: 2.1rem;
+  padding: 0 0.95rem;
+  border-radius: 1.2rem;
+  font-size: 0.78rem;
+}
+/* A long link should not stretch a bubble across the pane. */
+.conversation-message-row .conversation-message {
+  max-width: min(66%, 520px);
+  overflow-wrap: anywhere;
+}
+.rooms-new-btn {
+  flex-shrink: 0;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+/* DEC-0025. The inbox, deliberately the shape people already know: a list
+   with pinned above newest, a thread of bubbles, a composer at the bottom.
+   §Context is explicit that carrying over habits is the point, so this
+   borrows the arrangement rather than inventing one. */
+.rooms-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+}
+.rooms-inbox-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.rooms-inbox-head .messages-search {
+  flex: 1;
+  min-width: 0;
+}
+/* The row is a button with actions beside it rather than inside it: a click
+   anywhere on the conversation opens it, and pin/mute/leave never swallow
+   that click by accident. */
+.rooms-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.rooms-row-open {
+  flex: 1;
+  min-width: 0;
+}
+/* One dot button per row, and its menu. Shown on hover and on keyboard focus
+   alike - a control reachable only by pointer is a control half the people
+   cannot use - and always shown while its own menu is open. */
+.rooms-row-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.rooms-row-menu-btn {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.rooms-row:hover .rooms-row-menu-btn,
+.rooms-row:focus-within .rooms-row-menu-btn,
+.rooms-row-menu-btn[aria-expanded='true'] {
+  opacity: 1;
+}
+.rooms-row-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+.rooms-row-menu-list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 11rem;
+  padding: 0.3rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.7rem;
+  background: var(--surface-raised);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.rooms-row-menu-list button {
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.45rem;
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.rooms-row-menu-list button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-primary);
+}
+.rooms-row-menu-list .rooms-row-menu-leave {
+  color: #ff8a8a;
+}
+/* Two faces, overlapped, for a group; one for a pair. The cue that says
+   which it is before a single name is read. */
+.rooms-avatars {
+  display: flex;
+  flex-shrink: 0;
+}
+.rooms-avatars > * + * {
+  margin-left: -0.9rem;
+  border: 2px solid var(--surface-base);
+}
+.rooms-flag {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+.rooms-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--brand-border);
+}
+.rooms-hits > strong {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.rooms-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.rooms-hit small {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+/* In a room of several a bubble without a name is a bubble from nobody. */
+.rooms-author {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--brand-purple);
+}
+.rooms-attachment {
+  display: block;
+  max-width: 240px;
+  width: 100%;
+  height: auto;
+  border-radius: 0.6rem;
+  margin-top: 0.3rem;
+}
+.rooms-attach {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 1.1rem;
+  opacity: 0.75;
+}
+.rooms-attach:hover {
+  opacity: 1;
+}
+.rooms-attach input {
+  display: none;
+}
+.rooms-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-width: 26rem;
+}
+.rooms-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 15rem;
+  overflow-y: auto;
+}
+.rooms-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.rooms-picker-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* DEC-0024 §2: the discovery row, and the sentence that explains its
+   order. */
+.trending-row {
+  margin-bottom: 1.5rem;
+}
+.trending-hint {
+  display: block;
+  margin: -0.5rem 0 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+/* A settled status is one line, and two of them share a row. The full
+   panels come back the moment either needs something, so the page is only
+   as tall as it has questions to ask. */
+.organisateur-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+.organisateur-status-strip > * {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+.organisateur-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.95rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.8rem;
+  background: var(--surface-raised);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+.organisateur-chip strong {
+  color: var(--text-primary);
+}
+.organisateur-chip > span:nth-of-type(2) {
+  flex: 1;
+  min-width: 0;
+}
+.organisateur-chip .status-pill-dot {
+  color: var(--brand-green);
+  flex-shrink: 0;
+}
+.organisateur-chip .text-btn {
+  flex-shrink: 0;
+}
+
 /* DEC-0023 §1 and §2: the organizer's own event. A back office, so it reads
    as one - numbers first, controls under them, and the public page a link
    away rather than the thing you landed on. */
@@ -3911,6 +4237,19 @@ span.search-result-title {
   flex-direction: column;
   gap: 0.9rem;
   padding: 1rem 1.1rem 1.25rem;
+}
+/* Standing on its own page, the console has to say which event it is
+   about - as a tab it sat under a hero that already did. */
+.event-console-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.event-console-head h2 {
+  margin: 0;
+  font-size: clamp(1.15rem, 2.4vw, 1.5rem);
+  letter-spacing: -0.02em;
 }
 .event-console-lead {
   margin: 0;
@@ -9792,9 +10131,14 @@ a.venue-detail-info-row:hover {
    and a nested rail would read as a second sidebar competing with the real
    one. Sticks to the top of the scrolling panel so switching between
    Groupes, Messages and Amis never requires scrolling back up. */
+/* Grows into the column it sits in. It was sized by its contents, so the
+   Messages page inside it got 365px of a 1080px viewport and the rest of the
+   screen was black - the inbox has to be as tall as the window, like every
+   messaging surface people use. */
 .community-hub {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 1rem;
   min-height: 0;
 }

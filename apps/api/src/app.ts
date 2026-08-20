@@ -12,6 +12,7 @@ import {
 import type { MapBoundsQuery, SearchMessage } from '@pulso/contracts';
 import type {
   AttendanceRepository,
+  ConversationsRepository,
   OrganizerConsoleRepository,
   AuthRepository,
   EventAccessRepository,
@@ -68,6 +69,7 @@ import type { ImageModerationProvider } from './image-moderation.js';
 import { registerImageModerationRoutes } from './image-moderation-routes.js';
 import { registerForumRoutes } from './forum.js';
 import { registerGroupsRoutes } from './groups.js';
+import { registerConversationsRoutes } from './conversations.js';
 import { registerMessagesRoutes } from './messages.js';
 import { registerNotificationsRoutes } from './notifications.js';
 import { registerOrganizerRoutes } from './organizer.js';
@@ -88,6 +90,17 @@ const venueSearchQuerySchema = z.object({
   query: z.string().trim().min(3).max(120)
 });
 
+/**
+ * DEC-0024 §4. The ranking's three numbers, together and named, because they
+ * are product decisions rather than implementation details: a window short
+ * enough to describe tonight, a floor under which a count is noise, and a
+ * minimum below which the surface renders nothing at all.
+ */
+const TRENDING_WINDOW_HOURS = 48;
+const TRENDING_FLOOR = 3;
+const TRENDING_MINIMUM = 3;
+const TRENDING_LIMIT = 12;
+
 export function buildApp(
   repository: EventRepository,
   options: {
@@ -103,6 +116,7 @@ export function buildApp(
     friendsRepository?: FriendsRepository;
     attendanceRepository?: AttendanceRepository;
     organizerConsoleRepository?: OrganizerConsoleRepository;
+    conversationsRepository?: ConversationsRepository;
     forumRepository?: ForumRepository;
     messagesRepository?: MessagesRepository;
     reportsRepository?: ReportsRepository;
@@ -161,6 +175,34 @@ export function buildApp(
       root: options.uploadDir,
       prefix: '/uploads/'
     });
+  }
+
+  /**
+   * DEC-0025. Rooms register on their own requirements rather than inside the
+   * account block below, which demands eighteen repositories a conversation
+   * has nothing to do with. A feature gated on unrelated collaborators is a
+   * feature that disappears for reasons nobody can see - this one shipped
+   * behind that gate once already, answering 404 to every call.
+   *
+   * They live beside the one-to-one routes for the length of the transition:
+   * the schema already treats a pair as a room, and the old routes keep
+   * answering until the client has moved.
+   */
+  if (
+    options.authRepository &&
+    options.conversationsRepository &&
+    options.uploadDir &&
+    options.publicUploadUrl
+  ) {
+    registerConversationsRoutes(
+      app,
+      options.authRepository,
+      options.conversationsRepository,
+      options.uploadDir,
+      options.publicUploadUrl,
+      options.notificationsRepository,
+      options.imageModerationProvider
+    );
   }
 
   if (
@@ -811,6 +853,43 @@ export function buildApp(
       });
     }
     return reply.redirect(url.toString());
+  });
+
+  /**
+   * DEC-0024 §2 and §4. What is being decided right now.
+   *
+   * Ordered by attendance recorded in the last 48 hours - never by views,
+   * which §3 refuses as a ranking input because the DEC-0023 counter has no
+   * identifier to deduplicate by and no way to rate-limit.
+   */
+  app.get('/events/trending', async (request) => {
+    const viewer = options.authRepository
+      ? await resolveBearerUser(request, options.authRepository)
+      : undefined;
+    const ranked = options.attendanceRepository
+      ? await options.attendanceRepository.getMostAttendedEventIds({
+          sinceHours: TRENDING_WINDOW_HOURS,
+          floor: TRENDING_FLOOR,
+          limit: TRENDING_LIMIT
+        })
+      : [];
+    // §4: too few qualifying events is not a short ranking, it is no
+    // ranking. A top of two says more about how quiet the week was than
+    // about the two.
+    if (ranked.length < TRENDING_MINIMUM) {
+      return eventListResponseSchema.parse({ data: [] });
+    }
+    const events = await repository.findByIds(
+      ranked.map((entry) => entry.eventId),
+      viewer?.id ?? null
+    );
+    // findByIds answers in its own order; the ranking is the point here, so
+    // it is reimposed rather than hoped for.
+    const byId = new Map(events.map((event) => [event.id, event]));
+    const ordered = ranked
+      .map((entry) => byId.get(entry.eventId))
+      .filter((event): event is (typeof events)[number] => event !== undefined);
+    return eventListResponseSchema.parse({ data: ordered });
   });
 
   app.get('/events/near', async (request) => {

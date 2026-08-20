@@ -340,10 +340,23 @@ export function registerSocialRoutes(
   app.get('/events/:eventId/friends-attending', async (request) => {
     const user = await resolveBearerUser(request, authRepository);
     const { eventId } = eventParamsSchema.parse(request.params);
-    const friends = user
-      ? await attendanceRepository.getFriendsAttending(user.id, eventId)
-      : [];
-    return friendsAttendingResponseSchema.parse({ data: friends });
+    // Two sources, one list. Friends who chose 'friends' or 'public' are
+    // named to this viewer; accounts who chose 'public' are named to every
+    // reader, signed in or not, because that is what the option said when
+    // they picked it. The route keeps its historical name; what it returns
+    // is everyone this reader is allowed to be told about.
+    const [friends, open] = await Promise.all([
+      user
+        ? attendanceRepository.getFriendsAttending(user.id, eventId)
+        : Promise.resolve([]),
+      attendanceRepository.getPublicAttendees(eventId)
+    ]);
+    const seen = new Set(friends.map((attendee) => attendee.id));
+    const attendees = [
+      ...friends,
+      ...open.filter((attendee) => !seen.has(attendee.id))
+    ];
+    return friendsAttendingResponseSchema.parse({ data: attendees });
   });
 
   // Batched version of the route above (Phase 4.11's Événements page grid)

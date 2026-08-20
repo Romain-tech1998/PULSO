@@ -11,7 +11,10 @@ import {
   DATE_FILTER_OPTIONS,
   discoverForumsResponseSchema,
   discoverGroupsResponseSchema,
+  conversationRoomsResponseSchema,
+  conversationSearchResponseSchema,
   eventConsoleResponseSchema,
+  roomMessagesResponseSchema,
   eventDetailsResponseSchema,
   eventEngagementResponseSchema,
   eventListResponseSchema,
@@ -30,7 +33,6 @@ import {
   friendsMapResponseSchema,
   friendsResponseSchema,
   friendSuggestionsResponseSchema,
-  groupResponseSchema,
   adminGroupPlacementsResponseSchema,
   adminGroupSummariesResponseSchema,
   groupVerificationRequestsResponseSchema,
@@ -91,7 +93,9 @@ import {
   type HeldTicket,
   type ScanVerdict,
   type TicketType,
+  type ConversationRoom,
   type EventConsoleCounts,
+  type RoomMessage,
   type PublicEvent,
   type PublicUser,
   type PublicVenue,
@@ -338,9 +342,9 @@ interface ActiveSearch {
 // thing organizers create.
 const CREATED_EVENT_PIN_COLOR = '#7c3aed';
 
-// A native <select> for a two-option choice renders the OS dropdown, which
-// is unstyleable and looked pasted-on next to the brand controls beside it.
-// Two options is a toggle, not a menu.
+// A native <select> renders the OS dropdown, which is unstyleable and looked
+// pasted-on next to the brand controls beside it. Three options is still a
+// toggle, not a menu.
 function AttendanceVisibilityToggle({
   value,
   onChange,
@@ -351,27 +355,37 @@ function AttendanceVisibilityToggle({
   locale: SupportedLocale;
 }) {
   return (
-    <div
-      className="attendance-visibility-toggle"
-      role="group"
-      aria-label={translate(locale, 'attendance.visibilityLabel')}
-    >
-      {(
-        [
-          ['private', translate(locale, 'attendance.private')],
-          ['friends', translate(locale, 'attendance.friends')]
-        ] as Array<[AttendanceVisibility, string]>
-      ).map(([option, label]) => (
-        <button
-          type="button"
-          key={option}
-          className={value === option ? 'active' : ''}
-          aria-pressed={value === option}
-          onClick={() => onChange(option)}
-        >
-          {label}
-        </button>
-      ))}
+    <div className="attendance-visibility">
+      <div
+        className="attendance-visibility-toggle"
+        role="group"
+        aria-label={translate(locale, 'attendance.visibilityLabel')}
+      >
+        {(
+          [
+            ['private', translate(locale, 'attendance.private')],
+            ['friends', translate(locale, 'attendance.friends')],
+            ['public', translate(locale, 'attendance.public')]
+          ] as Array<[AttendanceVisibility, string]>
+        ).map(([option, label]) => (
+          <button
+            type="button"
+            key={option}
+            className={value === option ? 'active' : ''}
+            aria-pressed={value === option}
+            onClick={() => onChange(option)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {/* The only one of the three that names you to a stranger says so
+          where it is chosen, not in a settings page nobody opens. */}
+      {value === 'public' && (
+        <small className="attendance-visibility-hint">
+          {translate(locale, 'attendance.publicHint')}
+        </small>
+      )}
     </div>
   );
 }
@@ -4179,7 +4193,11 @@ export function ExploreMap({
                 }
               />
             ) : section === 'messages' ? (
-              <MessagesPage authToken={authToken} locale={locale} />
+              <MessagesPage
+                authToken={authToken}
+                userId={user.id}
+                locale={locale}
+              />
             ) : (
               <AmisPage
                 authToken={authToken}
@@ -4208,6 +4226,10 @@ export function ExploreMap({
           <OrganisateurPage
             authToken={authToken}
             locale={locale}
+            // What the console links out to: the event as everyone else
+            // sees it. The console itself is a destination inside
+            // OrganisateurPage, because this section does not mount the map
+            // shell's right-hand panel where EventDetails lives.
             onOpenEvent={(eventId) =>
               void openDetails(eventId, {
                 asForumPanel: true,
@@ -9594,6 +9616,62 @@ function isEventCategory(value: string): value is EventCategory {
 // real recency threshold on source.observedAt, and "Groupes actifs" reuses
 // the real event-linked group directory from Phase 4.10. No popularity %,
 // no capacity/"presque complet" bar - neither has any real backing data.
+/**
+ * DEC-0024 §2. What is being decided right now.
+ *
+ * Renders nothing at all when the API returns nothing, which it does whenever
+ * too few events clear the floor (§4). A near-empty "trending" row says more
+ * about how quiet the week was than about the events in it, and Pulso would
+ * rather show no order than an order that means nothing.
+ */
+function TrendingRow({
+  authToken,
+  locale,
+  onOpenDetails
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+  onOpenDetails: (eventId: string) => void;
+}) {
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/events/trending`, {
+      ...(authToken
+        ? { headers: { authorization: `Bearer ${authToken}` } }
+        : {})
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setEvents(eventListResponseSchema.parse(json).data))
+      .catch(() => setEvents([]));
+  }, [authToken]);
+
+  if (events.length === 0) return null;
+
+  return (
+    <section className="dashboard-home-section trending-row">
+      <div className="list-view-heading profil-section-heading">
+        <div>
+          <span className="profil-section-kicker">
+            {translate(locale, 'trending.kicker')}
+          </span>
+          <h3>{translate(locale, 'trending.title')}</h3>
+        </div>
+      </div>
+      {/* The order is a count, and the page says which count. An order nobody
+          can explain is one nobody can trust. */}
+      <small className="trending-hint">
+        {translate(locale, 'trending.hint')}
+      </small>
+      <EventCarouselRow
+        events={events}
+        onOpenDetails={onOpenDetails}
+        locale={locale}
+      />
+    </section>
+  );
+}
+
 function EventsPage({
   authToken,
   favorites,
@@ -9865,6 +9943,12 @@ function EventsPage({
         {state === 'success' && filtered.length === 0 && (
           <p className="list-view-empty">Aucun événement trouvé.</p>
         )}
+
+        <TrendingRow
+          authToken={authToken}
+          locale={locale}
+          onOpenDetails={onOpenEventForum}
+        />
 
         {state === 'success' && filtered.length > 0 && (
           <div className="events-results-heading">
@@ -10800,9 +10884,11 @@ function EventEditor({
  * entire directory.
  */
 function OrganizerStatusBlock({
-  authToken
+  authToken,
+  locale
 }: {
   authToken: string | undefined;
+  locale: SupportedLocale;
 }) {
   const [status, setStatus] = useState<{
     isAdmin: boolean;
@@ -10874,6 +10960,32 @@ function OrganizerStatusBlock({
   };
 
   if (!status) return null;
+
+  // Nothing left to ask for: a verified organizer with no request in flight
+  // is a fact, and a fact does not need a panel. It becomes one line, and
+  // the panel comes back the moment they want another venue.
+  const settled =
+    status.verifiedVenues.length > 0 &&
+    status.pendingRequests.length === 0 &&
+    !open;
+  if (settled) {
+    return (
+      <div className="organisateur-chip">
+        <span className="status-pill-dot" aria-hidden="true" />
+        <span>
+          <strong>{translate(locale, 'organizer.verifiedShort')}</strong>{' '}
+          {status.verifiedVenues.map((v) => v.venueName).join(', ')}
+        </span>
+        <button
+          type="button"
+          className="text-btn"
+          onClick={() => setOpen(true)}
+        >
+          {translate(locale, 'organizer.manage')}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <section className="organizer-status">
@@ -12259,6 +12371,26 @@ function StripeConnectPanel({
 
   if (!state) return null;
 
+  // Same rule as the block above: an account that can already be paid is a
+  // line. The full panel is for the states that ask something of the reader -
+  // not connected, or waiting on Stripe.
+  if (state.configured && state.connected && state.chargesEnabled) {
+    return (
+      <div className="organisateur-chip organisateur-chip-ok">
+        <span className="status-pill-dot" aria-hidden="true" />
+        <span>{translate(locale, 'pay.readyShort')}</span>
+        <button
+          type="button"
+          className="text-btn"
+          disabled={busy}
+          onClick={refresh}
+        >
+          {translate(locale, 'pay.refresh')}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <section className="stripe-panel">
       <div className="stripe-panel-head">
@@ -12809,6 +12941,11 @@ function OrganisateurPage({
     'loading'
   );
   const [editing, setEditing] = useState<PublicEvent | 'new'>();
+  // DEC-0023 §1. The console is a destination of this section, not a panel of
+  // the map shell: `EventDetails` lives inside the map's right-hand panel,
+  // which is not mounted while Organisateur is the section on screen. Opening
+  // it from here did nothing at all until this.
+  const [consoleEvent, setConsoleEvent] = useState<PublicEvent>();
 
   const reload = useCallback(() => {
     if (!authToken) return;
@@ -12874,6 +13011,20 @@ function OrganisateurPage({
     (event) => new Date(event.startsAt).getTime() < now
   );
 
+  if (consoleEvent) {
+    return (
+      <div className="map-container-wrapper organisateur-page">
+        <EventConsole
+          event={consoleEvent}
+          authToken={authToken}
+          locale={locale}
+          onBack={() => setConsoleEvent(undefined)}
+          onSeePublic={() => onOpenEvent(consoleEvent.id)}
+        />
+      </div>
+    );
+  }
+
   if (editing) {
     return (
       <div className="map-container-wrapper organisateur-page">
@@ -12927,11 +13078,17 @@ function OrganisateurPage({
       )}
       {actionError && <p className="create-event-error">{actionError}</p>}
 
-      <OrganizerStatusBlock authToken={authToken} />
+      {/* Both shrink to a chip once settled, so a page about events is not
+          two thirds about the account behind them. They expand back into
+          panels whenever they need something. */}
+      <div className="organisateur-status-strip">
+        <OrganizerStatusBlock authToken={authToken} locale={locale} />
 
-      {/* DEC-0022 §1: the Stripe account belongs to the organizer, not to one
-          event, so it sits once at the top rather than in every panel. */}
-      <StripeConnectPanel authToken={authToken} locale={locale} />
+        {/* DEC-0022 §1: the Stripe account belongs to the organizer, not to
+            one event, so it sits once at the top rather than in every
+            panel. */}
+        <StripeConnectPanel authToken={authToken} locale={locale} />
+      </div>
 
       {state === 'success' && events.length === 0 && (
         <div className="empty-state-card organisateur-empty">
@@ -13005,7 +13162,7 @@ function OrganisateurPage({
                       <button
                         type="button"
                         className="text-btn"
-                        onClick={() => onOpenEvent(event.id)}
+                        onClick={() => setConsoleEvent(event)}
                       >
                         Voir
                       </button>
@@ -13033,18 +13190,6 @@ function OrganisateurPage({
                       </button>
                     </span>
                   </div>
-                  {event.addressDisclosure === 'on_approval' && (
-                    <AccessRequestQueue
-                      eventId={event.id}
-                      authToken={authToken}
-                      locale={locale}
-                    />
-                  )}
-                  <EventTicketingPanel
-                    eventId={event.id}
-                    authToken={authToken}
-                    locale={locale}
-                  />
                 </div>
               ))}
             </div>
@@ -14434,21 +14579,697 @@ type MessagesTab = 'discussions' | 'demandes';
 // type: none of those are real capabilities Pulso has today, so they're
 // left out rather than faked (same principle applied to Forums' "membres
 // en ligne" earlier).
-function MessagesPage({
+/**
+ * DEC-0025. The inbox, and a room in it.
+ *
+ * Deliberately the shape people already know from Instagram: a list on the
+ * left with the newest first and pinned above it, a thread on the right with
+ * my words on one side and everyone else's on the other. §Context is explicit
+ * that the point is carrying over habits, so the interface borrows them
+ * rather than inventing.
+ *
+ * A pair and a group are the same row and the same thread, because they are
+ * the same object - there is no second component here for "group chat".
+ */
+function roomName(
+  room: ConversationRoom,
+  selfId: string,
+  locale: SupportedLocale
+): string {
+  if (room.title) return room.title;
+  const others = room.participants.filter((person) => person.id !== selfId);
+  if (others.length === 0) return '…';
+  if (others.length <= 3)
+    return others.map((person) => person.displayName).join(', ');
+  return translate(locale, 'rooms.people').replace(
+    '{count}',
+    String(others.length)
+  );
+}
+
+function RoomsInbox({
   authToken,
-  locale
+  userId,
+  locale,
+  openRoomId,
+  onOpenRoom,
+  refreshKey,
+  onCounts
 }: {
   authToken: string | undefined;
+  userId: string;
   locale: SupportedLocale;
+  openRoomId: string | undefined;
+  onOpenRoom: (room: ConversationRoom | undefined) => void;
+  // The header above this list counts what is in it. Reported rather than
+  // recomputed from the pair inbox, which would leave every group out.
+  onCounts: (counts: { rooms: number; unread: number }) => void;
+  // Bumped by the thread after it sends, so the row's preview and unread
+  // badge follow without this component knowing anything about the thread.
+  refreshKey: number;
 }) {
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [rooms, setRooms] = useState<ConversationRoom[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     'loading'
   );
-  const [tab, setTab] = useState<MessagesTab>('discussions');
   const [query, setQuery] = useState('');
+  const [hits, setHits] = useState<RoomMessage[]>([]);
+  const [composing, setComposing] = useState(false);
+  // Which row has its menu open. One at a time, and closed by opening
+  // another or by choosing something.
+  const [menuFor, setMenuFor] = useState<string>();
+
+  const headers = authToken
+    ? { authorization: `Bearer ${authToken}` }
+    : undefined;
+
+  const refresh = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/rooms`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        setRooms(conversationRoomsResponseSchema.parse(json).data);
+        setState('success');
+      })
+      .catch(() => setState('error'));
+  }, [authToken]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh, refreshKey]);
+
+  useEffect(() => {
+    onCounts({
+      rooms: rooms.length,
+      unread: rooms.reduce((sum, room) => sum + room.unreadCount, 0)
+    });
+  }, [rooms, onCounts]);
+
+  // Two searches at once, which is what the single field means: a name is
+  // matched here, and the words inside messages are matched by the API - §9
+  // scopes that to the reader's own rooms, so there is nothing to filter out.
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!authToken || trimmed.length < 2) {
+      setHits([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetch(
+        `${API_BASE_URL}/me/rooms/search?q=${encodeURIComponent(trimmed)}`,
+        { headers: { authorization: `Bearer ${authToken}` } }
+      )
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((json) =>
+          setHits(
+            conversationSearchResponseSchema
+              .parse(json)
+              .data.map((hit) => hit.message)
+          )
+        )
+        .catch(() => setHits([]));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [authToken, query]);
+
+  const flag = (roomId: string, kind: 'muted' | 'pinned', value: boolean) => {
+    if (!headers) return;
+    fetch(`${API_BASE_URL}/me/rooms/${roomId}/${kind}`, {
+      method: 'PUT',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ value })
+    })
+      .then(() => refresh())
+      .catch(() => {});
+  };
+
+  const leave = (roomId: string) => {
+    if (!headers) return;
+    if (!window.confirm(translate(locale, 'rooms.leaveConfirm'))) return;
+    fetch(`${API_BASE_URL}/me/rooms/${roomId}/participants`, {
+      method: 'DELETE',
+      headers
+    })
+      .then(() => {
+        onOpenRoom(undefined);
+        refresh();
+      })
+      .catch(() => {});
+  };
+
+  const nameMatches = rooms.filter((room) =>
+    roomName(room, userId, locale)
+      .toLowerCase()
+      .includes(query.trim().toLowerCase())
+  );
+  const visible = query.trim().length === 0 ? rooms : nameMatches;
+
+  // The open room's own row is the freshest copy of it, so the thread is fed
+  // from the list rather than holding a second, staler one.
+  useEffect(() => {
+    if (!openRoomId) return;
+    const found = rooms.find((room) => room.id === openRoomId);
+    if (found) onOpenRoom(found);
+  }, [rooms, openRoomId, onOpenRoom]);
+
+  return (
+    <>
+      <div className="rooms-inbox">
+        <div className="rooms-inbox-head">
+          <label className="messages-search">
+            <span aria-hidden="true">⌕</span>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={translate(locale, 'rooms.searchPlaceholder')}
+              aria-label={translate(locale, 'rooms.searchPlaceholder')}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn-secondary rooms-new-btn"
+            onClick={() => setComposing(true)}
+          >
+            {translate(locale, 'rooms.newGroup')}
+          </button>
+        </div>
+
+        {state === 'loading' && (
+          <p className="list-view-empty">
+            {translate(locale, 'common.loading')}
+          </p>
+        )}
+        {state === 'success' && rooms.length === 0 && (
+          <p className="list-view-empty">{translate(locale, 'rooms.empty')}</p>
+        )}
+        {state === 'success' &&
+          rooms.length > 0 &&
+          visible.length === 0 &&
+          hits.length === 0 && (
+            <p className="list-view-empty">
+              {translate(locale, 'rooms.noResult')}
+            </p>
+          )}
+
+        <div className="conversation-list">
+          {visible.map((room) => {
+            const others = room.participants.filter(
+              (person) => person.id !== userId
+            );
+            return (
+              <div
+                className={`rooms-row ${room.unreadCount > 0 ? 'unread' : ''} ${
+                  openRoomId === room.id ? 'selected' : ''
+                }`}
+                key={room.id}
+              >
+                <button
+                  type="button"
+                  className="conversation-list-row rooms-row-open"
+                  onClick={() => {
+                    onOpenRoom(room);
+                    if (headers) {
+                      void fetch(`${API_BASE_URL}/me/rooms/${room.id}/read`, {
+                        method: 'POST',
+                        headers
+                      }).then(() => refresh());
+                    }
+                  }}
+                >
+                  {/* Stacked faces for a group, one for a pair - the cue that
+                      says which it is before any name is read. */}
+                  <span className="rooms-avatars">
+                    {others.slice(0, 2).map((person) => (
+                      <span
+                        className="friends-row-avatar friends-row-avatar-lg"
+                        key={person.id}
+                      >
+                        {renderAvatarContent(person)}
+                      </span>
+                    ))}
+                  </span>
+                  <span className="conversation-list-info">
+                    <span className="conversation-list-row-top">
+                      <strong>{roomName(room, userId, locale)}</strong>
+                      {room.lastMessage && (
+                        <span className="conversation-list-time">
+                          {formatMessageTimestamp(room.lastMessage.createdAt)}
+                        </span>
+                      )}
+                    </span>
+                    <span className="conversation-list-preview">
+                      {room.lastMessage
+                        ? `${room.lastMessage.senderId === userId ? translate(locale, 'rooms.you') : ''}${room.lastMessage.body || '📷'}`
+                        : translate(locale, 'rooms.startWriting')}
+                    </span>
+                  </span>
+                  {room.pinned && (
+                    <span className="rooms-flag" aria-hidden="true">
+                      📌
+                    </span>
+                  )}
+                  {room.muted && (
+                    <span className="rooms-flag" aria-hidden="true">
+                      🔕
+                    </span>
+                  )}
+                  {room.unreadCount > 0 && (
+                    <span className="conversation-list-badge">
+                      {room.unreadCount}
+                    </span>
+                  )}
+                </button>
+                {/* Three links stacked beside every row was noise on a list
+                    whose job is to be scanned. They live behind the dots
+                    every messaging app puts them behind. */}
+                <span className="rooms-row-menu">
+                  <button
+                    type="button"
+                    className="rooms-row-menu-btn"
+                    aria-expanded={menuFor === room.id}
+                    aria-label={translate(locale, 'rooms.actions')}
+                    onClick={() =>
+                      setMenuFor((current) =>
+                        current === room.id ? undefined : room.id
+                      )
+                    }
+                  >
+                    ⋯
+                  </button>
+                  {menuFor === room.id && (
+                    <span className="rooms-row-menu-list">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          flag(room.id, 'pinned', !room.pinned);
+                          setMenuFor(undefined);
+                        }}
+                      >
+                        {translate(
+                          locale,
+                          room.pinned ? 'rooms.unpin' : 'rooms.pin'
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          flag(room.id, 'muted', !room.muted);
+                          setMenuFor(undefined);
+                        }}
+                      >
+                        {translate(
+                          locale,
+                          room.muted ? 'rooms.unmute' : 'rooms.mute'
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="rooms-row-menu-leave"
+                        onClick={() => {
+                          setMenuFor(undefined);
+                          leave(room.id);
+                        }}
+                      >
+                        {translate(locale, 'rooms.leave')}
+                      </button>
+                    </span>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {hits.length > 0 && (
+          <div className="rooms-hits">
+            <strong>{translate(locale, 'rooms.searchResults')}</strong>
+            {hits.map((hit) => (
+              <button
+                type="button"
+                className="rooms-hit"
+                key={hit.id}
+                onClick={() =>
+                  onOpenRoom(
+                    rooms.find((room) => room.id === hit.conversationId)
+                  )
+                }
+              >
+                <span>{hit.body}</span>
+                <small>{formatMessageTimestamp(hit.createdAt)}</small>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {composing && (
+        <NewRoomModal
+          authToken={authToken}
+          locale={locale}
+          onClose={() => setComposing(false)}
+          onCreated={() => {
+            setComposing(false);
+            refresh();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function RoomPane({
+  room,
+  authToken,
+  userId,
+  locale,
+  onActivity
+}: {
+  room: ConversationRoom;
+  authToken: string | undefined;
+  userId: string;
+  locale: SupportedLocale;
+  onActivity: () => void;
+}) {
+  const [messages, setMessages] = useState<RoomMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const load = useCallback(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/rooms/${room.id}/messages`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setMessages(roomMessagesResponseSchema.parse(json).data))
+      .catch(() => setMessages([]));
+  }, [authToken, room.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const send = () => {
+    if (!authToken || sending || draft.trim().length === 0) return;
+    setSending(true);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/me/rooms/${room.id}/messages`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${authToken}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ body: draft.trim() })
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => {
+        setDraft('');
+        load();
+        onActivity();
+      })
+      .catch(() => setError(translate(locale, 'messages.loadError')))
+      .finally(() => setSending(false));
+  };
+
+  const attach = (file: File) => {
+    if (!authToken) return;
+    const form = new FormData();
+    form.append('file', file);
+    setError(undefined);
+    // DEC-0021 screens it server-side; a refusal comes back as a 422 and the
+    // photo is never stored, so there is no "pending" state to draw.
+    fetch(`${API_BASE_URL}/me/rooms/${room.id}/attachments`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authToken}` },
+      body: form
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(() => {
+        load();
+        onActivity();
+      })
+      .catch(() => setError(translate(locale, 'rooms.attachFailed')));
+  };
+
+  const byId = new Map(room.participants.map((person) => [person.id, person]));
+
+  return (
+    <div className="conversation-pane">
+      <div className="conversation-pane-header">
+        <span className="conversation-modal-friend">
+          <span className="conversation-pane-identity">
+            <strong>{roomName(room, userId, locale)}</strong>
+            {/* Who else is in it - which a pair already says in its title, and
+                which used to repeat the reader's own name back at them. */}
+            {room.participants.length > 2 && (
+              <small>
+                {room.participants
+                  .filter((person) => person.id !== userId)
+                  .map((person) => person.displayName)
+                  .join(' · ')}
+              </small>
+            )}
+          </span>
+        </span>
+      </div>
+
+      <div className="conversation-messages">
+        {messages.map((message) => {
+          const incoming = message.senderId !== userId;
+          const author = byId.get(message.senderId);
+          return (
+            <div
+              className={`conversation-message-row ${incoming ? 'incoming' : 'outgoing'}`}
+              key={message.id}
+            >
+              {incoming && author && (
+                <span className="friends-row-avatar conversation-message-avatar">
+                  {renderAvatarContent(author)}
+                </span>
+              )}
+              <div
+                className={`conversation-message ${incoming ? 'incoming' : 'outgoing'}`}
+              >
+                {/* In a room of several, a bubble without a name is a bubble
+                    from nobody. A pair does not need it. */}
+                {incoming && room.participants.length > 2 && author && (
+                  <span className="rooms-author">{author.displayName}</span>
+                )}
+                {message.body && (
+                  <span className="conversation-message-body">
+                    {message.body}
+                  </span>
+                )}
+                {message.attachments.map((attachment) => (
+                  <img
+                    className="rooms-attachment"
+                    key={attachment.id}
+                    src={attachment.url}
+                    alt=""
+                  />
+                ))}
+                <span className="conversation-message-meta">
+                  {formatMessageTimestamp(message.createdAt)}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {error && <p className="access-panel-status-declined">{error}</p>}
+
+      {/* One row, the way every messaging app people already use draws it:
+          the field grows with what is typed, the clip and the send sit on the
+          line rather than under a block of empty space. */}
+      <form
+        className="room-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          send();
+        }}
+      >
+        <label
+          className="room-composer-attach"
+          title={translate(locale, 'rooms.attach')}
+        >
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) attach(file);
+              event.target.value = '';
+            }}
+          />
+          <span aria-hidden="true">📎</span>
+        </label>
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={translate(locale, 'rooms.startWriting')}
+          rows={1}
+          maxLength={2000}
+          onKeyDown={(event) => {
+            // Enter sends, Shift+Enter breaks the line - the habit this whole
+            // decision is about carrying over.
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              send();
+            }
+          }}
+        />
+        <button
+          type="submit"
+          className="btn-primary room-composer-send"
+          disabled={sending || draft.trim().length === 0}
+        >
+          {translate(locale, 'rooms.send')}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/** DEC-0025 §3 and §6: the picker only offers people already reachable. */
+function NewRoomModal({
+  authToken,
+  locale,
+  onClose,
+  onCreated
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const [friends, setFriends] = useState<PublicUser[]>([]);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [title, setTitle] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/me/friends`, {
+      headers: { authorization: `Bearer ${authToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => setFriends(friendsResponseSchema.parse(json).data))
+      .catch(() => setFriends([]));
+  }, [authToken]);
+
+  const create = () => {
+    if (!authToken || chosen.length === 0 || busy) return;
+    setBusy(true);
+    setError(undefined);
+    fetch(`${API_BASE_URL}/me/rooms`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${authToken}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        participantIds: chosen,
+        ...(title.trim() ? { title: title.trim() } : {})
+      })
+    })
+      .then((response) => {
+        if (response.status === 409) throw new Error('full');
+        if (response.status === 403) throw new Error('reach');
+        if (!response.ok) throw new Error('failed');
+        return response.json();
+      })
+      .then((json) => onCreated(json.data.id))
+      .catch((caught: Error) =>
+        setError(
+          translate(
+            locale,
+            caught.message === 'full'
+              ? 'rooms.full'
+              : caught.message === 'reach'
+                ? 'rooms.notReachable'
+                : 'messages.loadError'
+          )
+        )
+      )
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="modal-card rooms-modal">
+        <h2>{translate(locale, 'rooms.newGroup')}</h2>
+        <label className="create-event-field">
+          <span>{translate(locale, 'rooms.groupTitle')}</span>
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            maxLength={80}
+          />
+        </label>
+        <strong>{translate(locale, 'rooms.pick')}</strong>
+        <div className="rooms-picker">
+          {friends.map((friend) => (
+            <label className="rooms-picker-row" key={friend.id}>
+              <input
+                type="checkbox"
+                checked={chosen.includes(friend.id)}
+                onChange={(event) =>
+                  setChosen((current) =>
+                    event.target.checked
+                      ? [...current, friend.id]
+                      : current.filter((id) => id !== friend.id)
+                  )
+                }
+              />
+              <span className="friends-row-avatar">
+                {renderAvatarContent(friend)}
+              </span>
+              {friend.displayName}
+            </label>
+          ))}
+        </div>
+        {error && <p className="access-panel-status-declined">{error}</p>}
+        <div className="access-panel-actions">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            {translate(locale, 'access.cancel')}
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy || chosen.length === 0}
+            onClick={create}
+          >
+            {translate(locale, busy ? 'rooms.creating' : 'rooms.create')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessagesPage({
+  authToken,
+  userId,
+  locale
+}: {
+  authToken: string | undefined;
+  userId: string;
+  locale: SupportedLocale;
+}) {
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [, setState] = useState<'loading' | 'success' | 'error'>('loading');
+  const [tab, setTab] = useState<MessagesTab>('discussions');
+  const [roomCounts, setRoomCounts] = useState({ rooms: 0, unread: 0 });
   const [selectedFriend, setSelectedFriend] = useState<PublicUser>();
   const [composeOpen, setComposeOpen] = useState(false);
+  // DEC-0025. The room the thread is showing, held here because the list and
+  // the thread are two columns of one page.
+  const [openRoom, setOpenRoom] = useState<ConversationRoom>();
+  const [roomsRefresh, setRoomsRefresh] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
 
   const refresh = useCallback(() => {
@@ -14478,20 +15299,13 @@ function MessagesPage({
     refresh();
   }, [refresh]);
 
-  const filtered = query.trim()
-    ? conversations.filter((entry) =>
-        entry.friend.displayName
-          .toLowerCase()
-          .includes(query.trim().toLowerCase())
-      )
-    : conversations;
   const existingFriendIds = new Set(
     conversations.map((entry) => entry.friend.id)
   );
-  const unreadTotal = conversations.reduce(
-    (sum, conversation) => sum + conversation.unreadCount,
-    0
-  );
+  // DEC-0025: both numbers describe the rooms actually listed below, which
+  // is where a group lives too. Counting the pair inbox here would report a
+  // total that visibly disagreed with the list under it.
+  const unreadTotal = roomCounts.unread;
 
   return (
     <div className="messages-page messaging-page">
@@ -14517,10 +15331,10 @@ function MessagesPage({
         </header>
         <div className="messages-inbox-stats">
           <span>
-            <b>{conversations.length}</b>
+            <b>{roomCounts.rooms}</b>
             {translatePlural(
               locale,
-              conversations.length,
+              roomCounts.rooms,
               'messages.conversationWord',
               'messages.conversationWordPlural'
             )}
@@ -14555,84 +15369,15 @@ function MessagesPage({
         </div>
 
         {tab === 'discussions' && (
-          <>
-            <label className="messages-search">
-              <span aria-hidden="true">⌕</span>
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={translate(locale, 'messages.search')}
-                aria-label={translate(locale, 'messages.search')}
-              />
-            </label>
-            {state === 'loading' && (
-              <p className="list-view-empty">Chargement…</p>
-            )}
-            {state === 'error' && (
-              <p className="list-view-empty">
-                {translate(locale, 'messages.loadError')}
-              </p>
-            )}
-            {state === 'success' && conversations.length === 0 && (
-              <div className="messages-inbox-empty">
-                <span aria-hidden="true">◌</span>
-                <strong>{translate(locale, 'messages.readyTitle')}</strong>
-                <p>{translate(locale, 'messages.readyBody')}</p>
-                <button
-                  type="button"
-                  className="messages-empty-cta"
-                  onClick={() => setComposeOpen(true)}
-                >
-                  {translate(locale, 'messages.compose')}
-                </button>
-              </div>
-            )}
-            {state === 'success' &&
-              conversations.length > 0 &&
-              filtered.length === 0 && (
-                <p className="list-view-empty">
-                  {translate(locale, 'messages.noResult')}
-                </p>
-              )}
-            <div className="conversation-list">
-              {filtered.map((conversation) => (
-                <button
-                  type="button"
-                  className={`conversation-list-row ${conversation.unreadCount > 0 ? 'unread' : ''} ${selectedFriend?.id === conversation.friend.id ? 'selected' : ''}`}
-                  key={conversation.friend.id}
-                  onClick={() => {
-                    setSelectedFriend(conversation.friend);
-                  }}
-                >
-                  <span className="friends-row-avatar friends-row-avatar-lg">
-                    {renderAvatarContent(conversation.friend)}
-                  </span>
-                  <span className="conversation-list-info">
-                    <span className="conversation-list-row-top">
-                      <strong>{conversation.friend.displayName}</strong>
-                      {conversation.lastMessage && (
-                        <span className="conversation-list-time">
-                          {formatMessageTimestamp(
-                            conversation.lastMessage.createdAt
-                          )}
-                        </span>
-                      )}
-                    </span>
-                    <span className="conversation-list-preview">
-                      {conversation.lastMessage
-                        ? `${conversation.lastMessage.senderId === conversation.friend.id ? '' : 'Vous : '}${conversation.lastMessage.body}`
-                        : 'Commencez la conversation'}
-                    </span>
-                  </span>
-                  {conversation.unreadCount > 0 && (
-                    <span className="conversation-list-badge">
-                      {conversation.unreadCount}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </>
+          <RoomsInbox
+            authToken={authToken}
+            userId={userId}
+            locale={locale}
+            openRoomId={openRoom?.id}
+            onOpenRoom={setOpenRoom}
+            refreshKey={roomsRefresh}
+            onCounts={setRoomCounts}
+          />
         )}
 
         {tab === 'demandes' && (
@@ -14649,7 +15394,21 @@ function MessagesPage({
       </div>
 
       <div className="messages-conversation-column messaging-conversation-column">
-        {selectedFriend ? (
+        {tab === 'discussions' ? (
+          openRoom ? (
+            <RoomPane
+              room={openRoom}
+              authToken={authToken}
+              userId={userId}
+              locale={locale}
+              onActivity={() => setRoomsRefresh((count) => count + 1)}
+            />
+          ) : (
+            <div className="conversation-placeholder">
+              <p>{translate(locale, 'rooms.startWriting')}</p>
+            </div>
+          )
+        ) : selectedFriend ? (
           <ConversationPane
             friend={selectedFriend}
             authToken={authToken}
@@ -20006,12 +20765,16 @@ function EventConsole({
   event,
   authToken,
   locale,
-  onSeePublic
+  onSeePublic,
+  onBack
 }: {
   event: PublicEvent;
   authToken: string | undefined;
   locale: SupportedLocale;
   onSeePublic: () => void;
+  // Given when the console is the page rather than a tab: on Organisateur it
+  // replaces the list, and something has to lead back to it.
+  onBack?: () => void;
 }) {
   const [counts, setCounts] = useState<EventConsoleCounts>();
   const [failed, setFailed] = useState(false);
@@ -20034,6 +20797,14 @@ function EventConsole({
 
   return (
     <div className="event-console">
+      {onBack && (
+        <div className="event-console-head">
+          <button type="button" className="text-btn" onClick={onBack}>
+            {translate(locale, 'console.back')}
+          </button>
+          <h2>{event.title}</h2>
+        </div>
+      )}
       <p className="event-console-lead">{translate(locale, 'console.lead')}</p>
 
       {failed && (
@@ -20608,20 +21379,18 @@ function ForumPanel({
       .catch(() => setMembersState('error'));
   }, [authToken, event.id]);
 
-  const [meetupGroup, setMeetupGroup] = useState<Group>();
-  const [meetupLoading, setMeetupLoading] = useState(false);
-  const openMeetupGroup = () => {
-    if (!authToken || meetupLoading) return;
-    setMeetupLoading(true);
-    fetch(`${API_BASE_URL}/events/${event.id}/meetup-group`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${authToken}` }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((json) => setMeetupGroup(groupResponseSchema.parse(json).data))
-      .catch(() => {})
-      .finally(() => setMeetupLoading(false));
-  };
+  /**
+   * "Rencontrer avant l'événement" used to create a group and open its whole
+   * workspace over the event - a heavy machine for four friends going to the
+   * same night, and a second place to talk about an event that already has a
+   * forum.
+   *
+   * It now moves to that forum. The two surfaces complement each other rather
+   * than compete: the forum is where an event is discussed, and Groups stay
+   * for what they were built for - friend circles and durable organisation.
+   * The button is a shortcut to somewhere already on this page, which is the
+   * whole of what it should ever have been.
+   */
 
   // "Suivre ce forum" (Phase 4.8 follow-up) - a real, explicit bookmark
   // distinct from posting or favoriting/attending the event, so someone
@@ -20712,13 +21481,9 @@ function ForumPanel({
             <button
               type="button"
               className="meetup-btn"
-              onClick={openMeetupGroup}
-              disabled={meetupLoading}
+              onClick={() => setTab('discussion')}
             >
-              🤝{' '}
-              {meetupLoading
-                ? translate(locale, 'forum.meetupLoading')
-                : translate(locale, 'forum.meetupCta')}
+              🤝 {translate(locale, 'forum.meetupCta')}
             </button>
           </div>
         )}
@@ -20884,17 +21649,6 @@ function ForumPanel({
               </div>
             </div>
           </div>
-        )}
-
-        {meetupGroup && user && (
-          <GroupModal
-            locale={locale}
-            group={meetupGroup}
-            authToken={authToken}
-            userId={user.id}
-            onClose={() => setMeetupGroup(undefined)}
-            onLeft={() => setMeetupGroup(undefined)}
-          />
         )}
       </div>
 

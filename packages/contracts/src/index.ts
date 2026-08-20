@@ -676,7 +676,11 @@ export const friendsMapResponseSchema = z.object({
 
 // Private by default (DEC-0011): nothing about a user's plans is shared
 // until they explicitly set visibility to "friends" for that event.
-export const attendanceVisibilitySchema = z.enum(['private', 'friends']);
+export const attendanceVisibilitySchema = z.enum([
+  'private',
+  'friends',
+  'public'
+]);
 
 export const setAttendanceRequestSchema = z.object({
   visibility: attendanceVisibilitySchema
@@ -792,6 +796,85 @@ export const conversationSummarySchema = z.object({
 
 export const conversationsResponseSchema = z.object({
   data: z.array(conversationSummarySchema)
+});
+
+/**
+ * DEC-0025. A room, and what one reader is told about it.
+ *
+ * `muted` and `pinned` are this reader's own switches (§9) - they are in the
+ * payload because the reader needs them, and they describe nobody else.
+ */
+export const conversationAttachmentSchema = z.object({
+  id: z.uuid(),
+  url: z.url(),
+  mimeType: z.string().min(1),
+  byteSize: z.number().int().positive()
+});
+
+export const roomMessageSchema = z.object({
+  id: z.uuid(),
+  conversationId: z.uuid(),
+  senderId: z.uuid(),
+  body: z.string(),
+  createdAt: z.iso.datetime(),
+  attachments: z.array(conversationAttachmentSchema)
+});
+
+export const conversationRoomSchema = z.object({
+  id: z.uuid(),
+  title: z.string().min(1).optional(),
+  participants: z.array(publicUserSchema),
+  lastMessage: roomMessageSchema.optional(),
+  unreadCount: z.number().int().min(0),
+  muted: z.boolean(),
+  pinned: z.boolean()
+});
+
+export const conversationRoomsResponseSchema = z.object({
+  data: z.array(conversationRoomSchema)
+});
+
+export const roomMessagesResponseSchema = z.object({
+  data: z.array(roomMessageSchema)
+});
+
+export const roomMessageResponseSchema = z.object({
+  data: roomMessageSchema
+});
+
+// §6 caps a room at twenty; the schema stops nineteen others plus the creator
+// before a query is ever run.
+export const createConversationRequestSchema = z.object({
+  participantIds: z.array(z.uuid()).min(1).max(19),
+  title: z.string().min(1).max(80).optional()
+});
+
+export const addParticipantRequestSchema = z.object({
+  userId: z.uuid()
+});
+
+export const sendRoomMessageRequestSchema = z.object({
+  // Empty when the message is only an attachment, which is an ordinary way to
+  // say something.
+  body: z.string().max(2000).default(''),
+  attachmentIds: z.array(z.uuid()).max(4).optional()
+});
+
+export const conversationFlagRequestSchema = z.object({
+  value: z.boolean()
+});
+
+export const conversationSearchQuerySchema = z.object({
+  q: z.string().min(2).max(120)
+});
+
+export const conversationSearchHitSchema = z.object({
+  conversationId: z.uuid(),
+  message: roomMessageSchema
+});
+
+export const conversationSearchResponseSchema = z.object({
+  data: z.array(conversationSearchHitSchema)
 });
 
 // DEC-0020 - a conversation waiting to be let in. Carries the one message
@@ -1897,6 +1980,9 @@ export type ForumPostsResponse = z.infer<typeof forumPostsResponseSchema>;
 export type ForumPostResponse = z.infer<typeof forumPostResponseSchema>;
 export type ActiveForum = z.infer<typeof activeForumSchema>;
 export type ActiveForumsResponse = z.infer<typeof activeForumsResponseSchema>;
+export type ConversationRoom = z.infer<typeof conversationRoomSchema>;
+export type RoomMessage = z.infer<typeof roomMessageSchema>;
+export type ConversationSearchHit = z.infer<typeof conversationSearchHitSchema>;
 export type Message = z.infer<typeof messageSchema>;
 export type SendMessageRequest = z.infer<typeof sendMessageRequestSchema>;
 export type ConversationResponse = z.infer<typeof conversationResponseSchema>;
@@ -2362,7 +2448,14 @@ export function presentEvent(
       : {}),
     description:
       event.description ?? translate(locale, 'event.descriptionUnknown'),
-    organizer: event.organizer ?? translate(locale, 'event.organizerUnknown'),
+    // `organizer_name` is an ingestion field: a directory event carries the
+    // name its source published. An event created through the account layer
+    // has none, and its author is in `createdBy` - so Pulso was answering
+    // "unknown" about the one organizer it knows by name.
+    organizer:
+      event.organizer ??
+      event.createdBy?.displayName ??
+      translate(locale, 'event.organizerUnknown'),
     externalUnavailable:
       event.status === 'cancelled'
         ? translate(locale, 'event.external.cancelled')
