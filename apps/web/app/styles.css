@@ -3916,6 +3916,71 @@ span.search-result-title {
   line-height: 1.4;
 }
 
+/* The composer is one line that grows, not a panel. It was a 54px textarea
+   with the clip and the send stacked underneath, which turned the bottom
+   quarter of the thread into empty box. */
+.room-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border-top: 1px solid var(--brand-border);
+}
+.room-composer textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.4rem;
+  max-height: 8rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 1.2rem;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  resize: none;
+}
+.room-composer textarea:focus {
+  outline: 0;
+  border-color: rgba(135, 83, 235, 0.5);
+}
+.room-composer-attach {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  font-size: 1.05rem;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.room-composer-attach:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.06);
+}
+.room-composer-attach input {
+  display: none;
+}
+.room-composer-send {
+  flex-shrink: 0;
+  height: 2.4rem;
+  padding: 0 1.1rem;
+  border-radius: 1.2rem;
+  font-size: 0.82rem;
+}
+/* A long link should not stretch a bubble across the pane. */
+.conversation-message-row .conversation-message {
+  max-width: min(66%, 520px);
+  overflow-wrap: anywhere;
+}
+.rooms-new-btn {
+  flex-shrink: 0;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
 /* DEC-0025. The inbox, deliberately the shape people already know: a list
    with pinned above newest, a thread of bubbles, a composer at the bottom.
    §Context is explicit that carrying over habits is the point, so this

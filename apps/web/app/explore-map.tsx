@@ -14746,7 +14746,7 @@ function RoomsInbox({
           </label>
           <button
             type="button"
-            className="text-btn"
+            className="btn-secondary rooms-new-btn"
             onClick={() => setComposing(true)}
           >
             {translate(locale, 'rooms.newGroup')}
@@ -14991,11 +14991,16 @@ function RoomPane({
         <span className="conversation-modal-friend">
           <span className="conversation-pane-identity">
             <strong>{roomName(room, userId, locale)}</strong>
-            <small>
-              {room.participants
-                .map((person) => person.displayName)
-                .join(' · ')}
-            </small>
+            {/* Who else is in it - which a pair already says in its title, and
+                which used to repeat the reader's own name back at them. */}
+            {room.participants.length > 2 && (
+              <small>
+                {room.participants
+                  .filter((person) => person.id !== userId)
+                  .map((person) => person.displayName)
+                  .join(' · ')}
+              </small>
+            )}
           </span>
         </span>
       </div>
@@ -15046,40 +15051,53 @@ function RoomPane({
 
       {error && <p className="access-panel-status-declined">{error}</p>}
 
+      {/* One row, the way every messaging app people already use draws it:
+          the field grows with what is typed, the clip and the send sit on the
+          line rather than under a block of empty space. */}
       <form
-        className="forum-composer message-composer"
+        className="room-composer"
         onSubmit={(event) => {
           event.preventDefault();
           send();
         }}
       >
-        <div className="message-composer-box">
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={translate(locale, 'rooms.startWriting')}
-            rows={2}
-            maxLength={2000}
+        <label
+          className="room-composer-attach"
+          title={translate(locale, 'rooms.attach')}
+        >
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) attach(file);
+              event.target.value = '';
+            }}
           />
-          <label
-            className="rooms-attach"
-            title={translate(locale, 'rooms.attach')}
-          >
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) attach(file);
-                event.target.value = '';
-              }}
-            />
-            <span aria-hidden="true">📎</span>
-          </label>
-          <button type="submit" className="btn-primary" disabled={sending}>
-            {translate(locale, 'rooms.send')}
-          </button>
-        </div>
+          <span aria-hidden="true">📎</span>
+        </label>
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={translate(locale, 'rooms.startWriting')}
+          rows={1}
+          maxLength={2000}
+          onKeyDown={(event) => {
+            // Enter sends, Shift+Enter breaks the line - the habit this whole
+            // decision is about carrying over.
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              send();
+            }
+          }}
+        />
+        <button
+          type="submit"
+          className="btn-primary room-composer-send"
+          disabled={sending || draft.trim().length === 0}
+        >
+          {translate(locale, 'rooms.send')}
+        </button>
       </form>
     </div>
   );
