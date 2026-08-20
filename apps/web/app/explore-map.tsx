@@ -1347,13 +1347,34 @@ export function ExploreMap({
   }, [user]);
 
   // Deep linking initial
+  //
+  // Two things had to be true for a shared link to work, and neither was.
+  //
+  // The record opens in the map shell's right-hand panel, and a signed-in
+  // account lands on 'evenement', which renders the Événements grid instead -
+  // a different branch of the section chain entirely. The link fetched the
+  // event, stored it, and displayed nothing at all.
+  //
+  // And `authToken` is read from storage inside an effect, so on the first
+  // flush it is still undefined: this effect ran in the same flush and asked
+  // for the record anonymously. On an `on_approval` event that meant an
+  // approved reader - or the organizer themselves - was handed the withheld
+  // version and never given another, because nothing refetches a record that
+  // is already open. So the link waits for the token when storage says there
+  // is one, and opens immediately when there is not.
+  const deepLinkOpened = useRef(false);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const eventId = params.get('eventId');
-    if (eventId) {
-      void openDetails(eventId);
+    if (deepLinkOpened.current) return;
+    const eventId = new URLSearchParams(window.location.search).get('eventId');
+    if (!eventId) {
+      deepLinkOpened.current = true;
+      return;
     }
-  }, []);
+    if (localStorage.getItem(AUTH_TOKEN_KEY) && !authToken) return;
+    deepLinkOpened.current = true;
+    setSection('explorer');
+    void openDetails(eventId);
+  }, [authToken]);
 
   function selectLocale(nextLocale: SupportedLocale) {
     localeRef.current = nextLocale;
