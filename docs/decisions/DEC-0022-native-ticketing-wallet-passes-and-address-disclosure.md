@@ -1,7 +1,7 @@
 # DEC-0022 — Native Ticketing, Wallet Passes, and Address Disclosure on Approval
 
 **Identifier:** DEC-0022
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Accepted
 **Date:** 2026-08-15
 **Dependencies:** PDR-0001, PDR-0002, MVP-0001, DEC-0001, DEC-0010, DEC-0011, DEC-0016, DEC-0017, DEC-0018, DEC-0020, DEC-0021, UX-0001, PRD-0001, RFC-0001
@@ -226,9 +226,39 @@ A ticket also appears immediately where it was claimed, QR open. The claim
 response already carries the ticket and its signed token; sending the reader
 elsewhere to look for it was discarding what the server had just handed over.
 
+## v1.2 addendum — the live gate, opened by DEC-0026
+
+§8 above is titled "Live mode is a separate gate this document does not open".
+DEC-0026 opens it. This addendum records the change here, so §8 is never read
+alone by someone deciding what a key may be.
+
+**The four conditions are unchanged.** DEC-0026 adds three things and no
+fourth: it satisfies condition 4 by authorizing the deployment; it creates the
+single place where conditions 1 to 3 are recorded with dates, so "the
+accountant has reviewed it" is a line with a date rather than a memory; and it
+decides the shape of the guard below.
+
+**Criterion 14 is narrowed, not dropped.** "The process refuses to start if a
+live-mode Stripe key is configured" was the right rule while no path to live
+existed, and deleting it on the day one does would leave nothing at all
+between a developer's `.env` and real money — the exact failure the rule was
+written to prevent. It becomes: the process refuses to start with a live key
+unless `PULSO_ENV=production`, a decided non-zero `PULSO_APPLICATION_FEE_BPS`,
+and an explicit authorization variable naming DEC-0026 are all present
+together. Two of those three are absent by construction on a workstation.
+
+**Everything else in this document stands.** Charges remain direct and the
+organizer remains merchant of record; the commission is still added on top of
+the organizer's price rather than taken out of it; publication of a paid event
+still waits on the `charges_enabled` Stripe answers; and every line of "Not
+authorized" other than its first stands unchanged — Pulso still computes no
+tax, holds no card data, and issues no refund on an organizer's behalf.
+
 ## Not authorized
 
-- Live-mode Stripe keys, and any real money movement, before §8 is satisfied.
+- Live-mode Stripe keys, and any real money movement, before every condition
+  of §8 carries a date in DEC-0026 §3 and outside the three environment
+  conditions that addendum requires.
 - Pulso as merchant of record; destination charges; Pulso-operated payouts.
 - Storing card data of any kind, anywhere, in any form.
 - Tax computation, collection or remittance by Pulso.
@@ -266,4 +296,7 @@ elsewhere to look for it was discarding what the server had just handed over.
 11. A declined account cannot re-request access to that event.
 12. Both approval and decline produce a notification.
 13. No `directory` event exposes any ticketing surface.
-14. The process refuses to start if a live-mode Stripe key is configured.
+14. The process refuses to start with a live-mode Stripe key unless
+    `PULSO_ENV=production`, a decided non-zero `PULSO_APPLICATION_FEE_BPS` and
+    the DEC-0026 authorization variable are all present; with test keys it
+    starts with none of them.
