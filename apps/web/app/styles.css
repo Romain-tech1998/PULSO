@@ -12882,6 +12882,31 @@ a.venue-detail-info-row:hover {
     flex-direction: row;
   }
 
+  /* The rail runs horizontally in this band, so the footer's `margin-top:
+     auto` no longer pushes it past the nav - on the cross axis it only drops
+     the profile card to the bottom edge of the strip. End-alignment on a row
+     is margin-left, and the 1px rule that separates the profile from the nav
+     has to turn with the axis it divides. */
+  .primary-sidebar-footer {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0;
+    margin-left: auto;
+    align-self: center;
+  }
+
+  .primary-sidebar-divider {
+    width: 1px;
+    height: auto;
+    align-self: stretch;
+    margin: 0;
+  }
+
+  .primary-sidebar-profile {
+    margin-top: 0;
+  }
+
   .primary-sidebar-invite {
     display: none;
   }
@@ -18202,4 +18227,139 @@ a.venue-detail-info-row:hover {
   .onboarding-visual {
     height: min(36dvh, 300px);
   }
+}
+
+/* Legal documents (DEC-0026 §4).
+   A plain reading surface: one column, generous measure, no map chrome. It
+   deliberately shares nothing with the explore shell - these pages are
+   server-rendered on their own and must stay readable if everything else
+   fails to load. */
+.legal-page {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 5rem;
+  color: var(--text-primary);
+}
+
+.legal-back {
+  display: inline-block;
+  margin-bottom: 2rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.legal-back:hover {
+  color: var(--text-primary);
+}
+
+.legal-header {
+  padding-bottom: 1.75rem;
+  border-bottom: 1px solid var(--brand-border);
+}
+
+.legal-header h1 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  line-height: 1.15;
+  background: var(--gradient-logo);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.legal-summary {
+  margin: 0 0 1rem;
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.legal-updated {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.legal-section {
+  margin-top: 2.25rem;
+}
+
+.legal-section h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+  line-height: 1.3;
+}
+
+.legal-section p,
+.legal-section li {
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.legal-section p {
+  margin: 0 0 1rem;
+}
+
+.legal-section ul {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
+.legal-section li {
+  margin-bottom: 0.6rem;
+}
+
+.legal-nav {
+  margin-top: 3.5rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--brand-border);
+}
+
+.legal-nav h2 {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.legal-nav ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+
+.legal-nav a {
+  color: var(--brand-purple);
+  text-decoration: none;
+}
+
+.legal-nav a:hover {
+  text-decoration: underline;
+}
+
+/* Legal links in the two rails (DEC-0026 §4). Quiet by design: they must be
+   findable without competing with navigation. */
+.legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.75rem;
+  padding: 0.75rem 0.5rem 0.25rem;
+}
+
+.legal-links a {
+  color: var(--text-secondary);
+  opacity: 0.75;
+  font-size: 0.72rem;
+  text-decoration: none;
+  line-height: 1.5;
+}
+
+.legal-links a:hover {
+  opacity: 1;
+  text-decoration: underline;
 }

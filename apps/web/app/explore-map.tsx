@@ -169,6 +169,7 @@ import {
   DEFAULT_PROFILE_COVER,
   formatRelativeTime,
   HeartIcon,
+  LegalLinks,
   MAP_STYLE_URL,
   PROFILE_AVATAR_PRESETS,
   PROFILE_COVER_GRADIENTS,
@@ -3813,6 +3814,7 @@ export function ExploreMap({
               </span>
               {translate(locale, 'nav.profile')}
             </button>
+            <LegalLinks locale={locale} />
           </div>
         </aside>
       )}
@@ -3849,6 +3851,7 @@ export function ExploreMap({
             onClick={() => {
               setAboutOpen(false);
               setForumPanelMode(false);
+              setNotificationsOpen(false);
               setSection('explorer');
             }}
           >
@@ -3863,6 +3866,7 @@ export function ExploreMap({
             onClick={() => {
               setAboutOpen(false);
               setForumPanelMode(false);
+              setNotificationsOpen(false);
               setSection('evenement');
             }}
           >
@@ -3877,6 +3881,7 @@ export function ExploreMap({
             onClick={() => {
               setAboutOpen(false);
               setForumPanelMode(false);
+              setNotificationsOpen(false);
               setSection('groupes');
             }}
           >
@@ -3891,6 +3896,7 @@ export function ExploreMap({
             onClick={() => {
               setAboutOpen(false);
               setForumPanelMode(false);
+              setNotificationsOpen(false);
               setSection('messages');
             }}
           >
@@ -3908,6 +3914,7 @@ export function ExploreMap({
             onClick={() => {
               setAboutOpen(false);
               setForumPanelMode(false);
+              setNotificationsOpen(false);
               setSection('compte');
             }}
           >
@@ -5793,6 +5800,7 @@ export function ExploreMap({
               <AboutPanel
                 onClose={() => setAboutOpen(false)}
                 visible={aboutPanelMount.visible}
+                locale={locale}
               />
             )}
 
@@ -9461,6 +9469,8 @@ function Sidebar({
             </button>
           </div>
         )}
+
+        <LegalLinks locale={locale} />
       </div>
     </aside>
   );
@@ -19483,10 +19493,12 @@ function MapFilterBar({
 
 function AboutPanel({
   onClose,
-  visible
+  visible,
+  locale
 }: {
   onClose: () => void;
   visible: boolean;
+  locale: SupportedLocale;
 }) {
   const panelRef = useRef<HTMLElement>(null);
 
@@ -19545,6 +19557,11 @@ function AboutPanel({
         >
           rmeynaud@pulsonight.com
         </a>
+        {/* The one path to the legal documents that survives the phone: both
+          rails are display:none under 768px, and DEC-0026 §2 makes the phone
+          the product on launch day. This panel opens from the floating info
+          button at every width. */}
+        <LegalLinks locale={locale} />
       </div>
     </aside>
   );
