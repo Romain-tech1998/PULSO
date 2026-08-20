@@ -40,6 +40,13 @@ export interface ApiConfig {
   checkoutHoldMinutes: number;
 }
 
+/**
+ * The value `STRIPE_LIVE_AUTHORIZED` must carry for a live key to be accepted.
+ * It names the decision on purpose: whoever sets it has to have read the
+ * document that records whether the accountant and the lawyer have answered.
+ */
+export const LIVE_AUTHORIZATION = 'DEC-0026';
+
 export class ConfigError extends Error {
   constructor(problems: string[]) {
     super(
@@ -108,19 +115,47 @@ export function resolveApiConfig(
     }
   }
 
-  // DEC-0022 acceptance criterion 14, and §8's gate. Live keys are refused
-  // everywhere, not only in production - a live key on a developer's machine
-  // moves real money just as well as one on a server, and the accountant and
-  // lawyer reviews §8 requires have not happened.
+  const applicationFeeBps = Math.max(
+    0,
+    Math.min(10_000, Number(env.PULSO_APPLICATION_FEE_BPS ?? 0) || 0)
+  );
+
+  // DEC-0022 criterion 14, narrowed by its v1.2 addendum and DEC-0026 §3.
+  //
+  // Until DEC-0026 there was no path to live mode at all, so any `_live_` key
+  // was refused in every environment. There is a path now, and what replaces
+  // that rule has to keep the property that made it worth having: a live key
+  // on a developer's machine moves real money exactly as well as one on a
+  // server. So the refusal is narrowed, not deleted.
+  //
+  // Three conditions, two of which are absent by construction on a
+  // workstation. The environment must be production; the commission must be
+  // the decided non-zero rate §8 requires rather than the honest zero default,
+  // so that no live charge can carry a number nobody chose; and the
+  // authorization must be stated in a variable that names the decision - which
+  // makes turning live mode on an act somebody performs, never something a
+  // copied .env does quietly.
   const stripeKeys = [
     env.STRIPE_SECRET_KEY,
     env.STRIPE_PUBLISHABLE_KEY,
     env.STRIPE_WEBHOOK_SECRET
   ];
   if (stripeKeys.some((key) => key?.includes('_live_'))) {
-    problems.push(
-      'A live-mode Stripe key is configured. DEC-0022 §8 authorizes test mode only, until the accountant and lawyer reviews are recorded and a commission rate is decided.'
-    );
+    const missing: string[] = [];
+    if (!isProduction) missing.push('PULSO_ENV=production');
+    if (applicationFeeBps <= 0) {
+      missing.push(
+        'a decided non-zero PULSO_APPLICATION_FEE_BPS (DEC-0022 §8, condition 3)'
+      );
+    }
+    if (env.STRIPE_LIVE_AUTHORIZED !== LIVE_AUTHORIZATION) {
+      missing.push(`STRIPE_LIVE_AUTHORIZED=${LIVE_AUTHORIZATION}`);
+    }
+    if (missing.length > 0) {
+      problems.push(
+        `A live-mode Stripe key is configured, but live mode is authorized only under the conditions of DEC-0026 §3. Missing: ${missing.join(', ')}.`
+      );
+    }
   }
   if (problems.length > 0) throw new ConfigError(problems);
 
@@ -136,10 +171,7 @@ export function resolveApiConfig(
     // without a real one above.
     ticketSigningSecret:
       env.TICKET_SIGNING_SECRET ?? 'pulso-development-ticket-secret',
-    applicationFeeBps: Math.max(
-      0,
-      Math.min(10_000, Number(env.PULSO_APPLICATION_FEE_BPS ?? 0) || 0)
-    ),
+    applicationFeeBps,
     checkoutHoldMinutes: Math.max(
       1,
       Number(env.PULSO_CHECKOUT_HOLD_MINUTES ?? 20) || 20

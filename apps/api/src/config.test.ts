@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ConfigError,
+  LIVE_AUTHORIZATION,
   resolveAllowedOrigin,
   resolveApiConfig
 } from './config.js';
@@ -35,19 +36,57 @@ describe('deployment configuration', () => {
     expect(() => resolveApiConfig(env)).toThrow(ConfigError);
   });
 
-  // DEC-0022 acceptance criterion 14. Refused outside production too: a live
-  // key on a laptop moves real money exactly as well as one on a server, and
-  // §8's accountant and lawyer reviews have not happened.
-  it('refuses to start with a live-mode Stripe key, in any environment', () => {
+  // DEC-0022 criterion 14 as narrowed by v1.2 and DEC-0026 §3. The old rule
+  // refused every live key everywhere; these say the refusal survives
+  // everywhere the authorization is not complete, which is what it was for.
+  it('refuses a live-mode Stripe key outside production', () => {
     expect(() =>
-      resolveApiConfig({ ...productionEnv, STRIPE_SECRET_KEY: 'sk_live_abc' })
+      resolveApiConfig({
+        STRIPE_SECRET_KEY: 'sk_live_abc',
+        PULSO_APPLICATION_FEE_BPS: '250',
+        STRIPE_LIVE_AUTHORIZED: LIVE_AUTHORIZATION
+      })
     ).toThrow(ConfigError);
+  });
+
+  it('refuses a live-mode Stripe key with no decided commission rate', () => {
     expect(() =>
-      resolveApiConfig({ STRIPE_SECRET_KEY: 'sk_live_abc' })
+      resolveApiConfig({
+        ...productionEnv,
+        STRIPE_SECRET_KEY: 'sk_live_abc',
+        STRIPE_LIVE_AUTHORIZED: LIVE_AUTHORIZATION
+      })
     ).toThrow(ConfigError);
+  });
+
+  it('refuses a live-mode Stripe key nobody authorized', () => {
     expect(() =>
-      resolveApiConfig({ STRIPE_WEBHOOK_SECRET: 'whsec_live_abc' })
+      resolveApiConfig({
+        ...productionEnv,
+        STRIPE_WEBHOOK_SECRET: 'whsec_live_abc',
+        PULSO_APPLICATION_FEE_BPS: '250'
+      })
     ).toThrow(ConfigError);
+    // A near miss is a miss: the variable names the decision, so a value that
+    // does not is somebody guessing rather than somebody deciding.
+    expect(() =>
+      resolveApiConfig({
+        ...productionEnv,
+        STRIPE_WEBHOOK_SECRET: 'whsec_live_abc',
+        PULSO_APPLICATION_FEE_BPS: '250',
+        STRIPE_LIVE_AUTHORIZED: 'true'
+      })
+    ).toThrow(ConfigError);
+  });
+
+  it('accepts a live-mode Stripe key under the full DEC-0026 authorization', () => {
+    const config = resolveApiConfig({
+      ...productionEnv,
+      STRIPE_SECRET_KEY: 'sk_live_abc',
+      PULSO_APPLICATION_FEE_BPS: '250',
+      STRIPE_LIVE_AUTHORIZED: LIVE_AUTHORIZATION
+    });
+    expect(config.applicationFeeBps).toBe(250);
   });
 
   it('accepts a test-mode Stripe key', () => {
