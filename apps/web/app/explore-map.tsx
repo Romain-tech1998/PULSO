@@ -14635,6 +14635,9 @@ function RoomsInbox({
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<RoomMessage[]>([]);
   const [composing, setComposing] = useState(false);
+  // Which row has its menu open. One at a time, and closed by opening
+  // another or by choosing something.
+  const [menuFor, setMenuFor] = useState<string>();
 
   const headers = authToken
     ? { authorization: `Bearer ${authToken}` }
@@ -14838,34 +14841,61 @@ function RoomsInbox({
                     </span>
                   )}
                 </button>
-                <span className="rooms-row-actions">
+                {/* Three links stacked beside every row was noise on a list
+                    whose job is to be scanned. They live behind the dots
+                    every messaging app puts them behind. */}
+                <span className="rooms-row-menu">
                   <button
                     type="button"
-                    className="text-btn"
-                    onClick={() => flag(room.id, 'pinned', !room.pinned)}
+                    className="rooms-row-menu-btn"
+                    aria-expanded={menuFor === room.id}
+                    aria-label={translate(locale, 'rooms.actions')}
+                    onClick={() =>
+                      setMenuFor((current) =>
+                        current === room.id ? undefined : room.id
+                      )
+                    }
                   >
-                    {translate(
-                      locale,
-                      room.pinned ? 'rooms.unpin' : 'rooms.pin'
-                    )}
+                    ⋯
                   </button>
-                  <button
-                    type="button"
-                    className="text-btn"
-                    onClick={() => flag(room.id, 'muted', !room.muted)}
-                  >
-                    {translate(
-                      locale,
-                      room.muted ? 'rooms.unmute' : 'rooms.mute'
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    className="text-btn organisateur-delete"
-                    onClick={() => leave(room.id)}
-                  >
-                    {translate(locale, 'rooms.leave')}
-                  </button>
+                  {menuFor === room.id && (
+                    <span className="rooms-row-menu-list">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          flag(room.id, 'pinned', !room.pinned);
+                          setMenuFor(undefined);
+                        }}
+                      >
+                        {translate(
+                          locale,
+                          room.pinned ? 'rooms.unpin' : 'rooms.pin'
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          flag(room.id, 'muted', !room.muted);
+                          setMenuFor(undefined);
+                        }}
+                      >
+                        {translate(
+                          locale,
+                          room.muted ? 'rooms.unmute' : 'rooms.mute'
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="rooms-row-menu-leave"
+                        onClick={() => {
+                          setMenuFor(undefined);
+                          leave(room.id);
+                        }}
+                      >
+                        {translate(locale, 'rooms.leave')}
+                      </button>
+                    </span>
+                  )}
                 </span>
               </div>
             );

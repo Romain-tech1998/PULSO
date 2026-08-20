@@ -3916,18 +3916,10 @@ span.search-result-title {
   line-height: 1.4;
 }
 
-/* A thread is a column, not a wall. On a wide screen the pane is over a
-   thousand pixels across, which left the bubbles adrift on one side and
-   stretched the composer into a bar the width of the window. Both are held
-   to a readable measure and centred, the way every messaging app does it on
-   a desktop. */
-.conversation-messages,
-.room-composer {
-  width: 100%;
-  max-width: 46rem;
-  margin-left: auto;
-  margin-right: auto;
-}
+/* The thread uses the whole pane. Holding it to a centred column read as an
+   odd inset panel rather than as a conversation - the owner's call, and the
+   right one: the surface *is* the message area, so the composer spans it and
+   the bubbles use their own width inside it. */
 /* A short thread sits on the composer rather than floating at the top of an
    empty pane. An auto-margin on a pseudo-element rather than justify-content:
    flex-end, which makes the top of a long thread unreachable once it scrolls. */
@@ -4032,23 +4024,59 @@ span.search-result-title {
   flex: 1;
   min-width: 0;
 }
-.rooms-row-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+/* One dot button per row, and its menu. Shown on hover and on keyboard focus
+   alike - a control reachable only by pointer is a control half the people
+   cannot use - and always shown while its own menu is open. */
+.rooms-row-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.rooms-row-menu-btn {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
   opacity: 0;
   transition: opacity 0.15s;
 }
-/* Shown on hover and on keyboard focus alike - a control reachable only by
-   pointer is a control half the people cannot use. */
-.rooms-row:hover .rooms-row-actions,
-.rooms-row:focus-within .rooms-row-actions {
+.rooms-row:hover .rooms-row-menu-btn,
+.rooms-row:focus-within .rooms-row-menu-btn,
+.rooms-row-menu-btn[aria-expanded='true'] {
   opacity: 1;
 }
-.rooms-row-actions .text-btn {
-  font-size: 0.62rem;
-  padding: 0.05rem 0.25rem;
-  white-space: nowrap;
+.rooms-row-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+.rooms-row-menu-list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 11rem;
+  padding: 0.3rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.7rem;
+  background: var(--surface-raised);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.rooms-row-menu-list button {
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.45rem;
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.rooms-row-menu-list button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-primary);
+}
+.rooms-row-menu-list .rooms-row-menu-leave {
+  color: #ff8a8a;
 }
 /* Two faces, overlapped, for a group; one for a pair. The cue that says
    which it is before a single name is read. */
