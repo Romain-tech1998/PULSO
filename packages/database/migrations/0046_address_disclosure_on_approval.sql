@@ -18,7 +18,23 @@ ALTER TABLE events
 -- Every event that used the old flag becomes an 'on_approval' event. There
 -- is no data loss and no behaviour change for its organizer: what changes is
 -- that the promise is now kept.
-UPDATE events SET address_disclosure = 'on_approval' WHERE address_hidden;
+--
+-- Guarded, because `address_hidden` is not this migration's column to assume:
+-- 0029 added it, and a database that reached this point without it - restored
+-- from a dump, branched from another baseline, or simply older than 0029 -
+-- makes this statement fail and takes the whole file down with it. The DROP
+-- below was already written defensively; the read above it was not, and the
+-- scheduled events ingestion has failed on exactly that every run since
+-- DEC-0022 landed.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'events' AND column_name = 'address_hidden'
+  ) THEN
+    UPDATE events SET address_disclosure = 'on_approval' WHERE address_hidden;
+  END IF;
+END $$;
 
 ALTER TABLE events DROP COLUMN IF EXISTS address_hidden;
 
