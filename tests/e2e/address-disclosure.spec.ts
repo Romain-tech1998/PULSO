@@ -80,6 +80,31 @@ test.describe('DEC-0022 §6 address disclosure, as a signed-in reader', () => {
     ).toBeVisible({ timeout: 30_000 });
   };
 
+  /**
+   * What the API tells *this* browser, asked with the same token the app
+   * holds. Asserted alongside the rendering so a failure names its half: the
+   * server withholding, or the client failing to show what it was given.
+   *
+   * This exists because the first CI run failed here and the log could only
+   * say "element not found" - true of a withheld address and of a rendering
+   * bug alike, and the two need different fixes.
+   */
+  const addressAccordingToApi = async (page: Page, token: string) =>
+    page.evaluate(
+      async ([id, bearer]) => {
+        const response = await fetch(`http://127.0.0.1:3001/events/${id}`, {
+          headers: { authorization: `Bearer ${bearer}` }
+        });
+        const body = await response.json();
+        return {
+          status: response.status,
+          address: body?.data?.venue?.address ?? null,
+          access: body?.data?.myAccessStatus ?? null
+        };
+      },
+      [eventId, token] as const
+    );
+
   test.beforeAll(async () => {
     pool = createPool(databaseUrl);
     events = new PostgresEventRepository(pool);
@@ -127,6 +152,12 @@ test.describe('DEC-0022 §6 address disclosure, as a signed-in reader', () => {
   }) => {
     await openEventAs(page, organizerToken);
 
+    // The server's half first: an owner is always shown their own address.
+    expect(await addressAccordingToApi(page, organizerToken)).toMatchObject({
+      status: 200,
+      address: HIDDEN_ADDRESS
+    });
+
     // DEC-0023 §1 lands the owner on their console; the address is on the
     // public tab beside it, which is exactly where a visitor would read it.
     await page
@@ -169,6 +200,12 @@ test.describe('DEC-0022 §6 address disclosure, as a signed-in reader', () => {
     expect(decided).toBe(true);
 
     await openEventAs(page, visitorToken);
+
+    expect(await addressAccordingToApi(page, visitorToken)).toMatchObject({
+      status: 200,
+      address: HIDDEN_ADDRESS,
+      access: 'approved'
+    });
 
     await expect(page.getByText(HIDDEN_ADDRESS)).toBeVisible();
     await expect(page.getByRole('button', { name: REQUEST_LABEL })).toHaveCount(
