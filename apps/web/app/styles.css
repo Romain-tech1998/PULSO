@@ -3928,6 +3928,13 @@ span.search-result-title {
   margin-left: auto;
   margin-right: auto;
 }
+/* A short thread sits on the composer rather than floating at the top of an
+   empty pane. An auto-margin on a pseudo-element rather than justify-content:
+   flex-end, which makes the top of a long thread unreachable once it scrolls. */
+.conversation-messages::before {
+  content: '';
+  margin-top: auto;
+}
 
 /* The composer is one line that grows, not a panel. It was a 54px textarea
    with the clip and the send stacked underneath, which turned the bottom
@@ -10096,9 +10103,14 @@ a.venue-detail-info-row:hover {
    and a nested rail would read as a second sidebar competing with the real
    one. Sticks to the top of the scrolling panel so switching between
    Groupes, Messages and Amis never requires scrolling back up. */
+/* Grows into the column it sits in. It was sized by its contents, so the
+   Messages page inside it got 365px of a 1080px viewport and the rest of the
+   screen was black - the inbox has to be as tall as the window, like every
+   messaging surface people use. */
 .community-hub {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 1rem;
   min-height: 0;
 }
