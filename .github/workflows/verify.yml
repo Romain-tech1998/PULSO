@@ -24,6 +24,18 @@ jobs:
           --health-retries 12
     env:
       DATABASE_URL: postgresql://pulso:pulso@localhost:5432/pulso
+      # The whole account layer is wired in server.ts behind `google`, so with
+      # no credentials the API answers every request as an anonymous reader:
+      # no bearer is resolved, and an event that withholds its address
+      # withholds it even from the organizer. That is correct in production -
+      # nobody can sign in without Google - and it silently made every
+      # authenticated behaviour untestable end to end.
+      #
+      # These are not secrets and buy no access: the OAuth flow is never
+      # exercised by a test, and the values only decide whether the routes and
+      # repositories are registered at all.
+      GOOGLE_CLIENT_ID: ci-not-a-real-client
+      GOOGLE_CLIENT_SECRET: ci-not-a-real-secret
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v5
