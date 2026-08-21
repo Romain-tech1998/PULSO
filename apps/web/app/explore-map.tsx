@@ -4049,13 +4049,23 @@ export function ExploreMap({
         {/* Mobile bottom nav (audit: the desktop nav-actions-links row
             becomes inaccessible under ~768px) - the same 3 destinations
             plus Favoris, as real 44px+ tap targets instead of the ~22px
-            text row above. Anonymous only, same gate as the header above. */}
+            text row above. Anonymous only, same gate as the header above.
+
+            On a phone the three destinations divide the work rather than
+            repeat it (owner feedback after the first on-device test):
+            "Carte" is the one visual surface and carries the événements /
+            lieux switch itself, so it owns both maps; "Événements" and
+            "Lieux" are lists and nothing else. Hence the map tab lighting
+            up for section === 'lieu' too, and "Lieux" opening lieuTab
+            'list' instead of the venue map it used to duplicate. */}
         {!user && (
           <nav className="mobile-bottom-nav" aria-label="Navigation principale">
             <button
               type="button"
               className={
-                !aboutOpen && section === 'evenement' && viewMode === 'map'
+                !aboutOpen &&
+                ((section === 'evenement' && viewMode === 'map') ||
+                  (section === 'lieu' && lieuTab === 'map'))
                   ? 'active'
                   : ''
               }
@@ -4089,12 +4099,16 @@ export function ExploreMap({
             </button>
             <button
               type="button"
-              className={!aboutOpen && section === 'lieu' ? 'active' : ''}
+              className={
+                !aboutOpen && section === 'lieu' && lieuTab === 'list'
+                  ? 'active'
+                  : ''
+              }
               onClick={() => {
                 setAboutOpen(false);
                 setMobileFiltersOpen(false);
                 setSection('lieu');
-                setLieuTab('map');
+                setLieuTab('list');
               }}
             >
               <svg
@@ -4113,7 +4127,9 @@ export function ExploreMap({
             <button
               type="button"
               className={
-                !aboutOpen && section === 'evenement' && viewMode === 'calendar'
+                !aboutOpen &&
+                ((section === 'evenement' && viewMode === 'calendar') ||
+                  (section === 'lieu' && lieuTab === 'calendar'))
                   ? 'active'
                   : ''
               }
@@ -4424,6 +4440,13 @@ export function ExploreMap({
                         onClick={() => setShowFavoritesOnly((prev) => !prev)}
                       >
                         <HeartIcon filled={showFavoritesOnly} />
+                        {/* Only rendered visibly in the phone drawer, where
+                            the view toggles beside it are gone and a bare
+                            52px icon square would be unreadable on its own.
+                            The desktop rail keeps the icon-only square. */}
+                        <span className="view-toggle-fav-label">
+                          {translate(locale, 'favorites.showFavoritesOnly')}
+                        </span>
                       </button>
                     )}
                     {section === 'lieu' && (
@@ -4449,6 +4472,9 @@ export function ExploreMap({
                         }
                       >
                         <BellIcon />
+                        <span className="view-toggle-fav-label">
+                          {translate(locale, 'filters.followedVenues')}
+                        </span>
                       </button>
                     )}
                   </div>
