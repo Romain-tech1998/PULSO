@@ -113,7 +113,21 @@ export function createStripePaymentProvider(
 
     async refund(accountId: string, paymentIntentId: string): Promise<void> {
       await stripe.refunds.create(
-        { payment_intent: paymentIntentId },
+        {
+          payment_intent: paymentIntentId,
+          // Without this the commission stays with Pulso while the organizer
+          // returns the whole amount the buyer paid - commission included -
+          // out of their own balance. The organizer would lose Pulso's cut on
+          // every refund, on a sale that no longer exists. Invisible while
+          // PULSO_APPLICATION_FEE_BPS was zero, real the moment DEC-0026 §3
+          // decided a rate.
+          //
+          // The buyer is made whole, Pulso earns nothing on an undone sale,
+          // and the organizer is left with Stripe's own processing fee, which
+          // Stripe does not return and which DEC-0022 §1 already puts on them
+          // as merchant of record.
+          refund_application_fee: true
+        },
         { stripeAccount: accountId }
       );
     },

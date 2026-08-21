@@ -56,6 +56,21 @@ export function reportContent(
     .catch(() => {});
 }
 
+// DEC-0026 §4 acceptance criterion 4: the four legal documents must be
+// reachable from the interface without an account. Plain anchors, not client
+// navigation - /legal/* is server-rendered on its own and must stay reachable
+// when the map shell does not load.
+export function LegalLinks({ locale }: { locale: SupportedLocale }) {
+  return (
+    <nav className="legal-links" aria-label="Pulso">
+      <a href="/legal/privacy">{translate(locale, 'legal.privacy')}</a>
+      <a href="/legal/terms">{translate(locale, 'legal.terms')}</a>
+      <a href="/legal/tickets">{translate(locale, 'legal.tickets')}</a>
+      <a href="/legal/notice">{translate(locale, 'legal.notice')}</a>
+    </nav>
+  );
+}
+
 export function HeartIcon({ filled }: { filled: boolean }) {
   return (
     <svg

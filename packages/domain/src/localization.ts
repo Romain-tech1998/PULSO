@@ -545,6 +545,12 @@ const en = {
   'time.daysAgo': '{count}d ago',
   'report.prompt': 'Why are you reporting this content? (optional)',
   'report.sent': 'Report sent.',
+  // Links to the four legal documents (DEC-0026 §4). Short labels: they sit
+  // in a footer row, and the page itself carries the full title.
+  'legal.privacy': 'Privacy',
+  'legal.terms': 'Terms',
+  'legal.tickets': 'Tickets',
+  'legal.notice': 'Legal notice',
   // The map surface (explore-map.tsx). Marker pickers open only when two
   // or more pins overlap, so their labels have no singular form.
   'map.eventsHere': '{count} events at this spot',
@@ -1687,6 +1693,12 @@ const fr = {
   'time.daysAgo': 'il y a {count} j',
   'report.prompt': 'Pourquoi signalez-vous ce contenu ? (optionnel)',
   'report.sent': 'Signalement envoyé.',
+  // Links to the four legal documents (DEC-0026 §4). Short labels: they sit
+  // in a footer row, and the page itself carries the full title.
+  'legal.privacy': 'Confidentialité',
+  'legal.terms': 'Conditions',
+  'legal.tickets': 'Billetterie',
+  'legal.notice': 'Mentions légales',
   // The map surface (explore-map.tsx). Marker pickers open only when two
   // or more pins overlap, so their labels have no singular form.
   'map.eventsHere': '{count} événements à cet endroit',
