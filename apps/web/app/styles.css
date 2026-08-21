@@ -247,10 +247,15 @@ h6 {
   color: var(--text-primary);
 }
 
+/* Left-aligned on the trigger, not right-aligned: the city selector is the
+   first segment of the search bar, so anchoring a 200px panel to its right
+   edge hung it ~90px to the left of the bar - off-screen entirely once the
+   bar starts at the phone's left margin. */
 .city-selector-dropdown {
   position: absolute;
   top: calc(100% + 0.5rem);
-  right: 0;
+  left: 0;
+  max-width: calc(100vw - 1.5rem);
   background: var(--surface-raised);
   backdrop-filter: blur(24px);
   border: 1px solid var(--brand-border);
@@ -5197,6 +5202,13 @@ span.search-result-title {
   background: var(--brand-purple);
   border-color: var(--brand-purple);
   color: #fff;
+}
+
+/* Shown only in the phone filters drawer - see the phone block at the end
+   of this file. On desktop the square sits next to the view toggles and
+   reads fine as an icon. */
+.view-toggle-fav-label {
+  display: none;
 }
 
 /* One continuous panel rather than four identical floating boxes. Four
@@ -18362,4 +18374,156 @@ a.venue-detail-info-row:hover {
 .legal-links a:hover {
   opacity: 1;
   text-decoration: underline;
+}
+
+/* Phone pass, after the first on-device test of the deployed build ---------
+   Everything below is scoped to the phone breakpoint and to the shells that
+   actually change there; the desktop layouts above are left alone. Placed
+   last so an equal-specificity desktop rule can't win on source order. */
+@media (max-width: 768px) {
+  /* 1. There was no way to sign in at all on a phone: the anonymous rail
+     (which holds the profile button) is display:none here, and the floating
+     actions were hidden alongside it, taking the account control out with
+     the language and about buttons. Put the row back in the flow beside the
+     search field - the 1024px block above already reduces it to the account
+     control on its own. */
+  .anonymous-floating-toolbar {
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.5rem;
+  }
+
+  .anonymous-floating-actions {
+    display: flex;
+    position: static;
+    flex: 0 0 auto;
+  }
+
+  .anonymous-floating-search {
+    width: auto;
+    flex: 1 1 auto;
+  }
+
+  /* Reads as the primary invitation it is, and stays narrow enough to leave
+     the search field a usable width at 390px. */
+  .anonymous-floating-actions .account-login-btn {
+    min-height: 50px;
+    padding-inline: 0.85rem;
+    border-color: transparent;
+    background: linear-gradient(120deg, #7839ee, #ee2d8a);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  /* Same width recovery, taken off the one control on the bar that spends
+     it on a city the MVP does not let you change. */
+  .anonymous-floating-search .city-selector-trigger {
+    gap: 0.25rem;
+    padding-inline: 0.85rem 0.35rem;
+    font-size: 0.8rem;
+  }
+
+  /* 2. iOS zooms the whole viewport - the map with it - whenever a focused
+     input renders under 16px, and this one was inheriting the ~13px UA
+     default. That, not a map interaction, is the "tapping search zooms the
+     map" report. */
+  .anonymous-floating-search input,
+  .nav-search input {
+    font-size: 16px;
+  }
+
+  /* 3. Calendar: seven category pills plus three price pills wrapped to
+     three rows, which pushed the grid below the fold and let the fixed
+     bottom nav cut what was left. One scrollable row per filter family,
+     and the view keeps clear of the nav. */
+  .calendar-view {
+    padding: 1rem 0.9rem calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-container-anonymous .map-container-wrapper > .calendar-view,
+  .app-container-anonymous .venue-section > .calendar-view {
+    padding-top: 4.6rem;
+  }
+
+  .calendar-header {
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .calendar-header h3 {
+    min-width: 0;
+    font-size: 1.05rem;
+  }
+
+  .calendar-scope-note {
+    margin-bottom: 0.75rem;
+    font-size: 0.7rem;
+    line-height: 1.35;
+  }
+
+  .calendar-filter-bar {
+    align-items: stretch;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .calendar-filter-bar .pill-list {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 0.35rem;
+    /* Bleeds to the screen edges so a row that runs past the fold looks
+       like something you can push, rather than something clipped. */
+    margin-inline: -0.9rem;
+    padding-inline: 0.9rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .calendar-filter-bar .pill-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .calendar-filter-bar .filter-pill {
+    flex: 0 0 auto;
+    padding: 0.45rem 0.8rem;
+    font-size: 0.8rem;
+  }
+
+  .calendar-weekdays {
+    font-size: 0.7rem;
+  }
+
+  .calendar-grid {
+    gap: 0.3rem;
+  }
+
+  .calendar-day-number {
+    font-size: 0.85rem;
+  }
+
+  /* 4. The drawer is filters only. Its carte / liste / calendrier column
+     duplicated the bottom nav, and tapping an entry left the drawer open
+     over the view it had just switched to, so it read as doing nothing.
+     The favourites switch stays - it is a filter - promoted from a 52px
+     icon square to a labelled full-width row now that nothing sits beside
+     it. */
+  .sidebar-left.mobile-open .view-toggles-list {
+    display: none;
+  }
+
+  .sidebar-left.mobile-open .view-toggle-fav {
+    width: 100%;
+    min-height: 48px;
+    gap: 0.55rem;
+    border-radius: 1rem;
+    font-size: 0.85rem;
+    font-weight: 650;
+  }
+
+  .sidebar-left.mobile-open .view-toggle-fav-label {
+    display: inline;
+  }
 }
