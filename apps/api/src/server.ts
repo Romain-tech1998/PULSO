@@ -58,65 +58,59 @@ const app = buildApp(new PostgresEventRepository(pool), {
   // visible owner: this is the only place Pulso reaches a third-party service
   // during a visitor request.
   lookupVenues: (text) => lookupVenueByName(text),
-  ...(google
+  // Built whether or not Google is configured. These read and write the
+  // account's own data, and a session that exists must be readable by the API
+  // that stored it; `google` decides only whether a *new* one can be issued.
+  authRepository: new PostgresAuthRepository(pool),
+  favoritesRepository: new PostgresFavoritesRepository(pool),
+  trendsRepository: new PostgresTrendsRepository(pool),
+  friendsRepository: new PostgresFriendsRepository(pool),
+  attendanceRepository: new PostgresAttendanceRepository(pool),
+  conversationsRepository: new PostgresConversationsRepository(pool),
+  organizerConsoleRepository: new PostgresOrganizerConsoleRepository(pool),
+  forumRepository: new PostgresForumRepository(pool),
+  messagesRepository: new PostgresMessagesRepository(pool),
+  reportsRepository: new PostgresReportsRepository(pool),
+  groupsRepository: new PostgresGroupsRepository(pool),
+  profileRepository: new PostgresProfileRepository(pool),
+  eventAccessRepository: new PostgresEventAccessRepository(pool),
+  ticketingRepository: new PostgresTicketingRepository(pool),
+  eventPhotosRepository: new PostgresEventPhotosRepository(pool),
+  userPhotosRepository: new PostgresUserPhotosRepository(pool),
+  imageModerationRepository: new PostgresImageModerationRepository(pool),
+  // DEC-0021: absent means every upload is flagged for review rather
+  // than published unscreened, which is the correct default for an
+  // instance that has not been given a key.
+  ...(process.env.OPENAI_API_KEY
     ? {
-        authRepository: new PostgresAuthRepository(pool),
-        favoritesRepository: new PostgresFavoritesRepository(pool),
-        trendsRepository: new PostgresTrendsRepository(pool),
-        friendsRepository: new PostgresFriendsRepository(pool),
-        attendanceRepository: new PostgresAttendanceRepository(pool),
-        conversationsRepository: new PostgresConversationsRepository(pool),
-        organizerConsoleRepository: new PostgresOrganizerConsoleRepository(
-          pool
-        ),
-        forumRepository: new PostgresForumRepository(pool),
-        messagesRepository: new PostgresMessagesRepository(pool),
-        reportsRepository: new PostgresReportsRepository(pool),
-        groupsRepository: new PostgresGroupsRepository(pool),
-        profileRepository: new PostgresProfileRepository(pool),
-        eventAccessRepository: new PostgresEventAccessRepository(pool),
-        ticketingRepository: new PostgresTicketingRepository(pool),
-        eventPhotosRepository: new PostgresEventPhotosRepository(pool),
-        userPhotosRepository: new PostgresUserPhotosRepository(pool),
-        imageModerationRepository: new PostgresImageModerationRepository(pool),
-        // DEC-0021: absent means every upload is flagged for review rather
-        // than published unscreened, which is the correct default for an
-        // instance that has not been given a key.
-        ...(process.env.OPENAI_API_KEY
-          ? {
-              imageModerationProvider: createOpenAiModerationProvider(
-                process.env.OPENAI_API_KEY
-              )
-            }
-          : {}),
-        // DEC-0022 §1 and §8. Both halves required: a secret key with no
-        // webhook secret could open a checkout it could never confirm.
-        ...(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET
-          ? {
-              paymentProvider: createStripePaymentProvider(
-                process.env.STRIPE_SECRET_KEY,
-                process.env.STRIPE_WEBHOOK_SECRET
-              )
-            }
-          : {}),
-        // DEC-0022 §4. Absent unless every Google Wallet variable is set:
-        // a half-configured issuer renders a button that produces a broken
-        // pass, which the decision calls worse than no button.
-        ...(() => {
-          const wallet = resolveGoogleWalletProvider(
-            process.env,
-            config.webUrl
-          );
-          return wallet ? { walletProvider: wallet } : {};
-        })(),
-        ratingsRepository: new PostgresRatingsRepository(pool),
-        notificationsRepository: new PostgresNotificationsRepository(pool),
-        organizerRepository: new PostgresOrganizerRepository(pool),
-        uploadDir,
-        publicUploadUrl,
-        google
+        imageModerationProvider: createOpenAiModerationProvider(
+          process.env.OPENAI_API_KEY
+        )
       }
-    : {})
+    : {}),
+  // DEC-0022 §1 and §8. Both halves required: a secret key with no
+  // webhook secret could open a checkout it could never confirm.
+  ...(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET
+    ? {
+        paymentProvider: createStripePaymentProvider(
+          process.env.STRIPE_SECRET_KEY,
+          process.env.STRIPE_WEBHOOK_SECRET
+        )
+      }
+    : {}),
+  // DEC-0022 §4. Absent unless every Google Wallet variable is set:
+  // a half-configured issuer renders a button that produces a broken
+  // pass, which the decision calls worse than no button.
+  ...(() => {
+    const wallet = resolveGoogleWalletProvider(process.env, config.webUrl);
+    return wallet ? { walletProvider: wallet } : {};
+  })(),
+  ratingsRepository: new PostgresRatingsRepository(pool),
+  notificationsRepository: new PostgresNotificationsRepository(pool),
+  organizerRepository: new PostgresOrganizerRepository(pool),
+  uploadDir,
+  publicUploadUrl,
+  ...(google ? { google } : {})
 });
 
 const { host, port } = config;

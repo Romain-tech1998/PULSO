@@ -225,16 +225,27 @@ export function buildApp(
     options.notificationsRepository &&
     options.organizerRepository &&
     options.uploadDir &&
-    options.publicUploadUrl &&
-    options.google
+    options.publicUploadUrl
   ) {
-    registerAuthRoutes(
-      app,
-      options.authRepository,
-      options.favoritesRepository,
-      options.trendsRepository,
-      options.google
-    );
+    // Signing in needs Google; *being* signed in does not. This block used to
+    // require `options.google` in full, so an instance without credentials
+    // resolved no bearer at all and answered every request as an anonymous
+    // reader - including one carrying a valid session. Invisible in
+    // production, where without Google nobody has a session to carry; in CI it
+    // made every authenticated behaviour untestable end to end, and the e2e
+    // suite was green for three days because it never asked.
+    //
+    // Only the sign-in flow is gated now: reading a session an account already
+    // holds is not the same capability as issuing a new one.
+    if (options.google) {
+      registerAuthRoutes(
+        app,
+        options.authRepository,
+        options.favoritesRepository,
+        options.trendsRepository,
+        options.google
+      );
+    }
     registerSocialRoutes(
       app,
       options.authRepository,
