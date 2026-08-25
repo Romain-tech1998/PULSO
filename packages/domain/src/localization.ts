@@ -1662,7 +1662,10 @@ const en = {
   'you.settings': 'Settings',
   'filters.quickLabel': 'Quick filters',
   'filters.quickAll': 'All',
-  'map.myPosition': 'My location'
+  'map.myPosition': 'My location',
+  'venues.eventsHere': '{count} event',
+  'venues.eventsHerePlural': '{count} events',
+  'venues.following': 'Following'
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -3289,7 +3292,10 @@ const fr = {
   'you.settings': 'Réglages',
   'filters.quickLabel': 'Filtres rapides',
   'filters.quickAll': 'Tout',
-  'map.myPosition': 'Ma position'
+  'map.myPosition': 'Ma position',
+  'venues.eventsHere': '{count} événement',
+  'venues.eventsHerePlural': '{count} événements',
+  'venues.following': 'Suivi'
 } satisfies Record<MessageKey, string>;
 
 export const MESSAGE_CATALOGS = { en, fr } as const;

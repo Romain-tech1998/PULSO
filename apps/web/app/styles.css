@@ -19141,3 +19141,37 @@ a.venue-detail-info-row:hover {
   margin-left: auto;
   border-style: dashed;
 }
+
+/* ---------------------------------------------------------------------------
+   Picker rows carry a colour dot, not a cover image.
+
+   `.list-view-row` is shaped for the event list: 132px tall, `padding: 0`,
+   `align-items: stretch` — which works because a cover image fills that
+   height edge to edge and supplies its own inset. The pickers reuse the
+   class with a 7px dot instead, so nothing supplied the inset and the count
+   badge sat flush against the top edge, reading as though it floated
+   outside the card.
+   ------------------------------------------------------------------------- */
+.picker-list-rows .list-view-row {
+  min-height: 0;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+
+.picker-list-rows .list-view-main {
+  min-width: 0;
+  justify-content: center;
+  padding: 0;
+}
+
+.picker-list-rows .list-view-price {
+  flex: none;
+  margin-top: 0;
+  align-self: center;
+}
+
+.picker-list-rows .list-view-dot {
+  flex: none;
+  align-self: center;
+}

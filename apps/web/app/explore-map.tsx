@@ -6913,19 +6913,23 @@ function VenuePickerList({
             <span className="list-view-main">
               <strong>{group.name}</strong>
               <span className="list-view-sub">
-                {group.address}
+                {formatVenueAddress(group.address, locale)}
                 {group.venueCategory &&
                   ` · ${VENUE_CATEGORY_LABELS[locale][group.venueCategory]}`}
               </span>
             </span>
             <span className="list-view-price">
-              {group.events.length} événement
-              {group.events.length > 1 ? 's' : ''}
+              {translatePlural(
+                locale,
+                group.events.length,
+                'venues.eventsHere',
+                'venues.eventsHerePlural'
+              )}
             </span>
             {favoriteVenues.includes(group.id) && (
               <span
                 aria-hidden="true"
-                title="Suivi"
+                title={translate(locale, 'venues.following')}
                 className="list-view-following-dot"
               >
                 🔔
@@ -13949,7 +13953,9 @@ function MapSelectionCard({
       </div>
       <div className="map-selection-card-body">
         <h3>{group.name}</h3>
-        <p className="map-selection-card-venue">📍 {group.address}</p>
+        <p className="map-selection-card-venue">
+          📍 {formatVenueAddress(group.address, locale)}
+        </p>
         <div className="map-selection-card-footer">
           {group.priceTier && (
             <span className="map-selection-card-tag map-selection-card-tag-price">
