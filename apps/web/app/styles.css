@@ -17639,14 +17639,52 @@ a.venue-detail-info-row:hover {
 }
 
 .anonymous-floating-actions .nav-icon-btn,
+.anonymous-floating-actions .lang-selector-current,
 .anonymous-floating-actions .lang-selector-trigger,
 .anonymous-floating-actions .account-trigger {
   min-width: 48px;
   min-height: 48px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(21, 18, 30, 0.94);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  /* Opaque rather than translucent. These sit over a moving map, and a
+     translucent control picks up whatever happens to be under it - which
+     on a dark basemap means it reads as barely there. */
+  background: var(--surface-raised);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.42);
+  transition:
+    border-color 0.18s,
+    box-shadow 0.18s,
+    background 0.18s;
+}
+
+/* Pulso's own colour on hover, on the three header controls alike, so the
+   way in is the thing that lights up. */
+.anonymous-floating-actions .nav-icon-btn:hover,
+.anonymous-floating-actions .lang-selector-current:hover,
+.anonymous-floating-actions .account-login-btn:hover,
+.anonymous-floating-actions .account-menu-trigger:hover {
+  border-color: rgba(238, 45, 138, 0.55);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.42),
+    0 0 0 3px rgba(238, 45, 138, 0.16);
+}
+
+.anonymous-floating-actions .account-login-btn {
+  min-height: 48px;
+  padding-inline: 1.15rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: linear-gradient(120deg, #7839ee, #ee2d8a);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.42);
+  transition:
+    border-color 0.18s,
+    box-shadow 0.18s,
+    filter 0.18s;
+}
+
+.anonymous-floating-actions .account-login-btn:hover {
+  filter: brightness(1.1);
 }
 
 .anonymous-content-column .dashboard-main {
@@ -17703,7 +17741,9 @@ a.venue-detail-info-row:hover {
 }
 
 .anonymous-content-column .mobile-filters-trigger {
-  top: 5.9rem;
+  /* Was 5.9rem to clear the quick-filter bar beside it. That bar is gone
+     from this surface, so the control sits directly under the header. */
+  top: 5.25rem;
   left: 1.25rem;
   z-index: 42;
   display: flex;
@@ -17774,8 +17814,18 @@ a.venue-detail-info-row:hover {
   transform: none;
 }
 
+/* `width: max-content` on purpose.
+   
+   Without it the pill collapsed to 54px on a 514px track: the text carries
+   `overflow: hidden` for its ellipsis, which makes its min-content
+   contribution zero, and a `justify-self: start` item then resolved to that
+   minimum. All that showed was the pink dot and the ellipsis - the "two
+   dots" this was reported as. It still truncates, but only once the track
+   is genuinely too narrow for it. */
 .map-bottom-bar .anonymous-map-status {
   grid-column: 1;
+  width: max-content;
+  max-width: 100%;
   min-width: 0;
   justify-self: start;
 }
@@ -17811,7 +17861,15 @@ a.venue-detail-info-row:hover {
   backdrop-filter: blur(16px);
 }
 
-.anonymous-map-status span {
+/* The live dot, and only the live dot.
+   
+   This matched every span inside the pill. When the count text was wrapped
+   in its own span - so it could truncate rather than push the kind switch -
+   it inherited 7x7, a pink background and a border-radius, and rendered as
+   a *second dot*. The pill showed two dots and no text, which is exactly
+   how it was reported. */
+.anonymous-map-status > span[aria-hidden='true'] {
+  flex: none;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -18049,6 +18107,22 @@ a.venue-detail-info-row:hover {
 .app-container-anonymous .browse-switch + .list-view,
 .app-container-anonymous .browse-switch + .calendar-view,
 .app-container-anonymous .browse-switch + .venue-view {
+  padding-top: 0.75rem;
+}
+
+/* The quick-filter row obeys the same clearance rule: whichever control is
+   first under the floating header pays for it, and nothing pays twice. */
+.app-container-anonymous .quick-filters {
+  margin-top: 5.75rem;
+}
+
+.app-container-anonymous .browse-switch + .quick-filters {
+  margin-top: 0.6rem;
+}
+
+.app-container-anonymous .quick-filters + .list-view,
+.app-container-anonymous .quick-filters + .calendar-view,
+.app-container-anonymous .quick-filters + .venue-view {
   padding-top: 0.75rem;
 }
 
@@ -18754,6 +18828,9 @@ a.venue-detail-info-row:hover {
    toggle is display:none at every width but the mobile drawer.
    ------------------------------------------------------------------------- */
 .browse-switch {
+  /* `align-self` because the venue column is a flex column: without it the
+     switch stretched to the full width of the grid it sits above. */
+  align-self: flex-start;
   display: inline-flex;
   gap: 0.2rem;
   margin: 1rem 1.25rem 0;
@@ -18968,4 +19045,91 @@ a.venue-detail-info-row:hover {
     min-height: 46px;
     padding-block: 0.72rem;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Quick filters, at the head of Événements and Lieux.
+
+   Not a second filter panel - the full one holds everything and is one tap
+   away. This is the row that saves opening it.
+   ------------------------------------------------------------------------- */
+.quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.75rem 1.25rem 0;
+}
+
+.quick-filter-chip {
+  min-height: 38px;
+  padding: 0 0.9rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.18s,
+    color 0.18s,
+    border-color 0.18s;
+}
+
+.quick-filter-chip:hover {
+  border-color: rgba(238, 45, 138, 0.45);
+  color: var(--text-primary);
+}
+
+.quick-filter-chip.active {
+  border-color: transparent;
+  background: linear-gradient(120deg, #7839ee, #ee2d8a);
+  color: #fff;
+}
+
+.quick-filters-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 0.25rem;
+  background: var(--brand-border);
+}
+
+@media (max-width: 768px) {
+  .quick-filters {
+    margin: 0.6rem 0.9rem 0;
+    gap: 0.35rem;
+  }
+
+  .quick-filter-chip {
+    min-height: 40px;
+    padding: 0 0.75rem;
+    font-size: 0.78rem;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   The legal links sit at the foot of the rail. They must stay reachable
+   (DEC-0026 §4) and they must not compete with the navigation above them.
+   ------------------------------------------------------------------------- */
+.anonymous-rail-footer .legal-links a {
+  color: var(--text-secondary);
+  font-size: 0.66rem;
+  line-height: 1.5;
+  opacity: 0.45;
+  transition:
+    opacity 0.18s,
+    color 0.18s;
+}
+
+.anonymous-rail-footer .legal-links a:hover,
+.anonymous-rail-footer .legal-links a:focus-visible {
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+/* The way into the full panel, set apart from the chips that are choices. */
+.quick-filter-more {
+  margin-left: auto;
+  border-style: dashed;
 }

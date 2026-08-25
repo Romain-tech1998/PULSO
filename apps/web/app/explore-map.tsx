@@ -122,6 +122,7 @@ import {
   VENUE_CATEGORY_COLORS,
   type DiscoveryFilters,
   type EventCategory,
+  type DateFilterValue,
   type MapBounds,
   type VenueCategory
 } from '@pulso/domain';
@@ -1784,21 +1785,6 @@ export function ExploreMap({
     setFilters(defaults);
     setSelected(undefined);
     void loadEvents(currentBounds.current, defaults);
-  }
-
-  function goHome() {
-    setAboutOpen(false);
-    setSection('evenement');
-    setShowFavoritesOnly(false);
-    setViewMode('map');
-    setFiltersOpen(false);
-    setPickerList(undefined);
-    setVenuePickerList(undefined);
-    setVenueDetailsGroup(undefined);
-    setDetails({ kind: 'closed' });
-    setSelected(undefined);
-    clearSearch();
-    requestAnimationFrame(() => map.current?.resize());
   }
 
   function clearDerivedConstraint(key: SearchConstraintKey) {
@@ -3756,7 +3742,10 @@ export function ExploreMap({
           <button
             type="button"
             className="anonymous-rail-logo"
-            onClick={goHome}
+            // A real reload rather than a state reset. The ask was for the
+            // opening map exactly as a first visit finds it, and resetting
+            // state left the map instance panned wherever it was.
+            onClick={() => window.location.assign('/')}
             aria-label={translate(locale, 'app.logoHome')}
           >
             <img src="/brand/pulso-favicon-192.png" alt="" />
@@ -3808,7 +3797,10 @@ export function ExploreMap({
               onClick={() => {
                 setAboutOpen(false);
                 setSection('lieu');
-                setLieuTab('map');
+                // A list, like Événements. The map is one tap away on the
+                // switch drawn over it; opening on it made Lieux read as a
+                // second copy of Carte rather than the directory it is.
+                setLieuTab('list');
               }}
             >
               <span aria-hidden="true">
@@ -4402,66 +4394,12 @@ export function ExploreMap({
                   </p>
 
                   <div className="view-toggles">
-                    <div className="view-toggles-list">
-                      {section === 'evenement' ? (
-                        <>
-                          <button
-                            type="button"
-                            className={`view-toggle-btn ${viewMode === 'map' ? 'active' : ''}`}
-                            onClick={() => setViewMode('map')}
-                          >
-                            <ViewModeIcon kind="map" />{' '}
-                            {translate(locale, 'view.map')}
-                          </button>
-                          <button
-                            type="button"
-                            className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
-                            onClick={() => {
-                              setListOverride(undefined);
-                              setViewMode('list');
-                            }}
-                          >
-                            <ViewModeIcon kind="list" />{' '}
-                            {translate(locale, 'view.list')}
-                          </button>
-                          <button
-                            type="button"
-                            className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
-                            onClick={() => setViewMode('calendar')}
-                          >
-                            <ViewModeIcon kind="calendar" />{' '}
-                            {translate(locale, 'view.calendar')}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className={`view-toggle-btn ${lieuTab === 'map' ? 'active' : ''}`}
-                            onClick={() => setLieuTab('map')}
-                          >
-                            <ViewModeIcon kind="map" />{' '}
-                            {translate(locale, 'view.map')}
-                          </button>
-                          <button
-                            type="button"
-                            className={`view-toggle-btn ${lieuTab === 'list' ? 'active' : ''}`}
-                            onClick={() => setLieuTab('list')}
-                          >
-                            <ViewModeIcon kind="list" />{' '}
-                            {translate(locale, 'view.list')}
-                          </button>
-                          <button
-                            type="button"
-                            className={`view-toggle-btn ${lieuTab === 'calendar' ? 'active' : ''}`}
-                            onClick={() => setLieuTab('calendar')}
-                          >
-                            <ViewModeIcon kind="calendar" />{' '}
-                            {translate(locale, 'view.calendar')}
-                          </button>
-                        </>
-                      )}
-                    </div>
+                    {/* The Carte | Liste | Calendrier switcher used to
+                        live here. The bottom navigation and the switch at
+                        the head of Événements both do it now, so this was
+                        a third copy of one control, inside the panel for
+                        something else. The favourites toggle below is a
+                        filter, not a view, and stays. */}
                     {section === 'evenement' && (
                       <button
                         type="button"
@@ -4928,16 +4866,6 @@ export function ExploreMap({
                     {translate(locale, 'map.recenterShort')}
                   </button>
 
-                  <MapFilterBar
-                    filters={filters}
-                    onChange={applyFilters}
-                    onOpenMore={() => setFiltersOpen((prev) => !prev)}
-                    locale={locale}
-                    pinKind={explorerPinKind}
-                    venueCategories={venueCategoryFilter}
-                    onVenueCategoriesChange={setVenueCategoryFilter}
-                  />
-
                   {/* One row, not two overlays that happened to share an
                       edge. The count pill was pinned bottom-left and the
                       kind switch centred on the same line, so between about
@@ -5021,20 +4949,6 @@ export function ExploreMap({
                       >
                         <line x1="5" y1="12" x2="19" y2="12" />
                       </svg>
-                    </button>
-                    <button
-                      type="button"
-                      className="map-zoom-btn"
-                      aria-label={translate(locale, 'map.recenterMontreal')}
-                      title="Montréal"
-                      onClick={() =>
-                        connectedMap.current?.flyTo({
-                          center: MONTREAL_CENTER,
-                          zoom: 11
-                        })
-                      }
-                    >
-                      M
                     </button>
                     <button
                       type="button"
@@ -5150,6 +5064,15 @@ export function ExploreMap({
                   </div>
                 )}
 
+                {viewMode !== 'map' && (
+                  <QuickFilters
+                    filters={filters}
+                    onChange={applyFilters}
+                    onOpenAll={() => setMobileFiltersOpen(true)}
+                    locale={locale}
+                  />
+                )}
+
                 {viewMode === 'list' && (
                   <ListView
                     events={listOverride?.events ?? events}
@@ -5224,6 +5147,9 @@ export function ExploreMap({
                   <button
                     type="button"
                     className="mobile-filters-trigger"
+                    style={{
+                      display: lieuTab === 'map' ? undefined : 'none'
+                    }}
                     onClick={() => setMobileFiltersOpen(true)}
                   >
                     <svg
@@ -5295,10 +5221,42 @@ export function ExploreMap({
                           });
                         }}
                       >
-                        Ma position
+                        {translate(locale, 'map.myPosition')}
                       </button>
                     </div>
                   </div>
+                  {lieuTab !== 'map' && (
+                    <div className="browse-switch" role="tablist">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={lieuTab === 'list'}
+                        className={lieuTab === 'list' ? 'active' : ''}
+                        onClick={() => setLieuTab('list')}
+                      >
+                        <ViewModeIcon kind="list" />
+                        {translate(locale, 'view.list')}
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={lieuTab === 'calendar'}
+                        className={lieuTab === 'calendar' ? 'active' : ''}
+                        onClick={() => setLieuTab('calendar')}
+                      >
+                        <ViewModeIcon kind="calendar" />
+                        {translate(locale, 'view.calendar')}
+                      </button>
+                    </div>
+                  )}
+                  {lieuTab !== 'map' && (
+                    <QuickFilters
+                      filters={filters}
+                      onChange={applyFilters}
+                      onOpenAll={() => setMobileFiltersOpen(true)}
+                      locale={locale}
+                    />
+                  )}
                   {lieuTab === 'list' && (
                     <VenueListView
                       groups={filteredVenueListGroups}
@@ -5497,6 +5455,11 @@ export function ExploreMap({
                     </strong>
                   </div>
 
+                  {/* Kept on the connected map. The quick-filter bar was
+                      removed from the signed-out home screen, where it
+                      covered the city it filters and duplicated a panel
+                      already one tap away - that surface has a different
+                      layout and a different job. */}
                   <MapFilterBar
                     filters={filters}
                     onChange={applyFilters}
@@ -7252,6 +7215,75 @@ function useEventEngagement(
   }, [idsKey, authToken]);
 
   return engagement;
+}
+
+/**
+ * The three or four choices a visitor actually makes, at the head of the
+ * list they change.
+ *
+ * Not a second filter panel: the full one is a tap away and holds
+ * everything. This is the row that saves opening it - a date window and
+ * "free" cover most of what a person narrows by, and both surfaces
+ * (Événements and Lieux) read the same `filters` object, so the row is the
+ * same component on both.
+ */
+function QuickFilters({
+  filters,
+  onChange,
+  onOpenAll,
+  locale
+}: {
+  filters: DiscoveryFilters;
+  onChange: (filters: DiscoveryFilters) => void;
+  onOpenAll: () => void;
+  locale: SupportedLocale;
+}) {
+  const dates: DateFilterValue[] = ['today', 'weekend', 'next7'];
+  return (
+    <div
+      className="quick-filters"
+      role="group"
+      aria-label={translate(locale, 'filters.quickLabel')}
+    >
+      {dates.map((value) => (
+        <button
+          type="button"
+          key={value}
+          className={`quick-filter-chip ${filters.date === value ? 'active' : ''}`}
+          aria-pressed={filters.date === value}
+          onClick={() => onChange(withoutCustomDates(filters, value))}
+        >
+          {getDateFilterLabel(locale, value)}
+        </button>
+      ))}
+      <span className="quick-filters-divider" aria-hidden="true" />
+      <button
+        type="button"
+        className={`quick-filter-chip ${filters.price === 'free' ? 'active' : ''}`}
+        aria-pressed={filters.price === 'free'}
+        // A pressed chip releases: the same control both ways, so nothing
+        // becomes unreachable once it has been chosen.
+        onClick={() =>
+          onChange({
+            ...filters,
+            price: filters.price === 'free' ? 'all' : 'free'
+          })
+        }
+      >
+        {getPriceLabel(locale, 'free')}
+      </button>
+      {/* The full panel, from the surfaces that no longer float a trigger
+          over themselves. Without this the list and calendar views had no
+          way to reach anything beyond these four chips. */}
+      <button
+        type="button"
+        className="quick-filter-chip quick-filter-more"
+        onClick={onOpenAll}
+      >
+        {translate(locale, 'filters.more')}
+      </button>
+    </div>
+  );
 }
 
 function ListView({
