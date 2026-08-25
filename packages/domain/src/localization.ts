@@ -1659,7 +1659,13 @@ const en = {
   'you.favoritesHintSynced': 'Synced with your account',
   'you.language': 'Language',
   'you.about': 'About Pulso',
-  'you.settings': 'Settings'
+  'you.settings': 'Settings',
+  'filters.quickLabel': 'Quick filters',
+  'filters.quickAll': 'All',
+  'map.myPosition': 'My location',
+  'venues.eventsHere': '{count} event',
+  'venues.eventsHerePlural': '{count} events',
+  'venues.following': 'Following'
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -3283,7 +3289,13 @@ const fr = {
   'you.favoritesHintSynced': 'Synchronisés avec ton compte',
   'you.language': 'Langue',
   'you.about': 'À propos de Pulso',
-  'you.settings': 'Réglages'
+  'you.settings': 'Réglages',
+  'filters.quickLabel': 'Filtres rapides',
+  'filters.quickAll': 'Tout',
+  'map.myPosition': 'Ma position',
+  'venues.eventsHere': '{count} événement',
+  'venues.eventsHerePlural': '{count} événements',
+  'venues.following': 'Suivi'
 } satisfies Record<MessageKey, string>;
 
 export const MESSAGE_CATALOGS = { en, fr } as const;
