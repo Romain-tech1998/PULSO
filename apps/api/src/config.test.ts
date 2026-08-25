@@ -15,10 +15,46 @@ const productionEnv = {
   GOOGLE_CLIENT_ID: 'id',
   GOOGLE_CLIENT_SECRET: 'secret',
   DATABASE_URL: 'postgresql://x',
-  TICKET_SIGNING_SECRET: 'a-real-secret'
+  TICKET_SIGNING_SECRET: 'a-real-secret',
+  ERROR_WEBHOOK_URL: 'https://hook.pulso.example/errors'
 } satisfies NodeJS.ProcessEnv;
 
 describe('deployment configuration', () => {
+  it('refuses to start in production with nothing watching for errors', () => {
+    // DEC-0026 §4 makes error monitoring a condition of the first
+    // invitation, and DEPLOY.md names the consequence of its absence:
+    // "In production you are blind until you add some." Coming up without
+    // it is the failure this file exists to prevent.
+    const { ERROR_WEBHOOK_URL: _omitted, ...env } = productionEnv;
+    expect(() => resolveApiConfig(env)).toThrow(/ERROR_WEBHOOK_URL/);
+  });
+
+  it('refuses a placeholder left in place of a real webhook', () => {
+    // The documented example is written with angle brackets. Pasted
+    // verbatim it is non-empty, so a presence check would pass it and the
+    // service would boot reporting into nothing.
+    for (const placeholder of [
+      '<toute URL acceptant un POST JSON>',
+      '<your-webhook-url>',
+      'TODO',
+      'hook.example.com/errors'
+    ]) {
+      expect(() =>
+        resolveApiConfig({ ...productionEnv, ERROR_WEBHOOK_URL: placeholder })
+      ).toThrow(/ERROR_WEBHOOK_URL is not a URL/);
+    }
+  });
+
+  it('carries the error webhook through to the configuration', () => {
+    expect(resolveApiConfig(productionEnv).errorWebhookUrl).toBe(
+      'https://hook.pulso.example/errors'
+    );
+  });
+
+  it('does not demand an error webhook outside production', () => {
+    expect(resolveApiConfig({}).errorWebhookUrl).toBeUndefined();
+  });
+
   it('keeps working with local defaults outside production', () => {
     const config = resolveApiConfig({});
     expect(config.isProduction).toBe(false);

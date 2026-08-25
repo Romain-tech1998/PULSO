@@ -24,6 +24,10 @@ import {
 } from '@pulso/database';
 import { lookupVenueByName } from '@pulso/ingestion';
 import { buildApp } from './app.js';
+import {
+  installProcessErrorReporting,
+  type ErrorSink
+} from './error-reporting.js';
 import { createOpenAiModerationProvider } from './image-moderation-openai.js';
 import { createStripePaymentProvider } from './payments-stripe.js';
 import { resolveGoogleWalletProvider } from './wallet-google.js';
@@ -122,6 +126,13 @@ const app = buildApp(new PostgresEventRepository(pool), {
 const { host, port } = config;
 
 try {
+  // DEC-0026 §4. A rejected promise nobody awaited, or a throw outside any
+  // request, never reached the request-scoped handler - it left no line at
+  // all. Attached after listen so a startup failure still takes the normal
+  // path below.
+  installProcessErrorReporting(
+    (app as unknown as { errorSink: ErrorSink }).errorSink
+  );
   await app.listen({ host, port });
 } catch (error) {
   app.log.error(error);

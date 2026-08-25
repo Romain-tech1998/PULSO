@@ -52,6 +52,7 @@ NEXT_PUBLIC_APP_URL=https://your-domain.com  # where sign-in returns the visitor
 EVENT_PHOTOS_UPLOAD_DIR=/data
 GOOGLE_CLIENT_ID=…
 GOOGLE_CLIENT_SECRET=…
+ERROR_WEBHOOK_URL=…                          # required: see "Error monitoring"
 OPENROUTER_API_KEY=…                         # optional, see below
 ```
 
@@ -105,10 +106,39 @@ Check, in this order — each one has failed silently before:
 4. Sign in with Google, end to end.
 5. Upload an event cover, redeploy the API, confirm the photo still loads.
 
-## Known gaps
+## Error monitoring
 
-- **No error monitoring.** In production you are blind until you add some.
-- **No rate limiting** on user-generated content (DEC-0012 noted this as an
-  accepted limit while the user base is small).
+`ERROR_WEBHOOK_URL` is a **hard requirement in production** — the API refuses
+to start without it, the same way it refuses without `DATABASE_URL`. DEC-0026
+§4 makes error monitoring a condition of the first invitation, and the
+alternative is a service that comes up looking fine while nobody is told when
+it fails.
+
+No vendor is baked in. Anything that accepts a JSON POST works: a Sentry
+webhook, Betterstack, a Discord or Slack incoming webhook. The body is
+`{ kind, message, stack, route, method, requestId, at }` — `route` is the
+route pattern rather than the concrete path, so alerts group per endpoint,
+and `requestId` ties an alert to its line in the service log.
+
+Reported: every 500 (a 400 is the caller being wrong, and is deliberately not
+reported), plus `unhandledRejection` and `uncaughtException`, which used to
+leave no trace at all. The sink never throws and never blocks a response — a
+monitoring outage must not become an application outage.
+
+## Rate limiting
+
+On by default, no configuration. Four tiers, keyed per session rather than
+per address so that one venue's wifi is not one budget:
+
+| Tier | Per minute | What it covers |
+| --- | --- | --- |
+| `upload` | 6 | Photos and covers — disk, plus a moderator's time |
+| `authored` | 12 | Forum and group posts, messages, reports |
+| `write` | 60 | Favourites, attendance, joining a group |
+| `read` | 300 | Everything a GET does; `/health` is exempt |
+
+A refused request answers `429` with `Retry-After` and a readable body.
+
+## Known gaps
 - **Mobile is unaudited** for the organizer, notifications and administration
   surfaces.

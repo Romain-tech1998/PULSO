@@ -38,6 +38,12 @@ export interface ApiConfig {
   applicationFeeBps: number;
   /** How long an open checkout holds its seats (DEC-0022 §2). */
   checkoutHoldMinutes: number;
+  /**
+   * Where reported errors are POSTed, if the deployment wired anything up.
+   * DEC-0026 §4 makes error monitoring a condition of the first invitation;
+   * production refuses to start without it (see below).
+   */
+  errorWebhookUrl: string | undefined;
 }
 
 /**
@@ -52,6 +58,18 @@ export class ConfigError extends Error {
     super(
       `Pulso cannot start with this configuration:\n- ${problems.join('\n- ')}`
     );
+  }
+}
+
+/**
+ * A value that can actually be POSTed to, rather than merely present.
+ */
+function isPostableUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
   }
 }
 
@@ -107,6 +125,25 @@ export function resolveApiConfig(
     }
     if (!env.DATABASE_URL) {
       problems.push('DATABASE_URL is required.');
+    }
+    // DEC-0026 §4 lists error monitoring among the conditions of the first
+    // invitation, and DEPLOY.md states the consequence of its absence:
+    // "In production you are blind until you add some." Refusing to start
+    // is the same treatment every other production requirement here gets,
+    // and for the same reason - the alternative is coming up looking fine.
+    if (!env.ERROR_WEBHOOK_URL) {
+      problems.push(
+        'ERROR_WEBHOOK_URL is required in production (DEC-0026 §4): the URL that receives reported errors. Any endpoint accepting a JSON POST works - Sentry, Betterstack, a Discord or Slack webhook. Without it nothing is alerted when the API fails.'
+      );
+    } else if (!isPostableUrl(env.ERROR_WEBHOOK_URL)) {
+      // "Set, but not actually a URL" is the failure this whole variable
+      // exists to prevent, wearing a different hat: the process boots, the
+      // gate looks satisfied, and every report is posted into nothing. A
+      // documentation placeholder pasted verbatim lands here, which is a
+      // real way this goes wrong on a launch day.
+      problems.push(
+        `ERROR_WEBHOOK_URL is not a URL (got "${env.ERROR_WEBHOOK_URL}"). It must be the http(s) address that receives reported errors - if this looks like a placeholder from the documentation, it was not replaced with a real webhook.`
+      );
     }
     if (!env.TICKET_SIGNING_SECRET) {
       problems.push(
@@ -175,7 +212,8 @@ export function resolveApiConfig(
     checkoutHoldMinutes: Math.max(
       1,
       Number(env.PULSO_CHECKOUT_HOLD_MINUTES ?? 20) || 20
-    )
+    ),
+    errorWebhookUrl: env.ERROR_WEBHOOK_URL
   };
 }
 

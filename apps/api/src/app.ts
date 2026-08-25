@@ -57,6 +57,14 @@ import {
   type GoogleAuthConfig
 } from './auth.js';
 import { resolveAllowedOrigin, resolveApiConfig } from './config.js';
+import {
+  combineSinks,
+  createLogSink,
+  createWebhookSink,
+  describeError,
+  type ErrorSink
+} from './error-reporting.js';
+import { registerRateLimiting } from './rate-limit.js';
 import { registerCreatedEventsRoutes } from './created-events.js';
 import { registerEventAccessRoutes } from './event-access.js';
 import { registerTicketingRoutes } from './ticketing.js';
@@ -148,6 +156,9 @@ export function buildApp(
     uploadDir?: string;
     publicUploadUrl?: string;
     google?: GoogleAuthConfig;
+    // Where reported errors go. Absent, they go to the structured log and,
+    // if the deployment configured one, to the error webhook.
+    errorSink?: ErrorSink;
     // The live venue lookup behind a search that found nothing (see
     // @pulso/ingestion lookup-venue.ts). Injected rather than imported so the
     // test suite never reaches the network, and so a deployment can turn the
@@ -166,6 +177,10 @@ export function buildApp(
 ) {
   const app = Fastify({ logger: options.logger ?? false });
   const apiConfig = resolveApiConfig();
+
+  // Before any route is declared: the tier assignment is an `onRoute` hook,
+  // and a hook only sees routes registered after it.
+  registerRateLimiting(app);
 
   if (options.uploadDir) {
     app.register(fastifyMultipart, {
@@ -360,6 +375,18 @@ export function buildApp(
     );
   }
 
+  // DEC-0026 §4. A 500 used to end at `request.log.error` and stop there:
+  // findable if somebody happened to be reading the logs, invisible
+  // otherwise. It now goes to whatever the deployment wired up as well.
+  const errorSink: ErrorSink =
+    options.errorSink ??
+    combineSinks([
+      createLogSink((payload, message) => app.log.error(payload, message)),
+      ...(apiConfig.errorWebhookUrl
+        ? [createWebhookSink(apiConfig.errorWebhookUrl)]
+        : [])
+    ]);
+
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
       return reply.status(400).send({
@@ -370,6 +397,13 @@ export function buildApp(
       });
     }
     request.log.error(error);
+    errorSink(
+      describeError('request', error, {
+        route: request.routeOptions?.url,
+        method: request.method,
+        requestId: request.id
+      })
+    );
     return reply.status(500).send({
       error: {
         code: 'INTERNAL_ERROR',
@@ -377,6 +411,10 @@ export function buildApp(
       }
     });
   });
+
+  // Exposed so server.ts can attach the same sink to the process-level
+  // handlers, and so a test can assert on what was reported.
+  app.decorate('errorSink', errorSink);
 
   app.get('/health', async () => ({ status: 'ok' }));
 

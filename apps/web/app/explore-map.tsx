@@ -126,6 +126,7 @@ import {
   type VenueCategory
 } from '@pulso/domain';
 import {
+  displayLocale,
   formatCadMinor,
   formatMontrealDateTime,
   getCategoryLabel,
@@ -177,6 +178,7 @@ import {
   reportContent
 } from './shared';
 import { deriveVenuePriceTier, type VenuePriceTier } from './venue-price-tier';
+import { shortenMontrealAddress } from './venue-view-model';
 import {
   getVenueDiscoveryDateRange,
   partitionVenueEvents
@@ -820,6 +822,8 @@ const AUTH_TOKEN_KEY = 'pulso-auth-token';
 function useAuth() {
   const [user, setUser] = useState<User>();
   const [authToken, setAuthToken] = useState<string>();
+  /** Set when sign-in cannot even be attempted - see `login` below. */
+  const [loginError, setLoginError] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -850,7 +854,26 @@ function useAuth() {
       .catch(() => {});
   }, []);
 
+  // A production bundle built without NEXT_PUBLIC_API_BASE_URL ships the
+  // localhost default baked in (it is read at build time, not at runtime).
+  // Sending the browser there from a real domain points it at a port on the
+  // visitor's own machine, where it spins until it times out - which is
+  // exactly what "click Se connecter, load forever" looks like from the
+  // outside. Detected here, synchronously, so the button reports a broken
+  // deployment instead of navigating into a dead end.
   const login = () => {
+    const apiIsLocal =
+      /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)([:/]|$)/.test(
+        API_BASE_URL
+      );
+    const pageIsLocal = /^(localhost|127\.0\.0\.1)$/.test(
+      window.location.hostname
+    );
+    if (apiIsLocal && !pageIsLocal) {
+      setLoginError(true);
+      return;
+    }
+    setLoginError(false);
     window.location.href = `${API_BASE_URL}/auth/google`;
   };
 
@@ -867,7 +890,15 @@ function useAuth() {
     setUser(undefined);
   };
 
-  return { user, setUser, authToken, login, logout };
+  return {
+    user,
+    setUser,
+    authToken,
+    login,
+    logout,
+    loginError,
+    dismissLoginError: () => setLoginError(false)
+  };
 }
 
 /**
@@ -1011,7 +1042,15 @@ export function ExploreMap({
     }
     setOnboardingOpen(false);
   };
-  const { user, setUser, authToken, login, logout } = useAuth();
+  const {
+    user,
+    setUser,
+    authToken,
+    login,
+    logout,
+    loginError,
+    dismissLoginError
+  } = useAuth();
   // Read inside long-lived map callbacks that must not be re-created (and
   // re-subscribe their MapLibre handlers) every time the token resolves.
   const authTokenRef = useRef(authToken);
@@ -1148,14 +1187,20 @@ export function ExploreMap({
     return () => window.clearTimeout(timer);
   }, [section]);
 
-  // The anonymous tree only renders these four sections. Losing the account
+  // The anonymous tree only renders these sections. Losing the account
   // while standing anywhere else - signing out, or a session expiring into
   // a 401 - otherwise left the navbar up with an empty content area, since
   // every connected branch is guarded by `user &&` and none of the
   // anonymous ones match.
+  //
+  // 'compte' is in the list because the signed-out account surface exists
+  // now (AnonymousYouPanel): it is where the phone reaches language, About
+  // and the legal documents, none of which the floating header shows below
+  // 1024px. Without it here the third mobile destination set the section
+  // and this effect put it straight back.
   useEffect(() => {
     if (user) return;
-    const anonymous = ['evenement', 'lieu', 'explorer', 'favoris'];
+    const anonymous = ['evenement', 'lieu', 'explorer', 'favoris', 'compte'];
     if (!anonymous.includes(section)) setSection('evenement');
   }, [user, section]);
 
@@ -3657,6 +3702,21 @@ export function ExploreMap({
       {onboardingOpen && (
         <OnboardingTour locale={locale} onComplete={completeOnboarding} />
       )}
+      {/* Sign-in could not even be attempted - a deployment whose API base
+          URL never reached the build. Said out loud, because the alternative
+          is a button that silently does nothing. */}
+      {loginError && (
+        <div className="login-error-banner" role="alert">
+          <span>{translate(locale, 'auth.errorApiUnreachable')}</span>
+          <button
+            type="button"
+            onClick={dismissLoginError}
+            aria-label={translate(locale, 'common.close')}
+          >
+            ×
+          </button>
+        </div>
+      )}
       {user && (
         <Sidebar
           locale={locale}
@@ -3724,7 +3784,9 @@ export function ExploreMap({
             <button
               type="button"
               className={
-                !aboutOpen && section === 'evenement' && viewMode === 'list'
+                !aboutOpen &&
+                section === 'evenement' &&
+                (viewMode === 'list' || viewMode === 'calendar')
                   ? 'active'
                   : ''
               }
@@ -3754,24 +3816,13 @@ export function ExploreMap({
               </span>
               {translate(locale, 'nav.venues')}
             </button>
-            <button
-              type="button"
-              className={
-                !aboutOpen && section === 'evenement' && viewMode === 'calendar'
-                  ? 'active'
-                  : ''
-              }
-              onClick={() => {
-                setAboutOpen(false);
-                setSection('evenement');
-                setViewMode('calendar');
-              }}
-            >
-              <span aria-hidden="true">
-                <ViewModeIcon kind="calendar" />
-              </span>
-              {translate(locale, 'view.calendar')}
-            </button>
+          </nav>
+
+          {/* Favoris moves down here with the other personal entries.
+              Signed out it is a list this browser happens to hold, which is
+              not a peer of "the map" - and the heart on every card is what
+              actually fills it. */}
+          <div className="anonymous-rail-footer">
             <button
               type="button"
               className={!aboutOpen && section === 'favoris' ? 'active' : ''}
@@ -3785,9 +3836,6 @@ export function ExploreMap({
               </span>
               {translate(locale, 'sidebar.favorites')}
             </button>
-          </nav>
-
-          <div className="anonymous-rail-footer">
             <button
               type="button"
               data-about-toggle
@@ -3875,42 +3923,44 @@ export function ExploreMap({
             </span>
             {translate(locale, 'nav.events')}
           </button>
+          {/* Groupes, Messages and Amis were three peers of the map here, which
+              is what made the signed-in phone feel wider than the signed-out
+              one. They are one destination now rather than three - the hub
+              DEC-0020 already built, opening on Groupes - so the relationship
+              space keeps its place without spending three of four slots on
+              it. */}
+          {COMMUNITY_IN_PRIMARY_NAV && (
+            <button
+              type="button"
+              className={
+                !aboutOpen && isCommunitySection(section) ? 'active' : ''
+              }
+              onClick={() => {
+                setAboutOpen(false);
+                setForumPanelMode(false);
+                setNotificationsOpen(false);
+                setSection(lastCommunitySection);
+              }}
+            >
+              <span aria-hidden="true">
+                <SidebarNavIcon kind="amis" />
+              </span>
+              {translate(locale, 'nav.community')}
+              {unreadMessagesCount > 0 && (
+                <span className="mobile-bottom-nav-badge" aria-hidden="true" />
+              )}
+            </button>
+          )}
           <button
             type="button"
-            className={!aboutOpen && section === 'groupes' ? 'active' : ''}
-            onClick={() => {
-              setAboutOpen(false);
-              setForumPanelMode(false);
-              setNotificationsOpen(false);
-              setSection('groupes');
-            }}
-          >
-            <span aria-hidden="true">
-              <SidebarNavIcon kind="groupes" />
-            </span>
-            {translate(locale, 'nav.groups')}
-          </button>
-          <button
-            type="button"
-            className={!aboutOpen && section === 'messages' ? 'active' : ''}
-            onClick={() => {
-              setAboutOpen(false);
-              setForumPanelMode(false);
-              setNotificationsOpen(false);
-              setSection('messages');
-            }}
-          >
-            <span aria-hidden="true">
-              <SidebarNavIcon kind="messages" />
-            </span>
-            {translate(locale, 'nav.messages')}
-            {unreadMessagesCount > 0 && (
-              <span className="mobile-bottom-nav-badge" aria-hidden="true" />
-            )}
-          </button>
-          <button
-            type="button"
-            className={!aboutOpen && section === 'compte' ? 'active' : ''}
+            className={
+              !aboutOpen &&
+              (section === 'compte' ||
+                section === 'favoris' ||
+                section === 'mes-sorties')
+                ? 'active'
+                : ''
+            }
             onClick={() => {
               setAboutOpen(false);
               setForumPanelMode(false);
@@ -3919,7 +3969,7 @@ export function ExploreMap({
             }}
           >
             <span aria-hidden="true">{renderUserAvatarContent(user)}</span>
-            {translate(locale, 'nav.profile')}
+            {translate(locale, 'nav.you')}
           </button>
         </nav>
       )}
@@ -4002,7 +4052,17 @@ export function ExploreMap({
             />
           </>
         ) : (
-          <div className="anonymous-floating-toolbar">
+          <div
+            className={`anonymous-floating-toolbar ${
+              // The search field belongs to discovery. On the account
+              // surfaces it is the one thing on screen that does nothing
+              // for the task, so it steps out rather than sitting on top
+              // of them.
+              section === 'compte' || section === 'favoris'
+                ? 'toolbar-actions-only'
+                : ''
+            }`}
+          >
             <div className="anonymous-floating-search">
               <SearchPanel
                 query={queryInput}
@@ -4041,6 +4101,7 @@ export function ExploreMap({
                   setSection('compte');
                 }}
                 unreadCount={unreadMessagesCount}
+                locale={locale}
               />
             </div>
           </div>
@@ -4064,6 +4125,8 @@ export function ExploreMap({
               type="button"
               className={
                 !aboutOpen &&
+                section !== 'compte' &&
+                section !== 'favoris' &&
                 ((section === 'evenement' && viewMode === 'map') ||
                   (section === 'lieu' && lieuTab === 'map'))
                   ? 'active'
@@ -4082,7 +4145,11 @@ export function ExploreMap({
             <button
               type="button"
               className={
-                !aboutOpen && section === 'evenement' && viewMode === 'list'
+                !aboutOpen &&
+                section !== 'compte' &&
+                section !== 'favoris' &&
+                ((section === 'evenement' && viewMode !== 'map') ||
+                  (section === 'lieu' && lieuTab !== 'map'))
                   ? 'active'
                   : ''
               }
@@ -4100,15 +4167,14 @@ export function ExploreMap({
             <button
               type="button"
               className={
-                !aboutOpen && section === 'lieu' && lieuTab === 'list'
+                !aboutOpen && (section === 'compte' || section === 'favoris')
                   ? 'active'
                   : ''
               }
               onClick={() => {
                 setAboutOpen(false);
                 setMobileFiltersOpen(false);
-                setSection('lieu');
-                setLieuTab('list');
+                setSection('compte');
               }}
             >
               <svg
@@ -4117,43 +4183,12 @@ export function ExploreMap({
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2"
+                strokeWidth="1.8"
               >
-                <path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z" />
-                <circle cx="12" cy="10" r="2.5" />
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 21a8 8 0 0 1 16 0" />
               </svg>
-              {translate(locale, 'nav.venues')}
-            </button>
-            <button
-              type="button"
-              className={
-                !aboutOpen &&
-                ((section === 'evenement' && viewMode === 'calendar') ||
-                  (section === 'lieu' && lieuTab === 'calendar'))
-                  ? 'active'
-                  : ''
-              }
-              onClick={() => {
-                setAboutOpen(false);
-                setMobileFiltersOpen(false);
-                setSection('evenement');
-                setViewMode('calendar');
-              }}
-            >
-              <ViewModeIcon kind="calendar" />
-              {translate(locale, 'view.calendar')}
-            </button>
-            <button
-              type="button"
-              className={!aboutOpen && section === 'favoris' ? 'active' : ''}
-              onClick={() => {
-                setAboutOpen(false);
-                setMobileFiltersOpen(false);
-                setSection('favoris');
-              }}
-            >
-              <HeartIcon filled={!aboutOpen && section === 'favoris'} />
-              {translate(locale, 'sidebar.favorites')}
+              {translate(locale, 'nav.you')}
             </button>
           </nav>
         )}
@@ -4544,7 +4579,7 @@ export function ExploreMap({
                       </CollapsibleFilterGroup>
 
                       <CollapsibleFilterGroup
-                        title="Prix"
+                        title={translate(locale, 'filters.price')}
                         collapsed={collapsedSections.has('prix')}
                         onToggle={() => toggleSection('prix')}
                       >
@@ -4591,7 +4626,7 @@ export function ExploreMap({
                       </CollapsibleFilterGroup>
 
                       <CollapsibleFilterGroup
-                        title="Distance"
+                        title={translate(locale, 'filters.distance')}
                         collapsed={collapsedSections.has('distance')}
                         onToggle={() => toggleSection('distance')}
                       >
@@ -4638,7 +4673,7 @@ export function ExploreMap({
                   {section === 'lieu' && (
                     <>
                       <div className="filter-group-title-row">
-                        <h3>Filtres</h3>
+                        <h3>{translate(locale, 'filters.title')}</h3>
                         <button
                           className="filter-reset"
                           onClick={() => {
@@ -4731,7 +4766,7 @@ export function ExploreMap({
                       </CollapsibleFilterGroup>
 
                       <CollapsibleFilterGroup
-                        title="Distance"
+                        title={translate(locale, 'filters.distance')}
                         collapsed={collapsedSections.has('distance')}
                         onToggle={() => toggleSection('distance')}
                       >
@@ -4867,7 +4902,7 @@ export function ExploreMap({
                       <circle cx="15" cy="12" r="1.6" fill="currentColor" />
                       <circle cx="11" cy="18" r="1.6" fill="currentColor" />
                     </svg>
-                    Filtres
+                    {translate(locale, 'filters.title')}
                   </button>
                   <button
                     type="button"
@@ -4903,39 +4938,52 @@ export function ExploreMap({
                     onVenueCategoriesChange={setVenueCategoryFilter}
                   />
 
-                  <div className="anonymous-map-status" aria-live="polite">
-                    <span aria-hidden="true" />
-                    {translatePlural(
-                      locale,
-                      showFavoritesOnly
-                        ? events.filter((event) => favorites.includes(event.id))
-                            .length
-                        : events.length,
-                      'map.eventCount',
-                      'map.eventCountPlural'
-                    )}
-                  </div>
+                  {/* One row, not two overlays that happened to share an
+                      edge. The count pill was pinned bottom-left and the
+                      kind switch centred on the same line, so between about
+                      430px and 860px the centred switch grew far enough left
+                      to sit on top of the pill - and how far depended on the
+                      count and the language, which is why it looked
+                      intermittent. Laid out together they cannot collide,
+                      and the pill gives up its width first. */}
+                  <div className="map-bottom-bar">
+                    <div className="anonymous-map-status" aria-live="polite">
+                      <span aria-hidden="true" />
+                      <span className="anonymous-map-status-text">
+                        {translatePlural(
+                          locale,
+                          showFavoritesOnly
+                            ? events.filter((event) =>
+                                favorites.includes(event.id)
+                              ).length
+                            : events.length,
+                          'map.eventCount',
+                          'map.eventCountPlural'
+                        )}
+                      </span>
+                    </div>
 
-                  <div
-                    className="anonymous-map-kind-switch"
-                    aria-label={translate(locale, 'nav.explore')}
-                  >
-                    <button
-                      type="button"
-                      className="active"
-                      aria-current="page"
+                    <div
+                      className="anonymous-map-kind-switch"
+                      aria-label={translate(locale, 'nav.explore')}
                     >
-                      {translate(locale, 'nav.events')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSection('lieu');
-                        setLieuTab('map');
-                      }}
-                    >
-                      {translate(locale, 'nav.venues')}
-                    </button>
+                      <button
+                        type="button"
+                        className="active"
+                        aria-current="page"
+                      >
+                        {translate(locale, 'nav.events')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSection('lieu');
+                          setLieuTab('map');
+                        }}
+                      >
+                        {translate(locale, 'nav.venues')}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="map-zoom-controls">
@@ -5074,6 +5122,34 @@ export function ExploreMap({
                     )}
                 </div>
 
+                {viewMode !== 'map' && (
+                  <div className="browse-switch" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={viewMode === 'list'}
+                      className={viewMode === 'list' ? 'active' : ''}
+                      onClick={() => {
+                        setListOverride(undefined);
+                        setViewMode('list');
+                      }}
+                    >
+                      <ViewModeIcon kind="list" />
+                      {translate(locale, 'view.list')}
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={viewMode === 'calendar'}
+                      className={viewMode === 'calendar' ? 'active' : ''}
+                      onClick={() => setViewMode('calendar')}
+                    >
+                      <ViewModeIcon kind="calendar" />
+                      {translate(locale, 'view.calendar')}
+                    </button>
+                  </div>
+                )}
+
                 {viewMode === 'list' && (
                   <ListView
                     events={listOverride?.events ?? events}
@@ -5118,7 +5194,10 @@ export function ExploreMap({
                         // it in the picker title that opens on click/tap makes
                         // "what is this highlighted day" self-evident the moment
                         // someone actually interacts with it.
-                        const festiveLabel = FESTIVE_DAYS[day.slice(5)];
+                        const festiveLabel = festiveLabelFor(
+                          day.slice(5),
+                          locale
+                        );
                         setDetails({ kind: 'closed' });
                         setPickerList({
                           title: festiveLabel
@@ -5162,7 +5241,7 @@ export function ExploreMap({
                       <circle cx="15" cy="12" r="1.6" fill="currentColor" />
                       <circle cx="11" cy="18" r="1.6" fill="currentColor" />
                     </svg>
-                    Filtres
+                    {translate(locale, 'filters.title')}
                   </button>
                   <div
                     className="map-shell"
@@ -5654,6 +5733,17 @@ export function ExploreMap({
                   authToken={authToken}
                   onNavigateToMap={() => setSection('lieu')}
                   onNavigateToEvents={() => setSection('evenement')}
+                />
+              )}
+
+              {section === 'compte' && !user && (
+                <AnonymousYouPanel
+                  locale={locale}
+                  favoriteCount={favorites.length + favoriteVenues.length}
+                  onChangeLocale={selectLocale}
+                  onOpenFavorites={() => setSection('favoris')}
+                  onOpenAbout={() => setAboutOpen(true)}
+                  onLogin={login}
                 />
               )}
 
@@ -6744,7 +6834,7 @@ function PickerList({
           type="button"
           className="close-button"
           onClick={onClose}
-          aria-label="Fermer"
+          aria-label={translate(locale, 'common.close')}
         >
           <svg
             width="16"
@@ -6825,7 +6915,7 @@ function VenuePickerList({
           type="button"
           className="close-button"
           onClick={onClose}
-          aria-label="Fermer"
+          aria-label={translate(locale, 'common.close')}
         >
           <svg
             width="16"
@@ -6841,7 +6931,9 @@ function VenuePickerList({
       </div>
       <div className="picker-list-rows">
         {groups.length === 0 && (
-          <p className="list-view-empty">Aucun lieu à afficher.</p>
+          <p className="list-view-empty">
+            {translate(locale, 'venues.emptyList')}
+          </p>
         )}
         {groups.map((group) => (
           <button
@@ -6951,26 +7043,67 @@ function FavorisSection({
 
   const eventCount = events.length;
   const venueCount = favoriteVenueGroups.length;
+  // Nothing saved at all - not "no events but three venues", which is a
+  // real half-full page and keeps its hero and its tabs.
+  const nothingSaved =
+    state === 'empty' && eventCount === 0 && venueCount === 0;
+
+  // A page with no content does not need a hero, two counters both reading
+  // zero, a call to action and a pair of tabs stacked above the sentence
+  // that explains it is empty. It needs the sentence, and one way out.
+  if (nothingSaved) {
+    return (
+      <section className="map-container-wrapper favoris-section favoris-section-empty">
+        <div className="empty-state-card">
+          <span className="empty-state-icon" aria-hidden="true">
+            <HeartIcon filled={false} />
+          </span>
+          <p>{translate(locale, 'favorites.emptyEventsTitle')}</p>
+          <p>{translate(locale, 'favorites.emptyEventsBody')}</p>
+          {onNavigateToEvents && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={onNavigateToEvents}
+            >
+              {translate(locale, 'favorites.browseEvents')}
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="map-container-wrapper favoris-section">
       {variant === 'page' && (
         <div className="events-hero favoris-hero">
           <div className="events-hero-text">
-            <p className="events-hero-kicker">Ta sélection</p>
-            <h1>Tout ce que tu gardes sous la main.</h1>
+            <p className="events-hero-kicker">
+              {translate(locale, 'favorites.kicker')}
+            </p>
+            <h1>{translate(locale, 'favorites.heroTitle')}</h1>
             <p className="events-hero-eyebrow">
-              Les événements que tu as mis en favori et les lieux dont tu suis
-              la programmation.
+              {translate(locale, 'favorites.heroSubtitle')}
             </p>
             <div className="events-hero-stats">
               <span className="events-hero-stat">
-                <strong>{eventCount}</strong> événement
-                {eventCount > 1 ? 's' : ''} en favori
+                <strong>{eventCount}</strong>{' '}
+                {translatePlural(
+                  locale,
+                  eventCount,
+                  'favorites.statEvents',
+                  'favorites.statEventsPlural'
+                )}
               </span>
               <span className="events-hero-stat">
-                <strong>{venueCount}</strong> lieu{venueCount > 1 ? 'x' : ''}{' '}
-                suivi{venueCount > 1 ? 's' : ''}
+                <strong>{venueCount}</strong>{' '}
+                {translatePlural(
+                  locale,
+                  venueCount,
+                  'favorites.statVenues',
+                  'favorites.statVenuesPlural'
+                )}
               </span>
             </div>
           </div>
@@ -6981,7 +7114,7 @@ function FavorisSection({
               onClick={onNavigateToMap}
             >
               <ViewModeIcon kind="map" />
-              Explorer la carte
+              {translate(locale, 'favorites.exploreMap')}
             </button>
           )}
         </div>
@@ -6993,25 +7126,27 @@ function FavorisSection({
           className={kind === 'event' ? 'active' : ''}
           onClick={() => setKind('event')}
         >
-          Événements <span>{eventCount}</span>
+          {translate(locale, 'nav.events')} <span>{eventCount}</span>
         </button>
         <button
           type="button"
           className={kind === 'venue' ? 'active' : ''}
           onClick={() => setKind('venue')}
         >
-          Lieux suivis <span>{venueCount}</span>
+          {translate(locale, 'favorites.tabVenues')} <span>{venueCount}</span>
         </button>
       </div>
 
       {kind === 'event' && (
         <div className="favoris-block">
           {state === 'loading' && (
-            <p className="list-view-empty">Chargement de tes favoris…</p>
+            <p className="list-view-empty">
+              {translate(locale, 'favorites.loading')}
+            </p>
           )}
           {state === 'error' && (
             <p className="list-view-empty">
-              Impossible de charger tes favoris pour le moment.
+              {translate(locale, 'favorites.loadError')}
             </p>
           )}
           {state === 'empty' && (
@@ -7019,18 +7154,15 @@ function FavorisSection({
               <span className="empty-state-icon" aria-hidden="true">
                 <HeartIcon filled={false} />
               </span>
-              <p>Aucun événement en favori</p>
-              <p>
-                Touche le cœur sur un événement pour le retrouver ici, même hors
-                de la zone affichée sur la carte.
-              </p>
+              <p>{translate(locale, 'favorites.emptyEventsTitle')}</p>
+              <p>{translate(locale, 'favorites.emptyEventsBody')}</p>
               {onNavigateToEvents && (
                 <button
                   type="button"
                   className="btn-secondary"
                   onClick={onNavigateToEvents}
                 >
-                  Parcourir les événements
+                  {translate(locale, 'favorites.browseEvents')}
                 </button>
               )}
             </div>
@@ -7063,15 +7195,15 @@ function FavorisSection({
               <span className="empty-state-icon" aria-hidden="true">
                 <BellIcon />
               </span>
-              <p>Aucun lieu suivi</p>
-              <p>Touche la cloche sur un lieu pour suivre sa programmation.</p>
+              <p>{translate(locale, 'favorites.emptyVenuesTitle')}</p>
+              <p>{translate(locale, 'favorites.emptyVenuesBody')}</p>
               {onNavigateToMap && (
                 <button
                   type="button"
                   className="btn-secondary"
                   onClick={onNavigateToMap}
                 >
-                  Découvrir des lieux
+                  {translate(locale, 'favorites.discoverVenues')}
                 </button>
               )}
             </div>
@@ -7152,13 +7284,15 @@ function ListView({
           <h3>{title}</h3>
           {onClearTitle && (
             <button type="button" className="text-btn" onClick={onClearTitle}>
-              Voir tous les événements de la zone
+              {translate(locale, 'events.seeAllInArea')}
             </button>
           )}
         </div>
       )}
       {visible.length === 0 && (
-        <p className="list-view-empty">Aucun événement à afficher.</p>
+        <p className="list-view-empty">
+          {translate(locale, 'events.emptyList')}
+        </p>
       )}
       {visible.map((event) => {
         const fields = eventPreviewFields(event, locale);
@@ -7181,8 +7315,13 @@ function ListView({
               {!event.imageUrl && (
                 <EventImageFallback category={event.category} />
               )}
+              {/* The short label, not the taxonomy definition. The
+                  catalogue entry for `other` reads "Autres événements
+                  programmés admissibles", which is a category *definition*
+                  and truncates to "AUTRES ÉVÉ…" on a badge. The filters and
+                  the calendar have always used the short set. */}
               <span className="list-view-category">
-                {translate(locale, `category.${event.category}` as MessageKey)}
+                {SHORT_CATEGORY_LABELS[locale][event.category]}
               </span>
             </span>
             <span className="list-view-main">
@@ -7240,13 +7379,15 @@ interface VenueGroup {
 
 function getVenueSummary(group: VenueGroup, locale: SupportedLocale): string {
   if (group.events.length === 0) {
-    return locale === 'fr'
-      ? `${group.name} fait partie des lieux montréalais suivis par Pulso. Ce repère reste visible sur la carte même lorsqu'aucune programmation officielle n'est actuellement recensée.`
-      : `${group.name} is one of the Montréal venues tracked by Pulso. It remains visible on the map even when no official programming is currently listed.`;
+    return translate(locale, 'venues.summaryNoEvents', { name: group.name });
   }
-  return locale === 'fr'
-    ? `${group.name} fait partie des lieux montréalais suivis par Pulso. ${group.events.length} événement${group.events.length > 1 ? 's sont recensés' : ' est recensé'} ici au cours des 14 prochains jours.`
-    : `${group.name} is one of the Montréal venues tracked by Pulso. ${group.events.length} event${group.events.length > 1 ? 's are' : ' is'} listed here over the next 14 days.`;
+  return translatePlural(
+    locale,
+    group.events.length,
+    'venues.summaryWithEvents',
+    'venues.summaryWithEventsPlural',
+    { name: group.name }
+  );
 }
 
 // "Unknown address" is the ingestion mapper's sentinel for an event with no
@@ -7256,8 +7397,10 @@ function getVenueSummary(group: VenueGroup, locale: SupportedLocale): string {
 const UNKNOWN_ADDRESS_SENTINEL = 'Unknown address';
 
 function formatVenueAddress(address: string, locale: SupportedLocale): string {
-  if (address !== UNKNOWN_ADDRESS_SENTINEL) return address;
-  return locale === 'fr' ? 'Adresse non renseignée' : 'Address not recorded';
+  if (address === UNKNOWN_ADDRESS_SENTINEL) {
+    return translate(locale, 'venues.addressUnknown');
+  }
+  return shortenMontrealAddress(address);
 }
 
 // A bare street segment ("Rue Dorion", "Avenue du Parc-La Fontaine") isn't a
@@ -7356,7 +7499,7 @@ function VenueListView({
     <div className="venue-view">
       {groups.length === 0 && (
         <p className="list-view-empty">
-          Aucun lieu à afficher dans cette zone.
+          {translate(locale, 'venues.emptyArea')}
         </p>
       )}
 
@@ -7379,7 +7522,9 @@ function VenueListView({
             }}
             role="button"
             tabIndex={0}
-            aria-label={`Ouvrir la fiche de ${group.name}`}
+            aria-label={translate(locale, 'venues.openRecord', {
+              name: group.name
+            })}
             style={{ cursor: 'pointer' }}
           >
             <div className="venue-card-thumb">
@@ -7647,11 +7792,18 @@ function LieuxPage({
       <div className="events-page-main">
         <div className="events-hero">
           <div className="events-hero-text">
-            <p className="events-hero-eyebrow">Les lieux à Montréal ✨</p>
+            <p className="events-hero-eyebrow">
+              {translate(locale, 'venues.pageEyebrow')}
+            </p>
             <div className="events-hero-stats">
               <span className="events-hero-stat">
-                <strong>{allGroups.length}</strong> lieux avec des événements
-                dans les 14 prochains jours
+                <strong>{allGroups.length}</strong>{' '}
+                {translatePlural(
+                  locale,
+                  allGroups.length,
+                  'venues.statVenues',
+                  'venues.statVenuesPlural'
+                )}
               </span>
             </div>
           </div>
@@ -7660,7 +7812,7 @@ function LieuxPage({
             className="btn-secondary events-hero-map-btn"
             onClick={onNavigateToMap}
           >
-            🗺️ Voir la carte
+            🗺️ {translate(locale, 'venues.seeMap')}
           </button>
         </div>
 
@@ -7668,7 +7820,7 @@ function LieuxPage({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Rechercher un lieu, une adresse…"
+            placeholder={translate(locale, 'venues.searchPlaceholder')}
           />
         </div>
 
@@ -7678,7 +7830,7 @@ function LieuxPage({
             className={activeCategory === 'all' ? 'active' : ''}
             onClick={() => setActiveCategory('all')}
           >
-            Tous
+            {translate(locale, 'venues.categoryAll')}
           </button>
           {availableCategories.map((category) => (
             <button
@@ -7692,10 +7844,14 @@ function LieuxPage({
           ))}
         </div>
 
-        {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+        {state === 'loading' && (
+          <p className="list-view-empty">
+            {translate(locale, 'common.loading')}
+          </p>
+        )}
         {state === 'error' && (
           <p className="list-view-empty">
-            Impossible de charger les lieux pour le moment.
+            {translate(locale, 'venues.loadError')}
           </p>
         )}
 
@@ -7724,7 +7880,7 @@ function LieuxPage({
             <span className="empty-state-icon" aria-hidden="true">
               📍
             </span>
-            <p>Sélectionne un lieu pour l'ouvrir ici.</p>
+            <p>{translate(locale, 'venues.pickToOpen')}</p>
           </div>
         )}
       </aside>
@@ -7739,10 +7895,12 @@ function LieuxPage({
 // the average is only used server-side to break ranking ties.
 function VenueRatingWidget({
   venueId,
-  authToken
+  authToken,
+  locale
 }: {
   venueId: string;
   authToken: string | undefined;
+  locale: SupportedLocale;
 }) {
   const [myRating, setMyRating] = useState<MyVenueRating | null>();
   const [hoverStar, setHoverStar] = useState<number>();
@@ -7809,15 +7967,12 @@ function VenueRatingWidget({
 
   return (
     <div className="venue-rating-widget">
-      <h3>Noter ce lieu</h3>
-      <p className="venue-rating-hint">
-        Usage interne pour l'instant - aide à faire remonter les meilleurs
-        lieux.
-      </p>
+      <h3>{translate(locale, 'rating.title')}</h3>
+      <p className="venue-rating-hint">{translate(locale, 'rating.hint')}</p>
       <div
         className="venue-rating-stars"
         role="radiogroup"
-        aria-label="Note de 1 à 5 étoiles"
+        aria-label={translate(locale, 'rating.starsAria')}
       >
         {[1, 2, 3, 4, 5].map((star) => (
           <button
@@ -7826,7 +7981,12 @@ function VenueRatingWidget({
             className={star <= displayRating ? 'filled' : ''}
             role="radio"
             aria-checked={myRating?.rating === star}
-            aria-label={`${star} étoile${star > 1 ? 's' : ''}`}
+            aria-label={translatePlural(
+              locale,
+              star,
+              'rating.star',
+              'rating.starPlural'
+            )}
             disabled={saving}
             onMouseEnter={() => setHoverStar(star)}
             onMouseLeave={() => setHoverStar(undefined)}
@@ -7842,7 +8002,7 @@ function VenueRatingWidget({
             <textarea
               value={comment}
               onChange={(event) => setComment(event.target.value)}
-              placeholder="Commentaire (optionnel)"
+              placeholder={translate(locale, 'rating.commentPlaceholder')}
               maxLength={500}
             />
             <div className="venue-rating-comment-actions">
@@ -7851,7 +8011,7 @@ function VenueRatingWidget({
                 className="text-btn"
                 onClick={() => submitRating(myRating.rating, comment)}
               >
-                Enregistrer
+                {translate(locale, 'rating.save')}
               </button>
               <button
                 type="button"
@@ -7861,7 +8021,7 @@ function VenueRatingWidget({
                   setEditingComment(false);
                 }}
               >
-                Annuler
+                {translate(locale, 'rating.cancel')}
               </button>
             </div>
           </div>
@@ -7876,12 +8036,13 @@ function VenueRatingWidget({
                 className="text-btn"
                 onClick={() => setEditingComment(true)}
               >
-                {myRating.comment
-                  ? 'Modifier le commentaire'
-                  : 'Ajouter un commentaire'}
+                {translate(
+                  locale,
+                  myRating.comment ? 'rating.editComment' : 'rating.addComment'
+                )}
               </button>
               <button type="button" className="text-btn" onClick={clearRating}>
-                Supprimer ma note
+                {translate(locale, 'rating.remove')}
               </button>
             </div>
           </div>
@@ -7954,7 +8115,7 @@ function VenueDetailContent({
             type="button"
             className="venue-detail-back"
             onClick={onClose}
-            aria-label="Fermer la fiche du lieu"
+            aria-label={translate(locale, 'venues.closeRecord')}
           >
             ← Retour
           </button>
@@ -7993,15 +8154,18 @@ function VenueDetailContent({
       </div>
 
       <div className="venue-detail-header">
-        <span className="venue-detail-section-kicker">À propos</span>
+        <span className="venue-detail-section-kicker">
+          {translate(locale, 'venueDetail.about')}
+        </span>
         <p className="venue-detail-summary">{getVenueSummary(group, locale)}</p>
         <div className="venue-detail-metrics">
           <span>
             <strong>{eventBuckets.today.length}</strong>
-            aujourd'hui
+            {translate(locale, 'venueDetail.today')}
           </span>
           <span>
-            <strong>{eventBuckets.later.length}</strong>à venir
+            <strong>{eventBuckets.later.length}</strong>
+            {translate(locale, 'venueDetail.upcoming')}
           </span>
           {group.priceTier && (
             <span>
@@ -8048,12 +8212,17 @@ function VenueDetailContent({
             </span>
             <span>
               <small>
-                Horaires
+                {translate(locale, 'venueDetail.hours')}
                 {openingState !== 'unknown' && (
                   <span
                     className={`venue-open-pill venue-open-${openingState}`}
                   >
-                    {openingState === 'open' ? 'Ouvert' : 'Fermé'}
+                    {translate(
+                      locale,
+                      openingState === 'open'
+                        ? 'venueDetail.open'
+                        : 'venueDetail.closed'
+                    )}
                   </span>
                 )}
               </small>
@@ -8061,13 +8230,15 @@ function VenueDetailContent({
                 {describeOpeningSchedule(schedule, locale).map((row) => (
                   <li key={row.day}>
                     <span>{row.day}</span>
-                    <span>{row.hours ?? 'Fermé'}</span>
+                    <span>
+                      {row.hours ?? translate(locale, 'venueDetail.closed')}
+                    </span>
                   </li>
                 ))}
               </ul>
               <span className="venue-detail-info-hint">
                 {group.imageAttribution || group.openingHours
-                  ? 'Horaires publiés par la source du lieu, pas par Pulso.'
+                  ? translate(locale, 'venueDetail.hoursSource')
                   : ''}
               </span>
             </span>
@@ -8079,11 +8250,13 @@ function VenueDetailContent({
               $
             </span>
             <span>
-              <small>Prix indicatif</small>
-              Gamme estimée : {group.priceTier}
+              <small>{translate(locale, 'venueDetail.priceTier')}</small>
+              {translate(locale, 'venueDetail.priceRange', {
+                tier: group.priceTier
+              })}
               <span className="venue-detail-info-hint">
                 {' '}
-                (basée sur les événements payants à venir)
+                {translate(locale, 'venueDetail.priceRangeHint')}
               </span>
             </span>
           </div>
@@ -8093,9 +8266,9 @@ function VenueDetailContent({
           <div className="venue-detail-programming-heading">
             <div>
               <span className="venue-detail-programming-kicker">
-                Aujourd'hui
+                {translate(locale, 'venueDetail.kickerToday')}
               </span>
-              <h3>Ce soir dans ce lieu</h3>
+              <h3>{translate(locale, 'venueDetail.tonightHere')}</h3>
             </div>
             <span className="venue-detail-programming-count">
               {eventBuckets.today.length}
@@ -8103,7 +8276,7 @@ function VenueDetailContent({
           </div>
           {eventBuckets.today.length === 0 ? (
             <p className="venue-detail-programming-empty">
-              Aucun événement officiel recensé aujourd'hui.
+              {translate(locale, 'venueDetail.emptyToday')}
             </p>
           ) : (
             eventBuckets.today.map((event) => (
@@ -8120,8 +8293,10 @@ function VenueDetailContent({
         <div className="venue-detail-programming-block">
           <div className="venue-detail-programming-heading">
             <div>
-              <span className="venue-detail-programming-kicker">À venir</span>
-              <h3>Dans les 14 prochains jours</h3>
+              <span className="venue-detail-programming-kicker">
+                {translate(locale, 'venueDetail.kickerUpcoming')}
+              </span>
+              <h3>{translate(locale, 'venueDetail.next14Days')}</h3>
             </div>
             <span className="venue-detail-programming-count">
               {eventBuckets.later.length}
@@ -8129,7 +8304,7 @@ function VenueDetailContent({
           </div>
           {eventBuckets.later.length === 0 ? (
             <p className="venue-detail-programming-empty">
-              Aucune autre programmation officielle recensée pour le moment.
+              {translate(locale, 'venueDetail.emptyUpcoming')}
             </p>
           ) : (
             eventBuckets.later.map((event) => (
@@ -8156,17 +8331,16 @@ function VenueDetailContent({
             <div className="venue-detail-programming-heading">
               <div>
                 <span className="venue-detail-programming-kicker">
-                  Par la communauté
+                  {translate(locale, 'venueDetail.kickerCommunity')}
                 </span>
-                <h3>Événements organisés ici</h3>
+                <h3>{translate(locale, 'venueDetail.hostedHere')}</h3>
               </div>
               <span className="venue-detail-programming-count">
                 {hostedEvents.length}
               </span>
             </div>
             <p className="venue-detail-programming-note">
-              Organisés par des membres dans ce lieu. Ce n&apos;est pas la
-              programmation du lieu lui-même.
+              {translate(locale, 'venueDetail.hostedNote')}
             </p>
             {hostedEvents.map((event) => (
               <VenueDetailEventRow
@@ -8179,7 +8353,11 @@ function VenueDetailContent({
           </div>
         )}
 
-        <VenueRatingWidget venueId={group.id} authToken={authToken} />
+        <VenueRatingWidget
+          venueId={group.id}
+          authToken={authToken}
+          locale={locale}
+        />
       </div>
     </div>
   );
@@ -8224,7 +8402,19 @@ function VenueDetailEventRow({
   );
 }
 
-const CALENDAR_WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+// Derived rather than transcribed: Intl already knows that the narrow
+// weekday initials are L M M J V S D in French and M T W T F S S in English,
+// and a hardcoded list only ever had the French one.
+function calendarWeekdays(locale: SupportedLocale): string[] {
+  const format = new Intl.DateTimeFormat(displayLocale(locale), {
+    weekday: 'narrow',
+    timeZone: 'UTC'
+  });
+  // 2024-01-01 was a Monday, which is where this grid starts.
+  return Array.from({ length: 7 }, (_, index) =>
+    format.format(new Date(Date.UTC(2024, 0, 1 + index)))
+  );
+}
 
 // Recurring festive days worth calling out on the calendar, keyed by
 // "MM-DD" so they repeat every year regardless of the displayed month.
@@ -8232,13 +8422,22 @@ const CALENDAR_WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 // France, even though Bastille Day is the more famous illustration of "a
 // country's festive day" - Fête nationale du Québec and Fête du Canada are
 // the local equivalents, both real excuses for concerts/fireworks/nightlife.
-const FESTIVE_DAYS: Record<string, string> = {
-  '01-01': "Jour de l'An",
-  '06-21': 'Fête de la Musique',
-  '06-24': 'Fête nationale du Québec',
-  '07-01': 'Fête du Canada',
-  '12-31': "Réveillon du Jour de l'An"
+const FESTIVE_DAYS: Record<string, MessageKey> = {
+  '01-01': 'festive.newYearsDay',
+  '06-21': 'festive.musicDay',
+  '06-24': 'festive.quebecNationalDay',
+  '07-01': 'festive.canadaDay',
+  '12-31': 'festive.newYearsEve'
 };
+
+/** The festive day's name in the reader's language, if the date has one. */
+function festiveLabelFor(
+  monthDay: string,
+  locale: SupportedLocale
+): string | undefined {
+  const key = FESTIVE_DAYS[monthDay];
+  return key ? translate(locale, key) : undefined;
+}
 
 function CalendarView({
   month,
@@ -8316,7 +8515,7 @@ function CalendarView({
               new Date(month.getFullYear(), month.getMonth() - 1, 1)
             )
           }
-          aria-label="Mois précédent"
+          aria-label={translate(locale, 'calendar.prevMonth')}
         >
           <svg
             width="16"
@@ -8337,7 +8536,7 @@ function CalendarView({
               new Date(month.getFullYear(), month.getMonth() + 1, 1)
             )
           }
-          aria-label="Mois suivant"
+          aria-label={translate(locale, 'calendar.nextMonth')}
         >
           <svg
             width="16"
@@ -8353,7 +8552,7 @@ function CalendarView({
       </div>
 
       <p className="calendar-scope-note">
-        Tous les événements référencés, indépendamment des filtres de la carte.
+        {translate(locale, 'calendar.scopeNote')}
       </p>
 
       <div className="calendar-filter-bar">
@@ -8390,7 +8589,7 @@ function CalendarView({
       </div>
 
       <div className="calendar-weekdays">
-        {CALENDAR_WEEKDAYS.map((label, index) => (
+        {calendarWeekdays(locale).map((label, index) => (
           <span key={`${label}-${index}`}>{label}</span>
         ))}
       </div>
@@ -8402,7 +8601,7 @@ function CalendarView({
               <div className="calendar-cell empty" key={`blank-${index}`} />
             );
           const dayCount = eventsByDay.get(cell.key)?.length ?? 0;
-          const festiveLabel = FESTIVE_DAYS[cell.key.slice(5)];
+          const festiveLabel = festiveLabelFor(cell.key.slice(5), locale);
           return (
             <button
               type="button"
@@ -8428,9 +8627,13 @@ function CalendarView({
         })}
       </div>
 
-      {state === 'loading' && <p className="calendar-status">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="calendar-status">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
-        <p className="calendar-status">Erreur de chargement.</p>
+        <p className="calendar-status">
+          {translate(locale, 'calendar.loadError')}
+        </p>
       )}
     </div>
   );
@@ -8571,7 +8774,7 @@ const OTHER_CANADIAN_CITIES = [
   'Ottawa'
 ];
 
-function CitySelector() {
+function CitySelector({ locale }: { locale: SupportedLocale }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -8621,12 +8824,77 @@ function CitySelector() {
           {OTHER_CANADIAN_CITIES.map((city) => (
             <button type="button" key={city} className="city-option" disabled>
               {city}
-              <span className="city-soon">Bientôt</span>
+              <span className="city-soon">
+                {translate(locale, 'common.soon')}
+              </span>
             </button>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function AnonymousYouPanel({
+  locale,
+  favoriteCount,
+  onChangeLocale,
+  onOpenFavorites,
+  onOpenAbout,
+  onLogin
+}: {
+  locale: SupportedLocale;
+  favoriteCount: number;
+  onChangeLocale: (locale: SupportedLocale) => void;
+  onOpenFavorites: () => void;
+  onOpenAbout: () => void;
+  onLogin: () => void;
+}) {
+  return (
+    <section className="you-panel">
+      <header className="you-panel-head">
+        <h1>{translate(locale, 'you.signedOutTitle')}</h1>
+        <p>{translate(locale, 'you.signedOutBody')}</p>
+        <button type="button" className="btn-primary" onClick={onLogin}>
+          {translate(locale, 'auth.signIn')}
+        </button>
+      </header>
+
+      <button type="button" className="you-panel-row" onClick={onOpenFavorites}>
+        <span className="you-panel-row-icon" aria-hidden="true">
+          <HeartIcon filled={favoriteCount > 0} />
+        </span>
+        <span className="you-panel-row-text">
+          <strong>{translate(locale, 'you.favorites')}</strong>
+          <small>{translate(locale, 'you.favoritesHint')}</small>
+        </span>
+        <span className="you-panel-row-value">{favoriteCount}</span>
+      </button>
+
+      <div className="you-panel-row you-panel-row-static">
+        <span className="you-panel-row-icon" aria-hidden="true">
+          ⌾
+        </span>
+        <span className="you-panel-row-text">
+          <strong>{translate(locale, 'you.language')}</strong>
+        </span>
+        <LanguageSelector locale={locale} onChange={onChangeLocale} />
+      </div>
+
+      <button type="button" className="you-panel-row" onClick={onOpenAbout}>
+        <span className="you-panel-row-icon" aria-hidden="true">
+          <InfoIcon />
+        </span>
+        <span className="you-panel-row-text">
+          <strong>{translate(locale, 'you.about')}</strong>
+        </span>
+        <span className="you-panel-row-chevron" aria-hidden="true">
+          ›
+        </span>
+      </button>
+
+      <LegalLinks locale={locale} />
+    </section>
   );
 }
 
@@ -8638,17 +8906,19 @@ function AccountMenu({
   user,
   onLogin,
   onOpenAccount,
-  unreadCount
+  unreadCount,
+  locale
 }: {
   user: User | undefined;
   onLogin: () => void;
   onOpenAccount: () => void;
   unreadCount: number;
+  locale: SupportedLocale;
 }) {
   if (!user) {
     return (
       <button type="button" className="account-login-btn" onClick={onLogin}>
-        Se connecter
+        {translate(locale, 'auth.signIn')}
       </button>
     );
   }
@@ -8660,8 +8930,14 @@ function AccountMenu({
       onClick={onOpenAccount}
       aria-label={
         unreadCount > 0
-          ? `Mon compte (${user.displayName}) — ${unreadCount} message${unreadCount !== 1 ? 's' : ''} non lu${unreadCount !== 1 ? 's' : ''}`
-          : `Mon compte (${user.displayName})`
+          ? translatePlural(
+              locale,
+              unreadCount,
+              'account.menuAriaUnread',
+              'account.menuAriaUnreadPlural',
+              { name: user.displayName }
+            )
+          : translate(locale, 'account.menuAria', { name: user.displayName })
       }
     >
       <span className="account-avatar">
@@ -9167,6 +9443,26 @@ function CommunityHub({
   );
 }
 
+/**
+ * Whether the relationship space (groups, friends, messages) keeps an entry
+ * in the primary navigation.
+ *
+ * It does. The simplification pass took it out on a "discovery first"
+ * reading, and the product owner put it back: the group space is a
+ * deliberate differentiator, not an accessory, and the signed-in half of
+ * Pulso is where it lives. DEC-0027 v1.1 records the reversal.
+ *
+ * The distinction that survives is between the two halves of the product,
+ * not between discovery and everything else. Signed out there is no
+ * relationship space to show, so the anonymous phone keeps its three
+ * destinations. Signed in, Communauté is one of them - and it opens on
+ * Groupes (DEFAULT_COMMUNITY_SECTION), which is the part worth pushing.
+ *
+ * Kept as a flag rather than inlined so the decision stays visible and
+ * reversible in one place.
+ */
+const COMMUNITY_IN_PRIMARY_NAV = true;
+
 const SIDEBAR_NAV_ITEMS: Array<{
   section: SidebarDestination;
   labelKey: MessageKey;
@@ -9176,8 +9472,18 @@ const SIDEBAR_NAV_ITEMS: Array<{
   { section: 'explorer', labelKey: 'sidebar.map', icon: 'carte' },
   { section: 'evenement', labelKey: 'nav.events', icon: 'evenements' },
   { section: 'lieu', labelKey: 'nav.venues', icon: 'lieux' },
-  { section: 'communaute', labelKey: 'nav.community', icon: 'amis' },
-  { section: 'favoris', labelKey: 'sidebar.favorites', icon: 'favoris' },
+  // Favoris is not here any more: it is already a tab of the account space,
+  // and signed out it is a list this browser happens to hold. The heart on
+  // every card is what fills it; a rail entry never was.
+  ...(COMMUNITY_IN_PRIMARY_NAV
+    ? [
+        {
+          section: 'communaute' as SidebarDestination,
+          labelKey: 'nav.community' as MessageKey,
+          icon: 'amis' as SidebarIconKind
+        }
+      ]
+    : []),
   // Its own destination rather than a block inside a profile tab. It was
   // built there first, to avoid an eighth rail entry after DEC-0020
   // deliberately cut the rail from ten to seven - but a ticket that takes
@@ -9306,11 +9612,6 @@ function Sidebar({
             {item.section === 'decouvrir' && (
               <p className="primary-sidebar-section-label">
                 {translate(locale, 'sidebar.sectionExplore')}
-              </p>
-            )}
-            {item.section === 'communaute' && (
-              <p className="primary-sidebar-section-label">
-                {translate(locale, 'nav.community')}
               </p>
             )}
             {/* The "Plus" group now opens on Mes sorties. It sat under
@@ -9490,7 +9791,7 @@ function Sidebar({
                     </>
                   )}
                 </svg>
-                {copied ? 'Copié' : 'Copier'}
+                {translate(locale, copied ? 'common.copied' : 'common.copy')}
               </span>
             </button>
           </div>
@@ -9588,8 +9889,8 @@ function TopBar({
           type="button"
           className={`nav-icon-btn ${aboutOpen ? 'active' : ''}`}
           onClick={onOpenAbout}
-          aria-label="À propos"
-          title="À propos"
+          aria-label={translate(locale, 'nav.about')}
+          title={translate(locale, 'nav.about')}
         >
           <InfoIcon />
         </button>
@@ -9636,6 +9937,7 @@ function TopBar({
           onLogin={() => {}}
           onOpenAccount={onOpenAccount}
           unreadCount={0}
+          locale={locale}
         />
       </div>
     </header>
@@ -9648,10 +9950,10 @@ function TopBar({
 // fourth, undistinguishable bucket.
 type EventsPeriod = 'today' | 'weekend' | 'next7';
 
-const EVENTS_PERIOD_TABS: Array<{ value: EventsPeriod; label: string }> = [
-  { value: 'today', label: "Aujourd'hui" },
-  { value: 'weekend', label: 'Ce week-end' },
-  { value: 'next7', label: 'À venir' }
+const EVENTS_PERIOD_TABS: Array<{ value: EventsPeriod; label: MessageKey }> = [
+  { value: 'today', label: 'eventsPage.periodToday' },
+  { value: 'weekend', label: 'eventsPage.periodWeekend' },
+  { value: 'next7', label: 'eventsPage.periodNext7' }
 ];
 
 const EVENTS_PAGE_SIZE = 12;
@@ -9881,16 +10183,20 @@ function EventsPage({
       <div className="events-page-main">
         <div className="events-hero">
           <div className="events-hero-text">
-            <p className="events-hero-kicker">Agenda montréalais</p>
-            <h1>Ta prochaine sortie commence ici.</h1>
+            <p className="events-hero-kicker">
+              {translate(locale, 'eventsPage.kicker')}
+            </p>
+            <h1>{translate(locale, 'eventsPage.title')}</h1>
             <p className="events-hero-eyebrow">
-              Concerts, festivals et soirées sélectionnés à Montréal.
+              {translate(locale, 'eventsPage.subtitle')}
             </p>
             <div className="events-hero-stats">
               {EVENTS_PERIOD_TABS.map(({ value, label }) => (
                 <span className="events-hero-stat" key={value}>
                   <strong>{periodCounts[value] ?? '…'}</strong>{' '}
-                  {label.toLowerCase()}
+                  {translate(locale, label).toLocaleLowerCase(
+                    displayLocale(locale)
+                  )}
                 </span>
               ))}
             </div>
@@ -9903,7 +10209,7 @@ function EventsPage({
               className="btn-primary events-hero-create-btn"
               onClick={onNavigateToOrganisateur}
             >
-              Créer un événement
+              {translate(locale, 'eventsPage.create')}
             </button>
             <button
               type="button"
@@ -9911,7 +10217,7 @@ function EventsPage({
               onClick={onNavigateToMap}
             >
               <ViewModeIcon kind="map" />
-              Explorer la carte
+              {translate(locale, 'favorites.exploreMap')}
             </button>
           </div>
         </div>
@@ -9925,7 +10231,7 @@ function EventsPage({
                 className={period === value ? 'active' : ''}
                 onClick={() => setPeriod(value)}
               >
-                {label}
+                {translate(locale, label)}
                 <span>{periodCounts[value] ?? '…'}</span>
               </button>
             ))}
@@ -9938,7 +10244,7 @@ function EventsPage({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Rechercher un événement ou un lieu"
+              placeholder={translate(locale, 'eventsPage.searchPlaceholder')}
             />
           </div>
 
@@ -9948,7 +10254,7 @@ function EventsPage({
               className={activeChip === 'all' ? 'active' : ''}
               onClick={() => setActiveChip('all')}
             >
-              Tout voir
+              {translate(locale, 'eventsPage.chipAll')}
             </button>
             {EVENT_CATEGORIES.map((cat) => (
               <button
@@ -9991,14 +10297,20 @@ function EventsPage({
           </div>
         </div>
 
-        {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+        {state === 'loading' && (
+          <p className="list-view-empty">
+            {translate(locale, 'common.loading')}
+          </p>
+        )}
         {state === 'error' && (
           <p className="list-view-empty">
-            Impossible de charger les événements pour le moment.
+            {translate(locale, 'eventsPage.loadError')}
           </p>
         )}
         {state === 'success' && filtered.length === 0 && (
-          <p className="list-view-empty">Aucun événement trouvé.</p>
+          <p className="list-view-empty">
+            {translate(locale, 'eventsPage.noResults')}
+          </p>
         )}
 
         <TrendingRow
@@ -10010,11 +10322,16 @@ function EventsPage({
         {state === 'success' && filtered.length > 0 && (
           <div className="events-results-heading">
             <div>
-              <span>À découvrir</span>
-              <h2>Les sorties du moment</h2>
+              <span>{translate(locale, 'eventsPage.resultsKicker')}</span>
+              <h2>{translate(locale, 'eventsPage.resultsTitle')}</h2>
             </div>
             <p>
-              {filtered.length} événement{filtered.length > 1 ? 's' : ''}
+              {translatePlural(
+                locale,
+                filtered.length,
+                'eventsPage.resultCount',
+                'eventsPage.resultCountPlural'
+              )}
             </p>
           </div>
         )}
@@ -10042,15 +10359,15 @@ function EventsPage({
             className="events-load-more"
             onClick={() => setVisibleCount((count) => count + EVENTS_PAGE_SIZE)}
           >
-            Charger plus d'événements ↓
+            {translate(locale, 'eventsPage.loadMore')}
           </button>
         )}
       </div>
 
       <aside className="events-trends">
         <div className="events-trends-heading">
-          <span>En ce moment</span>
-          <h2>Tendances</h2>
+          <span>{translate(locale, 'eventsPage.trendsKicker')}</span>
+          <h2>{translate(locale, 'eventsPage.trendsTitle')}</h2>
         </div>
 
         <div className="events-trends-section">
@@ -10058,9 +10375,7 @@ function EventsPage({
           {popular.length === 0 ? (
             <div className="events-trends-empty">
               <span aria-hidden="true">↗</span>
-              <p>
-                Les tendances apparaîtront avec les premières participations.
-              </p>
+              <p>{translate(locale, 'eventsPage.trendsEmpty')}</p>
             </div>
           ) : (
             <ol className="events-trends-list">
@@ -10093,9 +10408,11 @@ function EventsPage({
         </div>
 
         <div className="events-trends-section">
-          <h3>Nouveaux événements</h3>
+          <h3>{translate(locale, 'eventsPage.newEvents')}</h3>
           {recentlyAdded.length === 0 ? (
-            <p className="list-view-empty">Rien de neuf pour l'instant.</p>
+            <p className="list-view-empty">
+              {translate(locale, 'eventsPage.nothingNew')}
+            </p>
           ) : (
             <ul className="events-trends-list">
               {recentlyAdded.map((event) => (
@@ -10118,7 +10435,9 @@ function EventsPage({
                         {event.venue.name}
                       </span>
                     </span>
-                    <span className="events-trends-badge">NOUVEAU</span>
+                    <span className="events-trends-badge">
+                      {translate(locale, 'eventsPage.newBadge')}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -10128,10 +10447,10 @@ function EventsPage({
 
         {authToken && (
           <div className="events-trends-section">
-            <h3>Tes amis y vont</h3>
+            <h3>{translate(locale, 'eventsPage.friendsGoing')}</h3>
             {friendsGoingList.length === 0 ? (
               <p className="list-view-empty">
-                Aucun ami n'a encore de présence prévue.
+                {translate(locale, 'eventsPage.noFriendsGoing')}
               </p>
             ) : (
               <>
@@ -10147,9 +10466,12 @@ function EventsPage({
                   ))}
                 </div>
                 <p className="events-trends-caption">
-                  {friendsGoingList.length} ami
-                  {friendsGoingList.length > 1 ? 's' : ''}{' '}
-                  {friendsGoingList.length > 1 ? 'ont' : 'a'} une place.
+                  {translatePlural(
+                    locale,
+                    friendsGoingList.length,
+                    'eventsPage.friendsHaveSpot',
+                    'eventsPage.friendsHaveSpotPlural'
+                  )}
                 </p>
               </>
             )}
@@ -10158,10 +10480,10 @@ function EventsPage({
 
         {authToken && (
           <div className="events-trends-section">
-            <h3>Groupes actifs</h3>
+            <h3>{translate(locale, 'eventsPage.activeGroups')}</h3>
             {activeGroups.length === 0 ? (
               <p className="list-view-empty">
-                Aucun groupe d'événement actif pour l'instant.
+                {translate(locale, 'eventsPage.noActiveGroups')}
               </p>
             ) : (
               <ul className="events-trends-groups">
@@ -10221,12 +10543,14 @@ function VenueSearchPicker({
   selected,
   onSelect,
   placeholder,
-  label
+  label,
+  locale
 }: {
   selected: PublicVenue | undefined;
   onSelect: (venue: PublicVenue | undefined) => void;
   placeholder: string;
   label: string;
+  locale: SupportedLocale;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<PublicVenue[]>([]);
@@ -10292,11 +10616,13 @@ function VenueSearchPicker({
         onChange={(changeEvent) => setQuery(changeEvent.target.value)}
       />
       {state === 'searching' && (
-        <small className="create-event-hint">Recherche…</small>
+        <small className="create-event-hint">
+          {translate(locale, 'venuePicker.searching')}
+        </small>
       )}
       {state === 'empty' && (
         <small className="create-event-hint">
-          Aucun lieu de ce nom dans Pulso.
+          {translate(locale, 'venuePicker.empty')}
         </small>
       )}
       {results.length > 0 && (
@@ -10578,9 +10904,7 @@ function EventEditor({
         onSaved(saved);
       })
       .catch(() => {
-        setError(
-          "L'événement n'a pas pu être enregistré. Vérifie la date et réessaie."
-        );
+        setError(translate(locale, 'create.saveFailed'));
       })
       .finally(() => setSaving(false));
   };
@@ -10600,33 +10924,38 @@ function EventEditor({
         >
           <path d="M15 18l-6-6 6-6" />
         </svg>
-        Retour à mes événements
+        {translate(locale, 'create.backToMyEvents')}
       </button>
 
       <div className="event-editor-head">
-        <span className="create-event-kicker">Organisateur</span>
-        <h1>{isEdit ? 'Modifier un événement' : 'Créer un événement'}</h1>
+        <span className="create-event-kicker">
+          {translate(locale, 'create.kicker')}
+        </span>
+        <h1>
+          {translate(
+            locale,
+            isEdit ? 'create.editTitle' : 'create.createTitle'
+          )}
+        </h1>
         <p className="create-event-notice">
-          {
-            "Ton événement sera visible uniquement dans l'espace connecté de Pulso, pas sur la carte publique. Il portera la mention « Communauté », ou « Organisateur vérifié » si ton compte est rattaché à ce lieu."
-          }
+          {translate(locale, 'create.visibilityNotice')}
         </p>
       </div>
 
       <section className="event-editor-section">
-        <h2>L&apos;essentiel</h2>
+        <h2>{translate(locale, 'create.sectionEssentials')}</h2>
         <label className="create-event-field">
-          <span>Titre</span>
+          <span>{translate(locale, 'create.eventTitle')}</span>
           <input
             value={title}
             onChange={(changeEvent) => setTitle(changeEvent.target.value)}
-            placeholder="After techno chez Marie"
+            placeholder={translate(locale, 'create.titlePlaceholder')}
             maxLength={200}
           />
         </label>
         <div className="create-event-row">
           <label className="create-event-field">
-            <span>Catégorie</span>
+            <span>{translate(locale, 'create.category')}</span>
             <select
               value={category}
               onChange={(changeEvent) =>
@@ -10641,7 +10970,7 @@ function EventEditor({
             </select>
           </label>
           <label className="create-event-field">
-            <span>Prix</span>
+            <span>{translate(locale, 'create.price')}</span>
             <select
               value={priceKind}
               onChange={(changeEvent) =>
@@ -10650,9 +10979,15 @@ function EventEditor({
                 )
               }
             >
-              <option value="free">Gratuit</option>
-              <option value="paid">Payant</option>
-              <option value="unknown">Non précisé</option>
+              <option value="free">
+                {translate(locale, 'create.priceFree')}
+              </option>
+              <option value="paid">
+                {translate(locale, 'create.pricePaid')}
+              </option>
+              <option value="unknown">
+                {translate(locale, 'create.priceUnknown')}
+              </option>
             </select>
           </label>
         </div>
@@ -10663,21 +10998,17 @@ function EventEditor({
             onChange={(changeEvent) => setIsAfter(changeEvent.target.checked)}
           />
           <span>
-            <strong>{"C'est un after"}</strong>
-            <small>
-              {
-                'Il apparaîtra dans le filtre After. Un événement qui commence entre 2 h et 6 h y apparaît de toute façon.'
-              }
-            </small>
+            <strong>{translate(locale, 'create.isAfter')}</strong>
+            <small>{translate(locale, 'create.isAfterHelp')}</small>
           </span>
         </label>
       </section>
 
       <section className="event-editor-section">
-        <h2>Quand</h2>
+        <h2>{translate(locale, 'create.sectionWhen')}</h2>
         <div className="create-event-row">
           <label className="create-event-field">
-            <span>Début</span>
+            <span>{translate(locale, 'create.start')}</span>
             <input
               type="datetime-local"
               value={startsAt}
@@ -10685,7 +11016,7 @@ function EventEditor({
             />
           </label>
           <label className="create-event-field">
-            <span>Fin (optionnel)</span>
+            <span>{translate(locale, 'create.endOptional')}</span>
             <input
               type="datetime-local"
               value={endsAt}
@@ -10696,14 +11027,13 @@ function EventEditor({
       </section>
 
       <section className="event-editor-section">
-        <h2>Où</h2>
+        <h2>{translate(locale, 'create.sectionWhere')}</h2>
         {isEdit ? (
           <label className="create-event-field">
-            <span>Lieu</span>
+            <span>{translate(locale, 'create.venue')}</span>
             <input value={existing?.venue.name ?? ''} disabled />
             <small className="create-event-hint">
-              Déplacer un événement ailleurs, c&apos;est un autre événement —
-              crée-en un nouveau.
+              {translate(locale, 'create.venueLocked')}
             </small>
           </label>
         ) : (
@@ -10714,15 +11044,13 @@ function EventEditor({
                 setSelectedVenue(venue);
                 if (venue) setNewVenueOpen(false);
               }}
-              label="Lieu"
-              placeholder="Clébard, Quai des brumes, Foufounes…"
+              label={translate(locale, 'create.venue')}
+              placeholder={translate(locale, 'create.venuePlaceholder')}
+              locale={locale}
             />
             {selectedVenue ? (
               <small className="create-event-hint">
-                L&apos;événement sera rattaché à ce lieu et apparaîtra sur sa
-                fiche. S&apos;il n&apos;est pas le tien, il y figurera comme
-                événement organisé par un membre, pas comme la programmation du
-                lieu.
+                {translate(locale, 'create.venueAttachedHint')}
               </small>
             ) : newVenueOpen ? null : (
               <button
@@ -10730,7 +11058,7 @@ function EventEditor({
                 className="btn-secondary create-event-new-venue"
                 onClick={() => setNewVenueOpen(true)}
               >
-                Ce lieu n&apos;est pas dans Pulso — saisir une adresse
+                {translate(locale, 'create.venueNotInPulso')}
               </button>
             )}
           </>
@@ -10744,7 +11072,7 @@ function EventEditor({
                 onChange={(changeEvent) =>
                   setVenueName(changeEvent.target.value)
                 }
-                placeholder="Loft Saint-Henri"
+                placeholder={translate(locale, 'create.venueNamePlaceholder')}
                 maxLength={200}
               />
             </label>
@@ -10759,7 +11087,7 @@ function EventEditor({
                     setConfirmedPoint(undefined);
                     setGeocodeState('idle');
                   }}
-                  placeholder="1 rue Notre-Dame Ouest, Montréal"
+                  placeholder={translate(locale, 'create.addressPlaceholder')}
                   maxLength={300}
                 />
                 <button
@@ -10847,9 +11175,9 @@ function EventEditor({
       </section>
 
       <section className="event-editor-section">
-        <h2>Détails</h2>
+        <h2>{translate(locale, 'create.sectionDetails')}</h2>
         <label className="create-event-field">
-          <span>Photo de couverture (optionnel)</span>
+          <span>{translate(locale, 'create.coverOptional')}</span>
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"
@@ -10859,18 +11187,18 @@ function EventEditor({
           />
         </label>
         <label className="create-event-field">
-          <span>Comment y accéder</span>
+          <span>{translate(locale, 'create.accessInformation')}</span>
           <textarea
             value={accessInformation}
             onChange={(changeEvent) =>
               setAccessInformation(changeEvent.target.value)
             }
-            placeholder="Sonner à la porte bleue, 3e étage."
+            placeholder={translate(locale, 'create.accessPlaceholder')}
             rows={2}
           />
         </label>
         <label className="create-event-field">
-          <span>Description (optionnel)</span>
+          <span>{translate(locale, 'create.descriptionOptional')}</span>
           <textarea
             value={description}
             onChange={(changeEvent) => setDescription(changeEvent.target.value)}
@@ -10880,9 +11208,9 @@ function EventEditor({
       </section>
 
       <section className="event-editor-section">
-        <h2>Billetterie</h2>
+        <h2>{translate(locale, 'create.sectionTicketing')}</h2>
         <label className="create-event-field">
-          <span>Lien billetterie (optionnel)</span>
+          <span>{translate(locale, 'create.ticketingUrlOptional')}</span>
           <input
             value={ticketingUrl}
             onChange={(changeEvent) =>
@@ -10903,7 +11231,7 @@ function EventEditor({
 
       <div className="event-editor-actions">
         <button type="button" className="btn-secondary" onClick={onCancel}>
-          Annuler
+          {translate(locale, 'create.cancel')}
         </button>
         <button
           type="button"
@@ -10981,9 +11309,7 @@ function OrganizerStatusBlock({
       justification: justification.trim()
     });
     if (!parsed.success) {
-      setError(
-        'Choisis un lieu et explique ton lien avec lui (10 caractères minimum).'
-      );
+      setError(translate(locale, 'organizer.requestInvalid'));
       return;
     }
     setSaving(true);
@@ -10997,9 +11323,7 @@ function OrganizerStatusBlock({
       body: JSON.stringify(parsed.data)
     })
       .then((response) => {
-        if (response.status === 409) {
-          throw new Error('Une demande est déjà en attente pour ce lieu.');
-        }
+        if (response.status === 409) throw new Error('pending');
         if (!response.ok) throw new Error('failed');
         setJustification('');
         setSelectedVenue(undefined);
@@ -11008,9 +11332,12 @@ function OrganizerStatusBlock({
       })
       .catch((caught: Error) =>
         setError(
-          caught.message === 'failed'
-            ? "La demande n'a pas pu être envoyée."
-            : caught.message
+          translate(
+            locale,
+            caught.message === 'pending'
+              ? 'organizer.requestPending'
+              : 'organizer.requestFailed'
+          )
         )
       )
       .finally(() => setSaving(false));
@@ -11048,26 +11375,27 @@ function OrganizerStatusBlock({
     <section className="organizer-status">
       <div className="organizer-status-head">
         <div>
-          <h2 className="organisateur-group-title">Statut organisateur</h2>
+          <h2 className="organisateur-group-title">
+            {translate(locale, 'organizer.statusTitle')}
+          </h2>
           {status.verifiedVenues.length > 0 ? (
             <p className="organizer-status-line">
-              Tu es organisateur vérifié de{' '}
-              <strong>
-                {status.verifiedVenues.map((v) => v.venueName).join(', ')}
-              </strong>
-              .
+              {translate(locale, 'organizer.verifiedFor', {
+                venues: status.verifiedVenues.map((v) => v.venueName).join(', ')
+              })}
             </p>
           ) : (
             <p className="organizer-status-line">
-              {
-                'Tes événements sont publiés en « Communauté ». Demande à gérer un lieu pour publier en son nom.'
-              }
+              {translate(locale, 'organizer.communityNotice')}
             </p>
           )}
           {status.pendingRequests.length > 0 && (
             <p className="organizer-status-line organizer-status-pending">
-              Demande en attente pour{' '}
-              {status.pendingRequests.map((r) => r.venueName).join(', ')}.
+              {translate(locale, 'organizer.pendingFor', {
+                venues: status.pendingRequests
+                  .map((r) => r.venueName)
+                  .join(', ')
+              })}
             </p>
           )}
         </div>
@@ -11077,7 +11405,10 @@ function OrganizerStatusBlock({
             className="btn-secondary"
             onClick={() => setOpen((current) => !current)}
           >
-            {open ? 'Annuler' : 'Demander un lieu'}
+            {translate(
+              locale,
+              open ? 'create.cancel' : 'organizer.requestVenue'
+            )}
           </button>
         )}
       </div>
@@ -11087,22 +11418,22 @@ function OrganizerStatusBlock({
           <VenueSearchPicker
             selected={selectedVenue}
             onSelect={setSelectedVenue}
-            label="Lieu"
-            placeholder="Cherche ton lieu par son nom…"
+            label={translate(locale, 'create.venue')}
+            placeholder={translate(locale, 'organizer.venueSearchPlaceholder')}
+            locale={locale}
           />
           <label className="create-event-field">
-            <span>Ton lien avec ce lieu</span>
+            <span>{translate(locale, 'organizer.yourLink')}</span>
             <textarea
               rows={3}
               value={justification}
               onChange={(changeEvent) =>
                 setJustification(changeEvent.target.value)
               }
-              placeholder="Je programme les soirées de ce bar depuis 2024…"
+              placeholder={translate(locale, 'organizer.yourLinkPlaceholder')}
             />
             <small className="create-event-hint">
-              Une personne lit chaque demande. Pulso ne vérifie rien
-              automatiquement.
+              {translate(locale, 'organizer.reviewNotice')}
             </small>
           </label>
           {error && <p className="create-event-error">{error}</p>}
@@ -11113,7 +11444,10 @@ function OrganizerStatusBlock({
               disabled={saving}
               onClick={submit}
             >
-              {saving ? 'Envoi…' : 'Envoyer la demande'}
+              {translate(
+                locale,
+                saving ? 'friends.inviting' : 'organizer.sendRequest'
+              )}
             </button>
           </div>
         </div>
@@ -11136,9 +11470,11 @@ function OrganizerStatusBlock({
  * so the next import cannot quietly restore what was taken down.
  */
 function AdminVenuePhotosBlock({
-  authToken
+  authToken,
+  locale
 }: {
   authToken: string | undefined;
+  locale: SupportedLocale;
 }) {
   const [photos, setPhotos] = useState<AdminVenuePhoto[]>([]);
   const [query, setQuery] = useState('');
@@ -11189,9 +11525,10 @@ function AdminVenuePhotosBlock({
       })
       .catch(() =>
         setError(
-          suppress
-            ? "La photo n'a pas pu être retirée."
-            : "La photo n'a pas pu être réactivée."
+          translate(
+            locale,
+            suppress ? 'admin.photoRemoveFailed' : 'admin.photoRestoreFailed'
+          )
         )
       )
       .finally(() => setBusy(undefined));
@@ -11204,11 +11541,14 @@ function AdminVenuePhotosBlock({
   return (
     <section className="admin-photos">
       <div className="admin-photos-header">
-        <h2>Photos des lieux</h2>
+        <h2>{translate(locale, 'admin.photosTitle')}</h2>
         <p>
-          {borrowed} photo{borrowed > 1 ? 's' : ''} empruntée
-          {borrowed > 1 ? 's' : ''} au site officiel du lieu. Retirer est
-          définitif : l&apos;import ne la reprendra pas.
+          {translatePlural(
+            locale,
+            borrowed,
+            'admin.photosBorrowed',
+            'admin.photosBorrowedPlural'
+          )}
         </p>
         <form
           className="admin-photos-search"
@@ -11220,26 +11560,30 @@ function AdminVenuePhotosBlock({
           <input
             type="search"
             value={query}
-            placeholder="Chercher un lieu…"
-            aria-label="Chercher un lieu par nom"
+            placeholder={translate(locale, 'admin.searchVenuePlaceholder')}
+            aria-label={translate(locale, 'admin.searchVenueAria')}
             onChange={(event) => setQuery(event.target.value)}
           />
           <button type="submit" className="btn-secondary">
-            Chercher
+            {translate(locale, 'admin.search')}
           </button>
         </form>
       </div>
 
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger les photos pour le moment.
+          {translate(locale, 'admin.photosLoadError')}
         </p>
       )}
       {error && <p className="create-event-error">{error}</p>}
 
       {state === 'success' && photos.length === 0 && (
-        <p className="list-view-empty">Aucune photo de lieu enregistrée.</p>
+        <p className="list-view-empty">
+          {translate(locale, 'admin.photosEmpty')}
+        </p>
       )}
 
       <div className="admin-photos-list">
@@ -11253,15 +11597,18 @@ function AdminVenuePhotosBlock({
             <div className="admin-photo-main">
               <strong>{photo.venueName}</strong>
               <span className="admin-photo-source">
-                {photo.imageSource === 'website_og'
-                  ? 'Site officiel du lieu (empruntée)'
-                  : photo.imageSource === 'wikimedia_commons'
-                    ? 'Wikimedia Commons (licence libre)'
-                    : photo.imageSource === 'osm_image_tag'
-                      ? 'Tag image OpenStreetMap'
-                      : photo.suppressed
-                        ? 'Retirée'
-                        : 'Source inconnue'}
+                {translate(
+                  locale,
+                  photo.imageSource === 'website_og'
+                    ? 'admin.sourceWebsite'
+                    : photo.imageSource === 'wikimedia_commons'
+                      ? 'admin.sourceCommons'
+                      : photo.imageSource === 'osm_image_tag'
+                        ? 'admin.sourceOsm'
+                        : photo.suppressed
+                          ? 'admin.sourceRemoved'
+                          : 'admin.sourceUnknown'
+                )}
               </span>
               {photo.imageAttribution && (
                 <span className="admin-photo-credit">
@@ -11275,7 +11622,7 @@ function AdminVenuePhotosBlock({
                   target="_blank"
                   rel="noreferrer noopener"
                 >
-                  Voir la source
+                  {translate(locale, 'admin.seeSource')}
                 </a>
               )}
             </div>
@@ -11287,16 +11634,22 @@ function AdminVenuePhotosBlock({
                   disabled={busy === photo.venueId}
                   onClick={() => act(photo.venueId, false)}
                 >
-                  Réautoriser
+                  {translate(locale, 'admin.reauthorise')}
                 </button>
               ) : (
                 <button
                   type="button"
                   className="btn-secondary"
                   disabled={busy === photo.venueId}
-                  onClick={() => act(photo.venueId, true, 'Retiré via console')}
+                  onClick={() =>
+                    act(
+                      photo.venueId,
+                      true,
+                      translate(locale, 'admin.removedViaConsole')
+                    )
+                  }
                 >
-                  Retirer
+                  {translate(locale, 'admin.remove')}
                 </button>
               )}
             </div>
@@ -11475,7 +11828,7 @@ function AdministrationPage({
         if (!response.ok) throw new Error(String(response.status));
         reload();
       })
-      .catch(() => setError("La décision n'a pas pu être enregistrée."))
+      .catch(() => setError(translate(locale, 'admin.decisionFailed')))
       .finally(() => setBusy(undefined));
   };
 
@@ -11483,24 +11836,28 @@ function AdministrationPage({
     <div className="map-container-wrapper organisateur-page">
       <div className="events-hero organisateur-hero">
         <div className="events-hero-text">
-          <p className="events-hero-kicker">Administration</p>
-          <h1>Demandes d&apos;organisateur.</h1>
+          <p className="events-hero-kicker">
+            {translate(locale, 'admin.kicker')}
+          </p>
+          <h1>{translate(locale, 'admin.requestsTitle')}</h1>
           <p className="events-hero-eyebrow">
-            Chaque demande t&apos;est notifiée dans Pulso. Approuver rattache le
-            compte au lieu ; refuser ne crée aucun lien.
+            {translate(locale, 'admin.requestsSubtitle')}
           </p>
           <div className="events-hero-stats">
             <span className="events-hero-stat">
-              <strong>{requests.length}</strong> en attente
+              <strong>{requests.length}</strong>{' '}
+              {translate(locale, 'admin.statPending')}
             </span>
           </div>
         </div>
       </div>
 
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger les demandes pour le moment.
+          {translate(locale, 'admin.requestsLoadError')}
         </p>
       )}
       {error && <p className="create-event-error">{error}</p>}
@@ -11510,8 +11867,8 @@ function AdministrationPage({
           <span className="empty-state-icon" aria-hidden="true">
             <SidebarNavIcon kind="administration" />
           </span>
-          <p>Aucune demande en attente</p>
-          <p>Tu seras notifié dès qu&apos;un compte demande à gérer un lieu.</p>
+          <p>{translate(locale, 'admin.requestsEmptyTitle')}</p>
+          <p>{translate(locale, 'admin.requestsEmptyBody')}</p>
         </div>
       )}
 
@@ -11524,8 +11881,10 @@ function AdministrationPage({
               <strong>{entry.venueName}</strong>
               <span className="admin-request-venue">{entry.venueAddress}</span>
               <span className="admin-request-who">
-                Demandé par {entry.requester.displayName} ·{' '}
-                {entry.requester.email}
+                {translate(locale, 'admin.requestedBy', {
+                  name: entry.requester.displayName,
+                  email: entry.requester.email
+                })}
               </span>
               <p className="admin-request-justification">
                 {entry.justification}
@@ -11541,7 +11900,7 @@ function AdministrationPage({
                 disabled={busy === entry.id}
                 onClick={() => resolve(entry.id, false)}
               >
-                Refuser
+                {translate(locale, 'admin.refuse')}
               </button>
               <button
                 type="button"
@@ -11549,7 +11908,7 @@ function AdministrationPage({
                 disabled={busy === entry.id}
                 onClick={() => resolve(entry.id, true)}
               >
-                Approuver
+                {translate(locale, 'admin.approve')}
               </button>
             </div>
           </div>
@@ -11558,7 +11917,7 @@ function AdministrationPage({
 
       <AdminGroupPlacementsBlock authToken={authToken} locale={locale} />
       <AdminGroupVerificationsBlock authToken={authToken} locale={locale} />
-      <AdminVenuePhotosBlock authToken={authToken} />
+      <AdminVenuePhotosBlock authToken={authToken} locale={locale} />
     </div>
   );
 }
@@ -11698,43 +12057,47 @@ function AdminGroupPlacementsBlock({
         setEvents([]);
         reload();
       })
-      .catch(() => setError("Le placement n'a pas pu être créé."))
+      .catch(() => setError(translate(locale, 'admin.placementFailed')))
       .finally(() => setBusy(false));
   };
 
   return (
     <section className="organisateur-section">
       <div className="events-hero-text">
-        <p className="events-hero-kicker">Placements dans les groupes</p>
+        <p className="events-hero-kicker">
+          {translate(locale, 'admin.placementsTitle')}
+        </p>
         <p className="events-hero-eyebrow">
-          Place un événement acheté en haut de l&apos;onglet Organiser d&apos;un
-          groupe. La bannière est toujours affichée comme sponsorisée, et
-          l&apos;administrateur du groupe peut la retirer.
+          {translate(locale, 'admin.placementsIntro')}
         </p>
       </div>
 
       <div className="admin-placement-form">
         <div className="admin-placement-picker">
           <label>
-            <span>1. Le groupe</span>
+            <span>{translate(locale, 'admin.placementStep1')}</span>
             <input
               value={groupQuery}
               onChange={(changeEvent) =>
                 setGroupQuery(changeEvent.target.value)
               }
-              placeholder="Ex. Français à Montréal — laisse vide pour tout voir"
+              placeholder={translate(locale, 'admin.placementGroupPlaceholder')}
             />
           </label>
           {!group && groupState === 'loading' && (
-            <p className="admin-placement-hint">Recherche…</p>
+            <p className="admin-placement-hint">
+              {translate(locale, 'admin.searching')}
+            </p>
           )}
           {!group && groupState === 'error' && (
             <p className="create-event-error">
-              La recherche de groupes a échoué.
+              {translate(locale, 'admin.placementGroupsError')}
             </p>
           )}
           {!group && groupState === 'done' && groups.length === 0 && (
-            <p className="admin-placement-hint">Aucun groupe ne correspond.</p>
+            <p className="admin-placement-hint">
+              {translate(locale, 'admin.placementNoGroup')}
+            </p>
           )}
           {groups.length > 0 && !group && (
             <ul className="admin-placement-results">
@@ -11743,9 +12106,15 @@ function AdminGroupPlacementsBlock({
                   <button type="button" onClick={() => setGroup(candidate)}>
                     <strong>{candidate.name}</strong>
                     <small>
-                      {candidate.memberCount} membre
-                      {candidate.memberCount > 1 ? 's' : ''}
-                      {candidate.verified ? ' · vérifié' : ''}
+                      {translatePlural(
+                        locale,
+                        candidate.memberCount,
+                        'forum.memberCount',
+                        'forum.memberCountPlural'
+                      )}
+                      {candidate.verified
+                        ? ` · ${translate(locale, 'admin.verified')}`
+                        : ''}
                     </small>
                   </button>
                 </li>
@@ -11754,14 +12123,19 @@ function AdminGroupPlacementsBlock({
           )}
           {group && (
             <p className="admin-placement-chosen">
-              <strong>{group.name}</strong> · {group.memberCount} membre
-              {group.memberCount > 1 ? 's' : ''}
+              <strong>{group.name}</strong> ·{' '}
+              {translatePlural(
+                locale,
+                group.memberCount,
+                'forum.memberCount',
+                'forum.memberCountPlural'
+              )}
               <button
                 type="button"
                 className="text-btn"
                 onClick={() => setGroup(undefined)}
               >
-                Changer
+                {translate(locale, 'admin.change')}
               </button>
             </p>
           )}
@@ -11769,26 +12143,28 @@ function AdminGroupPlacementsBlock({
 
         <div className="admin-placement-picker">
           <label>
-            <span>2. L&apos;événement</span>
+            <span>{translate(locale, 'admin.placementStep2')}</span>
             <input
               value={eventQuery}
               onChange={(changeEvent) =>
                 setEventQuery(changeEvent.target.value)
               }
-              placeholder="Titre, organisateur ou lieu"
+              placeholder={translate(locale, 'admin.placementEventPlaceholder')}
             />
           </label>
           {!event && eventState === 'loading' && (
-            <p className="admin-placement-hint">Recherche…</p>
+            <p className="admin-placement-hint">
+              {translate(locale, 'admin.searching')}
+            </p>
           )}
           {!event && eventState === 'error' && (
             <p className="create-event-error">
-              La recherche d&apos;événements a échoué.
+              {translate(locale, 'admin.placementEventsError')}
             </p>
           )}
           {!event && eventState === 'done' && events.length === 0 && (
             <p className="admin-placement-hint">
-              Aucun événement à venir ne correspond.
+              {translate(locale, 'admin.placementNoEvent')}
             </p>
           )}
           {events.length > 0 && !event && (
@@ -11799,7 +12175,7 @@ function AdminGroupPlacementsBlock({
                     <strong>{candidate.title}</strong>
                     <small>
                       {new Date(candidate.startsAt).toLocaleDateString(
-                        'fr-CA',
+                        displayLocale(locale),
                         {
                           day: 'numeric',
                           month: 'short'
@@ -11822,28 +12198,28 @@ function AdminGroupPlacementsBlock({
                 className="text-btn"
                 onClick={() => setEvent(undefined)}
               >
-                Changer
+                {translate(locale, 'admin.change')}
               </button>
             </p>
           )}
         </div>
 
         <label className="admin-placement-field">
-          <span>3. Qui a payé (affiché sur la bannière)</span>
+          <span>{translate(locale, 'admin.placementStep3')}</span>
           <input
             value={sponsorName}
             onChange={(changeEvent) => setSponsorName(changeEvent.target.value)}
-            placeholder="Ex. Clébard"
+            placeholder={translate(locale, 'admin.placementPayerPlaceholder')}
             maxLength={80}
           />
         </label>
 
         <label className="admin-placement-field">
-          <span>Message (optionnel)</span>
+          <span>{translate(locale, 'admin.placementMessage')}</span>
           <input
             value={message}
             onChange={(changeEvent) => setMessage(changeEvent.target.value)}
-            placeholder="Ex. Soirée techno, entrée gratuite avant 23h."
+            placeholder={translate(locale, 'admin.placementMessagePlaceholder')}
             maxLength={280}
           />
         </label>
@@ -11855,29 +12231,48 @@ function AdminGroupPlacementsBlock({
           disabled={busy || !group || !event || !sponsorName.trim()}
           onClick={place}
         >
-          {busy ? 'Placement…' : 'Placer dans le groupe'}
+          {translate(locale, busy ? 'admin.placing' : 'admin.place')}
         </button>
       </div>
 
       <div className="organisateur-list">
         {placements.length === 0 && (
-          <p className="list-view-empty">Aucun placement pour le moment.</p>
+          <p className="list-view-empty">
+            {translate(locale, 'admin.placementsEmpty')}
+          </p>
         )}
         {placements.map((entry) => (
           <div className="admin-request" key={entry.placement.id}>
             <div className="admin-request-main">
               <strong>{entry.placement.event.title}</strong>
               <span className="admin-request-venue">
-                Dans {entry.groupName} · {entry.groupMemberCount} membre
-                {entry.groupMemberCount > 1 ? 's' : ''}
+                {translate(locale, 'admin.placementIn', {
+                  group: entry.groupName
+                })}{' '}
+                ·{' '}
+                {translatePlural(
+                  locale,
+                  entry.groupMemberCount,
+                  'forum.memberCount',
+                  'forum.memberCountPlural'
+                )}
               </span>
               <span className="admin-request-who">
-                Payé par {entry.placement.sponsorName}
+                {translate(locale, 'admin.placementPaidBy', {
+                  sponsor: entry.placement.sponsorName
+                })}
               </span>
               <span className="admin-request-when">
                 {entry.dismissedAt
-                  ? `Retiré par le groupe ${formatRelativeTime(entry.dismissedAt, locale)}`
-                  : `Actif depuis ${formatRelativeTime(entry.placement.createdAt, locale)}`}
+                  ? translate(locale, 'admin.placementDismissed', {
+                      when: formatRelativeTime(entry.dismissedAt, locale)
+                    })
+                  : translate(locale, 'admin.placementActive', {
+                      when: formatRelativeTime(
+                        entry.placement.createdAt,
+                        locale
+                      )
+                    })}
               </span>
             </div>
           </div>
@@ -11934,24 +12329,27 @@ function AdminGroupVerificationsBlock({
         if (!response.ok) throw new Error(String(response.status));
         reload();
       })
-      .catch(() => setError("La décision n'a pas pu être enregistrée."))
+      .catch(() => setError(translate(locale, 'admin.decisionFailed')))
       .finally(() => setBusy(undefined));
   };
 
   return (
     <section className="organisateur-section">
       <div className="events-hero-text">
-        <p className="events-hero-kicker">Vérification de groupes</p>
+        <p className="events-hero-kicker">
+          {translate(locale, 'admin.verificationsTitle')}
+        </p>
         <p className="events-hero-eyebrow">
-          Approuver pose le badge vérifié partout où le groupe apparaît. Refuser
-          ne change rien et laisse le groupe libre de redemander.
+          {translate(locale, 'admin.verificationsIntro')}
         </p>
       </div>
 
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger les demandes de vérification.
+          {translate(locale, 'admin.verificationsLoadError')}
         </p>
       )}
       {error && <p className="create-event-error">{error}</p>}
@@ -11961,8 +12359,8 @@ function AdminGroupVerificationsBlock({
           <span className="empty-state-icon" aria-hidden="true">
             <SidebarNavIcon kind="groupes" />
           </span>
-          <p>Aucune demande de vérification</p>
-          <p>Tu seras notifié dès qu&apos;un groupe demande à être vérifié.</p>
+          <p>{translate(locale, 'admin.verificationsEmptyTitle')}</p>
+          <p>{translate(locale, 'admin.verificationsEmptyBody')}</p>
         </div>
       )}
 
@@ -11972,14 +12370,24 @@ function AdminGroupVerificationsBlock({
             <div className="admin-request-main">
               <strong>{entry.group.name}</strong>
               <span className="admin-request-venue">
-                {entry.group.memberCount} membre
-                {entry.group.memberCount > 1 ? 's' : ''} ·{' '}
-                {entry.group.visibility === 'restricted'
-                  ? 'Sur demande'
-                  : 'Accès libre'}
+                {translatePlural(
+                  locale,
+                  entry.group.memberCount,
+                  'forum.memberCount',
+                  'forum.memberCountPlural'
+                )}{' '}
+                ·{' '}
+                {translate(
+                  locale,
+                  entry.group.visibility === 'restricted'
+                    ? 'admin.accessOnRequest'
+                    : 'admin.accessOpen'
+                )}
               </span>
               <span className="admin-request-who">
-                Demandé par {entry.requester.displayName}
+                {translate(locale, 'admin.requestedByShort', {
+                  name: entry.requester.displayName
+                })}
               </span>
               <p className="admin-request-justification">
                 {entry.justification}
@@ -11995,7 +12403,7 @@ function AdminGroupVerificationsBlock({
                 disabled={busy === entry.group.id}
                 onClick={() => resolve(entry.group.id, false)}
               >
-                Refuser
+                {translate(locale, 'admin.refuse')}
               </button>
               <button
                 type="button"
@@ -12003,7 +12411,7 @@ function AdminGroupVerificationsBlock({
                 disabled={busy === entry.group.id}
                 onClick={() => resolve(entry.group.id, true)}
               >
-                Vérifier
+                {translate(locale, 'admin.verify')}
               </button>
             </div>
           </div>
@@ -13103,18 +13511,26 @@ function OrganisateurPage({
     <div className="map-container-wrapper organisateur-page">
       <div className="events-hero organisateur-hero">
         <div className="events-hero-text">
-          <p className="events-hero-kicker">Organisateur</p>
-          <h1>Tes événements.</h1>
+          <p className="events-hero-kicker">
+            {translate(locale, 'create.kicker')}
+          </p>
+          <h1>{translate(locale, 'organizer.pageTitle')}</h1>
           <p className="events-hero-eyebrow">
-            Crée et gère tes soirées. Elles sont visibles dans l&apos;espace
-            connecté de Pulso, pas sur la carte publique.
+            {translate(locale, 'organizer.pageSubtitle')}
           </p>
           <div className="events-hero-stats">
             <span className="events-hero-stat">
-              <strong>{upcoming.length}</strong> à venir
+              <strong>{upcoming.length}</strong>{' '}
+              {translate(locale, 'organizer.statUpcoming')}
             </span>
             <span className="events-hero-stat">
-              <strong>{past.length}</strong> passé{past.length > 1 ? 's' : ''}
+              <strong>{past.length}</strong>{' '}
+              {translatePlural(
+                locale,
+                past.length,
+                'organizer.statPast',
+                'organizer.statPastPlural'
+              )}
             </span>
           </div>
         </div>
@@ -13123,14 +13539,16 @@ function OrganisateurPage({
           className="btn-primary"
           onClick={() => setEditing('new')}
         >
-          Créer un événement
+          {translate(locale, 'create.createTitle')}
         </button>
       </div>
 
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger tes événements pour le moment.
+          {translate(locale, 'organizer.loadError')}
         </p>
       )}
       {actionError && <p className="create-event-error">{actionError}</p>}
@@ -13152,29 +13570,28 @@ function OrganisateurPage({
           <span className="empty-state-icon" aria-hidden="true">
             <SidebarNavIcon kind="organisateur" />
           </span>
-          <p>Aucun événement publié</p>
-          <p>
-            Crée ta première soirée : elle apparaîtra dans Événements et sur la
-            carte connectée, avec le filtre After si c&apos;en est un.
-          </p>
+          <p>{translate(locale, 'organizer.emptyTitle')}</p>
+          <p>{translate(locale, 'organizer.emptyBody')}</p>
           <button
             type="button"
             className="btn-primary"
             onClick={() => setEditing('new')}
           >
-            Créer un événement
+            {translate(locale, 'create.createTitle')}
           </button>
         </div>
       )}
 
       {[
-        { label: 'À venir', list: upcoming },
-        { label: 'Passés', list: past }
+        { label: 'common.upcoming' as MessageKey, list: upcoming },
+        { label: 'common.past' as MessageKey, list: past }
       ]
         .filter((group) => group.list.length > 0)
         .map((group) => (
           <section className="organisateur-group" key={group.label}>
-            <h2 className="organisateur-group-title">{group.label}</h2>
+            <h2 className="organisateur-group-title">
+              {translate(locale, group.label)}
+            </h2>
             <div className="organisateur-list">
               {group.list.map((event) => (
                 <div className="organisateur-row-wrap" key={event.id}>
@@ -13201,9 +13618,12 @@ function OrganisateurPage({
                         <span
                           className={`organisateur-origin origin-${event.origin ?? 'directory'}`}
                         >
-                          {event.origin === 'verified_organizer'
-                            ? 'Organisateur vérifié'
-                            : 'Communauté'}
+                          {translate(
+                            locale,
+                            event.origin === 'verified_organizer'
+                              ? 'origin.verifiedOrganizer'
+                              : 'origin.community'
+                          )}
                         </span>
                         {event.isAfter && (
                           <span className="organisateur-after">After</span>
@@ -13221,7 +13641,7 @@ function OrganisateurPage({
                         className="text-btn"
                         onClick={() => setConsoleEvent(event)}
                       >
-                        Voir
+                        {translate(locale, 'organizer.view')}
                       </button>
                       <button
                         type="button"
@@ -13229,21 +13649,24 @@ function OrganisateurPage({
                         aria-pressed={event.pinned === true}
                         onClick={() => togglePin(event)}
                       >
-                        {event.pinned ? 'Épinglé' : 'Épingler'}
+                        {translate(
+                          locale,
+                          event.pinned ? 'organizer.pinned' : 'organizer.pin'
+                        )}
                       </button>
                       <button
                         type="button"
                         className="text-btn"
                         onClick={() => setEditing(event)}
                       >
-                        Modifier
+                        {translate(locale, 'organizer.edit')}
                       </button>
                       <button
                         type="button"
                         className="text-btn organisateur-delete"
                         onClick={() => remove(event.id)}
                       >
-                        Supprimer
+                        {translate(locale, 'organizer.delete')}
                       </button>
                     </span>
                   </div>
@@ -13314,9 +13737,10 @@ function EventGridCard({
         <button
           type="button"
           className="card-fav"
-          aria-label={
-            isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'
-          }
+          aria-label={translate(
+            locale,
+            isFavorite ? 'favorites.remove' : 'favorites.add'
+          )}
           onClick={(clickEvent) => {
             clickEvent.stopPropagation();
             onToggleFavorite();
@@ -13507,8 +13931,13 @@ function MapSelectionCard({
           )}
           <span className="map-selection-card-count">
             {group.events.length > 0
-              ? `${group.events.length} événement${group.events.length > 1 ? 's' : ''} à venir`
-              : 'Aucun événement à venir'}
+              ? translatePlural(
+                  locale,
+                  group.events.length,
+                  'venues.upcomingCount',
+                  'venues.upcomingCountPlural'
+                )
+              : translate(locale, 'venues.noUpcoming')}
           </span>
           {nextEvent && (
             <button
@@ -13710,11 +14139,13 @@ function DashboardHome({
       <div className="dashboard-home">
         <div className="dashboard-home-hero">
           <p className="dashboard-home-hero-kicker">
-            Bonjour {user.displayName.split(' ')[0]}
+            {translate(locale, 'dashboard.greeting', {
+              name: user.displayName.split(' ')[0] ?? user.displayName
+            })}
           </p>
-          <h1>Montréal, maintenant.</h1>
+          <h1>{translate(locale, 'dashboard.heroTitle')}</h1>
           <p className="dashboard-home-hero-subtitle">
-            Les sorties, les lieux et les communautés qui font vibrer la ville.
+            {translate(locale, 'dashboard.heroSubtitle')}
           </p>
           <div className="dashboard-home-hero-actions">
             <button
@@ -13723,7 +14154,7 @@ function DashboardHome({
               onClick={() => onNavigate('explorer')}
             >
               <ViewModeIcon kind="map" />
-              Explorer la carte
+              {translate(locale, 'favorites.exploreMap')}
             </button>
             <button
               type="button"
@@ -13735,14 +14166,14 @@ function DashboardHome({
               }
             >
               <span aria-hidden="true">◐</span>
-              Voir ce soir
+              {translate(locale, 'dashboard.seeTonight')}
             </button>
           </div>
         </div>
 
         <div className="dashboard-home-filter-bar">
           <span className="dashboard-home-filter-label">
-            Explorer par envie
+            {translate(locale, 'dashboard.filterLabel')}
           </span>
           <div className="events-category-chips dashboard-home-filters">
             <button
@@ -13750,7 +14181,7 @@ function DashboardHome({
               className={activeFilter === 'all' ? 'active' : ''}
               onClick={() => setActiveFilter('all')}
             >
-              Tout voir
+              {translate(locale, 'dashboard.filterAll')}
             </button>
             <button
               type="button"
@@ -13794,14 +14225,17 @@ function DashboardHome({
             <div className="section-header dashboard-home-section-header">
               <div>
                 <span className="dashboard-home-section-kicker">
-                  Fraîchement ajouté
+                  {translate(locale, 'dashboard.newKicker')}
                 </span>
-                <h2>Nouveautés</h2>
+                <h2>{translate(locale, 'dashboard.newTitle')}</h2>
               </div>
               <span className="dashboard-home-section-subtitle">
-                {newEventsPersonalized
-                  ? 'Ajoutés récemment, dans tes catégories favorites'
-                  : 'Ajoutés récemment à Montréal'}
+                {translate(
+                  locale,
+                  newEventsPersonalized
+                    ? 'dashboard.newPersonalized'
+                    : 'dashboard.newGeneric'
+                )}
               </span>
             </div>
             <div className="event-carousel-wrap">
@@ -13829,7 +14263,7 @@ function DashboardHome({
                         behavior: 'smooth'
                       })
                     }
-                    aria-label="Précédent"
+                    aria-label={translate(locale, 'common.previous')}
                   >
                     ‹
                   </button>
@@ -13842,7 +14276,7 @@ function DashboardHome({
                         behavior: 'smooth'
                       })
                     }
-                    aria-label="Suivant"
+                    aria-label={translate(locale, 'common.next')}
                   >
                     ›
                   </button>
@@ -13855,15 +14289,17 @@ function DashboardHome({
         <div className="dashboard-home-section">
           <div className="section-header dashboard-home-section-header">
             <div>
-              <span className="dashboard-home-section-kicker">À proximité</span>
-              <h2>Autour de vous</h2>
+              <span className="dashboard-home-section-kicker">
+                {translate(locale, 'dashboard.nearbyKicker')}
+              </span>
+              <h2>{translate(locale, 'dashboard.nearbyTitle')}</h2>
             </div>
             <button
               type="button"
               className="view-all"
               onClick={() => onNavigate('evenement')}
             >
-              Voir tous les événements
+              {translate(locale, 'dashboard.seeAllEvents')}
             </button>
           </div>
           <div className="event-carousel-wrap">
@@ -13880,9 +14316,12 @@ function DashboardHome({
               ))}
               {nearbyEvents.length === 0 && (
                 <p>
-                  {carouselEmpty
-                    ? 'Aucun événement trouvé.'
-                    : 'Aucun événement ne correspond à ce filtre.'}
+                  {translate(
+                    locale,
+                    carouselEmpty
+                      ? 'dashboard.noEventsFound'
+                      : 'dashboard.noEventsForFilter'
+                  )}
                 </p>
               )}
             </div>
@@ -13897,7 +14336,7 @@ function DashboardHome({
                       behavior: 'smooth'
                     })
                   }
-                  aria-label="Précédent"
+                  aria-label={translate(locale, 'common.previous')}
                 >
                   ‹
                 </button>
@@ -13910,7 +14349,7 @@ function DashboardHome({
                       behavior: 'smooth'
                     })
                   }
-                  aria-label="Suivant"
+                  aria-label={translate(locale, 'common.next')}
                 >
                   ›
                 </button>
@@ -13936,13 +14375,13 @@ function DashboardHome({
             </button>
           </div>
           {forumsState === 'loading' && (
-            <p className="list-view-empty">Chargement…</p>
+            <p className="list-view-empty">
+              {translate(locale, 'common.loading')}
+            </p>
           )}
           {forumsState === 'success' && forums.length === 0 && (
             <p className="list-view-empty">
-              Aucune activité récente dans vos forums. Ajoutez des favoris ou
-              marquez votre participation à un événement pour en voir apparaître
-              ici.
+              {translate(locale, 'dashboard.forumsEmpty')}
             </p>
           )}
           <div className="active-forums-list">
@@ -13982,23 +14421,23 @@ function DashboardHome({
 
       <aside className="dashboard-home-rail">
         <div className="dashboard-home-rail-heading">
-          <span>À Montréal</span>
-          <h2>Ce soir</h2>
+          <span>{translate(locale, 'dashboard.railKicker')}</span>
+          <h2>{translate(locale, 'dashboard.railTitle')}</h2>
         </div>
         <div className="events-trends-section">
           <div className="section-header">
-            <h3>À l'affiche</h3>
+            <h3>{translate(locale, 'dashboard.onTonight')}</h3>
             <button
               type="button"
               className="view-all"
               onClick={() => setActiveFilter('tonight')}
             >
-              Voir tout
+              {translate(locale, 'common.seeAll')}
             </button>
           </div>
           {tonightEvents.length === 0 ? (
             <p className="list-view-empty">
-              Rien de programmé ce soir pour l'instant.
+              {translate(locale, 'dashboard.nothingTonight')}
             </p>
           ) : (
             <ul className="events-trends-list">
@@ -14027,7 +14466,7 @@ function DashboardHome({
         </div>
 
         <div className="events-trends-section">
-          <h3>Catégories populaires</h3>
+          <h3>{translate(locale, 'dashboard.popularCategories')}</h3>
           <div className="events-category-chips dashboard-home-rail-chips">
             {EVENT_CATEGORIES.map((cat) => {
               const color = CATEGORY_COLORS[cat];
@@ -14069,33 +14508,36 @@ function DashboardHome({
         </div>
 
         <div className="dashboard-invite-card">
-          <strong>Invite tes amis</strong>
-          <p>Plus on est de Pulso, plus on découvre.</p>
+          <strong>{translate(locale, 'dashboard.inviteTitle')}</strong>
+          <p>{translate(locale, 'dashboard.inviteBody')}</p>
           <button
             type="button"
             className="dashboard-invite-card-btn"
             onClick={() => setInviteOpen(true)}
           >
-            Inviter des amis
+            {translate(locale, 'dashboard.inviteCta')}
           </button>
         </div>
 
         {recommended.length > 0 && (
           <div className="events-trends-section">
             <div className="section-header">
-              <h3>Recommandé pour vous</h3>
+              <h3>{translate(locale, 'dashboard.recommended')}</h3>
               <button
                 type="button"
                 className="view-all"
                 onClick={() => onNavigate('evenement')}
               >
-                Voir tout
+                {translate(locale, 'common.seeAll')}
               </button>
             </div>
             <span className="dashboard-home-section-subtitle">
-              {recommendedPersonalized
-                ? 'Populaire dans tes catégories favorites'
-                : 'Événements populaires en ce moment'}
+              {translate(
+                locale,
+                recommendedPersonalized
+                  ? 'dashboard.recommendedPersonalized'
+                  : 'dashboard.recommendedGeneric'
+              )}
             </span>
             <ul className="events-trends-list">
               {recommended.map((event) => (
@@ -14129,6 +14571,7 @@ function DashboardHome({
           authToken={authToken}
           onSent={() => setInviteOpen(false)}
           onClose={() => setInviteOpen(false)}
+          locale={locale}
         />
       )}
     </div>
@@ -14191,13 +14634,18 @@ function DashboardEventCard({
         >
           {SHORT_CATEGORY_LABELS[locale][evt.category]}
         </div>
-        {isNew && <span className="dashboard-home-new-badge">NOUVEAU</span>}
+        {isNew && (
+          <span className="dashboard-home-new-badge">
+            {translate(locale, 'eventCard.newBadge')}
+          </span>
+        )}
         <button
           type="button"
           className="card-fav"
-          aria-label={
-            isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'
-          }
+          aria-label={translate(
+            locale,
+            isFavorite ? 'favorites.remove' : 'favorites.add'
+          )}
           onClick={(clickEvent) => {
             clickEvent.stopPropagation();
             onToggleFavorite();
@@ -16161,7 +16609,9 @@ function AmisPage({
             )}
             {incoming.length > 0 && (
               <div className="amis-section">
-                <h3 className="amis-section-title">Demandes reçues</h3>
+                <h3 className="amis-section-title">
+                  {translate(locale, 'friends.requestsReceived')}
+                </h3>
                 <div className="amis-list">
                   {incoming.map((request) => (
                     <div className="amis-row" key={request.id}>
@@ -16356,19 +16806,22 @@ function AmisPage({
         </div>
 
         <div className="amis-rail-section amis-code-rail">
-          <span className="amis-page-kicker">Ton code ami</span>
+          <span className="amis-page-kicker">
+            {translate(locale, 'friends.yourCode')}
+          </span>
           <strong>{friendCode ?? '—'}</strong>
-          <p>Partage-le uniquement avec les personnes que tu veux ajouter.</p>
+          <p>{translate(locale, 'friends.shareCodeHint')}</p>
           <button type="button" onClick={() => setInviteOpen(true)}>
-            Inviter avec mon code <span aria-hidden="true">→</span>
+            {translate(locale, 'friends.inviteWithCode')}{' '}
+            <span aria-hidden="true">→</span>
           </button>
         </div>
 
         <div className="amis-rail-section amis-actions-card">
           <div className="amis-rail-header">
             <div>
-              <span>Ensemble</span>
-              <h3>Organiser une sortie</h3>
+              <span>{translate(locale, 'friends.togetherKicker')}</span>
+              <h3>{translate(locale, 'friends.planOuting')}</h3>
             </div>
           </div>
           <div className="amis-quick-actions">
@@ -16379,8 +16832,8 @@ function AmisPage({
             >
               <span aria-hidden="true">♟</span>
               <span>
-                <strong>Créer un groupe</strong>
-                <small>Rassembler ton cercle</small>
+                <strong>{translate(locale, 'friends.createGroup')}</strong>
+                <small>{translate(locale, 'friends.createGroupHint')}</small>
               </span>
               <span aria-hidden="true">→</span>
             </button>
@@ -16391,8 +16844,8 @@ function AmisPage({
             >
               <span aria-hidden="true">♡</span>
               <span>
-                <strong>Choisir un événement</strong>
-                <small>Partager une idée de sortie</small>
+                <strong>{translate(locale, 'friends.pickEvent')}</strong>
+                <small>{translate(locale, 'friends.pickEventHint')}</small>
               </span>
               <span aria-hidden="true">→</span>
             </button>
@@ -16414,6 +16867,7 @@ function AmisPage({
           authToken={authToken}
           onSent={refresh}
           onClose={() => setInviteOpen(false)}
+          locale={locale}
         />
       )}
       {mapOpen && (
@@ -16422,6 +16876,7 @@ function AmisPage({
           eventsById={upcomingEventsById}
           onOpenEventForum={onOpenEventForum}
           onClose={() => setMapOpen(false)}
+          locale={locale}
         />
       )}
     </div>
@@ -16545,28 +17000,24 @@ type ProfilTab =
   | 'groupes'
   | 'activite';
 
-// `label` is a translation key where DEC-0020 added the tab, and literal
-// French where it predates the i18n work - the ratchet in
-// i18n-coverage.test.ts is what will eventually force the rest across.
+// Every tab carries a catalogue key. The mixed `label`/`labelKey` shape
+// this replaced was a half-finished migration: tabs added by DEC-0020 had
+// keys, the older ones kept literal French, and the ratchet could not see
+// the difference because "Photos", "Favoris" and "Groupes" carry neither an
+// accent nor a marker word.
 const PROFIL_TABS: Array<{
   id: ProfilTab;
-  label: string;
-  labelKey?: MessageKey;
+  labelKey: MessageKey;
   icon: string;
 }> = [
-  { id: 'apercu', label: 'Vue d’ensemble', icon: '✦' },
-  { id: 'photos', label: 'Photos', labelKey: 'profile.tabPhotos', icon: '❑' },
-  { id: 'mes-evenements', label: 'Mes sorties', icon: '◫' },
-  { id: 'favoris', label: 'Favoris', icon: '♡' },
-  { id: 'amis', label: 'Amis', labelKey: 'profile.tabFriends', icon: '🧑‍🤝‍🧑' },
-  {
-    id: 'lieux',
-    label: 'Lieux suivis',
-    labelKey: 'profile.tabFollowedVenues',
-    icon: '⌖'
-  },
-  { id: 'groupes', label: 'Groupes', icon: '♟' },
-  { id: 'activite', label: 'Activité', icon: '↗' }
+  { id: 'apercu', labelKey: 'profile.tabOverview', icon: '✦' },
+  { id: 'photos', labelKey: 'profile.tabPhotos', icon: '❑' },
+  { id: 'mes-evenements', labelKey: 'profile.tabMyOutings', icon: '◫' },
+  { id: 'favoris', labelKey: 'profile.tabFavorites', icon: '♡' },
+  { id: 'amis', labelKey: 'profile.tabFriends', icon: '🧑‍🤝‍🧑' },
+  { id: 'lieux', labelKey: 'profile.tabFollowedVenues', icon: '⌖' },
+  { id: 'groupes', labelKey: 'profile.tabGroups', icon: '♟' },
+  { id: 'activite', labelKey: 'profile.tabActivity', icon: '↗' }
 ];
 
 function renderUserAvatarContent(user: User): ReactNode {
@@ -16842,12 +17293,14 @@ function EditProfileModal({
   user,
   authToken,
   onClose,
-  onSaved
+  onSaved,
+  locale
 }: {
   user: User;
   authToken: string | undefined;
   onClose: () => void;
   onSaved: (user: User) => void;
+  locale: SupportedLocale;
 }) {
   const [bio, setBio] = useState(user.bio ?? '');
   const [coverStyle, setCoverStyle] = useState(
@@ -16885,14 +17338,14 @@ function EditProfileModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="conversation-modal-header">
-          <strong>Modifier mon profil</strong>
+          <strong>{translate(locale, 'profile.editTitle')}</strong>
           <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
+            {translate(locale, 'common.close')}
           </button>
         </div>
         <div className="profil-edit-body">
           <label className="profil-edit-label" htmlFor="profil-bio-input">
-            Bio
+            {translate(locale, 'profile.bio')}
           </label>
           <textarea
             id="profil-bio-input"
@@ -16900,18 +17353,20 @@ function EditProfileModal({
             onChange={(event) => setBio(event.target.value)}
             maxLength={280}
             rows={3}
-            placeholder="Quelques mots sur toi…"
+            placeholder={translate(locale, 'profile.bioPlaceholder')}
           />
           <span className="profil-edit-counter">{bio.length}/280</span>
 
-          <span className="profil-edit-label">Photo de profil</span>
+          <span className="profil-edit-label">
+            {translate(locale, 'profile.avatar')}
+          </span>
           <div className="profil-cover-picker">
             <button
               type="button"
               className={`profil-avatar-swatch ${avatarStyle === '' ? 'active' : ''}`}
               onClick={() => setAvatarStyle('')}
-              aria-label="Photo Google"
-              title="Photo Google"
+              aria-label={translate(locale, 'profile.googlePhoto')}
+              title={translate(locale, 'profile.googlePhoto')}
             >
               {renderAvatarContent(user)}
             </button>
@@ -16930,7 +17385,9 @@ function EditProfileModal({
             ))}
           </div>
 
-          <span className="profil-edit-label">Bannière</span>
+          <span className="profil-edit-label">
+            {translate(locale, 'profile.banner')}
+          </span>
           <div className="profil-cover-picker">
             {PROFILE_COVER_STYLES.map((style) => (
               <button
@@ -17353,35 +17810,48 @@ function ProfilHeader({
             )}
           </div>
           <div className="profil-identity-copy">
-            <span className="profil-eyebrow">Mon espace Pulso</span>
+            <span className="profil-eyebrow">
+              {translate(locale, 'profile.eyebrow')}
+            </span>
             <div className="profil-name-row">
               <h1>{user.displayName}</h1>
-              <span className="profil-account-pill">Compte connecté</span>
+              <span className="profil-account-pill">
+                {translate(locale, 'profile.accountPill')}
+              </span>
             </div>
             <div className="profil-meta">
-              <span>📍 Montréal, QC</span>
+              <span>{translate(locale, 'profile.location')}</span>
               <span>·</span>
-              <span>Membre depuis {formatMemberSince(user.createdAt)}</span>
+              <span>
+                {translate(locale, 'profile.memberSince', {
+                  date: formatMemberSince(user.createdAt)
+                })}
+              </span>
             </div>
             <p className={`profil-bio ${user.bio ? '' : 'is-empty'}`}>
-              {user.bio ||
-                'Ajoute quelques mots pour personnaliser ton espace.'}
+              {user.bio || translate(locale, 'profile.bioEmpty')}
             </p>
             <span className="profil-friends-link">
-              <strong>{friendsCount}</strong> ami{friendsCount !== 1 ? 's' : ''}
+              <strong>{friendsCount}</strong>{' '}
+              {translatePlural(
+                locale,
+                friendsCount,
+                'profile.friendLabel',
+                'profile.friendLabelPlural'
+              )}
             </span>
           </div>
         </div>
         <button type="button" className="profil-edit-btn" onClick={onEdit}>
           <span aria-hidden="true">✎</span>
-          Personnaliser
+          {translate(locale, 'profile.customise')}
         </button>
       </div>
       <div className="profil-cover-caption">
         <span className="profil-cover-spark" aria-hidden="true">
           ✦
         </span>
-        <span>Tes sorties, tes groupes et tes découvertes au même endroit</span>
+        <span>{translate(locale, 'profile.coverCaption')}</span>
       </div>
     </div>
   );
@@ -17409,28 +17879,52 @@ function ProfilCardHeading({
   );
 }
 
-function ProfilStatsCard({ authToken }: { authToken: string | undefined }) {
+function ProfilStatsCard({
+  authToken,
+  locale
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+}) {
   const { stats, state } = useProfileStats(authToken);
   const statItems = stats
     ? [
-        { value: stats.eventsAttended, label: 'Sorties vécues', icon: '◫' },
-        { value: stats.venuesDiscovered, label: 'Lieux découverts', icon: '⌖' },
-        { value: stats.groupsJoined, label: 'Groupes rejoints', icon: '♟' },
-        { value: stats.favoritesCount, label: 'Favoris gardés', icon: '♡' }
+        {
+          value: stats.eventsAttended,
+          label: translate(locale, 'profile.statOutings'),
+          icon: '◫'
+        },
+        {
+          value: stats.venuesDiscovered,
+          label: translate(locale, 'profile.statVenues'),
+          icon: '⌖'
+        },
+        {
+          value: stats.groupsJoined,
+          label: translate(locale, 'profile.statGroups'),
+          icon: '♟'
+        },
+        {
+          value: stats.favoritesCount,
+          label: translate(locale, 'profile.statFavorites'),
+          icon: '♡'
+        }
       ]
     : [];
 
   return (
     <div className="profil-side-card profil-stats-card">
       <ProfilCardHeading
-        eyebrow="Ton parcours"
-        title="En quelques chiffres"
+        eyebrow={translate(locale, 'profile.statsEyebrow')}
+        title={translate(locale, 'profile.statsTitle')}
         icon="↗"
       />
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger vos stats pour le moment.
+          {translate(locale, 'profile.statsError')}
         </p>
       )}
       {state === 'success' && stats && (
@@ -17453,7 +17947,13 @@ function ProfilStatsCard({ authToken }: { authToken: string | undefined }) {
 // Pre-existing feature (Phase 1.3), just relocated from the old flat "Mon
 // compte" card into its own side card - a real aggregation of the account's
 // own favorites, not simulated data.
-function ProfilTrendsCard({ authToken }: { authToken: string | undefined }) {
+function ProfilTrendsCard({
+  authToken,
+  locale
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+}) {
   const { trends, state } = useTrends(authToken);
 
   const hasTrends =
@@ -17463,30 +17963,32 @@ function ProfilTrendsCard({ authToken }: { authToken: string | undefined }) {
   return (
     <div className="profil-side-card profil-trends-card">
       <ProfilCardHeading
-        eyebrow="D’après tes favoris"
-        title="Tes tendances"
+        eyebrow={translate(locale, 'profile.trendsEyebrow')}
+        title={translate(locale, 'profile.trendsTitle')}
         icon="✦"
       />
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger vos tendances pour le moment.
+          {translate(locale, 'profile.trendsError')}
         </p>
       )}
       {state === 'success' && !hasTrends && (
         <p className="list-view-empty">
-          Ajoutez des favoris pour voir vos tendances apparaître ici.
+          {translate(locale, 'profile.trendsEmpty')}
         </p>
       )}
       {state === 'success' && hasTrends && trends && (
         <div className="compte-trends-lists">
           {trends.eventCategories.length > 0 && (
             <div className="compte-trends-group">
-              <h4>Catégories d'événements</h4>
+              <h4>{translate(locale, 'profile.trendsEventCategories')}</h4>
               <ul>
                 {trends.eventCategories.map((entry) => (
                   <li key={entry.category}>
-                    <span>{getCategoryLabel('fr', entry.category)}</span>
+                    <span>{getCategoryLabel(locale, entry.category)}</span>
                     <span className="compte-trends-count">{entry.count}</span>
                   </li>
                 ))}
@@ -17495,11 +17997,11 @@ function ProfilTrendsCard({ authToken }: { authToken: string | undefined }) {
           )}
           {trends.venueCategories.length > 0 && (
             <div className="compte-trends-group">
-              <h4>Types de lieux</h4>
+              <h4>{translate(locale, 'profile.trendsVenueKinds')}</h4>
               <ul>
                 {trends.venueCategories.map((entry) => (
                   <li key={entry.category}>
-                    <span>{VENUE_CATEGORY_LABELS.fr[entry.category]}</span>
+                    <span>{VENUE_CATEGORY_LABELS[locale][entry.category]}</span>
                     <span className="compte-trends-count">{entry.count}</span>
                   </li>
                 ))}
@@ -17514,25 +18016,34 @@ function ProfilTrendsCard({ authToken }: { authToken: string | undefined }) {
 
 function ProfilAmisCard({
   friends,
-  onOpenAmis
+  onOpenAmis,
+  locale
 }: {
   friends: PublicUser[];
   onOpenAmis: () => void;
+  locale: SupportedLocale;
 }) {
   return (
     <div className="profil-side-card profil-friends-card">
       <div className="profil-side-card-header">
         <ProfilCardHeading
-          eyebrow="Ton cercle"
-          title={`${friends.length} ami${friends.length !== 1 ? 's' : ''}`}
+          eyebrow={translate(locale, 'profile.circleEyebrow')}
+          title={translatePlural(
+            locale,
+            friends.length,
+            'profile.friendCount',
+            'profile.friendCountPlural'
+          )}
           icon="☺"
         />
         <button type="button" className="text-btn" onClick={onOpenAmis}>
-          Voir tout
+          {translate(locale, 'common.seeAll')}
         </button>
       </div>
       {friends.length === 0 && (
-        <p className="list-view-empty">Aucun ami pour le moment.</p>
+        <p className="list-view-empty">
+          {translate(locale, 'profile.noFriends')}
+        </p>
       )}
       {friends.length > 0 && (
         <div className="profil-friends-avatars">
@@ -17567,18 +18078,22 @@ function ProfilActivityRecentCard({
   return (
     <div className="profil-side-card profil-recent-card">
       <ProfilCardHeading
-        eyebrow="Derniers mouvements"
-        title="Activité récente"
+        eyebrow={translate(locale, 'profile.recentEyebrow')}
+        title={translate(locale, 'profile.recentActivity')}
         icon="↗"
       />
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger votre activité.</p>
+        <p className="list-view-empty">
+          {translate(locale, 'profile.activityError')}
+        </p>
       )}
       {state === 'success' && (
         <ActivityList
           entries={activity}
-          emptyMessage="Aucune activité pour le moment."
+          emptyMessage={translate(locale, 'profile.activityEmpty')}
           locale={locale}
         />
       )}
@@ -17608,9 +18123,11 @@ function ApercuTab({
     <div className="profil-tab-content">
       <div className="profil-welcome-strip">
         <div>
-          <span className="profil-section-kicker">Ton agenda</span>
-          <h2>Prêt pour ta prochaine sortie ?</h2>
-          <p>Retrouve ici les événements auxquels tu as prévu de participer.</p>
+          <span className="profil-section-kicker">
+            {translate(locale, 'profile.agendaKicker')}
+          </span>
+          <h2>{translate(locale, 'profile.readyTitle')}</h2>
+          <p>{translate(locale, 'profile.readyBody')}</p>
         </div>
         <span className="profil-welcome-glyph" aria-hidden="true">
           ✦
@@ -17619,8 +18136,10 @@ function ApercuTab({
       <div className="dashboard-home-section profil-events-section">
         <div className="list-view-heading profil-section-heading">
           <div>
-            <span className="profil-section-kicker">À l’horizon</span>
-            <h3>Mes prochaines sorties</h3>
+            <span className="profil-section-kicker">
+              {translate(locale, 'profile.horizonKicker')}
+            </span>
+            <h3>{translate(locale, 'profile.upcomingOutings')}</h3>
           </div>
           {upcoming.events.length > 0 && (
             <button
@@ -17628,13 +18147,13 @@ function ApercuTab({
               className="text-btn"
               onClick={onSeeMoreUpcoming}
             >
-              Voir tout
+              {translate(locale, 'common.seeAll')}
             </button>
           )}
         </div>
         {upcoming.state === 'success' && upcoming.events.length === 0 && (
           <p className="list-view-empty">
-            Aucun événement à venir pour le moment.
+            {translate(locale, 'profile.noUpcoming')}
           </p>
         )}
         <EventCarouselRow
@@ -17646,18 +18165,20 @@ function ApercuTab({
       <div className="dashboard-home-section profil-events-section">
         <div className="list-view-heading profil-section-heading">
           <div>
-            <span className="profil-section-kicker">Souvenirs</span>
-            <h3>Mes sorties passées</h3>
+            <span className="profil-section-kicker">
+              {translate(locale, 'profile.memoriesKicker')}
+            </span>
+            <h3>{translate(locale, 'profile.pastOutings')}</h3>
           </div>
           {past.events.length > 0 && (
             <button type="button" className="text-btn" onClick={onSeeMorePast}>
-              Voir tout
+              {translate(locale, 'common.seeAll')}
             </button>
           )}
         </div>
         {past.state === 'success' && past.events.length === 0 && (
           <p className="list-view-empty">
-            Aucun événement passé pour le moment.
+            {translate(locale, 'profile.noPast')}
           </p>
         )}
         <EventCarouselRow
@@ -17768,14 +18289,18 @@ function ActiviteTab({
   const { activity, state } = useActivity(authToken, 50);
   return (
     <div className="profil-tab-content">
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
-        <p className="list-view-empty">Impossible de charger votre activité.</p>
+        <p className="list-view-empty">
+          {translate(locale, 'profile.activityError')}
+        </p>
       )}
       {state === 'success' && (
         <ActivityList
           entries={activity}
-          emptyMessage="Aucune activité pour le moment."
+          emptyMessage={translate(locale, 'profile.activityEmpty')}
           locale={locale}
         />
       )}
@@ -17852,7 +18377,7 @@ function CompteSection({
                 onClick={() => setTab(item.id)}
               >
                 <span aria-hidden="true">{item.icon}</span>
-                {item.labelKey ? translate(locale, item.labelKey) : item.label}
+                {translate(locale, item.labelKey)}
               </button>
             ))}
           </nav>
@@ -17922,9 +18447,13 @@ function CompteSection({
         </div>
 
         <div className="profil-side">
-          <ProfilStatsCard authToken={authToken} />
-          <ProfilAmisCard friends={friends} onOpenAmis={onOpenAmis} />
-          <ProfilTrendsCard authToken={authToken} />
+          <ProfilStatsCard authToken={authToken} locale={locale} />
+          <ProfilAmisCard
+            friends={friends}
+            onOpenAmis={onOpenAmis}
+            locale={locale}
+          />
+          <ProfilTrendsCard authToken={authToken} locale={locale} />
           <ProfilActivityRecentCard
             authToken={authToken}
             locale={locale}
@@ -17932,14 +18461,14 @@ function CompteSection({
           />
           <div className="profil-side-card profil-settings-card">
             <ProfilCardHeading
-              eyebrow="Préférences"
-              title="Mon compte"
+              eyebrow={translate(locale, 'profile.preferences')}
+              title={translate(locale, 'profile.myAccount')}
               icon="⚙"
             />
             <div className="profil-settings-row">
               <div>
-                <strong>Langue de l’interface</strong>
-                <span>Choisis la langue de Pulso</span>
+                <strong>{translate(locale, 'profile.uiLanguage')}</strong>
+                <span>{translate(locale, 'profile.uiLanguageHint')}</span>
               </div>
               <LanguageSelector locale={locale} onChange={onChangeLocale} />
             </div>
@@ -17948,7 +18477,8 @@ function CompteSection({
               className="profil-logout-btn"
               onClick={onLogout}
             >
-              <span aria-hidden="true">↪</span> Se déconnecter
+              <span aria-hidden="true">↪</span>{' '}
+              {translate(locale, 'profile.logout')}
             </button>
           </div>
         </div>
@@ -17960,17 +18490,17 @@ function CompteSection({
           authToken={authToken}
           onClose={() => setEditing(false)}
           onSaved={onUserUpdated}
+          locale={locale}
         />
       )}
     </section>
   );
 }
 
-const FRIEND_REQUEST_ERROR_MESSAGES: Record<string, string> = {
-  FRIEND_CODE_NOT_FOUND: 'Aucun compte ne correspond à ce code.',
-  CANNOT_FRIEND_SELF: 'Vous ne pouvez pas vous ajouter vous-même.',
-  FRIENDSHIP_ALREADY_EXISTS:
-    'Vous êtes déjà amis, ou une demande est déjà en attente.'
+const FRIEND_REQUEST_ERROR_MESSAGES: Record<string, MessageKey> = {
+  FRIEND_CODE_NOT_FOUND: 'friends.errorCodeNotFound',
+  CANNOT_FRIEND_SELF: 'friends.errorCannotFriendSelf',
+  FRIENDSHIP_ALREADY_EXISTS: 'friends.errorAlreadyFriends'
 };
 
 // A friend's real detail panel (Phase 4.15) - profile fields (bio/
@@ -18115,10 +18645,12 @@ function FriendDetailPanel({
         <div className="friend-next-outing">
           <div className="friend-section-title">
             <div>
-              <span>À l’horizon</span>
-              <h3>Votre prochaine sortie en commun</h3>
+              <span>{translate(locale, 'friends.horizonKicker')}</span>
+              <h3>{translate(locale, 'friends.nextTogether')}</h3>
             </div>
-            <span className="friend-next-status">Prévue</span>
+            <span className="friend-next-status">
+              {translate(locale, 'friends.planned')}
+            </span>
           </div>
           <button
             type="button"
@@ -18300,11 +18832,14 @@ function InviteFriendToEventModal({
                   onClick={() => sendEvent(event)}
                   disabled={sendingId === event.id || sentTo.has(event.id)}
                 >
-                  {sentTo.has(event.id)
-                    ? 'Envoyé ✓'
-                    : sendingId === event.id
-                      ? 'Envoi…'
-                      : 'Inviter'}
+                  {translate(
+                    locale,
+                    sentTo.has(event.id)
+                      ? 'friends.invited'
+                      : sendingId === event.id
+                        ? 'friends.inviting'
+                        : 'friends.invite'
+                  )}
                 </button>
               </div>
             ))}
@@ -18320,12 +18855,14 @@ function InviteFriendModal({
   friendCode,
   authToken,
   onSent,
-  onClose
+  onClose,
+  locale
 }: {
   friendCode: string | undefined;
   authToken: string | undefined;
   onSent: () => void;
   onClose: () => void;
+  locale: SupportedLocale;
 }) {
   const [copied, setCopied] = useState(false);
   const [codeInput, setCodeInput] = useState('');
@@ -18352,8 +18889,11 @@ function InviteFriendModal({
         }
         return response.json().then((json) => {
           setSendError(
-            FRIEND_REQUEST_ERROR_MESSAGES[json?.error?.code] ??
-              "Impossible d'envoyer la demande pour le moment."
+            translate(
+              locale,
+              FRIEND_REQUEST_ERROR_MESSAGES[json?.error?.code] ??
+                'friends.errorSendFailed'
+            )
           );
         });
       })
@@ -18368,12 +18908,14 @@ function InviteFriendModal({
       >
         <div className="conversation-modal-header">
           <div className="amis-modal-title">
-            <span className="amis-page-kicker">Agrandir ton cercle</span>
-            <strong>Inviter un ami</strong>
-            <p>Échangez vos codes personnels pour vous retrouver sur Pulso.</p>
+            <span className="amis-page-kicker">
+              {translate(locale, 'friends.inviteKicker')}
+            </span>
+            <strong>{translate(locale, 'friends.inviteTitle')}</strong>
+            <p>{translate(locale, 'friends.inviteBody')}</p>
           </div>
           <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
+            {translate(locale, 'common.close')}
           </button>
         </div>
         <div className="amis-invite-modal-body">
@@ -18383,7 +18925,7 @@ function InviteFriendModal({
                 🔗
               </span>
               <div className="amis-code-info">
-                <p>Ton code ami</p>
+                <p>{translate(locale, 'friends.yourCode')}</p>
                 <strong>{friendCode}</strong>
               </div>
               <button
@@ -18395,7 +18937,10 @@ function InviteFriendModal({
                   setTimeout(() => setCopied(false), 2000);
                 }}
               >
-                {copied ? 'Copié !' : 'Copier'}
+                {translate(
+                  locale,
+                  copied ? 'friends.codeCopied' : 'common.copy'
+                )}
               </button>
             </div>
           )}
@@ -18409,8 +18954,8 @@ function InviteFriendModal({
             <input
               value={codeInput}
               onChange={(event) => setCodeInput(event.target.value)}
-              placeholder="Coller le code d'un ami pour l'ajouter"
-              aria-label="Code ami à ajouter"
+              placeholder={translate(locale, 'friends.pasteCodePlaceholder')}
+              aria-label={translate(locale, 'friends.pasteCodeAria')}
               maxLength={32}
             />
             <button
@@ -18418,7 +18963,7 @@ function InviteFriendModal({
               className="amis-add-btn"
               disabled={!codeInput.trim() || sending}
             >
-              Ajouter
+              {translate(locale, 'friends.addSubmit')}
             </button>
           </form>
           {sendError && <p className="friends-error">{sendError}</p>}
@@ -18435,12 +18980,14 @@ function FriendsMapModal({
   entries,
   eventsById,
   onOpenEventForum,
-  onClose
+  onClose,
+  locale
 }: {
   entries: FriendsMapEntry[];
   eventsById: Map<string, PublicEvent>;
   onOpenEventForum: (eventId: string) => void;
   onClose: () => void;
+  locale: SupportedLocale;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const points = entries
@@ -18489,14 +19036,14 @@ function FriendsMapModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="conversation-modal-header">
-          <strong>Amis sur la carte</strong>
+          <strong>{translate(locale, 'friends.mapTitle')}</strong>
           <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
+            {translate(locale, 'common.close')}
           </button>
         </div>
         {points.length === 0 ? (
           <p className="list-view-empty">
-            Aucun ami n'a de sortie à venir partagée pour l'instant.
+            {translate(locale, 'friends.mapEmpty')}
           </p>
         ) : (
           <>
@@ -18622,11 +19169,12 @@ function ConversationThread({
             <span className="friends-row-avatar friends-row-avatar-lg">
               {renderAvatarContent(friend)}
             </span>
-            <strong>Commence la conversation avec {friend.displayName}.</strong>
-            <p>
-              Un événement à partager ou une sortie à préparer ? Écris le
-              premier message.
-            </p>
+            <strong>
+              {translate(locale, 'friends.startConversation', {
+                name: friend.displayName
+              })}
+            </strong>
+            <p>{translate(locale, 'friends.startConversationHint')}</p>
           </div>
         )}
         {state === 'success' &&
@@ -18664,7 +19212,12 @@ function ConversationThread({
                       {!incoming && (
                         <span
                           className={`conversation-message-receipt ${message.readAt ? 'read' : ''}`}
-                          aria-label={message.readAt ? 'Lu' : 'Envoyé'}
+                          aria-label={translate(
+                            locale,
+                            message.readAt
+                              ? 'messages.receiptRead'
+                              : 'messages.receiptSent'
+                          )}
                         >
                           {message.readAt ? '✓✓' : '✓'}
                         </span>
@@ -18801,20 +19354,12 @@ function SearchPanel({
   // which also throws the query away rather than just closing the panel.
   const panelRef = useRef<HTMLElement>(null);
   const [inputActive, setInputActive] = useState(false);
-  const suggestions =
-    locale === 'fr'
-      ? [
-          'Ce soir près de moi',
-          'Musique gratuite ce week-end',
-          'Sur le Plateau cette semaine',
-          'Un bar avec musique live'
-        ]
-      : [
-          'Tonight near me',
-          'Free music this weekend',
-          'This week on the Plateau',
-          'A bar with live music'
-        ];
+  const suggestions = [
+    translate(locale, 'search.suggestionTonight'),
+    translate(locale, 'search.suggestionFreeWeekend'),
+    translate(locale, 'search.suggestionPlateau'),
+    translate(locale, 'search.suggestionLiveMusic')
+  ];
   const meaningfulConstraints =
     result?.interpretation.constraints.filter(
       ({ key }) => key !== 'status' && key !== 'bounds'
@@ -18868,7 +19413,7 @@ function SearchPanel({
           {translate(locale, 'search.question')}
         </label>
         <div className="search-input-wrapper">
-          <CitySelector />
+          <CitySelector locale={locale} />
           <span className="search-divider" aria-hidden="true" />
           <span className="search-icon" aria-hidden="true">
             <svg
@@ -18992,16 +19537,8 @@ function SearchPanel({
             {noMatches && (
               <div className="search-recovery">
                 <div>
-                  <strong>
-                    {locale === 'fr'
-                      ? 'Essayons autrement'
-                      : "Let's try another way"}
-                  </strong>
-                  <p>
-                    {locale === 'fr'
-                      ? 'Élargissez la zone ou repartez d’une recherche prête à l’emploi.'
-                      : 'Expand the area or start from a ready-made search.'}
-                  </p>
+                  <strong>{translate(locale, 'search.recoveryTitle')}</strong>
+                  <p>{translate(locale, 'search.recoveryBody')}</p>
                 </div>
                 <div className="search-recovery-actions">
                   {suggestions.slice(0, 3).map((suggestion) => (
@@ -19017,9 +19554,7 @@ function SearchPanel({
                     </button>
                   ))}
                   <button type="button" className="primary" onClick={onClear}>
-                    {locale === 'fr'
-                      ? 'Explorer Montréal sans recherche'
-                      : 'Explore Montréal without a search'}
+                    {translate(locale, 'search.recoveryExplore')}
                   </button>
                 </div>
               </div>
@@ -19316,7 +19851,7 @@ function MapFilterBar({
     const selected = venueCategories ?? [];
     const label =
       selected.length === 0
-        ? 'Type de lieu'
+        ? translate(locale, 'filters.venueType')
         : selected
             .map((category) => VENUE_CATEGORY_LABELS[locale][category])
             .join(', ');
@@ -19501,7 +20036,7 @@ function MapFilterBar({
         className="map-filter-chip map-filter-more"
         onClick={onOpenMore}
       >
-        Plus de filtres
+        {translate(locale, 'filters.more')}
         <svg
           width="12"
           height="12"
@@ -19548,35 +20083,20 @@ function AboutPanel({
   return (
     <aside
       className={`filter-overlay glass-panel panel-transition ${visible ? 'panel-visible' : ''}`}
-      aria-label="À propos de Pulso"
+      aria-label={translate(locale, 'about.title')}
       ref={panelRef}
     >
       <div className="filter-heading">
-        <h2>À propos de Pulso</h2>
+        <h2>{translate(locale, 'about.title')}</h2>
         <button type="button" onClick={onClose}>
-          Fermer
+          {translate(locale, 'common.close')}
         </button>
       </div>
       <div className="about-content">
-        <p>
-          Pulso est un répertoire d'événements festifs, musicaux et de soirée
-          géolocalisés à Montréal : concerts, clubs, bars, spectacles, comedy
-          clubs et catégories similaires. Vous pouvez explorer la carte sans
-          compte ni intention précise, ou chercher exactement ce que vous voulez
-          en langage naturel.
-        </p>
-        <p>
-          L'objectif est de regrouper le plus grand nombre possible d'événements
-          montréalais correctement référencés, avec un accès en une action vers
-          la billetterie ou la source d'origine — sans réservation ni billet
-          géré par Pulso lui-même.
-        </p>
-        <h3>Vous organisez un événement ?</h3>
-        <p>
-          Si vous voulez que votre événement soit listé sur Pulso, ou que vous
-          représentez une salle, un organisateur ou une billetterie intéressé·e
-          à collaborer, écrivez-nous :
-        </p>
+        <p>{translate(locale, 'about.body1')}</p>
+        <p>{translate(locale, 'about.body2')}</p>
+        <h3>{translate(locale, 'about.organiserHeading')}</h3>
+        <p>{translate(locale, 'about.organiserBody')}</p>
         <a
           className="primary-action-btn glow-purple"
           href="mailto:rmeynaud@pulsonight.com"
@@ -20116,8 +20636,8 @@ function EventHero({
             <button
               type="button"
               className="share-friend-button"
-              aria-label="Envoyer à un ami"
-              title="Envoyer à un ami"
+              aria-label={translate(locale, 'share.toFriend')}
+              title={translate(locale, 'share.toFriend')}
               onClick={() => setShareFriendOpen(true)}
             >
               <svg
@@ -20166,6 +20686,7 @@ function EventHero({
           event={event}
           authToken={authToken}
           onClose={() => setShareFriendOpen(false)}
+          locale={locale}
         />
       )}
     </div>
@@ -20180,11 +20701,13 @@ function EventHero({
 function ShareToFriendModal({
   event,
   authToken,
-  onClose
+  onClose,
+  locale
 }: {
   event: PublicEvent;
   authToken: string | undefined;
   onClose: () => void;
+  locale: SupportedLocale;
 }) {
   const [friends, setFriends] = useState<PublicUser[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
@@ -20232,23 +20755,25 @@ function ShareToFriendModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="conversation-modal-header">
-          <strong>Envoyer à un ami</strong>
+          <strong>{translate(locale, 'share.toFriend')}</strong>
           <button type="button" className="text-btn" onClick={onClose}>
-            Fermer
+            {translate(locale, 'common.close')}
           </button>
         </div>
         <div className="share-friend-list">
           {state === 'loading' && (
-            <p className="list-view-empty">Chargement…</p>
+            <p className="list-view-empty">
+              {translate(locale, 'common.loading')}
+            </p>
           )}
           {state === 'error' && (
             <p className="list-view-empty">
-              Impossible de charger vos amis pour le moment.
+              {translate(locale, 'share.friendsError')}
             </p>
           )}
           {state === 'success' && friends.length === 0 && (
             <p className="list-view-empty">
-              Ajoutez des amis pour pouvoir leur envoyer des événements.
+              {translate(locale, 'share.noFriends')}
             </p>
           )}
           {state === 'success' &&
@@ -20264,11 +20789,14 @@ function ShareToFriendModal({
                   onClick={() => sendToFriend(friend.id)}
                   disabled={sendingTo === friend.id || sentTo.has(friend.id)}
                 >
-                  {sentTo.has(friend.id)
-                    ? 'Envoyé ✓'
-                    : sendingTo === friend.id
-                      ? 'Envoi…'
-                      : 'Envoyer'}
+                  {translate(
+                    locale,
+                    sentTo.has(friend.id)
+                      ? 'friends.invited'
+                      : sendingTo === friend.id
+                        ? 'friends.inviting'
+                        : 'share.send'
+                  )}
                 </button>
               </div>
             ))}
@@ -20674,7 +21202,9 @@ function EventAboutContent({
             <strong>{translate(locale, 'details.venue')}</strong>
             <p>{event.venue.name}</p>
             <p className="info-sub">
-              {event.venue.address ?? translate(locale, 'access.approximate')}
+              {event.venue.address
+                ? shortenMontrealAddress(event.venue.address, event.venue.name)
+                : translate(locale, 'access.approximate')}
             </p>
           </div>
         </div>
@@ -20797,7 +21327,7 @@ function EventAboutContent({
         )}
         <button className="secondary-action-btn" onClick={onToggleFavorite}>
           <HeartIcon filled={isFavorite} />
-          {isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+          {translate(locale, isFavorite ? 'favorites.remove' : 'favorites.add')}
         </button>
       </div>
 
@@ -21083,7 +21613,7 @@ function EventDetails({
           className={tab === 'about' ? 'active' : ''}
           onClick={() => setTab('about')}
         >
-          À propos
+          {translate(locale, 'venueDetail.about')}
         </button>
         <button
           type="button"
@@ -21126,8 +21656,9 @@ function EventDetails({
         <div className="details-section">
           {!user ? (
             <SignInPrompt
-              message="Connectez-vous pour voir qui de vos amis participe et indiquer votre propre présence."
+              message={translate(locale, 'attendance.signInPrompt')}
               onLogin={onLogin}
+              locale={locale}
             />
           ) : (
             <>
@@ -21208,7 +21739,7 @@ function EventDetails({
                 </div>
               ) : (
                 <p className="list-view-empty">
-                  Aucun de vos amis n'a indiqué y participer.
+                  {translate(locale, 'attendance.noFriendsAttending')}
                 </p>
               )}
             </>
@@ -21220,14 +21751,16 @@ function EventDetails({
         <div className="details-section">
           {!user ? (
             <SignInPrompt
-              message="Connectez-vous pour lire et participer au forum de cet événement."
+              message={translate(locale, 'forum.signInEvent')}
               onLogin={onLogin}
+              locale={locale}
             />
           ) : (
             <ForumTeaser
               eventId={event.id}
               authToken={authToken}
               onOpenForumPanel={onOpenForumPanel}
+              locale={locale}
             />
           )}
         </div>
@@ -21244,11 +21777,13 @@ function EventDetails({
 function ForumTeaser({
   eventId,
   authToken,
-  onOpenForumPanel
+  onOpenForumPanel,
+  locale
 }: {
   eventId: string;
   authToken: string | undefined;
   onOpenForumPanel: () => void;
+  locale: SupportedLocale;
 }) {
   const [members, setMembers] = useState<PublicUser[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
@@ -21300,10 +21835,12 @@ function ForumTeaser({
 
   return (
     <div className="forum-teaser">
-      {state === 'loading' && <p className="list-view-empty">Chargement…</p>}
+      {state === 'loading' && (
+        <p className="list-view-empty">{translate(locale, 'common.loading')}</p>
+      )}
       {state === 'error' && (
         <p className="list-view-empty">
-          Impossible de charger le forum pour le moment.
+          {translate(locale, 'forum.teaserError')}
         </p>
       )}
       {state === 'success' && members.length > 0 && (
@@ -21320,18 +21857,23 @@ function ForumTeaser({
             ))}
           </div>
           <span className="forum-members-count">
-            {members.length} membre{members.length !== 1 ? 's' : ''}
+            {translatePlural(
+              locale,
+              members.length,
+              'forum.memberCount',
+              'forum.memberCountPlural'
+            )}
           </span>
         </div>
       )}
       {state === 'success' && members.length === 0 && (
         <p className="list-view-empty">
-          Personne n'a encore écrit ici. Sois le premier !
+          {translate(locale, 'forum.teaserEmpty')}
         </p>
       )}
       <div className="forum-teaser-actions">
         <button type="button" className="meetup-btn" onClick={onOpenForumPanel}>
-          Rejoindre la discussion
+          {translate(locale, 'forum.joinDiscussion')}
         </button>
         <button
           type="button"
@@ -21339,7 +21881,7 @@ function ForumTeaser({
           onClick={toggleFollow}
           disabled={followLoading}
         >
-          {following ? '✓ Forum ajouté' : '+ Ajouter ce forum'}
+          {translate(locale, following ? 'forum.followed' : 'forum.follow')}
         </button>
       </div>
     </div>
@@ -21595,6 +22137,7 @@ function ForumPanel({
               <SignInPrompt
                 message={translate(locale, 'forum.signInDiscussion')}
                 onLogin={onLogin}
+                locale={locale}
               />
             ) : (
               <EventForum
@@ -21658,6 +22201,7 @@ function ForumPanel({
               <SignInPrompt
                 message={translate(locale, 'forum.signInPhotos')}
                 onLogin={onLogin}
+                locale={locale}
               />
             ) : (
               <EventPhotosTab
@@ -21754,7 +22298,7 @@ function ForumPanel({
         </div>
 
         <div className="forum-panel-rail-card">
-          <h3>Membres</h3>
+          <h3>{translate(locale, 'forum.members')}</h3>
           {membersState === 'success' && members.length > 0 ? (
             <div className="forum-panel-members-row">
               <div className="forum-members-avatars">
@@ -21805,7 +22349,7 @@ function ForumPanel({
               className="forum-panel-rail-action"
               onClick={() => setTab('membres')}
             >
-              Voir les membres
+              {translate(locale, 'forum.seeMembers')}
             </button>
           </div>
         )}
@@ -21953,10 +22497,12 @@ function EventPhotosTab({
 
 function SignInPrompt({
   message,
-  onLogin
+  onLogin,
+  locale
 }: {
   message: string;
   onLogin: () => void;
+  locale: SupportedLocale;
 }) {
   return (
     <div className="sign-in-prompt">
@@ -21976,7 +22522,7 @@ function SignInPrompt({
       </span>
       <p>{message}</p>
       <button type="button" className="sign-in-prompt-btn" onClick={onLogin}>
-        Se connecter
+        {translate(locale, 'auth.signIn')}
       </button>
     </div>
   );
@@ -22297,11 +22843,13 @@ function EventForum({
 
         <div className="forum-posts">
           {state === 'loading' && (
-            <p className="list-view-empty">Chargement…</p>
+            <p className="list-view-empty">
+              {translate(locale, 'common.loading')}
+            </p>
           )}
           {state === 'error' && (
             <p className="list-view-empty">
-              Impossible de charger le forum pour le moment.
+              {translate(locale, 'forum.teaserError')}
             </p>
           )}
           {state === 'success' && topLevelPosts.length === 0 && (
