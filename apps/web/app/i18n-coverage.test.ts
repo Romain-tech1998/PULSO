@@ -215,9 +215,26 @@ function countFrench(source: string): { line: number; text: string }[] {
 /**
  * Remaining French per file. Lower these as batches land; never raise
  * them. Zero means the surface is done and must stay done.
+ *
+ * ExploreMap reached its floor at 10. Every one of those ten is French
+ * that is *correct where it stands*, and the scan cannot tell because it
+ * reads whole lines rather than just the value:
+ *
+ *   - 7 lines of VENUE_CATEGORY_LABELS / SHORT_VENUE_CATEGORY_LABELS, the
+ *     `fr` half of tables already typed Record<SupportedLocale, ...>. The
+ *     ALLOWED list above covers the values ('Boîte de nuit'), but the line
+ *     it sits on ("nightclub: 'Boîte de nuit',") is captured too.
+ *   - 1 line of LOCALE_META, where 'Français' is the French language's own
+ *     name and stays French in the English UI, exactly as 'English' stays
+ *     English in the French one.
+ *   - 2 lines of a TypeScript union ('mes-sorties'), which is an
+ *     identifier the router compares against, not text anyone reads.
+ *
+ * So 10 is the floor, not a debt. It can only go lower if one of those
+ * constructs disappears; it must never go up.
  */
 const BUDGETS: Record<string, number> = {
-  'explore-map.tsx': 192,
+  'explore-map.tsx': 10,
   'groups.tsx': 0,
   'shared.tsx': 0
 };
