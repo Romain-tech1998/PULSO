@@ -240,15 +240,21 @@ export interface DiscoveryFilters {
   after?: boolean;
 }
 
-// 'today' rather than the originally-specified 'next7' (MAP-003) - revised
-// by product decision once real ingestion volume made a 7-day default feel
-// too dense to browse. Briefly 'tonight' (see PROJECT_INDEX.md), then
-// refined once more to 'today' as the more broadly relevant default while
-// 'tonight' stays a distinct, still-selectable option. The 7-day window
-// itself is unchanged and still selectable; only the unconfigured default
-// moved. See PROJECT_INDEX.md.
+// Back to 'next7', the window MAP-003 originally specified.
+//
+// It moved to 'tonight' and then to 'today' on the reasoning that a 7-day
+// default was "too dense to browse" once real ingestion arrived. Measured
+// against the catalogue as it actually stands, the opposite is true: on
+// identical map bounds, 'today' returns 4 events and 'next7' returns 104,
+// while the calendar for the same month shows days carrying 31, 36 and 60.
+// A first screen with four pins on it does not read as a curated selection,
+// it reads as an empty city - and free map exploration is the primary
+// experience (MVP-0001), so the default that starves it is the wrong one.
+//
+// 'today' and 'tonight' are unchanged and still selectable; only the
+// unconfigured default moved back. See DEC-0027 and PROJECT_INDEX.md.
 export const DEFAULT_DISCOVERY_FILTERS: DiscoveryFilters = {
-  date: 'today',
+  date: 'next7',
   categories: [],
   price: 'all'
 };

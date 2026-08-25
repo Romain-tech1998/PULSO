@@ -32,8 +32,15 @@ async function openFilterPanel(page: Page) {
     // chip sits under the sticky top bar, whose logo swallows the click.
     // Reaching it by focus also exercises ACCESS-001/003 on the small
     // viewport, which is where it matters most.
+    // Both languages. This locator used to name the French labels only and
+    // still matched an English run, because "Plus de filtres" was hardcoded
+    // French on every locale - the test was quietly asserting the bug.
+    // DEC-0003's ratchet could not see it either: the string carries no
+    // accent and no marker word.
     const chip = page
-      .getByRole('button', { name: /^Filtres$|Plus de filtres/ })
+      .getByRole('button', {
+        name: /^Filtres$|^Filters$|Plus de filtres|More filters/
+      })
       .first();
     await chip.focus();
     await page.keyboard.press('Enter');
@@ -237,15 +244,25 @@ test('filters anonymously and keeps the filters modifiable', async ({
   await landAnonymously(page, 'en');
   const panel = await openFilterPanel(page);
 
-  // Stage 3: widen the window, so filtering has more than one day to bite
-  // on, then narrow by category and watch the map answer immediately.
+  // Stage 3: narrow the window and watch the map answer immediately.
+  //
+  // This used to click "This week" to widen from the landing default and
+  // assert the count rose. DEC-0027 moved that default back to the seven-day
+  // window, so the click became a no-op on the value being waited on and the
+  // poll timed out. It narrows first and then widens back, which exercises
+  // the filter in both directions, leaves the window where the category
+  // steps below expect it, and no longer depends on which default the app
+  // happens to open with.
   await expandGroup(page, 'Date');
   // Read before the click, not after: after it, the value being waited on
   // has already arrived and nothing ever changes.
   const onLanding = await countShown(page);
+  await panel.getByRole('button', { name: 'Today', exact: true }).click();
+  const oneDay = await countAfterChange(page, onLanding);
+  expect(oneDay).toBeLessThan(onLanding);
   await panel.getByRole('button', { name: 'This week', exact: true }).click();
-  const widened = await countAfterChange(page, onLanding);
-  expect(widened).toBeGreaterThan(onLanding);
+  const widened = await countAfterChange(page, oneDay);
+  expect(widened).toBeGreaterThan(oneDay);
 
   await expandGroup(page, 'Categories');
   await panel.getByRole('button', { name: 'Comedy', exact: true }).click();
