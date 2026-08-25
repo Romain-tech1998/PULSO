@@ -162,7 +162,11 @@ test.describe('DEC-0022 §6 address disclosure, as a signed-in reader', () => {
     // public tab beside it, which is exactly where a visitor would read it.
     await page
       .getByLabel(/Event Details|Détails de l.événement/)
-      .getByRole('button', { name: /^À propos$/ })
+      // Both languages, like the panel locator above it. This named the
+      // French label only and still matched an English run, because the tab
+      // was hardcoded French on every locale - the test was asserting the
+      // bug rather than the behaviour.
+      .getByRole('button', { name: /^À propos$|^About$/ })
       .click();
 
     await expect(page.getByText(HIDDEN_ADDRESS)).toBeVisible();
