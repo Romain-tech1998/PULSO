@@ -62,9 +62,31 @@ export function describeError(
 }
 
 /**
+ * One line a person can read at a glance, before the structured fields.
+ */
+export function summarise(error: ReportedError): string {
+  const where = error.route
+    ? ` ${error.method ?? ''} ${error.route}`.trimEnd()
+    : '';
+  const id = error.requestId ? ` (${error.requestId})` : '';
+  return `Pulso ${error.kind}${where}: ${error.message}${id}`;
+}
+
+/**
  * Posts the report and forgets about it.
  *
- * Deliberately swallows its own failures. A monitoring sink that can turn a
+ * The body carries the structured fields *and* the one-line summary under
+ * both of the two keys the common receivers require: Discord refuses any
+ * payload with neither `content` nor `embeds` ("cannot send an empty
+ * message"), and Slack reads `text`. Each ignores the other's key, and a
+ * generic receiver gets the structured fields regardless.
+ *
+ * This matters more than it looks. The sink swallows its own failures by
+ * design, so a body the receiver rejects produces exactly the silence the
+ * whole variable exists to prevent - configured, accepted at boot,
+ * reporting into nothing.
+ *
+ * Deliberately swallows its own failures: a monitoring sink that can turn a
  * handled 500 into an unhandled rejection has made the outage worse than
  * the bug it was reporting, and a request must never wait on it.
  */
@@ -73,10 +95,11 @@ export function createWebhookSink(
   post: typeof fetch = fetch
 ): ErrorSink {
   return (error) => {
+    const summary = summarise(error);
     void post(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(error)
+      body: JSON.stringify({ content: summary, text: summary, ...error })
     }).catch(() => {});
   };
 }

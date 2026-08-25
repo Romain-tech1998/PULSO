@@ -56,6 +56,33 @@ describe('webhook sink', () => {
     );
   });
 
+  it('carries the keys Discord and Slack each require', () => {
+    // Discord refuses a payload with neither `content` nor `embeds`, Slack
+    // reads `text`. A body either one rejects is swallowed by the sink and
+    // produces silence - the exact failure ERROR_WEBHOOK_URL exists to stop.
+    const post = vi.fn().mockResolvedValue(new Response('{}'));
+    createWebhookSink(
+      'https://discord.com/api/webhooks/1/abc',
+      post as never
+    )(
+      describeError('request', new Error('the database went away'), {
+        route: '/groups/:id/posts',
+        method: 'POST',
+        requestId: 'req-9'
+      })
+    );
+    const body = JSON.parse(
+      (post.mock.calls[0]![1] as RequestInit).body as string
+    );
+    expect(body.content).toBe(
+      'Pulso request POST /groups/:id/posts: the database went away (req-9)'
+    );
+    expect(body.text).toBe(body.content);
+    // The structured fields survive alongside them.
+    expect(body.route).toBe('/groups/:id/posts');
+    expect(body.kind).toBe('request');
+  });
+
   it('never turns a reported error into a new one', async () => {
     // The sink is called from inside an error handler. If its own failure
     // escaped, a handled 500 would become an unhandled rejection - the
