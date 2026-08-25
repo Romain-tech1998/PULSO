@@ -59,6 +59,68 @@ describe('account authentication API', () => {
     await app.close();
   });
 
+  // Every one of these used to leave the visitor stranded: a declined
+  // consent, a state-cookie mismatch or a database fault all ended as an
+  // exception, and Fastify answered with a 500 JSON body on the API's own
+  // domain. The browser had nowhere to go from there, which is what "click
+  // Se connecter, then load forever" looked like from the outside. The
+  // route now always redirects back into the app, carrying the reason.
+  it('returns the visitor to the app when Google declines consent', async () => {
+    const app = buildApp(event, accountRepositories());
+    const response = await app.inject({
+      method: 'GET',
+      url: '/auth/google/callback?error=access_denied'
+    });
+    expect(response.statusCode).toBe(302);
+    const location = new URL(response.headers.location as string);
+    expect(location.origin + location.pathname).toBe(
+      'http://localhost:3000/auth/callback'
+    );
+    expect(location.searchParams.get('error')).toBe('ACCESS_DENIED');
+    await app.close();
+  });
+
+  it('reports any other Google refusal without claiming the visitor cancelled', async () => {
+    const app = buildApp(event, accountRepositories());
+    const response = await app.inject({
+      method: 'GET',
+      url: '/auth/google/callback?error=invalid_client'
+    });
+    expect(response.statusCode).toBe(302);
+    expect(
+      new URL(response.headers.location as string).searchParams.get('error')
+    ).toBe('GOOGLE_REFUSED');
+    await app.close();
+  });
+
+  it('redirects home with a reason when the code exchange throws', async () => {
+    // No `code`, no state cookie: the exchange rejects, which is the same
+    // shape as the real-world state-cookie mismatch.
+    const app = buildApp(event, accountRepositories());
+    const response = await app.inject({
+      method: 'GET',
+      url: '/auth/google/callback'
+    });
+    expect(response.statusCode).toBe(302);
+    expect(
+      new URL(response.headers.location as string).searchParams.get('error')
+    ).toBe('OAUTH_EXCHANGE_FAILED');
+    await app.close();
+  });
+
+  it('never answers the OAuth callback with a server error', async () => {
+    const app = buildApp(event, accountRepositories());
+    for (const url of [
+      '/auth/google/callback',
+      '/auth/google/callback?error=access_denied',
+      '/auth/google/callback?code=not-a-real-code'
+    ]) {
+      const response = await app.inject({ method: 'GET', url });
+      expect(response.statusCode, url).toBe(302);
+    }
+    await app.close();
+  });
+
   it('deletes the session on logout, regardless of whether it existed', async () => {
     let deletedToken: string | undefined;
     const app = buildApp(

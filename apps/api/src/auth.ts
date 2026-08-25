@@ -90,39 +90,82 @@ export function registerAuthRoutes(
     callbackUri: google.callbackUri
   });
 
+  /**
+   * Sends the browser back to Pulso carrying an outcome, never a dead end.
+   *
+   * Every failure below used to leave the visitor on this domain looking at
+   * a JSON error object - or, worse, at nothing at all while the browser sat
+   * on a URL that answered with a 500. The web callback route knows how to
+   * render `?error=`; it cannot render an exception. So every exit from this
+   * route is a redirect into the app, and the only thing that varies is
+   * whether it carries a token or a reason.
+   */
+  const returnToApp = (
+    reply: FastifyReply,
+    outcome: Record<string, string>
+  ) => {
+    const redirectUrl = new URL(google.appCallbackUrl);
+    for (const [key, value] of Object.entries(outcome)) {
+      redirectUrl.searchParams.set(key, value);
+    }
+    return reply.redirect(redirectUrl.toString());
+  };
+
   app.get('/auth/google/callback', async (request, reply) => {
-    // The plugin decorates the instance both as the plain `name` given above
-    // and as `oauth2${Capitalized name}` - only the latter is in its own
-    // type declarations (as `| undefined`, since it's an index signature),
-    // but it's always defined here since registerAuthRoutes always
-    // registers the plugin with this exact name before this route can run.
-    const { token } =
-      await app.oauth2GoogleOAuth2!.getAccessTokenFromAuthorizationCodeFlow(
-        request
-      );
-    const userInfoResponse = await fetch(
-      'https://www.googleapis.com/oauth2/v3/userinfo',
-      { headers: { authorization: `Bearer ${token.access_token}` } }
-    );
-    if (!userInfoResponse.ok) {
-      return reply.status(502).send({
-        error: {
-          code: 'GOOGLE_USERINFO_FAILED',
-          message: 'Could not read the Google profile.'
-        }
+    // Google itself refused before we ever get a code - the visitor pressed
+    // "Cancel" on the consent screen, or the client is misconfigured. It
+    // reports that as a query parameter, not as an exception, so reading it
+    // first keeps a declined consent from being reported as a server fault.
+    const googleError = (request.query as { error?: string } | undefined)
+      ?.error;
+    if (googleError) {
+      request.log.info({ googleError }, 'Google declined the authorization');
+      return returnToApp(reply, {
+        error:
+          googleError === 'access_denied' ? 'ACCESS_DENIED' : 'GOOGLE_REFUSED'
       });
     }
-    const profile = (await userInfoResponse.json()) as GoogleUserInfo;
-    const user = await authRepository.upsertUserFromGoogle({
-      googleSubject: profile.sub,
-      email: profile.email,
-      displayName: profile.name ?? profile.email,
-      ...(profile.picture ? { avatarUrl: profile.picture } : {})
-    });
-    const session = await authRepository.createSession(user.id);
-    const redirectUrl = new URL(google.appCallbackUrl);
-    redirectUrl.searchParams.set('token', session.token);
-    return reply.redirect(redirectUrl.toString());
+
+    try {
+      // The plugin decorates the instance both as the plain `name` given above
+      // and as `oauth2${Capitalized name}` - only the latter is in its own
+      // type declarations (as `| undefined`, since it's an index signature),
+      // but it's always defined here since registerAuthRoutes always
+      // registers the plugin with this exact name before this route can run.
+      const { token } =
+        await app.oauth2GoogleOAuth2!.getAccessTokenFromAuthorizationCodeFlow(
+          request
+        );
+      const userInfoResponse = await fetch(
+        'https://www.googleapis.com/oauth2/v3/userinfo',
+        { headers: { authorization: `Bearer ${token.access_token}` } }
+      );
+      if (!userInfoResponse.ok) {
+        request.log.error(
+          { status: userInfoResponse.status },
+          'Google userinfo call failed'
+        );
+        return returnToApp(reply, { error: 'GOOGLE_USERINFO_FAILED' });
+      }
+      const profile = (await userInfoResponse.json()) as GoogleUserInfo;
+      const user = await authRepository.upsertUserFromGoogle({
+        googleSubject: profile.sub,
+        email: profile.email,
+        displayName: profile.name ?? profile.email,
+        ...(profile.picture ? { avatarUrl: profile.picture } : {})
+      });
+      const session = await authRepository.createSession(user.id);
+      return returnToApp(reply, { token: session.token });
+    } catch (error) {
+      // The exchange throws on a state-cookie mismatch (the single most
+      // common real-world failure: the cookie set by /auth/google never came
+      // back, because the start and callback hosts differ), on a redirect_uri
+      // Google does not recognise, and on any database fault while creating
+      // the session. Whatever the cause, the visitor gets a page that says so
+      // and offers to try again - not a spinner that never resolves.
+      request.log.error({ err: error }, 'Google OAuth callback failed');
+      return returnToApp(reply, { error: 'OAUTH_EXCHANGE_FAILED' });
+    }
   });
 
   app.get('/me', async (request, reply) => {
