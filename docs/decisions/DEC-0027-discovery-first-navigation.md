@@ -97,9 +97,17 @@ than the signed-out one. They are one hub entry now, the one DEC-0020 built.
 **6. A signed-out account surface exists.**
 
 `AnonymousYouPanel`, on `section === 'compte'`, carrying the sign-in
-invitation, the favourites count, the language selector, About, and the
-four legal links. This is what makes the phone compliant with DEC-0026 §4
-again. The blanket phone rule that hid every `.lang-selector` is scoped to
+invitation, the favourites count, the language selector and the way into
+About. This is what makes the phone compliant with DEC-0026 §4 again — the
+route to the legal documents exists on a phone, signed out, for the first
+time.
+
+The documents themselves live in **one** place: the About panel. They had
+been repeated in four (the anonymous rail, the connected sidebar, this
+panel, and About). §4 asks that they be reachable without an account, not
+that they be everywhere, and About is reachable from every state — the
+rail's À propos signed out on a desktop, this panel's row on a phone, and
+the header's info button signed in at either width. The blanket phone rule that hid every `.lang-selector` is scoped to
 the header, where it was always meant to apply.
 
 **7. The default discovery window returns to `next7`.** *(v1.1)*

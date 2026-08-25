@@ -3854,7 +3854,6 @@ export function ExploreMap({
               </span>
               {translate(locale, 'nav.profile')}
             </button>
-            <LegalLinks locale={locale} />
           </div>
         </aside>
       )}
@@ -8924,8 +8923,6 @@ function AnonymousYouPanel({
           ›
         </span>
       </button>
-
-      <LegalLinks locale={locale} />
     </section>
   );
 }
@@ -9828,8 +9825,6 @@ function Sidebar({
             </button>
           </div>
         )}
-
-        <LegalLinks locale={locale} />
       </div>
     </aside>
   );
@@ -20135,10 +20130,15 @@ function AboutPanel({
         >
           rmeynaud@pulsonight.com
         </a>
-        {/* The one path to the legal documents that survives the phone: both
-          rails are display:none under 768px, and DEC-0026 §2 makes the phone
-          the product on launch day. This panel opens from the floating info
-          button at every width. */}
+        {/* The only place the four legal documents live now.
+        
+            They used to sit here, in the anonymous rail, in the connected
+            sidebar and in the signed-out account surface - four copies of
+            one nav. DEC-0026 §4 asks that they be reachable without an
+            account, not that they be everywhere, and this panel is reachable
+            from every state: the rail's À propos when signed out on a
+            desktop, "À propos de Pulso" inside Vous on a phone, and the
+            header's info button when signed in at either width. */}
         <LegalLinks locale={locale} />
       </div>
     </aside>

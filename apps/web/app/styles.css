@@ -19109,23 +19109,31 @@ a.venue-detail-info-row:hover {
 }
 
 /* ---------------------------------------------------------------------------
-   The legal links sit at the foot of the rail. They must stay reachable
-   (DEC-0026 §4) and they must not compete with the navigation above them.
+   The legal links, now only inside À propos.
+
+   They were in four places; DEC-0026 §4 asks that they be reachable without
+   an account, not that they be repeated. Given a panel of their own they can
+   be read rather than tucked into a rail's foot.
    ------------------------------------------------------------------------- */
-.anonymous-rail-footer .legal-links a {
-  color: var(--text-secondary);
-  font-size: 0.66rem;
-  line-height: 1.5;
-  opacity: 0.45;
-  transition:
-    opacity 0.18s,
-    color 0.18s;
+.about-content .legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+  margin-top: 1.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--brand-border);
 }
 
-.anonymous-rail-footer .legal-links a:hover,
-.anonymous-rail-footer .legal-links a:focus-visible {
+.about-content .legal-links a {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+
+.about-content .legal-links a:hover,
+.about-content .legal-links a:focus-visible {
   color: var(--text-primary);
-  opacity: 1;
+  text-decoration: underline;
 }
 
 /* The way into the full panel, set apart from the chips that are choices. */
