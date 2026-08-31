@@ -186,6 +186,19 @@ import {
 } from './venue-view-model';
 
 const MONTREAL_CENTER: [number, number] = [-73.5673, 45.5017];
+/**
+ * The zoom every "take me to my own position" jump lands on - the initial
+ * centring on a geolocated visitor, the recenter buttons on all four maps,
+ * and the jump a search makes to a location it inferred.
+ *
+ * 13, not 14. At 14 a phone showed roughly a five-minute walk in each
+ * direction, which the owner read as being dropped on their own street
+ * corner rather than in their neighbourhood: too few pins on screen for the
+ * map to say anything. Each step down doubles the span, so this is the
+ * neighbourhood view - the surrounding kilometre or so - while the city-wide
+ * 11 stays what "Montréal" and a location-less first visit open on.
+ */
+const NEARBY_ZOOM = 13;
 // One neutral pin color for the Lieu map, rather than per-category icons
 // like the event map's - almost no venue has a real category yet (see
 // VENUE_CATEGORIES's comment), so color-coding by type would overstate a
@@ -944,11 +957,23 @@ export function ExploreMap({
 }: {
   initialLocale: SupportedLocale;
 }) {
-  const container = useRef<HTMLDivElement>(null);
+  // State, not refs, for the three anonymous map containers.
+  //
+  // A ref is invisible to React, so the mount-once effects below could only
+  // ever read it on the very first render - and the whole anonymous tree
+  // (all three of these <div>s) unmounts the moment a session signs in and
+  // mounts again on sign-out. With a ref the effect never re-ran against
+  // the new nodes and every anonymous map came back empty after a manual
+  // logout, until the visitor reloaded the whole site. Holding the node in
+  // state makes its (dis)appearance a dependency, so each map is rebuilt on
+  // the container it is actually attached to.
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const map = useRef<maplibregl.Map | null>(null);
-  const lieuMapContainer = useRef<HTMLDivElement>(null);
+  const [lieuMapContainer, setLieuMapContainer] =
+    useState<HTMLDivElement | null>(null);
   const lieuMap = useRef<maplibregl.Map | null>(null);
-  const explorerMapContainer = useRef<HTMLDivElement>(null);
+  const [explorerMapContainer, setExplorerMapContainer] =
+    useState<HTMLDivElement | null>(null);
   const explorerMap = useRef<maplibregl.Map | null>(null);
   // Phase 4.13 - the connected sidebar's own "Carte" page gets its own map
   // instance (same pattern as lieuMap/explorerMap each having their own),
@@ -1544,7 +1569,7 @@ export function ExploreMap({
                   result.suggestedLocation.longitude,
                   result.suggestedLocation.latitude
                 ],
-                zoom: 14
+                zoom: NEARBY_ZOOM
               });
             }
           }
@@ -1809,9 +1834,9 @@ export function ExploreMap({
   }, [authToken, loadEvents, loadVenueMapData]);
 
   useEffect(() => {
-    if (!container.current) return;
+    if (!container) return;
     const instance = new maplibregl.Map({
-      container: container.current,
+      container,
       center: MONTREAL_CENTER,
       zoom: 11,
       // OpenStreetMap data is ODbL: the credit is a licence obligation, so
@@ -2094,8 +2119,12 @@ export function ExploreMap({
     return () => {
       instance.off('moveend', onMoveEnd);
       instance.remove();
+      // Cleared, not just removed: every other effect in this file reads
+      // `map.current` to decide whether there is a map to push data
+      // into, and a removed instance left in the ref answers yes.
+      map.current = null;
     };
-  }, [loadEvents]);
+  }, [container, loadEvents]);
 
   // "You are here" marker - purely visual, never triggers a re-fetch on its
   // own (see applyDistanceFilter for why the Distance slider stays inactive
@@ -2490,9 +2519,9 @@ export function ExploreMap({
   }, []);
 
   useEffect(() => {
-    if (!lieuMapContainer.current) return;
+    if (!lieuMapContainer) return;
     const instance = new maplibregl.Map({
-      container: lieuMapContainer.current,
+      container: lieuMapContainer,
       center: MONTREAL_CENTER,
       zoom: 11,
       // OpenStreetMap data is ODbL: the credit is a licence obligation, so
@@ -2684,34 +2713,46 @@ export function ExploreMap({
     return () => {
       instance.off('moveend', onMoveEnd);
       instance.remove();
+      // Cleared, not just removed: every other effect in this file reads
+      // `lieuMap.current` to decide whether there is a map to push data
+      // into, and a removed instance left in the ref answers yes.
+      lieuMap.current = null;
     };
-  }, [pushVenuesToMap, loadVenueMapData]);
+  }, [lieuMapContainer, pushVenuesToMap, loadVenueMapData]);
 
   useEffect(() => {
     if (lieuMap.current) pushVenuesToMap(lieuMap.current);
   }, [filteredVenueGroups, pushVenuesToMap]);
 
   // Initial view for the Événement/Lieu maps (not Explorer, which is
-  // deliberately a wider, city-wide view). Zooming to a ~1km radius only
+  // deliberately a wider, city-wide view). Zooming to NEARBY_ZOOM only
   // makes sense around the visitor's *own* position: with geolocation
   // denied or unavailable - the default for a first anonymous visit - the
   // same jump landed on downtown Montréal at street level, where a visitor
   // saw "1 événement dans cette zone" instead of the city. Without a real
   // location there is nothing to zoom to, so the map keeps its city-wide
-  // starting zoom. Fires at most once so it never fights a pan/zoom the
-  // visitor makes themselves afterwards.
-  const hasAppliedInitialCenter = useRef(false);
+  // starting zoom.
+  //
+  // Once per set of containers, rather than once per page load: signing out
+  // remounts the anonymous tree and builds both maps again, back at the
+  // city-wide starting view, so the centring is owed again. Both maps mount
+  // and unmount together (same Fragment, only their `display` differs), so
+  // the event map's container is a faithful stand-in for the pair. Within
+  // one set it still fires at most once, so it never fights a pan or zoom
+  // the visitor makes themselves afterwards.
+  const initialCenterAppliedFor = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (geoStatus === 'pending' || hasAppliedInitialCenter.current) return;
-    hasAppliedInitialCenter.current = true;
+    if (geoStatus === 'pending') return;
+    if (!container || initialCenterAppliedFor.current === container) return;
+    initialCenterAppliedFor.current = container;
     if (!userLocation) return;
     const center: [number, number] = [
       userLocation.longitude,
       userLocation.latitude
     ];
-    map.current?.jumpTo({ center, zoom: 14 });
-    lieuMap.current?.jumpTo({ center, zoom: 14 });
-  }, [geoStatus, userLocation]);
+    map.current?.jumpTo({ center, zoom: NEARBY_ZOOM });
+    lieuMap.current?.jumpTo({ center, zoom: NEARBY_ZOOM });
+  }, [geoStatus, userLocation, container]);
 
   // Explorer: a third, genuinely independent MapLibre instance - no sidebar,
   // just the map and a floating toggle switching which of two always-loaded
@@ -2845,9 +2886,9 @@ export function ExploreMap({
   }, []);
 
   useEffect(() => {
-    if (!explorerMapContainer.current) return;
+    if (!explorerMapContainer) return;
     const instance = new maplibregl.Map({
-      container: explorerMapContainer.current,
+      container: explorerMapContainer,
       center: MONTREAL_CENTER,
       zoom: 11,
       // OpenStreetMap data is ODbL: the credit is a licence obligation, so
@@ -3158,8 +3199,17 @@ export function ExploreMap({
     return () => {
       instance.off('moveend', onMoveEnd);
       instance.remove();
+      // Cleared, not just removed: every other effect in this file reads
+      // `explorerMap.current` to decide whether there is a map to push data
+      // into, and a removed instance left in the ref answers yes.
+      explorerMap.current = null;
     };
-  }, [pushExplorerDataToMap, loadEvents, loadVenueMapData]);
+  }, [
+    explorerMapContainer,
+    pushExplorerDataToMap,
+    loadEvents,
+    loadVenueMapData
+  ]);
 
   useEffect(() => {
     if (explorerMap.current) pushExplorerDataToMap(explorerMap.current);
@@ -4054,6 +4104,25 @@ export function ExploreMap({
                 : ''
             }`}
           >
+            {/* The brand mark, phone-only.
+
+                Below 768px the left rail that carries it is display:none and
+                so is the actions cluster beside the search field, which left
+                the signed-out phone with no Pulso mark anywhere on screen -
+                on the surface a first-time visitor sees first. It goes in
+                the toolbar's empty first grid track rather than in a header
+                row of its own: a row would cost ~56px of vertical space on
+                the one screen where that is scarce, this costs ~48px of
+                width the search field can spare. Same behaviour as the
+                rail's copy - back to the opening view. */}
+            <button
+              type="button"
+              className="anonymous-floating-logo"
+              onClick={() => window.location.assign('/')}
+              aria-label={translate(locale, 'app.logoHome')}
+            >
+              <img src="/brand/pulso-favicon-192.png" alt="" />
+            </button>
             <div className="anonymous-floating-search">
               <SearchPanel
                 query={queryInput}
@@ -4099,25 +4168,24 @@ export function ExploreMap({
         )}
 
         {/* Mobile bottom nav (audit: the desktop nav-actions-links row
-            becomes inaccessible under ~768px) - the same 3 destinations
-            plus Favoris, as real 44px+ tap targets instead of the ~22px
+            becomes inaccessible under ~768px) - the same destinations as
+            the desktop rail, as real 44px+ tap targets instead of the ~22px
             text row above. Anonymous only, same gate as the header above.
 
-            On a phone the three destinations divide the work rather than
-            repeat it (owner feedback after the first on-device test):
-            "Carte" is the one visual surface and carries the événements /
-            lieux switch itself, so it owns both maps; "Événements" and
-            "Lieux" are lists and nothing else. Hence the map tab lighting
-            up for section === 'lieu' too, and "Lieux" opening lieuTab
-            'list' instead of the venue map it used to duplicate. */}
+            The four divide the work rather than repeat it: "Carte" is the
+            one visual surface and carries the événements / lieux switch
+            itself, so it owns both maps - hence it lighting up for
+            section === 'lieu' too. "Événements" and "Lieux" are the two
+            directories, lists and nothing else, and each opens on its own
+            list rather than on a second copy of the map. Lieux was reachable
+            only through the in-map switch before, which left the phone one
+            destination short of the desktop rail. */}
         {!user && (
           <nav className="mobile-bottom-nav" aria-label="Navigation principale">
             <button
               type="button"
               className={
                 !aboutOpen &&
-                section !== 'compte' &&
-                section !== 'favoris' &&
                 ((section === 'evenement' && viewMode === 'map') ||
                   (section === 'lieu' && lieuTab === 'map'))
                   ? 'active'
@@ -4136,11 +4204,7 @@ export function ExploreMap({
             <button
               type="button"
               className={
-                !aboutOpen &&
-                section !== 'compte' &&
-                section !== 'favoris' &&
-                ((section === 'evenement' && viewMode !== 'map') ||
-                  (section === 'lieu' && lieuTab !== 'map'))
+                !aboutOpen && section === 'evenement' && viewMode !== 'map'
                   ? 'active'
                   : ''
               }
@@ -4154,6 +4218,23 @@ export function ExploreMap({
             >
               <ViewModeIcon kind="list" />
               {translate(locale, 'nav.events')}
+            </button>
+            <button
+              type="button"
+              className={
+                !aboutOpen && section === 'lieu' && lieuTab !== 'map'
+                  ? 'active'
+                  : ''
+              }
+              onClick={() => {
+                setAboutOpen(false);
+                setMobileFiltersOpen(false);
+                setSection('lieu');
+                setLieuTab('list');
+              }}
+            >
+              <ViewModeIcon kind="venues" />
+              {translate(locale, 'nav.venues')}
             </button>
             <button
               type="button"
@@ -4818,7 +4899,7 @@ export function ExploreMap({
                   data-map-context="preserved"
                   style={{ display: viewMode === 'map' ? undefined : 'none' }}
                 >
-                  <div ref={container} className="map" />
+                  <div ref={setContainer} className="map" />
                   <button
                     type="button"
                     className="mobile-filters-trigger"
@@ -4961,7 +5042,7 @@ export function ExploreMap({
                             userLocation.longitude,
                             userLocation.latitude
                           ],
-                          zoom: 14
+                          zoom: NEARBY_ZOOM
                         });
                       }}
                     >
@@ -5172,7 +5253,7 @@ export function ExploreMap({
                     className="map-shell"
                     style={{ display: lieuTab === 'map' ? undefined : 'none' }}
                   >
-                    <div ref={lieuMapContainer} className="map" />
+                    <div ref={setLieuMapContainer} className="map" />
                     <div
                       className="anonymous-map-kind-switch"
                       aria-label={translate(locale, 'nav.explore')}
@@ -5216,7 +5297,7 @@ export function ExploreMap({
                               userLocation.longitude,
                               userLocation.latitude
                             ],
-                            zoom: 14
+                            zoom: NEARBY_ZOOM
                           });
                         }}
                       >
@@ -5323,7 +5404,7 @@ export function ExploreMap({
                 }}
               >
                 <div className="map-shell explorer-map-shell">
-                  <div ref={explorerMapContainer} className="map" />
+                  <div ref={setExplorerMapContainer} className="map" />
                   <div className="map-floating-pin-toggle">
                     <button
                       type="button"
@@ -5417,7 +5498,7 @@ export function ExploreMap({
                             userLocation.longitude,
                             userLocation.latitude
                           ],
-                          zoom: 14
+                          zoom: NEARBY_ZOOM
                         });
                       }}
                     >
@@ -5627,7 +5708,7 @@ export function ExploreMap({
                             userLocation.longitude,
                             userLocation.latitude
                           ],
-                          zoom: 14
+                          zoom: NEARBY_ZOOM
                         });
                       }}
                     >

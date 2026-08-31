@@ -17606,6 +17606,43 @@ a.venue-detail-info-row:hover {
   pointer-events: auto;
 }
 
+/* Phone-only: on desktop the left rail carries the mark, and a second copy
+   in the toolbar's first track would be the same logo twice on one screen.
+   Shown by the max-width block further down. */
+.anonymous-floating-logo {
+  display: none;
+  grid-column: 1;
+  justify-self: start;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  /* Opaque, like the other floating controls: these sit over a moving map,
+     and a translucent one picks up whatever happens to be under it. */
+  background: var(--surface-raised);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.42);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    border-color 0.18s,
+    box-shadow 0.18s;
+}
+
+.anonymous-floating-logo:hover,
+.anonymous-floating-logo:focus-visible {
+  border-color: rgba(238, 45, 138, 0.45);
+}
+
+.anonymous-floating-logo img {
+  display: block;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+
 .anonymous-floating-search .search-input-wrapper {
   min-height: 56px;
   border-color: rgba(255, 255, 255, 0.13);
@@ -18564,18 +18601,42 @@ a.venue-detail-info-row:hover {
      search field - the 1024px block above already reduces it to the account
      control on its own. */
   .anonymous-floating-toolbar {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.5rem;
   }
 
+  /* 1b. The brand mark takes the first track. Below 768px the rail that
+     carries it is display:none and so is everything in the actions cluster
+     except the account control, which left the signed-out phone - the first
+     screen a visitor ever sees - with no Pulso mark on it at all. A track of
+     its own rather than a header row of its own: a row costs ~56px of height
+     on the one screen where height is the scarce thing, this costs 44px of
+     width, and the rule below hands back twice that. */
+  .anonymous-floating-logo {
+    display: flex;
+  }
+
   .anonymous-floating-search {
-    grid-column: 1;
+    grid-column: 2;
   }
 
   .anonymous-floating-actions {
     display: flex;
-    grid-column: 2;
+    grid-column: 3;
+  }
+
+  /* What pays for the logo, and then some. Measured at 390px the row is
+     366px wide and already fully spoken for: search 252 (of which the city
+     selector 88) + "Se connecter" 106. The city selector is the one control
+     there spending real width to state something the phone cannot act on -
+     Montréal is the only selectable city in the MVP, and it is also what the
+     map, every card and every result already say. Dropped here, the search
+     input goes from 135px to roughly 180 even after the logo is paid for.
+     Tablet and desktop keep it, teaser dropdown and all. */
+  .anonymous-floating-search .city-selector,
+  .anonymous-floating-search .search-divider {
+    display: none;
   }
 
   /* Reads as the primary invitation it is, and stays narrow enough to leave
@@ -19095,16 +19156,56 @@ a.venue-detail-info-row:hover {
   background: var(--brand-border);
 }
 
+/* On a phone the row becomes a swipeable carousel rather than a wrapping
+   block. Five chips in French measure roughly 530px against a ~360px usable
+   width, so `flex-wrap: wrap` always broke them onto two lines and sometimes
+   three - a filter row taller than the first event card under it, on the one
+   screen where vertical space is the scarce thing. One line that scrolls
+   sideways costs a fixed 40px whatever the language does to the labels.
+
+   The horizontal inset moves from margin to padding so chips run to the
+   screen edge instead of stopping short of it - the cue that there is more
+   to the right - while the first and last still line up with the cards
+   below. `margin-top` is left alone: the anonymous shell overrides it to
+   clear the floating header. */
 @media (max-width: 768px) {
   .quick-filters {
-    margin: 0.6rem 0.9rem 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-left: 0.9rem;
+    scrollbar-width: none;
+    margin: 0.6rem 0 0;
+    padding: 0 0.9rem;
     gap: 0.35rem;
   }
 
+  .quick-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Without this the chips share out the overflow by shrinking, which is
+     how a one-line row turns into a row of clipped labels instead. */
   .quick-filter-chip {
+    flex: 0 0 auto;
     min-height: 40px;
     padding: 0 0.75rem;
     font-size: 0.78rem;
+  }
+
+  .quick-filters-divider {
+    flex: 0 0 1px;
+  }
+
+  /* "Plus de filtres" leads the row on a phone instead of closing it. It is
+     the only way into the full panel from the list and calendar views - the
+     map has its own floating trigger - and last in a row that now scrolls
+     means off-screen until someone thinks to swipe. First in a row that
+     scrolls means always there at rest, which is also the order most filter
+     rows on a phone already use: the way in, then the shortcuts. */
+  .quick-filter-more {
+    order: -1;
   }
 }
 

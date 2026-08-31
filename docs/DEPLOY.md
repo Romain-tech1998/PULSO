@@ -6,7 +6,7 @@ Pulso is **two services plus a database**, not one app:
 | --- | --- | --- |
 | `apps/web` (Next.js) | Vercel | What Vercel is for. |
 | `apps/api` (Fastify) | Railway / Render / Fly | Needs a long-lived process (Postgres pool) and a **persistent volume** for uploaded photos. Vercel has neither. |
-| Postgres + **PostGIS** | Managed (Neon, Supabase, or the API host's own) | Every geographic query depends on PostGIS. Confirm the extension is available *before* committing to a provider. |
+| Postgres + **PostGIS** | **Neon** | Every geographic query depends on PostGIS, which Neon carries as an extension. Its branch-level restore is also what satisfies the backup condition below. |
 
 The API refuses to start if this configuration is incomplete — see
 `apps/api/src/config.ts`. That is deliberate: every value below used to fall
@@ -31,8 +31,48 @@ DATABASE_URL='postgresql://…' pnpm db:migrate
 Do **not** run `pnpm db:seed` against production — it inserts the synthetic
 test fixtures the e2e suite uses.
 
-Turn on automated backups now, not later: this database holds user-authored
-content (events, forum posts, photos, messages).
+#### Backups
+
+A condition of the first invitation (DEC-0026 §4), and the one worth doing
+before rather than after: this database holds content people wrote — events,
+forum posts, photos, messages — none of which exists anywhere else.
+
+Pulso's database is **Neon**, and Neon's own backups are what satisfies this.
+A job of our own would need the production connection string readable by
+whatever runs it; Neon's restore is a storage-level branch operation, so it
+needs no credentials anywhere and carries extensions, roles and PostGIS with
+it rather than replaying a dump.
+
+**The free plan does not satisfy the condition.** It gives a short history
+window and manual snapshots only — the console says "Upgrade for schedules"
+plainly. A snapshot somebody has to remember to click is a habit, and habits
+break on exactly the weeks that are busy.
+
+On a paid plan, two settings, both under *Backup & restore* on the
+`production` branch:
+
+1. **Restore from history** → *Configure*. Raise the history window to the
+   maximum the plan allows — at least 7 days. This is the control that
+   decides whether an incident noticed on Monday can still be undone.
+2. **Create snapshot** → set a **daily schedule** with explicit retention.
+   The default is not a policy.
+
+**Then verify it, because an untested backup is not a backup.**
+
+1. After the first scheduled run, confirm a snapshot is *listed* with a
+   timestamp. A schedule that has never produced one does not work.
+2. Restore that snapshot **into a new branch** — never over `production` —
+   and run one query against the branch's connection string:
+
+   ```bash
+   psql "$RESTORED_BRANCH_URL" -c      "select count(*) from users; select count(*) from events;       select postgis_version();"
+   ```
+
+   Plausible counts and a PostGIS version mean the restore is real. Delete
+   the branch afterwards; it bills like any other.
+
+Record the date of the first successful restore test. Until one has been
+done, the answer to "are we backed up?" is "we don't know".
 
 ### 2. API
 
