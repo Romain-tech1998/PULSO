@@ -18348,6 +18348,27 @@ a.venue-detail-info-row:hover {
     padding-inline: 0.75rem;
   }
 
+  /* The Lieux map's switch is a direct child of .map-shell, where the event
+     map's is wrapped in .map-bottom-bar - so it never got the lift the rule
+     above gives that bar, and kept the standalone `bottom: 1.25rem`. On a
+     Pixel 7 that put 37px of its 52px height behind the bottom navigation:
+     tapping Lieux from the map appeared to drop the switch into the bar.
+     Same offset as the bar, so both maps carry their switch on one line. */
+  .venue-section .anonymous-map-kind-switch {
+    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Which only frees the bottom edge if these leave it. At the lift above
+     the switch spans x 107-304, straight through the right-aligned controls
+     at x 240-400. They move to the row under the header, opposite the
+     Filtres trigger - where the event map already puts Recentrer, so the
+     two maps end up sharing a shape rather than each having its own. */
+  .venue-section .explorer-location-controls {
+    top: 5.25rem;
+    right: 0.75rem;
+    bottom: auto;
+  }
+
   .anonymous-content-column .map-empty-state {
     right: 0.75rem;
     bottom: calc(9rem + env(safe-area-inset-bottom, 0px));
