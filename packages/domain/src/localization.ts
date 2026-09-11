@@ -586,6 +586,9 @@ const en = {
   'nav.friends': 'Friends',
   'nav.explore': 'Explore',
   'nav.profile': 'Profile',
+  // A short form of sidebar.organizer, for the phone's bottom bar where
+  // five slots leave about 70px per label.
+  'nav.organize': 'Organize',
   'nav.about': 'About',
   'nav.notificationsSoon': 'Notifications (coming soon)',
   'nav.comingSoon': 'Coming soon',
@@ -1328,7 +1331,10 @@ const en = {
   'eventsPage.periodWeekend': 'This weekend',
   'eventsPage.periodNext7': 'Upcoming',
   'eventsPage.create': 'Create an event',
-  'eventsPage.searchPlaceholder': 'Search an event or a venue',
+  // Scoped on purpose: this field filters the list below it, where the
+  // header's field runs the natural-language search across the whole
+  // directory. Worded the same, they read as the same control twice.
+  'eventsPage.searchPlaceholder': 'Filter these results',
   'eventsPage.chipAll': 'See all',
   'eventsPage.loadError': 'Could not load events right now.',
   'eventsPage.noResults': 'No events found.',
@@ -1393,6 +1399,19 @@ const en = {
   'profile.tabFavorites': 'Favorites',
   'profile.tabGroups': 'Groups',
   'profile.tabActivity': 'Activity',
+  // The account side of organising: verified-organizer requests and the
+  // Stripe payout account. Both belong to the account, not to any one
+  // event, so they live in the profile rather than on the Organizer page.
+  'profile.tabOrganizer': 'Organizer',
+  'profile.organizerKicker': 'Publish and get paid',
+  'profile.organizerTitle': 'Organizer settings',
+  'profile.organizerLead':
+    'Request approval for a venue and connect the Stripe account your ticket sales are paid into.',
+  'profile.organizerOpenPage': 'Go to my events',
+  'organizer.settingsInProfile': 'Approval and payouts',
+  'organizer.settingsInProfileHint':
+    'Verified-organizer requests and the Stripe account moved to your profile.',
+  'organizer.settingsInProfileCta': 'Open',
   'profile.editTitle': 'Edit my profile',
   'profile.bio': 'Bio',
   'profile.bioPlaceholder': 'A few words about you…',
@@ -2217,6 +2236,7 @@ const fr = {
   'nav.friends': 'Amis',
   'nav.explore': 'Explorer',
   'nav.profile': 'Profil',
+  'nav.organize': 'Organiser',
   'nav.about': 'À propos',
   'nav.notificationsSoon': 'Notifications (bientôt disponible)',
   'nav.comingSoon': 'Bientôt disponible',
@@ -2957,7 +2977,7 @@ const fr = {
   'eventsPage.periodWeekend': 'Ce week-end',
   'eventsPage.periodNext7': 'À venir',
   'eventsPage.create': 'Créer un événement',
-  'eventsPage.searchPlaceholder': 'Rechercher un événement ou un lieu',
+  'eventsPage.searchPlaceholder': 'Filtrer ces résultats',
   'eventsPage.chipAll': 'Tout voir',
   'eventsPage.loadError':
     'Impossible de charger les événements pour le moment.',
@@ -3026,6 +3046,16 @@ const fr = {
   'profile.tabFavorites': 'Favoris',
   'profile.tabGroups': 'Groupes',
   'profile.tabActivity': 'Activité',
+  'profile.tabOrganizer': 'Organisateur',
+  'profile.organizerKicker': 'Publier et être payé',
+  'profile.organizerTitle': 'Réglages organisateur',
+  'profile.organizerLead':
+    'Demande l’agrément pour un lieu et connecte le compte Stripe sur lequel tes ventes de billets sont versées.',
+  'profile.organizerOpenPage': 'Aller à mes événements',
+  'organizer.settingsInProfile': 'Agrément et paiements',
+  'organizer.settingsInProfileHint':
+    'Les demandes d’organisateur agréé et le compte Stripe sont dans ton profil.',
+  'organizer.settingsInProfileCta': 'Ouvrir',
   'profile.editTitle': 'Modifier mon profil',
   'profile.bio': 'Bio',
   'profile.bioPlaceholder': 'Quelques mots sur toi…',
