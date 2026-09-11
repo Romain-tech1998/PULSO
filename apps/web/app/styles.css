@@ -13713,6 +13713,22 @@ a.venue-detail-info-row:hover {
     grid-template-columns: minmax(0, 1fr);
     justify-items: start;
     gap: 0.5rem;
+    /* Back to the gutter the left and right edges already use.
+       
+       The shared rule lifts this bar by `4.75rem + safe-area` to clear the
+       bottom navigation - which the signed-out map needs, because its map
+       runs to the bottom of the screen. This one does not:
+       .map-container-wrapper above already ends its height at
+       `100dvh - header - 4.5rem - safe-area`, so the map stops at the
+       navigation and the lift is a second clearance for a bar that was
+       never behind anything.
+       
+       Measured on a 390x812 phone: the bar floated 76px above the map's own
+       bottom edge with the inset at 0, and 110px with the 34px an iPhone
+       reports - because the lift adds the safe area a second time. That
+       difference is why this read as correct in Chrome's responsive mode
+       and wrong on the device. */
+    bottom: 0.75rem;
   }
   .connected-map-shell .map-bottom-bar .anonymous-map-kind-switch {
     grid-column: 1;
@@ -13723,9 +13739,21 @@ a.venue-detail-info-row:hover {
      the two would leave the card about 90px of screen. */
   .connected-map-shell .map-selection-card {
     right: 0.75rem;
-    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+    /* Same offset as the bar above, for the same reason - the card is
+       supposed to land on the bottom row, so it moves with it. */
+    bottom: 0.75rem;
     left: 0.75rem;
     width: auto;
+  }
+
+  /* Bringing the bar down to the gutter brought it onto MapLibre's
+     attribution, which sits in the same corner: measured on a 390px phone
+     the pill spanned x 25-365 at y 688-739 and the credit 343-367 at
+     713-741, so the one line on this screen that is not ours to move was
+     the one underneath. This corner holds the attribution and nothing else,
+     so lifting it clears the pill row without touching a control. */
+  .connected-map-shell .maplibregl-ctrl-bottom-right {
+    bottom: 4.25rem;
   }
 
   /* Four buttons in the width the signed-out map gives two. Measured on a
@@ -13736,6 +13764,19 @@ a.venue-detail-info-row:hover {
   .map-bottom-bar .connected-map-kind-switch button {
     padding-inline: 0.4rem;
     font-size: 0.72rem;
+  }
+  /* The pill is stretched to the full width by the rule above; its buttons
+     were not, so they sized to their text and left the remainder as a blank
+     strip inside the glass. It grew with the screen: 17px unused at 375,
+     35px at 393, 72px at 430 - the same four button widths at every one of
+     them, which is what proved they never took part in the free space.
+     
+     `1 1 auto`, not `1 1 0`: equal quarters would have to fit "Événements" and
+     its count into ~79px at 375 and would truncate all four. Growing from
+     the content keeps the labels whole and spreads only the surplus. */
+  .connected-map-shell .map-bottom-bar .connected-map-kind-switch button {
+    flex: 1 1 auto;
+    justify-content: center;
   }
   .connected-map-kind-switch button > span:not(.map-kind-label) {
     margin-left: 0.22rem;
