@@ -245,6 +245,10 @@ export function registerCreatedEventsRoutes(
         imageUrl: input.imageUrl,
         ticketingUrl: input.ticketingUrl,
         addressDisclosure: input.addressDisclosure ?? 'public',
+        // The repository drops it unless the address is actually withheld;
+        // passed through here so the create path carries what the update
+        // path already gets from its spread.
+        addressRequestNote: input.addressRequestNote,
         isAfter: input.isAfter ?? false,
         price:
           input.price.kind === 'paid'

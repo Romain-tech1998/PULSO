@@ -84,6 +84,14 @@ export interface CreateEventInput {
   ticketingUrl?: string | undefined;
   /** DEC-0022 §6. Absent means 'public'. */
   addressDisclosure?: 'public' | 'on_approval' | undefined;
+  /**
+   * What the organizer asks of someone requesting the address.
+   *
+   * Stored only alongside `on_approval`: an instruction on an event whose
+   * address is already public has nobody to instruct, and keeping one would
+   * publish a contact line the organizer thinks is gated.
+   */
+  addressRequestNote?: string | undefined;
   /** DEC-0023 §4. Absent means no cap, which is the default. */
   attendanceLimit?: number | undefined;
   price: {
@@ -206,6 +214,10 @@ function publicEventSelect(viewer: string): string {
   SELECT
     ${locationVisible} AS location_visible,
     e.address_disclosure,
+    -- Served to everyone who meets the gate, approved or not: it is the
+    -- instruction for getting past it, so withholding it from the people it
+    -- addresses would be the one reader group it is useless to.
+    e.address_request_note,
     (
       SELECT r.status FROM event_access_requests r
       WHERE r.event_id = e.id AND r.user_id = ${viewer}
@@ -291,6 +303,7 @@ interface EventRow {
   origin: NonNullable<PublicEvent['origin']>;
   is_after: boolean;
   address_disclosure: 'public' | 'on_approval';
+  address_request_note: string | null;
   // Computed by publicEventSelect, not stored: whether *this* reader may see
   // the exact address and pin.
   location_visible: boolean;
@@ -379,6 +392,8 @@ function toPublicEvent(row: EventRow): PublicEvent {
   // `origin`).
   if (row.address_disclosure !== 'public') {
     event.addressDisclosure = row.address_disclosure;
+    if (row.address_request_note !== null)
+      event.addressRequestNote = row.address_request_note;
     // The client must be able to tell a 300 m circle from a doorway. Without
     // this it would draw the offset point as an exact one and quietly lie.
     if (!row.location_visible) event.locationPrecision = 'approximate';
@@ -545,12 +560,12 @@ export class PostgresEventRepository implements EventRepository {
          source_name, source_url, observed_at, freshness, location_confidence,
          price_kind, price_minimum_amount, image_url, description,
          access_information, origin, created_by_user_id, is_after,
-         address_disclosure, attendance_limit
+         address_disclosure, attendance_limit, address_request_note
        ) VALUES (
          $1, $2, $3, $4, 'scheduled', $5, $6, 'America/Toronto',
          $7, $8, now(), NULL, NULL,
          $9, $10, $11, $12,
-         $13, $14, $15, $16, $17, $18
+         $13, $14, $15, $16, $17, $18, $19
        )`,
       [
         eventId,
@@ -574,7 +589,8 @@ export class PostgresEventRepository implements EventRepository {
         userId,
         input.isAfter,
         disclosure,
-        input.attendanceLimit ?? null
+        input.attendanceLimit ?? null,
+        disclosure === 'on_approval' ? (input.addressRequestNote ?? null) : null
       ]
     );
 
@@ -629,7 +645,8 @@ export class PostgresEventRepository implements EventRepository {
          title = $3, category = $4, starts_at = $5, ends_at = $6,
          price_kind = $7, price_minimum_amount = $8,
          description = $9, access_information = $10, is_after = $11,
-         address_disclosure = $12, attendance_limit = $13
+         address_disclosure = $12, attendance_limit = $13,
+         address_request_note = $14
        WHERE id = $1 AND created_by_user_id = $2 AND origin <> 'directory'`,
       [
         eventId,
@@ -650,7 +667,10 @@ export class PostgresEventRepository implements EventRepository {
         // of those touch `event_attendance`. Lowering it below the number
         // already committed leaves every one of them in place - the event
         // simply reads as full.
-        input.attendanceLimit ?? null
+        input.attendanceLimit ?? null,
+        // Cleared when the organizer turns disclosure back to public, so an
+        // instruction never outlives the gate it was written for.
+        disclosure === 'on_approval' ? (input.addressRequestNote ?? null) : null
       ]
     );
     if ((result.rowCount ?? 0) === 0) return undefined;

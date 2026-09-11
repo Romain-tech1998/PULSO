@@ -11101,6 +11101,13 @@ function EventEditor({
   const [addressOnApproval, setAddressOnApproval] = useState(
     existing?.addressDisclosure === 'on_approval'
   );
+  // What the organizer asks of whoever requests the address. Kept when the
+  // toggle is switched off and on again - the field is hidden, not lost, so
+  // a mistaken tap does not cost what they typed. The API is what decides it
+  // is only stored alongside a withheld address.
+  const [addressRequestNote, setAddressRequestNote] = useState(
+    existing?.addressRequestNote ?? ''
+  );
   // DEC-0023 §4. Held as a string so the field can be emptied, which is how
   // a limit is removed - `0` and "" are different answers and only one of
   // them means "no cap".
@@ -11202,6 +11209,9 @@ function EventEditor({
       accessInformation: accessInformation.trim(),
       ...(description.trim() ? { description: description.trim() } : {}),
       ...(ticketingUrl.trim() ? { ticketingUrl: ticketingUrl.trim() } : {}),
+      ...(addressOnApproval && addressRequestNote.trim()
+        ? { addressRequestNote: addressRequestNote.trim().slice(0, 200) }
+        : {}),
       ...(addressOnApproval
         ? { addressDisclosure: 'on_approval' as const }
         : {}),
@@ -11360,7 +11370,7 @@ function EventEditor({
 
       <section className="event-editor-section">
         <h2>{translate(locale, 'create.sectionWhen')}</h2>
-        <div className="create-event-row">
+        <div className="create-event-row create-event-row-when">
           <label className="create-event-field">
             <span>{translate(locale, 'create.start')}</span>
             <input
@@ -11507,6 +11517,26 @@ function EventEditor({
               <strong>{translate(locale, 'access.toggle')}</strong>
               <small>{translate(locale, 'access.toggleHelp')}</small>
             </span>
+          </label>
+        )}
+
+        {/* Only once the address is actually withheld: on a public event
+            there is nobody to instruct, and offering the field anyway would
+            invite an organizer to publish a handle for no reason. */}
+        {addressOnApproval && (
+          <label className="create-event-field">
+            <span>{translate(locale, 'access.noteLabel')}</span>
+            <input
+              value={addressRequestNote}
+              onChange={(changeEvent) =>
+                setAddressRequestNote(changeEvent.target.value)
+              }
+              placeholder={translate(locale, 'access.notePlaceholder')}
+              maxLength={200}
+            />
+            <small className="create-event-hint">
+              {translate(locale, 'access.noteHelp')}
+            </small>
           </label>
         )}
 
@@ -21101,6 +21131,14 @@ function AddressDisclosurePanel({
     <div className="access-panel">
       <strong>{translate(locale, 'access.hiddenTitle')}</strong>
       <p>{translate(locale, 'access.hiddenBody')}</p>
+      {/* Before the status and before the composer: it is the one thing on
+          this panel that tells the reader what to actually do. */}
+      {event.addressRequestNote && (
+        <p className="access-panel-note">
+          <span>{translate(locale, 'access.noteFromOrganizer')}</span>
+          <strong>{event.addressRequestNote}</strong>
+        </p>
+      )}
       {/* Where the request stands, said the way every other decided
           state in the app is said. It used to be a line of body text,
           which is thin for the one thing the reader came back to check. */}

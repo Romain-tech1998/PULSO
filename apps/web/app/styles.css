@@ -4001,6 +4001,32 @@ span.search-result-title {
 .access-panel-status-declined {
   color: #ff8a8a;
 }
+/* The organizer's own words, so they read as quoted instruction rather than
+   as more of Pulso's explanation above them. */
+.access-panel-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(127, 119, 221, 0.3);
+  border-radius: 0.75rem;
+  background: rgba(127, 119, 221, 0.09);
+}
+.access-panel-note > span {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.access-panel-note > strong {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .access-panel-actions {
   display: flex;
   gap: 0.5rem;
@@ -5129,6 +5155,23 @@ span.search-result-title {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
+}
+
+/* The two datetime fields, which cannot be squeezed the way a select can.
+   
+   A native datetime-local draws its own date and time in a shadow tree and
+   simply clips what does not fit - scrollWidth reports nothing, so the form
+   looked fine to every measurement while "25/09/2026 22:30" rendered as
+   "2026 22:30" on a phone, with the day and the month cut off the left. At
+   376px each half was 136px against roughly 175px of content, and the 16px
+   floor this file puts on form controls below 768px (to stop iOS zooming on
+   focus) made the text larger still.
+
+   auto-fit rather than a viewport breakpoint: what matters is the width of
+   the form, which changes with the rail as well as with the screen, so the
+   row drops to one column exactly when two would no longer hold a date. */
+.create-event-row-when {
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
 }
 
 .create-event-field {

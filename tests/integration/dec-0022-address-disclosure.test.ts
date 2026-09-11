@@ -34,6 +34,8 @@ const describeWithDatabase = databaseUrl ? describe : describe.skip;
 
 const EXACT_LONGITUDE = -73.5712;
 const EXACT_LATITUDE = 45.5254;
+/** What the organizer asks of anyone requesting the address. */
+const ORGANIZER_NOTE = 'Envoie-moi un MP sur Instagram @integration';
 const EXACT_ADDRESS = '4321 rue Intégration, Montréal';
 
 describeWithDatabase('DEC-0022 address disclosure on approval', () => {
@@ -96,6 +98,7 @@ describeWithDatabase('DEC-0022 address disclosure on approval', () => {
       accessInformation: 'Sonner deux fois.',
       isAfter: true,
       addressDisclosure: 'on_approval',
+      addressRequestNote: ORGANIZER_NOTE,
       price: { kind: 'free' },
       venue: {
         kind: 'new',
@@ -125,6 +128,53 @@ describeWithDatabase('DEC-0022 address disclosure on approval', () => {
     ]);
     await pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [userIds]);
     await pool.end();
+  });
+
+  /**
+   * The instruction an organizer leaves for whoever has to ask.
+   *
+   * It is the one part of a withheld event that must reach the people the
+   * address does not: a stranger cannot be approved if they cannot read how
+   * to introduce themselves. So it is asserted from the far side of the gate
+   * on purpose - the reader who sees no address still sees this.
+   */
+  it('shows the organizer note to a stranger who has no address yet', async () => {
+    const asStranger = await events.findById(privateEventId, strangerId);
+    expect(asStranger?.addressRequestNote).toBe(ORGANIZER_NOTE);
+    // Same read, to make the pairing explicit rather than implied.
+    expect(asStranger?.venue.address).toBeUndefined();
+    expect(asStranger?.locationPrecision).toBe('approximate');
+
+    const asAnonymous = await events.findById(privateEventId, null);
+    expect(asAnonymous?.addressRequestNote).toBe(ORGANIZER_NOTE);
+  });
+
+  it('keeps no note on an event whose address is public', async () => {
+    const publicEvent = await events.createEvent(organizerId, {
+      title: 'Soirée publique intégration',
+      category: 'nightlife',
+      startsAt: new Date(Date.now() + 4 * 3600_000).toISOString(),
+      accessInformation: 'Entrée libre.',
+      isAfter: false,
+      // No disclosure mode, so the note has nobody to instruct. Storing it
+      // would publish a contact line on an event that never asks anyone to
+      // write in.
+      addressRequestNote: 'ne doit pas être conservé',
+      price: { kind: 'free' },
+      venue: {
+        kind: 'new',
+        name: 'Bar public intégration',
+        address: '12 rue Ouverte, Montréal',
+        point: { longitude: -73.6, latitude: 45.53 }
+      }
+    });
+    const read = await events.findById(publicEvent.id, strangerId);
+    expect(read?.addressRequestNote).toBeUndefined();
+    expect(read?.venue.address).toBe('12 rue Ouverte, Montréal');
+    await pool.query(`DELETE FROM events WHERE id = $1`, [publicEvent.id]);
+    await pool.query(`DELETE FROM venues WHERE id = $1`, [
+      publicEvent.venue.id
+    ]);
   });
 
   it('gives the organizer the exact address and point', async () => {

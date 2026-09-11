@@ -1402,6 +1402,12 @@ export const publicEventSchema = z.object({
   // until they approve a request - it says nothing about whether *this*
   // reader is approved, which `locationPrecision` answers.
   addressDisclosure: z.literal('on_approval').optional(),
+  // What the organizer asks of someone who wants the address - typically a
+  // way to identify themselves off Pulso ("envoie-moi un MP sur Insta
+  // @exemple"). Served to every reader who sees the withheld address,
+  // because it is what tells them how to get past it; absent unless the
+  // organizer wrote one, and never served on a public-address event.
+  addressRequestNote: z.string().min(1).max(200).optional(),
   // Present, and 'approximate', when the point in `venue.point` is the ~300 m
   // offset rather than the real one. A client must not draw an offset point
   // the way it draws an exact one.
@@ -1494,6 +1500,10 @@ export const createEventRequestSchema = z.object({
   // newly typed venue: an existing directory venue's address is already
   // published and cannot be taken back.
   addressDisclosure: z.literal('on_approval').optional(),
+  // Only read when addressDisclosure is 'on_approval' - a note without a
+  // withheld address has nobody to instruct, so the repository drops it
+  // rather than storing an instruction that will never be shown.
+  addressRequestNote: z.string().min(1).max(200).optional(),
   // DEC-0023 §4. Optional and absent by default: most events have no door
   // count, and a required field would make every organizer invent one. It is
   // ignored on a ticketed event, where the ticket type's quantity is already

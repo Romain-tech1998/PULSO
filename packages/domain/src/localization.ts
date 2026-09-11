@@ -802,6 +802,14 @@ const en = {
   'access.badgeApproved': 'Approved',
   'access.badgeDeclined': 'Declined',
   'access.declineFinal': 'A decline is final: this account cannot ask again.',
+  // The organizer's instruction to whoever has to ask. Written next to the
+  // toggle it depends on, and shown to every reader who meets the gate -
+  // which is why the hint says out loud that it is public.
+  'access.noteLabel': 'How should they reach you? (optional)',
+  'access.notePlaceholder': 'e.g. DM me on Instagram @myhandle',
+  'access.noteHelp':
+    'Shown to anyone who asks, so you can recognise them before approving. It is public on the event - write a handle, not a private detail.',
+  'access.noteFromOrganizer': 'The organizer asks:',
   'access.toggle': 'Give the address only to attendees I approve',
   'access.toggleHelp':
     'Everyone else sees the neighbourhood, not the exact address. Requires an address you type yourself, not a venue already listed in Pulso.',
@@ -2443,6 +2451,11 @@ const fr = {
   'access.badgeDeclined': 'Refusé',
   'access.declineFinal':
     'Un refus est définitif : ce compte ne pourra pas redemander.',
+  'access.noteLabel': 'Comment te joindre ? (facultatif)',
+  'access.notePlaceholder': 'Ex. envoie-moi un MP sur Instagram @moncompte',
+  'access.noteHelp':
+    'Affiché à qui demande, pour que tu puisses reconnaître la personne avant de valider. C’est public sur l’événement — mets un pseudo, pas une information privée.',
+  'access.noteFromOrganizer': 'L’organisateur demande :',
   'access.toggle': 'Ne donner l’adresse qu’aux participants que je valide',
   'access.toggleHelp':
     'Tous les autres voient le quartier, pas l’adresse exacte. Nécessite une adresse que tu saisis toi-même, pas un lieu déjà référencé dans Pulso.',
