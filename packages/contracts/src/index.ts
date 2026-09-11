@@ -993,6 +993,19 @@ export const createGroupRequestSchema = z.object({
   // it mandatory rejected them all with a 400.
   type: groupTypeSchema.default('community'),
   visibility: groupVisibilitySchema.optional(),
+  // The real Pulso event this group is being opened for.
+  //
+  // groups.event_id and the whole event-group idea already existed, but the
+  // only way to set it was the "Rencontrer avant l'evenement" button on an
+  // event page - which names the group itself and gives you no say in its
+  // description or how people join. Choosing the type "Sortie" in the
+  // create form therefore produced a group that was an outing in name only:
+  // no event behind it, nothing in the Evenements tab of the directory.
+  //
+  // One group per event stays true (unique index on groups.event_id,
+  // migration 0022); the API answers 409 rather than silently joining you
+  // to someone else's group under a name you just typed.
+  eventId: z.uuid().optional(),
   modulesConfig: z.array(groupModuleConfigSchema).optional()
 });
 

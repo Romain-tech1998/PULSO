@@ -20,6 +20,22 @@ export const API_BASE_URL =
 // that looked nothing like the rest of the product.
 const MAP_STYLE_PULSO = '/map-styles/pulso-dark.json';
 
+/**
+ * The island of Montreal, as a bounding box.
+ *
+ * The map's opening viewport, and the box every citywide `/events` fetch
+ * uses when it wants "what is on in Montreal" rather than "what is in the
+ * viewport". It lived in explore-map.tsx as INITIAL_BOUNDS; the group
+ * create form needs the same box to list the events a Sortie can be
+ * attached to, and two copies of a bounding box drift.
+ */
+export const MONTREAL_MAP_BOUNDS = {
+  west: -73.75,
+  south: 45.4,
+  east: -73.4,
+  north: 45.7
+};
+
 export const MAP_STYLE_URL: string | maplibregl.StyleSpecification =
   process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? MAP_STYLE_PULSO;
 

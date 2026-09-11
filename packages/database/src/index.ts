@@ -117,6 +117,7 @@ export {
 } from './reports-repository.js';
 export {
   PostgresGroupsRepository,
+  EventGroupExistsError,
   GroupNotFoundError,
   NotChannelWriterError,
   NotGroupMemberError,

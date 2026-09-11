@@ -114,10 +114,12 @@ import {
 import {
   AFTER_WINDOW_END_HOUR,
   AFTER_WINDOW_START_HOUR,
+  createFilteredDiscoveryWindow,
   DEFAULT_DISCOVERY_FILTERS,
   EVENT_CATEGORIES,
   FORUM_CATEGORIES,
   getMontrealCalendarDate,
+  isEligibleForActiveDiscovery,
   CATEGORY_COLORS,
   VENUE_CATEGORY_COLORS,
   type DiscoveryFilters,
@@ -173,6 +175,7 @@ import {
   HeartIcon,
   LegalLinks,
   MAP_STYLE_URL,
+  MONTREAL_MAP_BOUNDS,
   PROFILE_AVATAR_PRESETS,
   PROFILE_COVER_GRADIENTS,
   renderAvatarContent,
@@ -215,12 +218,7 @@ const VENUE_PIN_COLOR = '#8b7ff0';
  * visitor standing outside a dark door does not forgive.
  */
 const OPENING_STATE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
-const INITIAL_BOUNDS = {
-  west: -73.75,
-  south: 45.4,
-  east: -73.4,
-  north: 45.7
-};
+const INITIAL_BOUNDS = MONTREAL_MAP_BOUNDS;
 const PIN_WIDTH = 38;
 const PIN_HEIGHT = 44;
 // Pins are rasterized once at load time, not re-drawn per zoom level -
@@ -924,6 +922,33 @@ function useAuth() {
  * immediately on close); `mounted` gates whether the panel is in the DOM
  * at all.
  */
+/**
+ * Whether the primary rail is actually displayed.
+ *
+ * It is `display: none` below 768px, but CSS hides a component - it does not
+ * unmount it, and it does not stop its effects. Measured on a phone: three
+ * taps produced 21 API calls, three of which were the rail refetching
+ * `/me/events` for a surface with no pixels on screen, plus its friend code
+ * and its groups on mount.
+ *
+ * A media query rather than a conditional mount: deciding at render time
+ * needs the width before the first paint, which in this tree means either a
+ * hydration mismatch or the rail appearing a frame late on every desktop
+ * load. Asking here changes no markup and no layout - only whether the
+ * fetches below are worth making.
+ */
+function useSidebarVisible() {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const query = window.matchMedia('(min-width: 769px)');
+    const sync = () => setVisible(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+  return visible;
+}
+
 function useTransitionedMount(open: boolean, durationMs = 180) {
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(open);
@@ -1028,6 +1053,15 @@ export function ExploreMap({
   const [connectedSelectedVenueId, setConnectedSelectedVenueId] =
     useState<string>();
   const [filters, setFilters] = useState<DiscoveryFilters>(filtersRef.current);
+  // Which tab the account space opens on. Held here because Organisateur
+  // links straight into its settings tab, and a component's own state
+  // cannot be addressed from another section.
+  const [compteTab, setCompteTab] = useState<ProfilTab>('apercu');
+  // Pinning happens in Organisateur and is read by the rail's Raccourcis,
+  // which are two different branches of this tree - so the signal passes
+  // through here rather than the rail refetching on every navigation in
+  // case something changed.
+  const [pinVersion, setPinVersion] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersOverlayMount = useTransitionedMount(filtersOpen);
   // Mobile-only: the desktop sidebar becomes a bottom-sheet drawer below the
@@ -3705,25 +3739,23 @@ export function ExploreMap({
     userLocation && (nearbyState === 'success' || nearbyState === 'empty')
       ? nearbyEvents.length === 0
       : events.length === 0;
-  const explorerTwoWeekRange = getVenueDiscoveryDateRange(new Date());
-  const explorerTwoWeeksActive =
-    filters.date === 'custom' &&
-    filters.customStartDate === explorerTwoWeekRange.start &&
-    filters.customEndDate === explorerTwoWeekRange.end;
-  const applyExplorerDatePreset = (
-    preset: 'today' | 'tonight' | 'weekend' | 'two-weeks'
-  ) => {
-    if (preset === 'two-weeks') {
-      applyFilters({
-        ...filters,
-        date: 'custom',
-        customStartDate: explorerTwoWeekRange.start,
-        customEndDate: explorerTwoWeekRange.end
-      });
-      return;
-    }
-    applyFilters(withoutCustomDates(filters, preset));
-  };
+  // The connected map's own date-shortcut row used to live here (today /
+  // tonight / weekend / 14 days). It is gone with the row: Filtres offers
+  // the same three presets plus a real custom range, and spelling a subset
+  // of them out a second time over the map was one of the layers the
+  // product owner asked to take off it.
+
+  // What the count pill at the bottom of the connected map is counting -
+  // whatever the kind switch beside it currently has selected, so the two
+  // never disagree about what is on screen.
+  const connectedPinnedCount =
+    explorerPinKind === 'event'
+      ? events.length
+      : explorerPinKind === 'venue'
+        ? venueGroups.length
+        : explorerPinKind === 'after'
+          ? afterEventCount
+          : events.length + venueGroups.length;
 
   // A real <main> landmark for the anonymous experience (audit: none
   // existed anywhere on the page) - the signed-in side already gets one
@@ -3773,6 +3805,7 @@ export function ExploreMap({
           user={user}
           unreadMessagesCount={unreadMessagesCount}
           isAdmin={isAdmin}
+          pinVersion={pinVersion}
           onOpenAccount={() => {
             setAboutOpen(false);
             setForumPanelMode(false);
@@ -3992,6 +4025,26 @@ export function ExploreMap({
               )}
             </button>
           )}
+          {/* Organisateur was rail-only, and the rail does not exist on a
+              phone: publishing an event - the one thing this product asks
+              people to come back and do - was four taps deep behind the
+              profile. It gets a slot of its own here, with the short label
+              (nav.organize) five slots leave room for. */}
+          <button
+            type="button"
+            className={!aboutOpen && section === 'organisateur' ? 'active' : ''}
+            onClick={() => {
+              setAboutOpen(false);
+              setForumPanelMode(false);
+              setNotificationsOpen(false);
+              setSection('organisateur');
+            }}
+          >
+            <span aria-hidden="true">
+              <SidebarNavIcon kind="organisateur" />
+            </span>
+            {translate(locale, 'nav.organize')}
+          </button>
           <button
             type="button"
             className={
@@ -4055,6 +4108,12 @@ export function ExploreMap({
                 setAboutOpen(false);
                 setForumPanelMode(false);
                 setSection('compte');
+              }}
+              onOpenHome={() => {
+                setAboutOpen(false);
+                setForumPanelMode(false);
+                setNotificationsOpen(false);
+                setSection('decouvrir');
               }}
               onOpenMessages={() => {
                 setAboutOpen(false);
@@ -4371,12 +4430,34 @@ export function ExploreMap({
             attendance={attendance}
             authToken={authToken}
             locale={locale}
-            onOpenDetails={(eventId) => void openDetails(eventId)}
+            /* The record has to open as its own page here.
+
+               A bare openDetails() puts it in the map shell's right-hand
+               panel, and that panel is mounted *inside* the map tree - the
+               same tree that renders Mes sorties, the account space and
+               Favoris. So on those three the event did not open over
+               anything: it was appended underneath the page you were on,
+               half a screen down, with the profile still above it. The
+               connected surfaces all go through the full-page treatment
+               instead, which is what Événements already does. */
+            onOpenDetails={(eventId) =>
+              void openDetails(eventId, {
+                asForumPanel: true,
+                forumEventFirst: true
+              })
+            }
           />
         ) : user && section === 'organisateur' ? (
           <OrganisateurPage
             authToken={authToken}
             locale={locale}
+            onPinsChanged={() => setPinVersion((version) => version + 1)}
+            onOpenOrganizerSettings={() => {
+              setCompteTab('organisateur');
+              setAboutOpen(false);
+              setForumPanelMode(false);
+              setSection('compte');
+            }}
             // What the console links out to: the event as everyone else
             // sees it. The console itself is a destination inside
             // OrganisateurPage, because this section does not mount the map
@@ -5510,11 +5591,11 @@ export function ExploreMap({
 
               {/* Connected "Carte" (Phase 4.13) - its own map instance
                   (connectedMap/connectedMapContainer), real clustering with
-                  visible counts for both events and venues, a real filter
-                  bar (reuses MapFilterBar as-is), a real recenter/zoom
-                  control, and a small floating card on pin selection
-                  instead of the full EventDetails panel. explorerMap above
-                  is untouched - anonymous "Explorer" behaves exactly as
+                  visible counts for both events and venues, and a small
+                  floating card on pin selection instead of the full
+                  EventDetails panel. Its chrome now mirrors the signed-out
+                  event map; see the shell below. explorerMap above is
+                  untouched - anonymous "Explorer" behaves exactly as
                   before. */}
               <section
                 className="map-container-wrapper"
@@ -5523,124 +5604,154 @@ export function ExploreMap({
                 }}
               >
                 <div className="map-shell connected-map-shell">
-                  <div className="connected-map-context">
-                    <span>{translate(locale, 'map.exploreMontreal')}</span>
-                    <strong>
-                      {translatePlural(
-                        locale,
-                        events.length + venueGroups.length,
-                        'map.markerCount',
-                        'map.markerCountPlural'
-                      )}
-                    </strong>
-                  </div>
-
-                  {/* Kept on the connected map. The quick-filter bar was
-                      removed from the signed-out home screen, where it
-                      covered the city it filters and duplicated a panel
-                      already one tap away - that surface has a different
-                      layout and a different job. */}
-                  <MapFilterBar
-                    filters={filters}
-                    onChange={applyFilters}
-                    onOpenMore={() => setFiltersOpen((prev) => !prev)}
-                    locale={locale}
-                    pinKind={explorerPinKind}
-                    venueCategories={venueCategoryFilter}
-                    onVenueCategoriesChange={setVenueCategoryFilter}
-                  />
-
-                  <div
-                    className="explorer-date-shortcuts"
-                    aria-label={translate(locale, 'map.explorePeriod')}
-                  >
-                    <button
-                      type="button"
-                      className={filters.date === 'today' ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('today')}
-                    >
-                      Aujourd'hui
-                    </button>
-                    <button
-                      type="button"
-                      className={filters.date === 'tonight' ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('tonight')}
-                    >
-                      Ce soir
-                    </button>
-                    <button
-                      type="button"
-                      className={filters.date === 'weekend' ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('weekend')}
-                    >
-                      Ce week-end
-                    </button>
-                    <button
-                      type="button"
-                      className={explorerTwoWeeksActive ? 'active' : ''}
-                      onClick={() => applyExplorerDatePreset('two-weeks')}
-                    >
-                      14 jours
-                    </button>
-                  </div>
-
                   <div ref={connectedMapContainerRef} className="map" />
 
-                  <div className="map-floating-pin-toggle">
-                    <button
-                      type="button"
-                      className={explorerPinKind === 'all' ? 'active' : ''}
-                      onClick={() => setExplorerPinKind('all')}
-                    >
-                      <i className="map-toggle-dot map-toggle-dot-all" />
-                      {translate(locale, 'map.pinAll')}{' '}
-                      <span>{events.length + venueGroups.length}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={explorerPinKind === 'event' ? 'active' : ''}
-                      onClick={() => setExplorerPinKind('event')}
-                    >
-                      <i className="map-toggle-dot map-toggle-dot-event" />
-                      {translate(locale, 'nav.events')}{' '}
-                      <span>{events.length}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={explorerPinKind === 'venue' ? 'active' : ''}
-                      onClick={() => setExplorerPinKind('venue')}
-                    >
-                      <i className="map-toggle-dot map-toggle-dot-venue" />
-                      {translate(locale, 'nav.venues')}{' '}
-                      <span>{venueGroups.length}</span>
-                    </button>
-                    {/* Connected map only (DEC-0017) - the anonymous
-                        Explorer's identical toggle above deliberately has no
-                        After, since the filter and the created events it
-                        surfaces are both connected-experience surfaces. */}
-                    <button
-                      type="button"
-                      className={explorerPinKind === 'after' ? 'active' : ''}
-                      onClick={() => setExplorerPinKind('after')}
-                    >
-                      <i className="map-toggle-dot map-toggle-dot-after" />
-                      After <span>{afterEventCount}</span>
-                    </button>
-                  </div>
+                  {/* Same shape as the signed-out event map, on purpose.
 
-                  <div
-                    className="explorer-map-legend"
-                    aria-label={translate(locale, 'map.legend')}
+                      What used to be here: a context card naming the city
+                      and counting the markers, a wrapping filter bar, a row
+                      of date shortcuts repeating one of that bar's chips, a
+                      pin-kind toggle and a legend explaining the pin
+                      colours - five floating layers over the one thing the
+                      destination exists to show. The signed-out map does
+                      the same work with three (Filtres, Recentrer, and a
+                      bottom row carrying the count and the kind switch),
+                      and the product owner asked for that one.
+
+                      So: filters behind a single pill, the count folded
+                      into the bottom row where the switch already names
+                      both kinds - which is what made the legend redundant -
+                      and the date presets back where the rest of the
+                      filters live. */}
+                  <button
+                    type="button"
+                    className={`mobile-filters-trigger connected-map-filters-trigger ${
+                      filtersOpen ? 'active' : ''
+                    }`}
+                    aria-expanded={filtersOpen}
+                    onClick={() => setFiltersOpen((open) => !open)}
                   >
-                    <strong>{translate(locale, 'map.legendMarkers')}</strong>
-                    <span>
-                      <i className="legend-event-dot" />{' '}
-                      {translate(locale, 'map.legendEvent')}
-                    </span>
-                    <span>
-                      <i className="legend-venue-dot" />{' '}
-                      {translate(locale, 'map.legendVenue')}
-                    </span>
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      aria-hidden="true"
+                    >
+                      <line x1="4" y1="6" x2="20" y2="6" />
+                      <line x1="4" y1="12" x2="20" y2="12" />
+                      <line x1="4" y1="18" x2="20" y2="18" />
+                      <circle cx="9" cy="6" r="1.6" fill="currentColor" />
+                      <circle cx="15" cy="12" r="1.6" fill="currentColor" />
+                      <circle cx="11" cy="18" r="1.6" fill="currentColor" />
+                    </svg>
+                    {translate(locale, 'filters.title')}
+                    {activeFilterCount > 0 && (
+                      <span className="map-floating-filters-count">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="map-floating-recenter"
+                    onClick={() =>
+                      connectedMap.current?.flyTo({
+                        center: MONTREAL_CENTER,
+                        zoom: 11
+                      })
+                    }
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      aria-hidden="true"
+                    >
+                      <circle cx="12" cy="12" r="3" />
+                      <line x1="12" y1="2" x2="12" y2="5" />
+                      <line x1="12" y1="19" x2="12" y2="22" />
+                      <line x1="2" y1="12" x2="5" y2="12" />
+                      <line x1="19" y1="12" x2="22" y2="12" />
+                    </svg>
+                    {translate(locale, 'map.recenterShort')}
+                  </button>
+
+                  {/* The signed-out map's bottom row, with this map's four
+                      pin kinds in the switch instead of its two
+                      destinations. The counts stay on the buttons - they
+                      are the reason to pick one - and the switch scrolls
+                      sideways rather than wrapping on a narrow phone. */}
+                  <div className="map-bottom-bar">
+                    <div className="anonymous-map-status" aria-live="polite">
+                      <span aria-hidden="true" />
+                      <span className="anonymous-map-status-text">
+                        {translatePlural(
+                          locale,
+                          connectedPinnedCount,
+                          'map.markerCount',
+                          'map.markerCountPlural'
+                        )}
+                      </span>
+                    </div>
+
+                    <div
+                      className="anonymous-map-kind-switch connected-map-kind-switch"
+                      aria-label={translate(locale, 'nav.explore')}
+                    >
+                      <button
+                        type="button"
+                        className={explorerPinKind === 'all' ? 'active' : ''}
+                        aria-pressed={explorerPinKind === 'all'}
+                        onClick={() => setExplorerPinKind('all')}
+                      >
+                        <span className="map-kind-label">
+                          {translate(locale, 'map.pinAll')}
+                        </span>
+                        <span>{events.length + venueGroups.length}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={explorerPinKind === 'event' ? 'active' : ''}
+                        aria-pressed={explorerPinKind === 'event'}
+                        onClick={() => setExplorerPinKind('event')}
+                      >
+                        <span className="map-kind-label">
+                          {translate(locale, 'nav.events')}
+                        </span>
+                        <span>{events.length}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={explorerPinKind === 'venue' ? 'active' : ''}
+                        aria-pressed={explorerPinKind === 'venue'}
+                        onClick={() => setExplorerPinKind('venue')}
+                      >
+                        <span className="map-kind-label">
+                          {translate(locale, 'nav.venues')}
+                        </span>
+                        <span>{venueGroups.length}</span>
+                      </button>
+                      {/* Connected map only (DEC-0017) - the anonymous
+                          Explorer's toggle deliberately has no After, since
+                          the filter and the created events it surfaces are
+                          both connected-experience surfaces. */}
+                      <button
+                        type="button"
+                        className={explorerPinKind === 'after' ? 'active' : ''}
+                        aria-pressed={explorerPinKind === 'after'}
+                        onClick={() => setExplorerPinKind('after')}
+                      >
+                        <span className="map-kind-label">After</span>
+                        <span>{afterEventCount}</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="map-zoom-controls">
@@ -5678,22 +5789,6 @@ export function ExploreMap({
                       >
                         <line x1="5" y1="12" x2="19" y2="12" />
                       </svg>
-                    </button>
-                    <button
-                      type="button"
-                      className="map-zoom-btn"
-                      aria-label={translate(locale, 'map.recenterMontreal')}
-                      title="Montréal"
-                      onClick={() =>
-                        connectedMap.current?.flyTo({
-                          center: MONTREAL_CENTER,
-                          zoom: 11
-                        })
-                      }
-                    >
-                      <span className="map-montreal-icon" aria-hidden="true">
-                        ⌖
-                      </span>
                     </button>
                     <button
                       type="button"
@@ -5753,7 +5848,16 @@ export function ExploreMap({
                 <FavorisSection
                   favorites={favorites}
                   onToggleFavorite={toggleFavorite}
-                  onOpenDetails={openDetails}
+                  /* Signed in this is a page like the others (see Mes
+                     sorties above); signed out there is no full-page mode,
+                     the flag is ignored and the right-hand panel opens as
+                     it always has. */
+                  onOpenDetails={(eventId) =>
+                    void openDetails(eventId, {
+                      asForumPanel: true,
+                      forumEventFirst: true
+                    })
+                  }
                   favoriteVenueGroups={venueGroups.filter((group) =>
                     favoriteVenues.includes(group.id)
                   )}
@@ -5763,7 +5867,12 @@ export function ExploreMap({
                     setDetails({ kind: 'closed' });
                     setVenuePickerList(undefined);
                     if (group.events.length === 1) {
-                      void openDetails(group.events[0]!.id);
+                      // Same page treatment as the lists above: a venue
+                      // with one event is a shortcut to that event.
+                      void openDetails(group.events[0]!.id, {
+                        asForumPanel: true,
+                        forumEventFirst: true
+                      });
                     } else {
                       setPickerList({
                         title: `${group.name} — ${group.address}`,
@@ -5811,7 +5920,12 @@ export function ExploreMap({
                   attendance={attendance}
                   favorites={favorites}
                   onToggleFavorite={toggleFavorite}
-                  onOpenDetails={openDetails}
+                  onOpenDetails={(eventId) =>
+                    void openDetails(eventId, {
+                      asForumPanel: true,
+                      forumEventFirst: true
+                    })
+                  }
                   favoriteVenueGroups={venueGroups.filter((group) =>
                     favoriteVenues.includes(group.id)
                   )}
@@ -5821,7 +5935,12 @@ export function ExploreMap({
                     setDetails({ kind: 'closed' });
                     setVenuePickerList(undefined);
                     if (group.events.length === 1) {
-                      void openDetails(group.events[0]!.id);
+                      // Same page treatment as the lists above: a venue
+                      // with one event is a shortcut to that event.
+                      void openDetails(group.events[0]!.id, {
+                        asForumPanel: true,
+                        forumEventFirst: true
+                      });
                     } else {
                       setPickerList({
                         title: `${group.name} — ${group.address}`,
@@ -5831,6 +5950,14 @@ export function ExploreMap({
                     }
                   }}
                   onOpenAmis={() => setSection('amis')}
+                  onOpenOrganizer={() => {
+                    setAboutOpen(false);
+                    setForumPanelMode(false);
+                    setSection('organisateur');
+                  }}
+                  onOpenAbout={() => setAboutOpen(true)}
+                  tab={compteTab}
+                  onTabChange={setCompteTab}
                 />
               )}
 
@@ -5952,6 +6079,14 @@ export function ExploreMap({
                 onApplyDistance={applyDistanceFilter}
                 distanceFilterActive={distanceFilterActive}
                 geoStatus={geoStatus}
+                {...(user &&
+                section === 'explorer' &&
+                (explorerPinKind === 'venue' || explorerPinKind === 'all')
+                  ? {
+                      venueCategories: venueCategoryFilter,
+                      onVenueCategoriesChange: setVenueCategoryFilter
+                    }
+                  : {})}
               />
             )}
 
@@ -5981,148 +6116,161 @@ export function ExploreMap({
               </div>
             )}
 
-            <div className="bottom-section">
-              <div className="section-header">
-                <h2>{translate(locale, 'landing.nearbyTitle')}</h2>
-                <button
-                  type="button"
-                  className="view-all"
-                  onClick={() => {
-                    setListOverride({
-                      title: translate(locale, 'landing.nearbyListTitle'),
-                      events: carouselEvents.slice(0, 15)
-                    });
-                    setViewMode('list');
-                  }}
-                >
-                  {translate(locale, 'landing.seeAllEvents')}{' '}
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    style={{ verticalAlign: 'middle', marginLeft: 4 }}
-                  >
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                    <polyline points="12 5 19 12 12 19"></polyline>
-                  </svg>
-                </button>
-              </div>
+            {/* The signed-out landing page's tail: an "À proximité" carousel
+                and the four feature cards that pitch the product.
 
-              <div className="event-carousel">
-                {carouselEvents.slice(0, 15).map((evt) => (
-                  <div
-                    className="event-card"
-                    key={evt.id}
-                    onClick={() => openDetails(evt.id)}
-                    style={{ cursor: 'pointer' }}
+                Signed out it is the argument for signing up. Signed in it
+                was a second copy of Découvrir's own carousel sitting under
+                the map, ending in marketing aimed at someone who already
+                has an account - and its "Voir tous les événements" was
+                dead: it drives `viewMode`/`listOverride`, which only the
+                anonymous events map reads, so on the connected Carte the
+                button did nothing at all. Reported as "pas cliquable",
+                which is exactly what it was. */}
+            {!user && (
+              <div className="bottom-section">
+                <div className="section-header">
+                  <h2>{translate(locale, 'landing.nearbyTitle')}</h2>
+                  <button
+                    type="button"
+                    className="view-all"
+                    onClick={() => {
+                      setListOverride({
+                        title: translate(locale, 'landing.nearbyListTitle'),
+                        events: carouselEvents.slice(0, 15)
+                      });
+                      setViewMode('list');
+                    }}
                   >
-                    <div
-                      className="event-card-img"
-                      style={
-                        evt.imageUrl
-                          ? {
-                              backgroundImage: `url(${evt.imageUrl})`,
-                              backgroundSize: 'cover',
-                              backgroundPosition: 'center'
-                            }
-                          : undefined
-                      }
+                    {translate(locale, 'landing.seeAllEvents')}{' '}
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      style={{ verticalAlign: 'middle', marginLeft: 4 }}
                     >
-                      {!evt.imageUrl && (
-                        <EventImageFallback category={evt.category} />
-                      )}
-                      <div
-                        className="card-badge"
-                        style={{
-                          background:
-                            CATEGORY_COLORS[evt.category] ??
-                            CATEGORY_COLORS['other']
-                        }}
-                      >
-                        {SHORT_CATEGORY_LABELS[locale][evt.category]}
-                      </div>
-                      <button
-                        className={`card-fav${favorites.includes(evt.id) ? ' active' : ''}`}
-                        aria-label={translate(
-                          locale,
-                          favorites.includes(evt.id)
-                            ? 'favorites.remove'
-                            : 'favorites.add'
-                        )}
-                        aria-pressed={favorites.includes(evt.id)}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleFavorite(evt.id);
-                        }}
-                      >
-                        <SidebarNavIcon kind="favoris" />
-                      </button>
-                    </div>
-                    <div className="event-card-content">
-                      <h3>{evt.title}</h3>
-                      <p>{evt.venue?.name}</p>
-                      <p className="card-when">
-                        {eventPreviewFields(evt, locale).dateTime}
-                      </p>
-                      {readCapacity(evt)?.full && (
-                        <p className="card-full">
-                          {translate(locale, 'console.full')}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {carouselEmpty && (
-                  <p>{translate(locale, 'landing.noEvents')}</p>
-                )}
-              </div>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                      <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                  </button>
+                </div>
 
-              <div className="feature-footer">
-                <div className="feature-item">
-                  <div className="feature-icon" aria-hidden="true">
-                    <SidebarNavIcon kind="carte" />
-                  </div>
-                  <div className="feature-text">
-                    <h4>{translate(locale, 'landing.featureMapTitle')}</h4>
-                    <p>{translate(locale, 'landing.featureMapBody')}</p>
-                  </div>
+                <div className="event-carousel">
+                  {carouselEvents.slice(0, 15).map((evt) => (
+                    <div
+                      className="event-card"
+                      key={evt.id}
+                      onClick={() => openDetails(evt.id)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <div
+                        className="event-card-img"
+                        style={
+                          evt.imageUrl
+                            ? {
+                                backgroundImage: `url(${evt.imageUrl})`,
+                                backgroundSize: 'cover',
+                                backgroundPosition: 'center'
+                              }
+                            : undefined
+                        }
+                      >
+                        {!evt.imageUrl && (
+                          <EventImageFallback category={evt.category} />
+                        )}
+                        <div
+                          className="card-badge"
+                          style={{
+                            background:
+                              CATEGORY_COLORS[evt.category] ??
+                              CATEGORY_COLORS['other']
+                          }}
+                        >
+                          {SHORT_CATEGORY_LABELS[locale][evt.category]}
+                        </div>
+                        <button
+                          className={`card-fav${favorites.includes(evt.id) ? ' active' : ''}`}
+                          aria-label={translate(
+                            locale,
+                            favorites.includes(evt.id)
+                              ? 'favorites.remove'
+                              : 'favorites.add'
+                          )}
+                          aria-pressed={favorites.includes(evt.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(evt.id);
+                          }}
+                        >
+                          <SidebarNavIcon kind="favoris" />
+                        </button>
+                      </div>
+                      <div className="event-card-content">
+                        <h3>{evt.title}</h3>
+                        <p>{evt.venue?.name}</p>
+                        <p className="card-when">
+                          {eventPreviewFields(evt, locale).dateTime}
+                        </p>
+                        {readCapacity(evt)?.full && (
+                          <p className="card-full">
+                            {translate(locale, 'console.full')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {carouselEmpty && (
+                    <p>{translate(locale, 'landing.noEvents')}</p>
+                  )}
                 </div>
-                <div className="feature-item">
-                  <div className="feature-icon" aria-hidden="true">
-                    <SidebarNavIcon kind="recherche" />
+
+                <div className="feature-footer">
+                  <div className="feature-item">
+                    <div className="feature-icon" aria-hidden="true">
+                      <SidebarNavIcon kind="carte" />
+                    </div>
+                    <div className="feature-text">
+                      <h4>{translate(locale, 'landing.featureMapTitle')}</h4>
+                      <p>{translate(locale, 'landing.featureMapBody')}</p>
+                    </div>
                   </div>
-                  <div className="feature-text">
-                    <h4>{translate(locale, 'landing.featureSearchTitle')}</h4>
-                    <p>{translate(locale, 'landing.featureSearchBody')}</p>
+                  <div className="feature-item">
+                    <div className="feature-icon" aria-hidden="true">
+                      <SidebarNavIcon kind="recherche" />
+                    </div>
+                    <div className="feature-text">
+                      <h4>{translate(locale, 'landing.featureSearchTitle')}</h4>
+                      <p>{translate(locale, 'landing.featureSearchBody')}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="feature-item">
-                  <div className="feature-icon" aria-hidden="true">
-                    <SidebarNavIcon kind="favoris" />
+                  <div className="feature-item">
+                    <div className="feature-icon" aria-hidden="true">
+                      <SidebarNavIcon kind="favoris" />
+                    </div>
+                    <div className="feature-text">
+                      <h4>
+                        {translate(locale, 'landing.featureFavoritesTitle')}
+                      </h4>
+                      <p>{translate(locale, 'landing.featureFavoritesBody')}</p>
+                    </div>
                   </div>
-                  <div className="feature-text">
-                    <h4>
-                      {translate(locale, 'landing.featureFavoritesTitle')}
-                    </h4>
-                    <p>{translate(locale, 'landing.featureFavoritesBody')}</p>
-                  </div>
-                </div>
-                <div className="feature-item">
-                  <div className="feature-icon" aria-hidden="true">
-                    <SidebarNavIcon kind="groupes" />
-                  </div>
-                  <div className="feature-text">
-                    <h4>
-                      {translate(locale, 'landing.featureCommunityTitle')}
-                    </h4>
-                    <p>{translate(locale, 'landing.featureCommunityBody')}</p>
+                  <div className="feature-item">
+                    <div className="feature-icon" aria-hidden="true">
+                      <SidebarNavIcon kind="groupes" />
+                    </div>
+                    <div className="feature-text">
+                      <h4>
+                        {translate(locale, 'landing.featureCommunityTitle')}
+                      </h4>
+                      <p>{translate(locale, 'landing.featureCommunityBody')}</p>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </Fragment>
         )}
       </ContentColumn>
@@ -8916,7 +9064,26 @@ function CitySelector({ locale }: { locale: SupportedLocale }) {
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
       >
-        Montréal
+        {/* Phone-only, shown by the 768px block. Montréal is the only city
+            Pulso serves, so on the width where the search field has none to
+            spare the name is the part that goes - the pin still says what
+            the control is, and the list still opens. */}
+        <span className="city-selector-pin" aria-hidden="true">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" />
+            <circle cx="12" cy="10" r="3" />
+          </svg>
+        </span>
+        <span className="city-selector-name">Montréal</span>
         <svg
           width="12"
           height="12"
@@ -9640,6 +9807,7 @@ function Sidebar({
   locale,
   unreadMessagesCount,
   isAdmin,
+  pinVersion,
   onOpenAccount,
   onOpenEvent
 }: {
@@ -9647,6 +9815,17 @@ function Sidebar({
   onNavigate: (section: ConnectedSection) => void;
   lastCommunitySection: CommunitySection;
   authToken: string | undefined;
+  /**
+   * Bumped when a pin is added or removed, which is the only thing that
+   * changes the Raccourcis list below.
+   *
+   * This effect used to depend on `activeSection` instead - navigation as a
+   * stand-in for "something might have changed", which refetched every
+   * event this account has published on every single tap. The real signal
+   * is cheaper and more correct: the shortcuts now update the moment a pin
+   * is toggled rather than on the next time you happen to navigate.
+   */
+  pinVersion: number;
   locale: SupportedLocale;
   user: User;
   unreadMessagesCount: number;
@@ -9658,9 +9837,10 @@ function Sidebar({
   const [copied, setCopied] = useState(false);
   const [myGroups, setMyGroups] = useState<Group[]>([]);
   const [openGroup, setOpenGroup] = useState<Group>();
+  const visible = useSidebarVisible();
 
   useEffect(() => {
-    if (!authToken) return;
+    if (!authToken || !visible) return;
     fetch(`${API_BASE_URL}/me/friend-code`, {
       headers: { authorization: `Bearer ${authToken}` }
     })
@@ -9669,17 +9849,17 @@ function Sidebar({
         setFriendCode(friendCodeResponseSchema.parse(json).data.friendCode)
       )
       .catch(() => {});
-  }, [authToken]);
+  }, [authToken, visible]);
 
   const refreshGroups = useCallback(() => {
-    if (!authToken) return;
+    if (!authToken || !visible) return;
     fetch(`${API_BASE_URL}/me/groups`, {
       headers: { authorization: `Bearer ${authToken}` }
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json) => setMyGroups(groupsResponseSchema.parse(json).data))
       .catch(() => {});
-  }, [authToken]);
+  }, [authToken, visible]);
 
   useEffect(() => {
     refreshGroups();
@@ -9691,7 +9871,7 @@ function Sidebar({
   // beside pinned groups - the two things a user actually returns to.
   const [pinnedEvents, setPinnedEvents] = useState<PublicEvent[]>([]);
   useEffect(() => {
-    if (!authToken) return;
+    if (!authToken || !visible) return;
     fetch(`${API_BASE_URL}/me/events`, {
       headers: { authorization: `Bearer ${authToken}` }
     })
@@ -9704,7 +9884,7 @@ function Sidebar({
         )
       )
       .catch(() => {});
-  }, [authToken, activeSection]);
+  }, [authToken, visible, pinVersion]);
 
   return (
     <aside className="primary-sidebar">
@@ -9942,6 +10122,7 @@ function TopBar({
   onToggleNotifications,
   onOpenAccount,
   onOpenMessages,
+  onOpenHome,
   onOpenAbout,
   aboutOpen
 }: {
@@ -9973,11 +10154,30 @@ function TopBar({
   onToggleNotifications: () => void;
   onOpenAccount: () => void;
   onOpenMessages: () => void;
+  /** Back to Découvrir - what the brand mark means everywhere else. */
+  onOpenHome: () => void;
   onOpenAbout: () => void;
   aboutOpen: boolean;
 }) {
   return (
     <header className="top-navbar connected-topbar">
+      {/* Phone-only, and shown by the 768px block in styles.css.
+
+          The rail carries the mark on desktop, and it is the rail that
+          disappears under 768px - so the signed-in phone was the one
+          surface in the whole product with no Pulso anywhere on it, and no
+          way back to Découvrir from a scrolled-down page either. The
+          horizontal asset rather than the favicon: the header's first track
+          has the width for the wordmark, which the signed-out phone's
+          44x44 floating square did not. */}
+      <button
+        type="button"
+        className="nav-logo connected-topbar-logo"
+        onClick={onOpenHome}
+        aria-label="Pulso"
+      >
+        <img src="/brand/pulso-logo-horizontal-dark.svg" alt="Pulso" />
+      </button>
       <div className="nav-search">
         <SearchPanel
           query={query}
@@ -9999,7 +10199,7 @@ function TopBar({
       <div className="nav-actions">
         <button
           type="button"
-          className={`nav-icon-btn ${aboutOpen ? 'active' : ''}`}
+          className={`nav-icon-btn nav-icon-btn-about ${aboutOpen ? 'active' : ''}`}
           onClick={onOpenAbout}
           aria-label={translate(locale, 'nav.about')}
           title={translate(locale, 'nav.about')}
@@ -10008,7 +10208,7 @@ function TopBar({
         </button>
         <button
           type="button"
-          className="nav-icon-btn"
+          className="nav-icon-btn nav-icon-btn-messages"
           onClick={onOpenMessages}
           aria-label={
             unreadMessagesCount > 0
@@ -10161,6 +10361,18 @@ function EventsPage({
   locale: SupportedLocale;
 }) {
   const [period, setPeriod] = useState<EventsPeriod>('today');
+  /**
+   * Whether the visitor chose this period themselves.
+   *
+   * 'today' is the right thing to open on when there is anything on today.
+   * When there is not - late in the evening, or a quiet Tuesday - the
+   * directory opened on an empty grid while dozens of events sat one tab
+   * away: measured at 22h, "today 0" against "this weekend 32" and "coming
+   * up 52". So the counters, when they land, are allowed to move the tab
+   * once. Never after a tap: taking the tab back from someone who just
+   * chose it would be worse than the empty grid.
+   */
+  const periodChosenByUser = useRef(false);
   const [activeChip, setActiveChip] = useState<'all' | EventCategory | 'free'>(
     'all'
   );
@@ -10177,27 +10389,54 @@ function EventsPage({
   >({});
   const [activeGroups, setActiveGroups] = useState<DiscoverGroupEntry[]>([]);
 
+  /**
+   * The three tab counters, from one request instead of three.
+   *
+   * This used to fetch `/events` once per period and keep only `.length` -
+   * measured against the real directory, 102KB of event JSON downloaded and
+   * thrown away to print three integers, before the page fetched the list
+   * again for the grid itself.
+   *
+   * `next7` is the rolling window, and `today` and `weekend` are both
+   * intersected with it (see createFilteredDiscoveryWindow) - so one
+   * `next7` response contains every event the other two could match. The
+   * buckets are then computed with the very functions the API uses to build
+   * them, so a counter cannot drift from the list it labels: no second
+   * definition of "this weekend" living in the client.
+   */
   useEffect(() => {
     let cancelled = false;
-    Promise.all(
-      EVENTS_PERIOD_TABS.map(({ value }) =>
-        fetch(
-          `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, { date: value, categories: [], price: 'all' })}`
-        )
-          .then((response) =>
-            response.ok ? response.json() : Promise.reject()
-          )
-          .then(
-            (json) =>
-              [value, eventListResponseSchema.parse(json).data.length] as [
-                EventsPeriod,
-                number
-              ]
-          )
-      )
+    fetch(
+      `${API_BASE_URL}/events?${buildMapEventsQuery(INITIAL_BOUNDS, { date: 'next7', categories: [], price: 'all' })}`
     )
-      .then((entries) => {
-        if (!cancelled) setPeriodCounts(Object.fromEntries(entries));
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        if (cancelled) return;
+        const events = eventListResponseSchema.parse(json).data;
+        const now = new Date();
+        const counts = Object.fromEntries(
+          EVENTS_PERIOD_TABS.map(({ value }) => {
+            const window = createFilteredDiscoveryWindow(now, { date: value });
+            return [
+              value,
+              events.filter((event) =>
+                isEligibleForActiveDiscovery(event, window)
+              ).length
+            ];
+          })
+        ) as Partial<Record<EventsPeriod, number>>;
+        setPeriodCounts(counts);
+        // Read through the updater rather than the closure: depending on
+        // `period` here would re-run the fetch on every tab change, which is
+        // the opposite of the point.
+        setPeriod((current) => {
+          if (periodChosenByUser.current) return current;
+          if ((counts[current] ?? 0) > 0) return current;
+          return (
+            EVENTS_PERIOD_TABS.find(({ value }) => (counts[value] ?? 0) > 0)
+              ?.value ?? current
+          );
+        });
       })
       .catch(() => {});
     return () => {
@@ -10302,34 +10541,34 @@ function EventsPage({
             <p className="events-hero-eyebrow">
               {translate(locale, 'eventsPage.subtitle')}
             </p>
-            <div className="events-hero-stats">
-              {EVENTS_PERIOD_TABS.map(({ value, label }) => (
-                <span className="events-hero-stat" key={value}>
-                  <strong>{periodCounts[value] ?? '…'}</strong>{' '}
-                  {translate(locale, label).toLocaleLowerCase(
-                    displayLocale(locale)
-                  )}
-                </span>
-              ))}
-            </div>
+            {/* The stats row that used to sit here mapped over
+                EVENTS_PERIOD_TABS and printed periodCounts - the same array
+                and the same three numbers as the period tabs a hundred
+                pixels below, which are the ones you can actually press. One
+                of the two had to go, and it is the decorative one. */}
           </div>
           <div className="events-hero-actions">
-            {/* Creation lives in Organisateur now (DEC-0017 v1.2) - this
-                stays as a shortcut rather than a second implementation. */}
+            {/* Exploring is what this page is for, so it takes the primary
+                treatment. Publishing had it, and publishing is the rarest
+                thing anyone does here - it also has its own slot in the
+                phone's bottom bar now, so this is a shortcut to a
+                destination rather than the page's own call to action.
+                Creation itself still lives in Organisateur (DEC-0017
+                v1.2). */}
             <button
               type="button"
-              className="btn-primary events-hero-create-btn"
-              onClick={onNavigateToOrganisateur}
-            >
-              {translate(locale, 'eventsPage.create')}
-            </button>
-            <button
-              type="button"
-              className="btn-secondary events-hero-map-btn"
+              className="btn-primary events-hero-map-btn"
               onClick={onNavigateToMap}
             >
               <ViewModeIcon kind="map" />
               {translate(locale, 'favorites.exploreMap')}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary events-hero-create-btn"
+              onClick={onNavigateToOrganisateur}
+            >
+              {translate(locale, 'eventsPage.create')}
             </button>
           </div>
         </div>
@@ -10341,7 +10580,10 @@ function EventsPage({
                 type="button"
                 key={value}
                 className={period === value ? 'active' : ''}
-                onClick={() => setPeriod(value)}
+                onClick={() => {
+                  periodChosenByUser.current = true;
+                  setPeriod(value);
+                }}
               >
                 {translate(locale, label)}
                 <span>{periodCounts[value] ?? '…'}</span>
@@ -11023,7 +11265,7 @@ function EventEditor({
 
   return (
     <div className="event-editor">
-      <button type="button" className="event-editor-back" onClick={onCancel}>
+      <button type="button" className="page-back" onClick={onCancel}>
         <svg
           width="16"
           height="16"
@@ -13507,11 +13749,17 @@ function MesSortiesPage({
 function OrganisateurPage({
   authToken,
   locale,
-  onOpenEvent
+  onOpenEvent,
+  onPinsChanged,
+  onOpenOrganizerSettings
 }: {
   authToken: string | undefined;
   locale: SupportedLocale;
   onOpenEvent: (eventId: string) => void;
+  /** Tells the rail its Raccourcis list just changed. */
+  onPinsChanged: () => void;
+  /** The account space's Organisateur tab, where approval and Stripe live. */
+  onOpenOrganizerSettings: () => void;
 }) {
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
@@ -13576,6 +13824,7 @@ function OrganisateurPage({
       .then((response) => {
         if (!response.ok) throw new Error(String(response.status));
         reload();
+        onPinsChanged();
       })
       .catch(() => setActionError("L'épinglage n'a pas pu être enregistré."));
   };
@@ -13665,17 +13914,28 @@ function OrganisateurPage({
       )}
       {actionError && <p className="create-event-error">{actionError}</p>}
 
-      {/* Both shrink to a chip once settled, so a page about events is not
-          two thirds about the account behind them. They expand back into
-          panels whenever they need something. */}
-      <div className="organisateur-status-strip">
-        <OrganizerStatusBlock authToken={authToken} locale={locale} />
-
-        {/* DEC-0022 §1: the Stripe account belongs to the organizer, not to
-            one event, so it sits once at the top rather than in every
-            panel. */}
-        <StripeConnectPanel authToken={authToken} locale={locale} />
-      </div>
+      {/* Both panels moved to the account space (OrganizerSettingsTab): an
+          approval request and a Stripe connection are settings of the
+          account, not of the events this page lists - and even shrunk to
+          chips they were the first thing above the list. What stays is the
+          way to them, so nobody has to go looking for Stripe halfway
+          through publishing something. */}
+      <button
+        type="button"
+        className="organisateur-settings-link"
+        onClick={onOpenOrganizerSettings}
+      >
+        <span className="organisateur-settings-link-icon" aria-hidden="true">
+          ◈
+        </span>
+        <span className="organisateur-settings-link-text">
+          <strong>{translate(locale, 'organizer.settingsInProfile')}</strong>
+          <span>{translate(locale, 'organizer.settingsInProfileHint')}</span>
+        </span>
+        <span className="organisateur-settings-link-cta">
+          {translate(locale, 'organizer.settingsInProfileCta')}
+        </span>
+      </button>
 
       {state === 'success' && events.length === 0 && (
         <div className="empty-state-card organisateur-empty">
@@ -17112,6 +17372,7 @@ type ProfilTab =
   | 'amis'
   | 'lieux'
   | 'groupes'
+  | 'organisateur'
   | 'activite';
 
 // Every tab carries a catalogue key. The mixed `label`/`labelKey` shape
@@ -17131,6 +17392,10 @@ const PROFIL_TABS: Array<{
   { id: 'amis', labelKey: 'profile.tabFriends', icon: '🧑‍🤝‍🧑' },
   { id: 'lieux', labelKey: 'profile.tabFollowedVenues', icon: '⌖' },
   { id: 'groupes', labelKey: 'profile.tabGroups', icon: '♟' },
+  // Approval and payouts belong to the account, not to any one event - and
+  // the Organisateur destination is about the events themselves. See
+  // OrganizerSettingsTab.
+  { id: 'organisateur', labelKey: 'profile.tabOrganizer', icon: '◈' },
   { id: 'activite', labelKey: 'profile.tabActivity', icon: '↗' }
 ];
 
@@ -18422,6 +18687,45 @@ function ActiviteTab({
   );
 }
 
+/**
+ * The account side of organising, moved here from OrganisateurPage.
+ *
+ * Neither panel is about an event: one asks Pulso to recognise this account
+ * as the organizer of a venue, the other connects the Stripe account ticket
+ * money is paid into. Both are settings of the account, and both were
+ * sitting on top of the page that lists the events - which is what the
+ * product owner asked to change. OrganisateurPage keeps a one-line pointer
+ * back to here so nobody has to hunt for Stripe mid-publication.
+ */
+function OrganizerSettingsTab({
+  authToken,
+  locale,
+  onOpenOrganizer
+}: {
+  authToken: string | undefined;
+  locale: SupportedLocale;
+  onOpenOrganizer: () => void;
+}) {
+  return (
+    <div className="profil-tab-content profil-organizer-tab">
+      <div className="profil-organizer-intro">
+        <span className="profil-organizer-kicker">
+          {translate(locale, 'profile.organizerKicker')}
+        </span>
+        <h2>{translate(locale, 'profile.organizerTitle')}</h2>
+        <p>{translate(locale, 'profile.organizerLead')}</p>
+        <button type="button" className="text-btn" onClick={onOpenOrganizer}>
+          {translate(locale, 'profile.organizerOpenPage')}
+        </button>
+      </div>
+      <div className="organisateur-status-strip profil-organizer-strip">
+        <OrganizerStatusBlock authToken={authToken} locale={locale} />
+        <StripeConnectPanel authToken={authToken} locale={locale} />
+      </div>
+    </div>
+  );
+}
+
 function CompteSection({
   user,
   authToken,
@@ -18437,7 +18741,11 @@ function CompteSection({
   favoriteVenues,
   onToggleFavoriteVenue,
   onSelectVenue,
-  onOpenAmis
+  onOpenAmis,
+  onOpenOrganizer,
+  onOpenAbout,
+  tab,
+  onTabChange
 }: {
   user: User;
   authToken: string | undefined;
@@ -18454,8 +18762,24 @@ function CompteSection({
   onToggleFavoriteVenue: (id: string) => void;
   onSelectVenue: (group: VenueGroup) => void;
   onOpenAmis: () => void;
+  /** The Organisateur destination - this section only holds its settings. */
+  onOpenOrganizer: () => void;
+  /**
+   * About / legal.
+   *
+   * The header's info button is the only way into it when signed in, and
+   * that button leaves the header on a phone (the search field needs the
+   * width). The signed-out account surface has carried this entry for a
+   * while; the signed-in one never did.
+   */
+  onOpenAbout: () => void;
+  /* Controlled from the shell rather than held here, so Organisateur can
+     send someone straight to the settings tab instead of dropping them on
+     Vue d'ensemble and asking them to find it. */
+  tab: ProfilTab;
+  onTabChange: (tab: ProfilTab) => void;
 }) {
-  const [tab, setTab] = useState<ProfilTab>('apercu');
+  const setTab = onTabChange;
   const [editing, setEditing] = useState(false);
   const [friends, setFriends] = useState<PublicUser[]>([]);
 
@@ -18555,6 +18879,13 @@ function CompteSection({
               onSelectVenue={onSelectVenue}
             />
           )}
+          {tab === 'organisateur' && (
+            <OrganizerSettingsTab
+              authToken={authToken}
+              locale={locale}
+              onOpenOrganizer={onOpenOrganizer}
+            />
+          )}
           {tab === 'activite' && (
             <ActiviteTab authToken={authToken} locale={locale} />
           )}
@@ -18586,6 +18917,16 @@ function CompteSection({
               </div>
               <LanguageSelector locale={locale} onChange={onChangeLocale} />
             </div>
+            <button
+              type="button"
+              className="profil-settings-link"
+              onClick={onOpenAbout}
+            >
+              <span aria-hidden="true">
+                <InfoIcon />
+              </span>
+              {translate(locale, 'nav.about')}
+            </button>
             <button
               type="button"
               className="profil-logout-btn"
@@ -19909,262 +20250,12 @@ function applySearchFilterEdits(
  * That is also what keeps it on one row at phone width, where four chips
  * wrapped onto two and covered the map.
  */
-function MapFilterBar({
-  filters,
-  onChange,
-  onOpenMore,
-  locale,
-  pinKind,
-  venueCategories,
-  onVenueCategoriesChange
-}: {
-  filters: DiscoveryFilters;
-  onChange: (filters: DiscoveryFilters) => void;
-  onOpenMore: () => void;
-  locale: SupportedLocale;
-  /** What the map is pinning. Absent on surfaces that only ever show events. */
-  pinKind?: 'all' | 'event' | 'venue' | 'after';
-  venueCategories?: VenueCategory[];
-  onVenueCategoriesChange?: (categories: VenueCategory[]) => void;
-}) {
-  const [openChip, setOpenChip] = useState<'date' | 'price' | 'category'>();
-  const barRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!openChip) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (barRef.current && !barRef.current.contains(event.target as Node)) {
-        setOpenChip(undefined);
-      }
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [openChip]);
-
-  const toggleChip = (chip: 'date' | 'price' | 'category') =>
-    setOpenChip((prev) => (prev === chip ? undefined : chip));
-
-  const toggleCategory = (category: EventCategory) => {
-    onChange({
-      ...filters,
-      categories: filters.categories.includes(category)
-        ? filters.categories.filter((value) => value !== category)
-        : [...filters.categories, category]
-    });
-  };
-
-  const categoryLabel =
-    filters.categories.length === 0
-      ? translate(locale, 'filters.categories')
-      : filters.categories
-          .map((category) => SHORT_CATEGORY_LABELS[locale][category])
-          .join(', ');
-
-  // Venue mode asks one question, in the venue vocabulary.
-  if (pinKind === 'venue' && onVenueCategoriesChange) {
-    const selected = venueCategories ?? [];
-    const label =
-      selected.length === 0
-        ? translate(locale, 'filters.venueType')
-        : selected
-            .map((category) => VENUE_CATEGORY_LABELS[locale][category])
-            .join(', ');
-    return (
-      <div className="map-filter-bar" ref={barRef}>
-        <div className="map-filter-chip-wrapper">
-          <button
-            type="button"
-            className={`map-filter-chip ${openChip === 'category' ? 'open' : ''} ${selected.length > 0 ? 'active' : ''}`}
-            onClick={() => toggleChip('category')}
-            aria-expanded={openChip === 'category'}
-            aria-haspopup="true"
-          >
-            {label}
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          {openChip === 'category' && (
-            <div className="map-filter-dropdown">
-              {VENUE_CATEGORY_FILTER_OPTIONS.map((option) => (
-                <label key={option.value}>
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(option.value)}
-                    onChange={() =>
-                      onVenueCategoriesChange(
-                        selected.includes(option.value)
-                          ? selected.filter(
-                              (category) => category !== option.value
-                            )
-                          : [...selected, option.value]
-                      )
-                    }
-                  />
-                  {VENUE_CATEGORY_LABELS[locale][option.value]}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-        {selected.length > 0 && (
-          <button
-            type="button"
-            className="map-filter-chip"
-            onClick={() => onVenueCategoriesChange([])}
-          >
-            Effacer
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="map-filter-bar" ref={barRef}>
-      <div className="map-filter-chip-wrapper">
-        <button
-          type="button"
-          className={`map-filter-chip ${openChip === 'date' ? 'open' : ''}`}
-          onClick={() => toggleChip('date')}
-          aria-expanded={openChip === 'date'}
-          aria-haspopup="true"
-        >
-          {getDateFilterLabel(locale, filters.date)}
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-        {openChip === 'date' && (
-          <div className="map-filter-dropdown">
-            {DATE_FILTER_OPTIONS.map((option) => (
-              <label key={option.value}>
-                <input
-                  type="radio"
-                  name="map-date-filter"
-                  checked={filters.date === option.value}
-                  onChange={() => {
-                    onChange(withoutCustomDates(filters, option.value));
-                    setOpenChip(undefined);
-                  }}
-                />
-                {getDateFilterLabel(locale, option.value)}
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="map-filter-chip-wrapper">
-        <button
-          type="button"
-          className={`map-filter-chip ${openChip === 'price' ? 'open' : ''}`}
-          onClick={() => toggleChip('price')}
-          aria-expanded={openChip === 'price'}
-          aria-haspopup="true"
-        >
-          {getPriceLabel(locale, filters.price)}
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-        {openChip === 'price' && (
-          <div className="map-filter-dropdown">
-            {PRICE_FILTER_OPTIONS.map((option) => (
-              <label key={option.value}>
-                <input
-                  type="radio"
-                  name="map-price-filter"
-                  checked={filters.price === option.value}
-                  onChange={() => {
-                    onChange({ ...filters, price: option.value });
-                    setOpenChip(undefined);
-                  }}
-                />
-                {getPriceLabel(locale, option.value)}
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="map-filter-chip-wrapper">
-        <button
-          type="button"
-          className={`map-filter-chip ${openChip === 'category' ? 'open' : ''} ${filters.categories.length > 0 ? 'active' : ''}`}
-          onClick={() => toggleChip('category')}
-          aria-expanded={openChip === 'category'}
-          aria-haspopup="true"
-        >
-          {categoryLabel}
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-        {openChip === 'category' && (
-          <div className="map-filter-dropdown">
-            {CATEGORY_FILTER_OPTIONS.map((option) => (
-              <label key={option.value}>
-                <input
-                  type="checkbox"
-                  checked={filters.categories.includes(option.value)}
-                  onChange={() => toggleCategory(option.value)}
-                />
-                {SHORT_CATEGORY_LABELS[locale][option.value]}
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <button
-        type="button"
-        className="map-filter-chip map-filter-more"
-        onClick={onOpenMore}
-      >
-        {translate(locale, 'filters.more')}
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
-    </div>
-  );
-}
+/* MapFilterBar lived here: a row of dropdown chips (date, price, category,
+   "Plus") floating over the map. The connected Carte was its only caller
+   and no longer has it - the filters are one pill and one panel now, the
+   way the signed-out map has always done it. Its venue-type dropdown, the
+   one thing FilterOverlay did not already offer, moved into FilterOverlay
+   below rather than being dropped with it. */
 
 function AboutPanel({
   onClose,
@@ -20243,7 +20334,9 @@ function FilterOverlay({
   onDistanceChange,
   onApplyDistance,
   distanceFilterActive,
-  geoStatus
+  geoStatus,
+  venueCategories,
+  onVenueCategoriesChange
 }: {
   filters: DiscoveryFilters;
   onChange: (filters: DiscoveryFilters) => void;
@@ -20256,6 +20349,12 @@ function FilterOverlay({
   onApplyDistance: () => void;
   distanceFilterActive: boolean;
   geoStatus: GeoStatus;
+  /* Venue types, from MapFilterBar's venue mode. Only passed while a map
+     that actually pins venues is the surface in front of the panel - the
+     signed-out Lieux map keeps this choice in its own sidebar, and a
+     second copy here would be two controls for one filter. */
+  venueCategories?: VenueCategory[];
+  onVenueCategoriesChange?: (categories: VenueCategory[]) => void;
 }) {
   const today = getMontrealCalendarDate(new Date());
   const setDate = (date: DiscoveryFilters['date']) => {
@@ -20349,6 +20448,29 @@ function FilterOverlay({
           </label>
         ))}
       </fieldset>
+      {venueCategories && onVenueCategoriesChange && (
+        <fieldset>
+          <legend>{translate(locale, 'filters.venueType')}</legend>
+          {VENUE_CATEGORY_FILTER_OPTIONS.map((option) => (
+            <label key={option.value}>
+              <input
+                type="checkbox"
+                checked={venueCategories.includes(option.value)}
+                onChange={() =>
+                  onVenueCategoriesChange(
+                    venueCategories.includes(option.value)
+                      ? venueCategories.filter(
+                          (category) => category !== option.value
+                        )
+                      : [...venueCategories, option.value]
+                  )
+                }
+              />
+              {VENUE_CATEGORY_LABELS[locale][option.value]}
+            </label>
+          ))}
+        </fieldset>
+      )}
       <fieldset>
         <legend>{translate(locale, 'filters.price')}</legend>
         {PRICE_FILTER_OPTIONS.map((option) => (
@@ -21512,7 +21634,18 @@ function EventConsole({
     <div className="event-console">
       {onBack && (
         <div className="event-console-head">
-          <button type="button" className="text-btn" onClick={onBack}>
+          <button type="button" className="page-back" onClick={onBack}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
             {translate(locale, 'console.back')}
           </button>
           <h2>{event.title}</h2>

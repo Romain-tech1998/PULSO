@@ -1,4 +1,5 @@
 import {
+  EventGroupExistsError,
   GroupNotFoundError,
   NotGroupMemberError,
   NotGroupModeratorError
@@ -64,6 +65,111 @@ describe('groups API', () => {
     });
     expect(response.json().data.isMember).toBe(true);
     expect(response.json().data.memberCount).toBe(1);
+    await app.close();
+  });
+
+  it('attaches a real event to a group created as a Sortie', async () => {
+    const eventId = '00000000-0000-4000-8000-000000000031';
+    const eventWithMatch: EventRepository = {
+      ...event,
+      findById: async (id) =>
+        id === eventId
+          ? ({ id: eventId, title: 'Nuit Techno' } as unknown as Awaited<
+              ReturnType<EventRepository['findById']>
+            >)
+          : undefined
+    };
+    let receivedEventId: string | undefined | 'never-called' = 'never-called';
+    const app = buildApp(
+      eventWithMatch,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          createGroup: async (
+            creatorId,
+            name,
+            description,
+            type,
+            visibility,
+            modulesConfig,
+            linkedEventId
+          ) => {
+            void description;
+            void visibility;
+            void modulesConfig;
+            receivedEventId = linkedEventId;
+            return fakeGroup({
+              createdBy: creatorId,
+              name,
+              type,
+              ...(linkedEventId ? { eventId: linkedEventId } : {})
+            });
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: '/me/groups',
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { name: 'Nuit Techno – la bande', type: 'event', eventId }
+    });
+    expect(response.statusCode).toBe(201);
+    expect(receivedEventId).toBe(eventId);
+    expect(response.json().data.eventId).toBe(eventId);
+    await app.close();
+  });
+
+  it('refuses to create a group for an event that does not exist', async () => {
+    const app = buildApp(event, accountRepositories());
+    const response = await app.inject({
+      method: 'POST',
+      url: '/me/groups',
+      headers: { authorization: 'Bearer valid-token' },
+      payload: {
+        name: 'Soirée fantôme',
+        type: 'event',
+        eventId: '00000000-0000-4000-8000-000000000032'
+      }
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe('EVENT_NOT_FOUND');
+    await app.close();
+  });
+
+  // One group per event (unique index, migration 0022). The caller is told
+  // which group already holds it rather than being joined to it silently
+  // under a name they just typed.
+  it('answers 409 with the existing group when the event already has one', async () => {
+    const eventId = '00000000-0000-4000-8000-000000000033';
+    const existingGroupId = '00000000-0000-4000-8000-000000000034';
+    const eventWithMatch: EventRepository = {
+      ...event,
+      findById: async (id) =>
+        id === eventId
+          ? ({ id: eventId, title: 'Nuit Techno' } as unknown as Awaited<
+              ReturnType<EventRepository['findById']>
+            >)
+          : undefined
+    };
+    const app = buildApp(
+      eventWithMatch,
+      accountRepositories({
+        groupsRepository: fakeGroupsRepository({
+          createGroup: async () => {
+            throw new EventGroupExistsError(existingGroupId);
+          }
+        })
+      })
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: '/me/groups',
+      headers: { authorization: 'Bearer valid-token' },
+      payload: { name: 'Un deuxième groupe', type: 'event', eventId }
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe('EVENT_GROUP_EXISTS');
+    expect(response.json().error.groupId).toBe(existingGroupId);
     await app.close();
   });
 

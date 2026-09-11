@@ -61,6 +61,49 @@
 
 html {
   overflow-x: hidden;
+  /* Safari on iOS reflows text up when a page rotates or a container grows.
+     Combined with the two rules at the end of this block it removes every
+     unasked-for scale change without ever locking pinch-to-zoom. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Two separate iOS behaviours both read as "the app zooms on every tap".
+
+   1. A double tap anywhere zooms the page, and any two taps close together
+      count - which on a dense interface is most of them. `touch-action:
+      manipulation` tells the browser a tap on a control is never the first
+      half of a double-tap gesture, so it also fires ~300ms sooner.
+   2. Focusing a form control whose font-size is under 16px zooms the
+      viewport to it and never zooms back out. Ours are 0.7-0.85rem
+      throughout, so every text field did this - including the group-name
+      field that opens focused, which is why "Créer un groupe" appeared to
+      zoom by itself.
+
+   The usual shortcut for both is user-scalable=no, which also takes
+   pinch-to-zoom away from anyone who needs it. These two rules do not.
+
+   `!important` is deliberate and confined to the phone block: component
+   rules set their own font-size with class-level specificity, so nothing
+   less would win, and the platform floor has to hold everywhere. */
+a,
+button,
+label,
+select,
+summary,
+[role='button'],
+[role='tab'],
+input:not([type='range']),
+textarea {
+  touch-action: manipulation;
+}
+
+@media (max-width: 768px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
 }
 
 body {
@@ -247,6 +290,12 @@ h6 {
   color: var(--text-primary);
 }
 
+/* Desktop keeps the city written out; the phone block below swaps the two. */
+.city-selector-pin {
+  display: none;
+  align-items: center;
+}
+
 /* Left-aligned on the trigger, not right-aligned: the city selector is the
    first segment of the search bar, so anchoring a 200px panel to its right
    edge hung it ~90px to the left of the bar - off-screen entirely once the
@@ -305,7 +354,7 @@ h6 {
 
 /* Natural-language search results dropdown - anchored under .nav-search
    (already position:relative), same blur/surface-raised/shadow language as
-   .city-selector-dropdown/.map-filter-dropdown above. */
+   .city-selector-dropdown above. */
 .search-dropdown {
   position: absolute;
   top: calc(100% + 0.75rem);
@@ -2115,6 +2164,12 @@ span.search-result-title {
   font-size: 0.95rem;
 }
 
+/* Same reason as .profil-header below: nothing in a scrolling column should
+   be compressed to make the column fit. */
+.map-container-wrapper.profil-page > * {
+  flex-shrink: 0;
+}
+
 /* Profile page (Phase 4.7) - reworked from the old flat "Mon compte" card
    into a full two-column page matching the reference mockup. Reuses
    .map-container-wrapper for the outer chrome like every other full-page
@@ -2142,6 +2197,15 @@ span.search-result-title {
 
 .profil-header {
   position: relative;
+  /* `flex-shrink: 0`, because `min-height` does not protect a flex item.
+     
+     The page is a column flex container with a fixed height on a phone (it
+     scrolls), so its children shrink to fit it - and this one shrank from
+     the 438px its content needs to the 310px floor below, with
+     `overflow: hidden` cutting the difference. Measured at 360px: 130px of
+     the identity card gone, taking the bio's second line and the counts
+     with it. The page scrolls; the card should not be squeezed into it. */
+  flex-shrink: 0;
   margin: 1.5rem 2rem 0;
   min-height: 310px;
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -3092,6 +3156,37 @@ span.search-result-title {
   color: var(--text-muted);
   font-size: 0.65rem;
 }
+/* Same shape as the logout button below it, in the neutral tone: it is a
+   destination, not a warning. */
+.profil-settings-link {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+  padding: 0.72rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    color 0.2s;
+}
+.profil-settings-link:hover {
+  border-color: rgba(127, 119, 221, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+.profil-settings-link svg {
+  width: 15px;
+  height: 15px;
+}
+
 .profil-logout-btn {
   display: flex;
   align-items: center;
@@ -3643,6 +3738,45 @@ span.search-result-title {
   gap: 0.65rem;
   flex-shrink: 0;
 }
+
+/* The row had no phone rule at all, and its three parts cannot all hold
+   their ground: the cover is a fixed 56px, the four actions carry
+   `flex-shrink: 0`, and the title column is the only thing left that can
+   give. At 376px it gave everything - "Gala Caritatif" wrapped one word per
+   line down a column about 60px wide, with the actions drawn across it.
+
+   So on a phone the actions take a line of their own under the title, which
+   is also where a row of four 44px targets belongs. */
+@media (max-width: 640px) {
+  .organisateur-page {
+    padding: 1rem;
+    gap: 1rem;
+  }
+  .organisateur-row {
+    flex-wrap: wrap;
+    gap: 0.7rem;
+    padding: 0.75rem;
+  }
+  .organisateur-row-main {
+    flex: 1 1 8rem;
+  }
+  .organisateur-row-main strong,
+  .organisateur-row-main > span {
+    overflow-wrap: anywhere;
+  }
+  .organisateur-row-actions {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    gap: 1.1rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--brand-border);
+  }
+  /* A text link is a 17px-tall target in a row of four. Given the line to
+     themselves they can afford the height a thumb needs. */
+  .organisateur-row-actions .text-btn {
+    min-height: 32px;
+  }
+}
 /* DEC-0018 organizer status + administration queue. */
 .organizer-status {
   display: flex;
@@ -3750,22 +3884,48 @@ span.search-result-title {
   width: min(760px, 100%);
   margin: 0 auto;
 }
-.event-editor-back {
+/* One "back to the page behind this one" control, for the surfaces that
+   take over the whole column.
+
+   Organisateur had two of them and neither read as a control: the editor's
+   was a borderless label, and the console's was a bare `.text-btn` - a
+   purple text link, on the page where you land after opening one of your
+   own events. Both say the same words ("Retour a mes evenements"), so they
+   are the same control and now look like it.
+
+   The shape is the one the app already uses for going back, from
+   .forum-panel-back on a record and .groups-open-back in the group
+   workspace: a pill with a real border and a real tap target. It drifts a
+   couple of pixels left on hover, in the direction it takes you. */
+.page-back {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 0.75rem 0.5rem 0.5rem;
-  border: 0;
-  border-radius: 0.6rem;
-  background: none;
+  gap: 0.45rem;
+  min-height: 40px;
+  padding: 0.5rem 0.95rem 0.5rem 0.75rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text-secondary);
   font-size: 0.82rem;
   font-weight: 700;
-  transition: color 0.2s;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    color 0.2s,
+    transform 0.2s;
 }
-.event-editor-back:hover {
+.page-back:hover {
+  border-color: rgba(127, 119, 221, 0.55);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
+  transform: translateX(-2px);
+}
+.page-back svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
 }
 .event-editor-head h1 {
   margin: 0.15rem 0 0.75rem;
@@ -4234,6 +4394,103 @@ span.search-result-title {
   flex-shrink: 0;
 }
 
+/* The pointer left on the Organisateur page once approval and Stripe moved
+   into the account space. One row, so the page starts with the events. */
+.organisateur-settings-link {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.95rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 0.9rem;
+  background: var(--surface-raised);
+  text-align: left;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.organisateur-settings-link:hover {
+  border-color: rgba(234, 62, 129, 0.45);
+  background: rgba(255, 255, 255, 0.05);
+}
+.organisateur-settings-link-icon {
+  display: grid;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 0.6rem;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-size: 0.9rem;
+}
+.organisateur-settings-link-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.organisateur-settings-link-text strong {
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+.organisateur-settings-link-text > span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+.organisateur-settings-link-cta {
+  flex: none;
+  color: var(--brand-pink);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+/* Account space > Organisateur: the two panels that used to head the
+   Organisateur page, with a line saying what they are for. */
+.profil-organizer-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--brand-border);
+  border-radius: 1.1rem;
+  background: linear-gradient(
+    140deg,
+    rgba(32, 22, 58, 0.92),
+    rgba(18, 15, 29, 0.96)
+  );
+}
+.profil-organizer-kicker {
+  color: #ff6ea5;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.profil-organizer-intro h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+}
+.profil-organizer-intro p {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.profil-organizer-intro .text-btn {
+  align-self: flex-start;
+}
+/* One column here: the account space's main pane is already narrow, and
+   the two panels each ask a full question. */
+.profil-organizer-strip > * {
+  flex: 1 1 100%;
+}
+
 /* DEC-0023 §1 and §2: the organizer's own event. A back office, so it reads
    as one - numbers first, controls under them, and the public page a link
    away rather than the thing you landed on. */
@@ -4249,7 +4506,7 @@ span.search-result-title {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.35rem;
+  gap: 0.75rem;
 }
 .event-console-head h2 {
   margin: 0;
@@ -4801,13 +5058,12 @@ span.search-result-title {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
 }
 
-.map-toggle-dot-after {
-  background: #7c3aed;
-}
-
 .events-hero-actions {
   display: flex;
   align-items: center;
+  /* Wraps rather than pushing the second button off the hero: the two
+     labels need ~360px and a 376px phone gives the hero 312. */
+  flex-wrap: wrap;
   gap: 0.6rem;
   flex-shrink: 0;
 }
@@ -5797,6 +6053,12 @@ span.search-result-title {
 }
 .list-view-row {
   display: flex;
+  /* Same trap as .profil-header: these are flex items in a column that has
+     a fixed height, so they were shrunk *below* the min-height on the next
+     line - measured 110px against a 112px floor at 360px - and
+     `overflow: hidden` ate whatever did not fit. The list scrolls; its rows
+     should keep their size. */
+  flex-shrink: 0;
   min-height: 132px;
   align-items: stretch;
   gap: 1rem;
@@ -6795,34 +7057,6 @@ a.venue-detail-info-row:hover {
   background: rgba(255, 255, 255, 0.12);
 }
 
-.explorer-date-shortcuts {
-  position: absolute;
-  top: 5.4rem;
-  left: 1.5rem;
-  z-index: 9;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  max-width: calc(100% - 3rem);
-}
-.explorer-date-shortcuts button {
-  padding: 0.42rem 0.75rem;
-  border: 1px solid var(--brand-border);
-  border-radius: 999px;
-  background: rgba(13, 11, 20, 0.82);
-  backdrop-filter: blur(12px);
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  font-weight: 700;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-.explorer-date-shortcuts button:hover,
-.explorer-date-shortcuts button.active {
-  border-color: rgba(234, 62, 129, 0.62);
-  background: rgba(115, 54, 193, 0.72);
-  color: #fff;
-}
-
 .explorer-map-legend {
   position: absolute;
   left: 1.5rem;
@@ -6891,95 +7125,6 @@ a.venue-detail-info-row:hover {
   cursor: not-allowed;
 }
 
-.map-filter-bar {
-  position: absolute;
-  bottom: 1.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-  display: flex;
-  gap: 0.5rem;
-  background: var(--surface-overlay);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--brand-border);
-  border-radius: 999px;
-  padding: 0.4rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-}
-
-.map-filter-chip-wrapper {
-  position: relative;
-}
-
-.map-filter-chip {
-  background: transparent;
-  border: none;
-  padding: 0.6rem 1.1rem;
-  border-radius: 999px;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  white-space: nowrap;
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s;
-}
-
-.map-filter-chip:hover {
-  background: var(--surface-raised);
-  color: var(--text-primary);
-}
-
-.map-filter-chip.open,
-.map-filter-chip.active {
-  background: var(--brand-accent, var(--text-primary));
-  color: var(--surface-base, #0a0a0a);
-}
-
-.map-filter-more {
-  border-left: 1px solid var(--brand-border);
-  border-radius: 0 999px 999px 0;
-}
-
-.map-filter-dropdown {
-  position: absolute;
-  bottom: calc(100% + 0.75rem);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--surface-raised);
-  backdrop-filter: blur(24px);
-  border: 1px solid var(--brand-border);
-  border-radius: 1rem;
-  padding: 0.75rem;
-  min-width: 200px;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
-  z-index: 20;
-}
-
-.map-filter-dropdown label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.5rem;
-  border-radius: 0.5rem;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.map-filter-dropdown label:hover {
-  background: var(--surface-overlay);
-  color: var(--text-primary);
-}
-
 .map-zoom-controls {
   position: absolute;
   top: 50%;
@@ -7028,20 +7173,83 @@ a.venue-detail-info-row:hover {
   color: var(--brand-purple);
 }
 
-/* Connected "Carte" page (Phase 4.13) - reuses .map-filter-bar/.map-zoom-
-   controls/.map-floating-pin-toggle as-is, just relocates the filter bar
-   to top-left (its default bottom-center slot is already taken by the
-   pin-kind toggle here, unlike the plain evenement map which only ever
-   shows one of the two). Same treatment applies to the anonymous
-   Explorer map below, which also shows both at once. */
-.map-shell.connected-map-shell .map-filter-bar,
-.map-shell.explorer-map-shell .map-filter-bar {
-  top: 1.5rem;
-  bottom: auto;
-  left: 1.5rem;
-  transform: none;
-  flex-wrap: wrap;
-  max-width: calc(100% - 3rem);
+/* Connected "Carte", rebuilt on the signed-out event map's shape.
+
+   .mobile-filters-trigger is the signed-out map's Filtres button and is
+   display:none until the 768px block turns it on - the connected map wants
+   it at every width, since it has no sidebar to fall back to and this is
+   now the only way into the filters. So it opts in here and positions
+   itself, rather than the phone rule doing both jobs. */
+.connected-map-shell .connected-map-filters-trigger {
+  display: inline-flex;
+  top: var(--map-gutter);
+  left: var(--map-gutter);
+  padding: 0.6rem 1rem;
+  font-size: 0.82rem;
+}
+.connected-map-shell .connected-map-filters-trigger.active {
+  border-color: rgba(234, 62, 129, 0.6);
+  background: linear-gradient(120deg, #7839ee, #ee2d8a);
+  color: #fff;
+}
+
+/* Four kinds where the signed-out switch carries two, so the buttons give
+   up the 116px minimum that makes a two-way switch feel deliberate, and the
+   count moves into a quieter pill on each one. */
+.connected-map-kind-switch {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.connected-map-kind-switch::-webkit-scrollbar {
+  display: none;
+}
+/* `.map-bottom-bar` prefix, not the bare class: the signed-out switch's own
+   phone rule sets min-width: 88px on its buttons and is declared later in
+   this file, so at equal specificity it won and four buttons could never
+   fit. Measured on a Pixel 7: 404px of buttons in a 360px bar, After half
+   off the edge. */
+.map-bottom-bar .connected-map-kind-switch button {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  padding-inline: 0.6rem;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+/* The label is what gives when there is not enough room - a truncated
+   "Événements" still reads, a button pushed off the edge does not. */
+.connected-map-kind-switch .map-kind-label {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+.connected-map-kind-switch button > span:not(.map-kind-label) {
+  flex: none;
+  margin-left: 0.28rem;
+  padding: 0.06rem 0.3rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+}
+.connected-map-kind-switch button.active > span:not(.map-kind-label) {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+/* Clear of the bottom row, which now occupies the corner the card used to
+   have to itself - and clear of the zoom column, for the reason
+   --map-panel-inset exists: the column is centred vertically while this card
+   grows upward from the bottom, so the two miss each other on a tall
+   viewport and cross on a short one. The gutter belongs to the controls;
+   panels start after it. */
+.connected-map-shell .map-selection-card {
+  bottom: calc(var(--map-gutter) + 3.6rem);
+  left: var(--map-panel-inset);
+  width: min(340px, calc(100% - var(--map-panel-inset) - var(--map-gutter)));
 }
 
 /* Phone only. The bar sat over the top third of the map, stacked above a row
@@ -7053,45 +7261,12 @@ a.venue-detail-info-row:hover {
    filters opened into nothing. The bar keeps wrapping; what goes instead is
    everything around it. */
 @media (max-width: 700px) {
-  .map-shell.connected-map-shell .map-filter-bar,
-  .map-shell.explorer-map-shell .map-filter-bar {
-    top: 0.75rem;
-    left: 0.75rem;
-    right: 0.75rem;
-    max-width: none;
-    gap: 0.2rem;
-    padding: 0.25rem;
-  }
-  .map-shell.connected-map-shell .map-filter-chip,
-  .map-shell.explorer-map-shell .map-filter-chip {
-    padding: 0.4rem 0.5rem;
-    font-size: 0.7rem;
-    white-space: nowrap;
-  }
   /* Its own label is the longest thing in the bar and the least informative
      - the three chips beside it already say what they filter. An icon keeps
      the row to one line without hiding the way into the full overlay. */
-  .map-shell.connected-map-shell .map-filter-more,
-  .map-shell.explorer-map-shell .map-filter-more {
-    font-size: 0;
-    padding: 0.4rem;
-  }
-  .map-shell.connected-map-shell .map-filter-more::before,
-  .map-shell.explorer-map-shell .map-filter-more::before {
-    content: '⚙';
-    font-size: 0.85rem;
-    line-height: 1;
-  }
-  .map-shell.connected-map-shell .map-filter-more svg,
-  .map-shell.explorer-map-shell .map-filter-more svg {
-    display: none;
-  }
 
   /* The same date choice the first chip already offers, spelled out a second
      time directly underneath it. */
-  .explorer-date-shortcuts {
-    display: none;
-  }
 
   /* Two colours of pin explained in a box that covered the map it was
      explaining. The pin-kind toggle below already names both kinds and lets
@@ -7106,42 +7281,11 @@ a.venue-detail-info-row:hover {
      is `overflow: hidden`, so it was clipped away entirely. The chip
      responded to every tap and appeared to do nothing. Opening downward puts
      the panel back inside the map. */
-  .map-shell.connected-map-shell .map-filter-dropdown,
-  .map-shell.explorer-map-shell .map-filter-dropdown {
-    top: calc(100% + 0.5rem);
-    bottom: auto;
-    /* Anchored to the bar rather than centred on its chip: the chips sit at
-       the left edge, so a panel centred on one of them hung off the map. */
-    left: 0;
-    right: 0;
-    transform: none;
-    min-width: 0;
-    /* Two columns. Ten venue types in a single stack ran the height of the
-       map, which is a strange way to show a filter - it hid the thing being
-       filtered while you chose. */
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.15rem 0.4rem;
-    padding: 0.5rem;
-    max-height: 45dvh;
-    overflow-y: auto;
-  }
-  .map-shell.connected-map-shell .map-filter-dropdown label,
-  .map-shell.explorer-map-shell .map-filter-dropdown label {
-    gap: 0.35rem;
-    padding: 0.3rem 0.35rem;
-    font-size: 0.75rem;
-    line-height: 1.2;
-  }
 
   /* The panel is nested inside the bar, so its own z-index only ever ranks
      it against its siblings - the bar's stacking context is what the zoom
      controls (z-index 10, later in the DOM) were painting over. Raising the
      bar is what lifts the panel with it. */
-  .map-shell.connected-map-shell .map-filter-bar,
-  .map-shell.explorer-map-shell .map-filter-bar {
-    z-index: 12;
-  }
 }
 
 /* Connected Carte visual system: compact glass docks over the map, aligned
@@ -7162,136 +7306,6 @@ a.venue-detail-info-row:hover {
   border-radius: inherit;
   box-shadow: inset 0 0 80px rgba(5, 4, 10, 0.2);
   pointer-events: none;
-}
-
-.connected-map-context {
-  position: absolute;
-  z-index: 10;
-  top: 1.5rem;
-  right: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.12rem;
-  padding: 0.66rem 0.85rem;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 0.9rem;
-  background: rgba(12, 10, 18, 0.88);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(18px);
-}
-
-.connected-map-context span {
-  color: #ff75aa;
-  font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-}
-
-.connected-map-context strong {
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 0.76rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.map-shell.connected-map-shell .map-filter-bar {
-  gap: 0.15rem;
-  padding: 0.32rem;
-  border-color: rgba(255, 255, 255, 0.11);
-  border-radius: 1rem;
-  background: rgba(12, 10, 18, 0.9);
-  box-shadow:
-    0 12px 34px rgba(0, 0, 0, 0.34),
-    inset 0 1px rgba(255, 255, 255, 0.035);
-}
-
-.connected-map-shell .map-filter-chip {
-  min-height: 40px;
-  padding: 0.52rem 0.78rem;
-  border: 1px solid transparent;
-  border-radius: 0.72rem;
-  color: #aaa6b8;
-  font-size: 0.75rem;
-  font-weight: 650;
-}
-
-.connected-map-shell .map-filter-chip:hover {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.055);
-  color: #fff;
-}
-
-.connected-map-shell .map-filter-chip.open,
-.connected-map-shell .map-filter-chip.active {
-  border-color: rgba(255, 42, 122, 0.28);
-  background: rgba(255, 42, 122, 0.13);
-  color: #fff;
-}
-
-.connected-map-shell .map-filter-more {
-  margin-left: 0.12rem;
-  border-left-color: rgba(255, 255, 255, 0.08);
-  border-radius: 0.72rem;
-}
-
-.connected-map-shell .map-filter-dropdown {
-  min-width: 220px;
-  padding: 0.65rem;
-  border-color: rgba(255, 255, 255, 0.11);
-  border-radius: 0.9rem;
-  background: rgba(17, 14, 25, 0.97);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
-}
-
-.connected-map-shell .map-filter-dropdown label {
-  min-height: 36px;
-  padding: 0.45rem 0.55rem;
-  border-radius: 0.58rem;
-  font-size: 0.78rem;
-}
-
-.connected-map-shell .explorer-date-shortcuts {
-  top: 5.05rem;
-  gap: 0.18rem;
-  padding: 0.28rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.9rem;
-  background: rgba(12, 10, 18, 0.86);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(16px);
-}
-
-.connected-map-shell .explorer-date-shortcuts button {
-  min-height: 34px;
-  padding: 0.38rem 0.7rem;
-  border-color: transparent;
-  border-radius: 0.65rem;
-  background: transparent;
-  box-shadow: none;
-  color: #9692a5;
-  font-size: 0.67rem;
-  transition:
-    background 0.18s,
-    color 0.18s,
-    border-color 0.18s;
-}
-
-.connected-map-shell .explorer-date-shortcuts button:hover {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-}
-
-.connected-map-shell .explorer-date-shortcuts button.active {
-  border-color: rgba(255, 42, 122, 0.3);
-  background: linear-gradient(
-    120deg,
-    rgba(112, 55, 221, 0.58),
-    rgba(225, 40, 128, 0.42)
-  );
-  color: #fff;
-  box-shadow: 0 6px 16px rgba(69, 27, 105, 0.25);
 }
 
 .connected-map-shell .map-floating-pin-toggle {
@@ -7341,28 +7355,6 @@ a.venue-detail-info-row:hover {
   color: #918c9f;
 }
 
-.map-toggle-dot {
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: 50%;
-}
-
-.map-toggle-dot-all {
-  background: linear-gradient(135deg, var(--brand-pink) 45%, #8b7ff0 55%);
-  box-shadow: 0 0 8px rgba(214, 92, 255, 0.55);
-}
-
-.map-toggle-dot-event {
-  background: var(--brand-pink);
-  box-shadow: 0 0 8px rgba(255, 42, 122, 0.62);
-}
-
-.map-toggle-dot-venue {
-  background: #9b8cff;
-  box-shadow: 0 0 8px rgba(155, 140, 255, 0.62);
-}
-
 .connected-map-shell .explorer-map-legend {
   gap: 0.4rem;
   padding: 0.72rem 0.82rem;
@@ -7406,14 +7398,8 @@ a.venue-detail-info-row:hover {
   color: #fff;
 }
 
-.connected-map-shell .map-recenter-btn:not(:disabled),
-.map-montreal-icon {
+.connected-map-shell .map-recenter-btn:not(:disabled) {
   color: #b9adff;
-}
-
-.map-montreal-icon {
-  font-size: 1.1rem;
-  line-height: 1;
 }
 
 .connected-map-shell .maplibregl-ctrl-attrib {
@@ -7425,16 +7411,6 @@ a.venue-detail-info-row:hover {
 
 .connected-map-shell .maplibregl-ctrl-attrib a {
   color: #aaa5b5;
-}
-
-/* The bar itself sits near the top in these two contexts (above), so its
-   dropdowns must open downward - the default .map-filter-dropdown opens
-   upward assuming a bottom-anchored bar, which rendered them off-screen
-   (above the map, inaccessible) here. */
-.map-shell.connected-map-shell .map-filter-dropdown,
-.map-shell.explorer-map-shell .map-filter-dropdown {
-  top: calc(100% + 0.75rem);
-  bottom: auto;
 }
 
 /* The connected Carte page's own floating card (Phase 4.13) - a compact,
@@ -9252,7 +9228,9 @@ a.venue-detail-info-row:hover {
   border-bottom: 1px solid var(--brand-border);
   gap: 0.6rem;
 }
-.messages-list-column .groups-create-form input {
+.messages-list-column
+  .groups-create-form
+  input:not([type='radio']):not([type='checkbox']) {
   width: 100%;
 }
 .messages-search input {
@@ -9990,6 +9968,12 @@ a.venue-detail-info-row:hover {
   position: sticky;
   top: 0;
   overflow-y: auto;
+}
+
+/* Desktop and tablet keep the mark in the rail; the header copy only
+   exists for the widths where the rail is gone. */
+.connected-topbar-logo {
+  display: none;
 }
 
 .primary-sidebar-logo {
@@ -11068,6 +11052,12 @@ a.venue-detail-info-row:hover {
   font-size: 1.22rem;
   font-variant-numeric: tabular-nums;
 }
+/* Shape only. The glass background this used to carry was written when the
+   map button was the secondary one, and it sat later in the file than
+   .btn-primary - so swapping the two classes in the markup moved the label
+   and not the weight, and the hero ended up with two grey buttons and no
+   primary at all. Which of the two is primary is now decided by the
+   .btn-primary / .btn-secondary class alone, as everywhere else. */
 .events-hero-map-btn {
   flex-shrink: 0;
   white-space: nowrap;
@@ -11076,16 +11066,23 @@ a.venue-detail-info-row:hover {
   gap: 0.55rem;
   min-height: 44px;
   padding: 0.65rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.09);
-  color: #fff;
-  backdrop-filter: blur(14px);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
 }
 .events-hero-map-btn:hover {
-  border-color: rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.15);
   transform: translateY(-1px);
+}
+/* The shortcut to Organisateur: present, and quieter than the page's own
+   purpose. Same glass treatment the map button used to wear. */
+.events-hero-create-btn {
+  min-height: 44px;
+  padding: 0.65rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+  backdrop-filter: blur(14px);
+}
+.events-hero-create-btn:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.13);
 }
 .events-hero-map-btn svg {
   width: 17px;
@@ -11550,9 +11547,21 @@ a.venue-detail-info-row:hover {
   position: relative;
 }
 .events-trends-thumb img {
+  /* `display: block` removes the ~5px of descender space an inline image
+     sits on: the thumb is 42px and its content measured 47, clipped away by
+     the overflow above. Invisible, but it is the last thing in the app
+     whose box does not match what it draws. */
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+/* EventImageFallback always draws its category icon at 56px, which is
+   larger than this 42px thumb - so the placeholder was a cropped corner of
+   an icon rather than an icon. It fits here instead. */
+.events-trends-thumb .event-image-fallback svg {
+  width: 58%;
+  height: 58%;
 }
 .events-trends-info {
   flex: 1;
@@ -12888,12 +12897,23 @@ a.venue-detail-info-row:hover {
   .map-container-wrapper {
     flex: none;
     height: 50vh;
-    /* Above the stacked sidebar. Below 768px the sidebar becomes a bottom
-       drawer and leaves the flow entirely, but in this band it stacks inline
-       and put a full screen of view-toggle, filters and the app-download card
-       ahead of the map - so the map was off-screen on a tablet even once it
-       had a height again. The map is what this destination is for; the
-       filters that refine it belong after it. */
+  }
+
+  /* Above the stacked sidebar. Below 768px the sidebar becomes a bottom
+     drawer and leaves the flow entirely, but in this band it stacks inline
+     and put a full screen of view-toggle, filters and the app-download card
+     ahead of the map - so the map was off-screen on a tablet even once it
+     had a height again. The map is what this destination is for; the
+     filters that refine it belong after it.
+
+     Scoped to a wrapper that actually holds a map. .map-container-wrapper is
+     the shared chrome for every full-page section - Organisateur, the account
+     space, Favoris - and reordering all of them put whichever one was open
+     *above the header*. Measured on a Pixel 7: Organisateur rendered at y=0
+     and the header at y=700, under the page it is supposed to sit on top of.
+     Only reachable on a phone since Organisateur joined the bottom bar,
+     which is how it surfaced. */
+  .map-container-wrapper:has(> .map-shell) {
     order: -1;
   }
 
@@ -12951,25 +12971,6 @@ a.venue-detail-info-row:hover {
 }
 
 @media (max-width: 700px) {
-  .connected-map-context {
-    display: none;
-  }
-
-  .explorer-date-shortcuts {
-    top: 5rem;
-    left: 0.75rem;
-    right: 0.75rem;
-    max-width: none;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .explorer-date-shortcuts::-webkit-scrollbar {
-    display: none;
-  }
-  .explorer-date-shortcuts button {
-    flex: 0 0 auto;
-  }
   .explorer-map-legend {
     left: 0.75rem;
     bottom: 4.8rem;
@@ -13035,6 +13036,23 @@ a.venue-detail-info-row:hover {
   border-radius: 50%;
   object-fit: cover;
 }
+/* Five slots instead of four once Organisateur joined the connected bar.
+   At 390px that is ~78px each, so the label has to give up a little of its
+   size rather than the icon giving up its tap target. */
+.app-container-connected > .mobile-bottom-nav button {
+  min-width: 0;
+  padding-inline: 0.15rem;
+  font-size: 0.62rem;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 360px) {
+  .app-container-connected > .mobile-bottom-nav button {
+    font-size: 0.56rem;
+  }
+}
+
 .mobile-bottom-nav-badge {
   position: absolute;
   top: 0.35rem;
@@ -13092,9 +13110,118 @@ a.venue-detail-info-row:hover {
     align-self: flex-start;
   }
 
+  /* The right-hand rail, on a phone.
+
+     Stacked under the main column it was three full-height cards - "Ce
+     soir", "Categories populaires", "Invite tes amis" - each a boxed panel
+     with its own border, its own padding and a vertical list inside. Two
+     screens of scrolling for what the sections above say in one screen and
+     a swipe.
+
+     So the rail stops being a rail here and becomes more of what is above
+     it: no card chrome, section titles in the same voice as the carousels'
+     own headings, and every list that was vertical scrolls sideways
+     instead. The negative inline margin is the same trick .event-carousel
+     already uses at this width, so the rows bleed to the screen edge and
+     read as continuable rather than clipped. */
+  /* minmax(0, 1fr), not 1fr - the 1024px block above already knew this and
+     the phone rule did not. A bare `1fr` track has an `auto` minimum, so it
+     cannot go below its widest item's min-content size: measured at 412px,
+     the track resolved to 1642px and the whole rail scrolled sideways as one
+     block instead of each row scrolling inside it. The min-width: 0 pair
+     below is the same fix one level down, for the flex chain between the
+     track and the row that is meant to scroll. */
   .dashboard-home-rail {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.65rem;
     padding: 1.25rem 1rem 5rem;
+  }
+
+  .dashboard-home-rail > *,
+  .dashboard-home-rail .events-trends-section > * {
+    min-width: 0;
+  }
+
+  .dashboard-home-rail .events-trends-section {
+    gap: 0.9rem;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .dashboard-home-rail .events-trends-section h3 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-transform: none;
+    color: var(--text-primary);
+  }
+
+  .dashboard-home-rail .events-trends-list {
+    flex-direction: row;
+    gap: 0.75rem;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 1rem;
+    scrollbar-width: none;
+  }
+  .dashboard-home-rail .events-trends-list::-webkit-scrollbar {
+    display: none;
+  }
+  .dashboard-home-rail .events-trends-list > li {
+    flex: 0 0 min(72vw, 260px);
+    scroll-snap-align: start;
+  }
+  /* Each row becomes the card, so it needs the border it borrowed from the
+     panel it no longer sits in. */
+  .dashboard-home-rail .events-trends-list button {
+    height: 100%;
+    align-items: center;
+    padding: 0.6rem;
+    border-color: var(--brand-border);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  /* Same treatment for the category chips: one line that scrolls, exactly
+     like the filter row at the top of the page. */
+  .dashboard-home-rail-chips {
+    flex-wrap: nowrap;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .dashboard-home-rail-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .dashboard-home-rail-chips button {
+    flex: 0 0 auto;
+  }
+
+  .dashboard-invite-card {
+    padding: 1rem;
+  }
+  .dashboard-invite-card strong {
+    font-size: 0.95rem;
+  }
+  .dashboard-invite-card p {
+    font-size: 0.8rem;
+  }
+  .dashboard-invite-card-btn {
+    margin-top: 0.25rem;
+    padding: 0.55rem 0.95rem;
+    font-size: 0.85rem;
+  }
+
+  /* The rail's own heading duplicated the page title's job once the cards
+     below stopped looking like a sidebar. */
+  .dashboard-home-rail-heading {
+    padding: 0;
+  }
+  .dashboard-home-rail-heading h2 {
+    font-size: 1.5rem;
   }
 
   .events-page-main {
@@ -13163,6 +13290,28 @@ a.venue-detail-info-row:hover {
 
   .events-grid {
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+}
+
+/* Every row that scrolls sideways ends by cutting a word in half against a
+   hard edge, which reads as broken rather than as "there is more". The
+   fiche's tabs (Photos), the Amis tabs (A decouvrir), the period tabs, the
+   category chips and the quick filters all do it, on every phone width.
+   
+   A fade says the same thing the cut was trying to: keep going. Anchored to
+   the element's own right edge, so it stays put while the content scrolls
+   under it - and it costs nothing on a row short enough not to overflow,
+   where the faded strip is empty anyway. */
+@media (max-width: 768px) {
+  .details-tabs,
+  .events-category-chips,
+  .quick-filters {
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      #000 calc(100% - 2.25rem),
+      transparent
+    );
+    mask-image: linear-gradient(90deg, #000 calc(100% - 2.25rem), transparent);
   }
 }
 
@@ -13351,24 +13500,27 @@ a.venue-detail-info-row:hover {
        map is the page here.
        
        --pulso-header-height is measured from the real header rather than
-       assumed. A hardcoded 60px was the original bug: the header wraps onto
-       a second row for the search field and is closer to 121px, so the map
-       ran under the fixed nav and took the pin-kind toggle with it. A fixed
-       fraction avoided that but left a third of the screen empty. */
+       assumed. A hardcoded 60px was the original bug: back when the header
+       wrapped onto a second row for the search field it was closer to
+       121px, so the map ran under the fixed nav and took the pin-kind
+       toggle with it. A fixed fraction avoided that but left a third of the
+       screen empty. The header is one row again (see .connected-topbar
+       below), which is where the fallback's 64px comes from - but it is
+       still measured, because it moves with the locale and the safe area.
+
+       The trailing 1.5rem this used to subtract is gone: the column's own
+       padding-bottom already reserves the nav's height, so it was a second
+       margin under a map that had none to spare. */
     flex: none;
     height: calc(
-      100dvh - var(--pulso-header-height, 121px) - 4.5rem -
-        env(safe-area-inset-bottom, 0px) - 1.5rem
+      100dvh - var(--pulso-header-height, 64px) - 4.5rem -
+        env(safe-area-inset-bottom, 0px)
     );
   }
 
   /* Redundant with the unified Filtres drawer above once it's the only
      entry point on a phone - kept for the Explorer/connected maps below,
      which have no sidebar of their own and still need it. */
-  .map-shell:not(.explorer-map-shell):not(.connected-map-shell)
-    .map-filter-bar {
-    display: none;
-  }
 
   .map-floating-recenter {
     top: 0.85rem;
@@ -13384,8 +13536,95 @@ a.venue-detail-info-row:hover {
   .primary-sidebar {
     display: none;
   }
+  /* One row, where the signed-in header used to take two.
+
+     .nav-search gets `flex-basis: 100%` above, which wrapped the field onto
+     a line of its own and made this header ~121px tall - 14% of a phone
+     screen, and the map underneath is sized from what is left of it. The
+     signed-out phone solves the same problem by floating one toolbar over
+     the map; this one keeps a real header and just stops it wrapping.
+
+     The mark, the field and the icons share the line, and the field is the
+     one that gives up width - it starts from `auto` and shrinks, so this
+     holds down to a 320px screen. */
   .connected-topbar {
+    flex-wrap: nowrap;
+    gap: 0.5rem;
     padding-left: 0.85rem;
+  }
+  .connected-topbar-logo {
+    display: flex;
+    flex: none;
+    align-items: center;
+    order: 1;
+  }
+  .connected-topbar-logo img {
+    height: 26px;
+    width: auto;
+  }
+  .connected-topbar .nav-search {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-basis: auto;
+  }
+  .connected-topbar .nav-actions {
+    order: 3;
+  }
+  /* The search field is now the narrowest thing on the row, and the results
+     panel is anchored to it. It breaks out to the full width instead. */
+  .connected-topbar .search-dropdown {
+    right: -0.85rem;
+    left: auto;
+    width: calc(100vw - 1.7rem);
+  }
+
+  /* Measured at 376px: the bar spent ~108px on the city name and its
+     padding and ~40px on the info button before the input got a pixel, and
+     what was left could not hold the placeholder. Both are ornaments here -
+     Montréal is the only city Pulso serves, and About now has a row in the
+     account space - so the field takes their width. */
+  .connected-topbar .city-selector-pin {
+    display: flex;
+  }
+  .connected-topbar .city-selector-name {
+    display: none;
+  }
+  .connected-topbar .city-selector-trigger {
+    gap: 0.15rem;
+    padding: 0.75rem 0.35rem 0.75rem 0.7rem;
+  }
+  .connected-topbar .nav-icon-btn-about {
+    display: none;
+  }
+  .connected-topbar .nav-search input {
+    min-width: 0;
+    text-overflow: ellipsis;
+  }
+
+  /* Even with both ornaments gone the field only gets ~87px of a 376px
+     header: the mark takes 71, the bell and the avatar 101, and none of the
+     three is fair game. So it borrows the whole row for as long as someone
+     is actually typing in it, and gives it back on blur.
+
+     `:focus-within` rather than a state flag: the results panel lives inside
+     .nav-search, so tabbing or clicking into a result keeps the header
+     expanded, which a blur handler would have had to special-case. */
+  .connected-topbar:has(.nav-search:focus-within) .connected-topbar-logo,
+  .connected-topbar:has(.nav-search:focus-within) .nav-actions {
+    display: none;
+  }
+  .connected-topbar:has(.nav-search:focus-within) .search-dropdown {
+    right: 0;
+    left: 0;
+    width: auto;
+  }
+  /* Messages leaves the header here: Communaute in the bottom bar is one tap
+     away and carries the same unread dot, and the row needs the width for
+     the search field. Notifications, About and the avatar stay - none of the
+     three has another way in on a phone. */
+  .connected-topbar .nav-icon-btn-messages {
+    display: none;
   }
   /* Messages, notifications and the profile belong together at the right
      edge. The header wraps at this width and the search field takes the
@@ -13398,6 +13637,67 @@ a.venue-detail-info-row:hover {
   }
   .connected-content-column {
     padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The connected map on a phone. Unlike the signed-out one it sits under a
+     real header rather than behind a floating toolbar, so its controls need
+     no extra top offset - only the tighter gutter the rest of the phone
+     layout uses. */
+  .connected-map-shell .connected-map-filters-trigger {
+    top: 0.75rem;
+    left: 0.75rem;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.8rem;
+  }
+  .connected-map-shell .map-floating-recenter {
+    top: 0.75rem;
+    right: 0.75rem;
+    left: auto;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.8rem;
+    transform: none;
+  }
+  /* Out of the way of both, and of the bottom row - the same left column the
+     signed-out map keeps its zoom stack in. */
+  .connected-map-shell .map-zoom-controls {
+    top: 48%;
+    left: 0.75rem;
+  }
+  /* Two lanes instead of three: at this width the centre track cannot hold
+     four buttons and leave the pill anything, so the pill takes the row
+     above and the switch gets the full width to scroll in. */
+  .connected-map-shell .map-bottom-bar {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    gap: 0.5rem;
+  }
+  .connected-map-shell .map-bottom-bar .anonymous-map-kind-switch {
+    grid-column: 1;
+    justify-self: stretch;
+  }
+  /* Full width, and deliberately over the bottom row rather than above it:
+     the signed-out map's own pin preview does exactly this, and stacking
+     the two would leave the card about 90px of screen. */
+  .connected-map-shell .map-selection-card {
+    right: 0.75rem;
+    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+    left: 0.75rem;
+    width: auto;
+  }
+
+  /* Four buttons in the width the signed-out map gives two. Measured on a
+     Pixel 7: at the desktop padding they wanted 418px of a 362px bar, so
+     After sat half off the edge with nothing saying it was there. The
+     padding is what gives - the labels and their counts are the content.
+     `overflow-x: auto` above stays as the floor for a 320px screen. */
+  .map-bottom-bar .connected-map-kind-switch button {
+    padding-inline: 0.4rem;
+    font-size: 0.72rem;
+  }
+  .connected-map-kind-switch button > span:not(.map-kind-label) {
+    margin-left: 0.22rem;
+    padding: 0.06rem 0.26rem;
+    font-size: 0.6rem;
   }
 }
 
@@ -14166,6 +14466,17 @@ a.venue-detail-info-row:hover {
   padding: 1.5rem 1.25rem 1.1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
+/* Without this the heading block cannot shrink below its own longest line,
+   so on a narrow column it pushed the Créer button off the right edge
+   instead of wrapping. */
+.groups-page-header > div {
+  min-width: 0;
+}
+.groups-page-header h1,
+.groups-page-header p,
+.groups-page-eyebrow {
+  overflow-wrap: anywhere;
+}
 .groups-page-eyebrow {
   display: block;
   color: #ff68a4;
@@ -14263,7 +14574,9 @@ a.venue-detail-info-row:hover {
   font-size: 0.68rem;
   font-weight: 750;
 }
-.messages-list-column .groups-create-form input,
+.messages-list-column
+  .groups-create-form
+  input:not([type='radio']):not([type='checkbox']),
 .messages-list-column .groups-create-form textarea {
   width: 100%;
   padding: 0.65rem 0.72rem;
@@ -14285,6 +14598,85 @@ a.venue-detail-info-row:hover {
   align-self: flex-end;
   color: #6e6878;
   font-size: 0.58rem;
+}
+
+/* Picking the real event behind a "Sortie" group. A short list under the
+   field rather than a modal: it is one step of a form, and the form is
+   already inside a column that scrolls. */
+.groups-create-event-results {
+  display: flex;
+  max-height: 13rem;
+  flex-direction: column;
+  gap: 0.3rem;
+  overflow-y: auto;
+}
+.groups-create-event-results > small {
+  align-self: flex-start;
+  color: #6e6878;
+  font-size: 0.65rem;
+}
+.groups-create-event-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.025);
+  text-align: left;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.groups-create-event-option:hover {
+  border-color: rgba(255, 74, 147, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+}
+.groups-create-event-option strong {
+  overflow: hidden;
+  color: #fff;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.groups-create-event-option small,
+.groups-create-event-chosen small {
+  color: #81798d;
+  font-size: 0.62rem;
+}
+.groups-create-event-chosen {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(130, 79, 234, 0.5);
+  border-radius: 0.65rem;
+  background: rgba(104, 59, 211, 0.14);
+}
+.groups-create-event-chosen-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.1rem;
+  overflow-wrap: anywhere;
+}
+.groups-create-event-chosen-text strong {
+  color: #fff;
+  font-size: 0.76rem;
+}
+.groups-create-event-chosen .text-btn {
+  flex-shrink: 0;
+}
+.groups-create-error {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 92, 92, 0.35);
+  border-radius: 0.6rem;
+  background: rgba(255, 92, 92, 0.1);
+  color: #ffb3b3;
+  font-size: 0.7rem;
+  line-height: 1.4;
 }
 .groups-visibility-choice {
   display: grid;
@@ -14316,8 +14708,19 @@ a.venue-detail-info-row:hover {
   border-color: rgba(130, 79, 234, 0.58);
   background: rgba(104, 59, 211, 0.12);
 }
+/* A real 1x1 box, not just zero opacity.
+   
+   `position: absolute` with no offsets keeps the radio at its static
+   position, and the two `width: 100%` rules the create form applies to
+   every input then sized it to the whole containing block: five invisible
+   376px inputs starting 45px in, and the page could be dragged 45px
+   sideways with everything on it. Invisible, so nothing pointed at them.
+   The `:not()`s on those two rules stop it recurring; this makes the box
+   right regardless of who sets a width later. */
 .groups-visibility-choice label > input {
   position: absolute;
+  width: 1px;
+  height: 1px;
   opacity: 0;
   pointer-events: none;
 }
@@ -15906,6 +16309,29 @@ a.venue-detail-info-row:hover {
   background: none;
 }
 
+/* Both badges keep their words, and take a second line when they have to.
+   
+   They are flex items with `white-space: nowrap` but nothing stopping them
+   from shrinking, so the browser took the space out of them rather than out
+   of the group name: at 376px "Administrateur" became "Admin…" and "Libre"
+   became "L…", and a badge shortened to one letter carries less than no
+   information. Refusing to shrink is only half the answer though - measured
+   at 360px that pushed them 65px off the right edge of the screen - so the
+   row wraps, and the name keeps the auto margin that holds them right while
+   they still fit on one line. */
+.group-directory-admin,
+.group-directory-access {
+  flex-shrink: 0;
+}
+.groups-directory-list .conversation-list-row-top {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.groups-directory-list .conversation-list-row-top > strong {
+  min-width: 0;
+  margin-right: auto;
+}
+
 .group-directory-admin {
   padding: 0.18rem 0.38rem;
   border: 1px solid rgba(255, 75, 148, 0.28);
@@ -16131,6 +16557,31 @@ a.venue-detail-info-row:hover {
    column count and the note explaining the constraint. */
 .groups-type-choice {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Three cards across a phone left "Communauté" hanging out of its own card.
+   At 390px the column is ~105px, of which the icon takes 30 and the padding
+   19, so the title had ~47px to render 68px of text - and nothing here wraps
+   or truncates, so it simply drew past the border.
+
+   The compound selector is the point: the 480px block further up already
+   sets .groups-visibility-choice to one column, but this rule has the same
+   specificity and comes later in the file, so it won every time. Written as
+   two classes it no longer depends on source order. */
+@media (max-width: 640px) {
+  .groups-visibility-choice.groups-type-choice {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Belt and braces for every card in both fieldsets: the grid track is
+   already minmax(0, 1fr), but a long single word has no break opportunity
+   and overflows a track it cannot fit in. */
+.groups-visibility-choice strong,
+.groups-visibility-choice small,
+.groups-visibility-choice legend {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .groups-type-note {
   grid-column: 1 / -1;
@@ -16687,6 +17138,33 @@ a.venue-detail-info-row:hover {
   background: var(--surface-base);
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
   overflow: hidden;
+}
+
+/* The dock, on a phone.
+   
+   Its launcher is a 54px bubble pinned bottom-right at z-index 60, under a
+   bottom navigation at 65 - so half of it was already drawn behind the bar,
+   and the other half sat on top of whatever the page put there. On the
+   create-event form that was the Publier button. The panel had the same
+   problem one level down: `bottom: 1.25rem` puts its composer behind the
+   nav, so the phone could open a conversation it could not type into.
+
+   The launcher goes: Communauté is a tap away in the bar below and carries
+   the same unread dot, so this was a second door to the same room drawn on
+   top of the furniture. The panel stays - "Envoyer à un ami" opens it from
+   an event without going through the inbox - and gets the whole width,
+   above the bar rather than under it. */
+@media (max-width: 768px) {
+  .messaging-dock-launcher {
+    display: none;
+  }
+  .messaging-dock {
+    right: 0.75rem;
+    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+    left: 0.75rem;
+    width: auto;
+    max-height: min(70dvh, calc(100dvh - 12rem));
+  }
 }
 
 .messaging-dock-header {
@@ -17789,19 +18267,6 @@ a.venue-detail-info-row:hover {
   font-size: 0.82rem;
 }
 
-.anonymous-content-column .map-filter-bar {
-  top: 5.9rem;
-  bottom: auto;
-  left: 7.75rem;
-  max-width: calc(100% - 21rem);
-  transform: none;
-}
-
-.anonymous-content-column .map-filter-dropdown {
-  top: calc(100% + 0.75rem);
-  bottom: auto;
-}
-
 .anonymous-content-column .map-floating-recenter {
   top: 5.9rem;
   right: 1.25rem;
@@ -18163,6 +18628,38 @@ a.venue-detail-info-row:hover {
   padding-top: 0.75rem;
 }
 
+/* The list has to *share* its container, and `height: 100%` does not share.
+   
+   .list-view is 100% of the wrapper, but the wrapper also stacks the
+   Liste|Calendrier switch and the quick-filter row above it - so the list's
+   own scroll viewport ran ~196px past the bottom of a screen that clips it.
+   Measured at 360px, scrolled to the very end: the last event sat at
+   y=964 in a 780px viewport. Not "slightly cut" - the final rows could not
+   be reached at all, on the signed-out directory.
+
+   Turning the container into a column and letting the view take what is
+   left is the fix. `:has()` keeps it off the map wrappers, which share this
+   class and lay their shell out with absolute positioning. */
+.app-container-anonymous .map-container-wrapper:has(> .list-view),
+.app-container-anonymous .map-container-wrapper:has(> .calendar-view),
+.app-container-anonymous .venue-section:has(> .venue-view),
+.app-container-anonymous .venue-section:has(> .calendar-view) {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-container-anonymous .map-container-wrapper > .list-view,
+.app-container-anonymous .map-container-wrapper > .calendar-view,
+.app-container-anonymous .venue-section > .venue-view,
+.app-container-anonymous .venue-section > .calendar-view {
+  height: auto;
+  min-height: 0;
+  flex: 1;
+  /* The bottom navigation is fixed over this column, so the last row needs
+     its height back or it ends up reading through the bar. */
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
 .anonymous-content-column .you-panel {
   padding-top: 5.75rem;
 }
@@ -18264,15 +18761,6 @@ a.venue-detail-info-row:hover {
     display: none;
   }
 
-  .anonymous-content-column .map-filter-bar {
-    max-width: calc(100% - 10rem);
-    overflow: visible;
-  }
-
-  .anonymous-content-column .map-filter-chip:nth-child(n + 4) {
-    display: none;
-  }
-
   .onboarding-tour {
     column-gap: 2rem;
   }
@@ -18322,12 +18810,6 @@ a.venue-detail-info-row:hover {
     top: 4.65rem;
     right: 0.75rem;
     padding: 0.55rem 0.8rem;
-  }
-
-  .anonymous-content-column
-    .map-shell:not(.explorer-map-shell):not(.connected-map-shell)
-    .map-filter-bar {
-    display: none;
   }
 
   .anonymous-content-column .map-zoom-controls {
