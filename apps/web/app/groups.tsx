@@ -1,7 +1,9 @@
 'use client';
 
 import {
+  buildMapEventsQuery,
   discoverGroupsResponseSchema,
+  eventListResponseSchema,
   groupChannelsResponseSchema,
   groupSponsoredPlacementsResponseSchema,
   friendsResponseSchema,
@@ -24,6 +26,7 @@ import type {
   GroupPost,
   GroupScheduleItem,
   GroupVisibility,
+  PublicEvent,
   PublicUser
 } from '@pulso/contracts';
 import {
@@ -40,11 +43,13 @@ import type {
 import maplibregl from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { getVenueDiscoveryDateRange } from './venue-view-model';
 import {
   API_BASE_URL,
   formatRelativeTime,
   HeartIcon,
   MAP_STYLE_URL,
+  MONTREAL_MAP_BOUNDS,
   renderAvatarContent,
   reportContent
 } from './shared';
@@ -59,6 +64,146 @@ import {
  * it. The move was mechanical - the components below are unchanged from
  * the versions that lived there.
  */
+
+/**
+ * The events a "Sortie" group can be attached to.
+ *
+ * There is no text-search route for events - `/search` is the natural
+ * language one, which answers with a ranked interpretation rather than a
+ * list - so this loads the city's upcoming events once and filters them
+ * here, the same way the dashboard's own citywide widgets do.
+ *
+ * Two weeks rather than the `next7` preset: a group is put together well
+ * before the night it is for, and a seven-day window would have hidden
+ * exactly the events people plan around. Same range the venue pages use.
+ */
+function useUpcomingEvents() {
+  const [events, setEvents] = useState<PublicEvent[]>();
+
+  useEffect(() => {
+    if (events) return;
+    const window = getVenueDiscoveryDateRange(new Date());
+    const query = buildMapEventsQuery(MONTREAL_MAP_BOUNDS, {
+      date: 'custom',
+      customStartDate: window.start,
+      customEndDate: window.end,
+      categories: [],
+      price: 'all'
+    });
+    let cancelled = false;
+    fetch(`${API_BASE_URL}/events?${query}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((json) => {
+        if (cancelled) return;
+        setEvents(
+          eventListResponseSchema
+            .parse(json)
+            .data.slice()
+            .sort(
+              (a, b) =>
+                new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+            )
+        );
+      })
+      // An empty list rather than a spinner that never resolves: the field
+      // below is optional chrome, not the point of the form.
+      .catch(() => {
+        if (!cancelled) setEvents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [events]);
+
+  return events;
+}
+
+function GroupEventPicker({
+  locale,
+  selected,
+  onSelect
+}: {
+  locale: SupportedLocale;
+  selected: PublicEvent | undefined;
+  onSelect: (event: PublicEvent | undefined) => void;
+}) {
+  const t = (key: MessageKey) => translate(locale, key);
+  const [query, setQuery] = useState('');
+  const events = useUpcomingEvents();
+
+  if (selected) {
+    return (
+      <div className="groups-create-field">
+        <span>{t('groups.eventLabel')}</span>
+        <div className="groups-create-event-chosen">
+          <span className="groups-create-event-chosen-text">
+            <strong>{selected.title}</strong>
+            <small>
+              {new Date(selected.startsAt).toLocaleDateString(
+                displayLocale(locale),
+                { weekday: 'short', day: 'numeric', month: 'short' }
+              )}
+              {` · ${selected.venue.name}`}
+            </small>
+          </span>
+          <button
+            type="button"
+            className="text-btn"
+            onClick={() => onSelect(undefined)}
+          >
+            {t('groups.eventChange')}
+          </button>
+        </div>
+        <small>{t('groups.eventHint')}</small>
+      </div>
+    );
+  }
+
+  const needle = query.trim().toLowerCase();
+  const matches = (events ?? [])
+    .filter(
+      (event) =>
+        needle.length === 0 ||
+        event.title.toLowerCase().includes(needle) ||
+        event.venue.name.toLowerCase().includes(needle)
+    )
+    .slice(0, 6);
+
+  return (
+    <div className="groups-create-field">
+      <span>{t('groups.eventLabel')}</span>
+      <input
+        value={query}
+        onChange={(changed) => setQuery(changed.target.value)}
+        placeholder={t('groups.eventPlaceholder')}
+        aria-label={t('groups.eventLabel')}
+      />
+      <div className="groups-create-event-results">
+        {events === undefined && <small>{t('common.loading')}</small>}
+        {events !== undefined && matches.length === 0 && (
+          <small>{t('groups.eventEmpty')}</small>
+        )}
+        {matches.map((event) => (
+          <button
+            type="button"
+            key={event.id}
+            className="groups-create-event-option"
+            onClick={() => onSelect(event)}
+          >
+            <strong>{event.title}</strong>
+            <small>
+              {new Date(event.startsAt).toLocaleDateString(
+                displayLocale(locale),
+                { weekday: 'short', day: 'numeric', month: 'short' }
+              )}
+              {` · ${event.venue.name}`}
+            </small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Full-page home for "Groupes" (Sidebar nav item), redesigned (Phase 4.10
 // follow-up) as a real split view: a searchable directory on the left and
@@ -81,13 +226,23 @@ export function GroupsPage({
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<GroupVisibility>('open');
   const [type, setType] = useState<GroupTypeValue>('community');
+  // The real Pulso event a "Sortie" group is opened for. Until now the type
+  // said "une soiree precise" and nothing behind it pointed at one, so the
+  // group never reached the directory's Evenements tab.
+  const [linkedEvent, setLinkedEvent] = useState<PublicEvent>();
+  const [createError, setCreateError] = useState<MessageKey>();
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [listVersion, setListVersion] = useState(0);
 
   const createGroup = () => {
     if (!authToken || !name.trim() || creating) return;
+    if (type === 'event' && !linkedEvent) {
+      setCreateError('groups.eventRequired');
+      return;
+    }
     setCreating(true);
+    setCreateError(undefined);
     fetch(`${API_BASE_URL}/me/groups`, {
       method: 'POST',
       headers: {
@@ -98,20 +253,34 @@ export function GroupsPage({
         name: name.trim(),
         type,
         visibility,
-        ...(description.trim() ? { description: description.trim() } : {})
+        ...(description.trim() ? { description: description.trim() } : {}),
+        ...(type === 'event' && linkedEvent ? { eventId: linkedEvent.id } : {})
       })
     })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((response) => {
+        // One group per event, so a second one is a real answer rather than
+        // a failure: 409 says the group exists and where.
+        if (response.status === 409) throw new Error('exists');
+        if (!response.ok) throw new Error('failed');
+        return response.json();
+      })
       .then((json) => {
         setName('');
         setDescription('');
         setVisibility('open');
         setType('community');
+        setLinkedEvent(undefined);
         setCreateOpen(false);
         setListVersion((version) => version + 1);
         setSelectedGroup(groupResponseSchema.parse(json).data);
       })
-      .catch(() => {})
+      .catch((caught: Error) =>
+        setCreateError(
+          caught.message === 'exists'
+            ? 'groups.errorEventGroupExists'
+            : 'groups.createFailed'
+        )
+      )
       .finally(() => setCreating(false));
   };
 
@@ -223,6 +392,11 @@ export function GroupsPage({
                       } else if (visibility === 'private_invite') {
                         setVisibility('open');
                       }
+                      // The event only means anything for a Sortie, and a
+                      // stale selection would otherwise be sent with the
+                      // next type the user lands on.
+                      if (option.value !== 'event') setLinkedEvent(undefined);
+                      setCreateError(undefined);
                     }}
                   />
                   <span className="groups-visibility-icon" aria-hidden="true">
@@ -235,6 +409,27 @@ export function GroupsPage({
                 </label>
               ))}
             </fieldset>
+            {type === 'event' && (
+              <GroupEventPicker
+                locale={locale}
+                selected={linkedEvent}
+                onSelect={(chosen) => {
+                  setLinkedEvent(chosen);
+                  setCreateError(undefined);
+                  // A name the user has not written yet is better filled in
+                  // from the event than left empty - the same shape the
+                  // "Rencontrer avant l'evenement" button already gives its
+                  // groups.
+                  if (chosen && !name.trim()) {
+                    setName(
+                      translate(locale, 'groups.meetupName', {
+                        event: chosen.title
+                      })
+                    );
+                  }
+                }}
+              />
+            )}
             <fieldset
               className="groups-visibility-choice"
               disabled={type === 'private_crew'}
@@ -274,6 +469,11 @@ export function GroupsPage({
                 <p className="groups-type-note">{t('groups.crewNote')}</p>
               )}
             </fieldset>
+            {createError && (
+              <p className="groups-create-error" role="alert">
+                {t(createError)}
+              </p>
+            )}
             <button
               type="submit"
               className="groups-create-submit"

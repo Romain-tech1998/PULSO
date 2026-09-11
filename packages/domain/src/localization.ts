@@ -317,6 +317,20 @@ const en = {
   'groups.missionLabel': 'What is it for?',
   'groups.missionPlaceholder':
     'Who is it for, and how do you want to organise your outings?',
+  // Picking the real event behind a "Sortie" group, at creation time.
+  'groups.eventLabel': 'Which event?',
+  'groups.eventPlaceholder': 'Search an upcoming event…',
+  'groups.eventEmpty': 'No event matches.',
+  'groups.eventChange': 'Change',
+  'groups.eventHint':
+    'The group is listed under the directory’s Events tab, and opens on that evening.',
+  'groups.eventRequired': 'Pick the event this outing is for.',
+  // Same shape as the group the "Meet before the event" button creates, so
+  // the two routes to an event group do not produce two naming styles.
+  'groups.meetupName': 'Meetup – {event}',
+  'groups.createFailed': 'The group could not be created. Try again.',
+  'groups.errorEventGroupExists':
+    'This event already has a group. Open it from Discover rather than starting a second one.',
   'groups.typeLegend': 'What kind of group?',
   'groups.typeCommunity': 'Community',
   'groups.typeCommunityHint':
@@ -1930,6 +1944,17 @@ const fr = {
   'groups.missionLabel': 'Mission du groupe',
   'groups.missionPlaceholder':
     'À qui s’adresse le groupe et comment souhaitez-vous organiser les sorties ?',
+  'groups.eventLabel': 'Quel événement ?',
+  'groups.eventPlaceholder': 'Chercher un événement à venir…',
+  'groups.eventEmpty': 'Aucun événement ne correspond.',
+  'groups.eventChange': 'Changer',
+  'groups.eventHint':
+    'Le groupe est listé dans l’onglet Événements du répertoire, et s’ouvre sur cette soirée.',
+  'groups.eventRequired': 'Choisis l’événement de la sortie.',
+  'groups.meetupName': 'Rencontre – {event}',
+  'groups.createFailed': 'Le groupe n’a pas pu être créé. Réessaie.',
+  'groups.errorEventGroupExists':
+    'Cet événement a déjà un groupe. Ouvre-le depuis Découvrir plutôt que d’en créer un deuxième.',
   'groups.typeLegend': 'Quel genre de groupe ?',
   'groups.typeCommunity': 'Communauté',
   'groups.typeCommunityHint':

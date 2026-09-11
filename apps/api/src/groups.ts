@@ -37,6 +37,7 @@ import type {
   OrganizerRepository
 } from '@pulso/database';
 import {
+  EventGroupExistsError,
   EventNotFoundError,
   GroupNotFoundError,
   NotChannelWriterError,
@@ -120,19 +121,47 @@ export function registerGroupsRoutes(
   app.post('/me/groups', async (request, reply) => {
     const user = await resolveBearerUser(request, authRepository);
     if (!user) return sendUnauthenticated(reply);
-    const { name, description, type, visibility, modulesConfig } =
+    const { name, description, type, visibility, modulesConfig, eventId } =
       createGroupRequestSchema.parse(request.body);
-    const group = await groupsRepository.createGroup(
-      user.id,
-      name,
-      description,
-      type,
-      visibility ?? 'open',
-      // DEC-0015: each group type starts from its own template. Passing []
-      // created a workspace with no modules at all - not even discussion.
-      modulesConfig ?? defaultModulesForGroupType(type)
-    );
-    return reply.status(201).send(groupResponseSchema.parse({ data: group }));
+    // The event has to exist and has to be one this account can see, the
+    // same gate the meetup-group route applies - otherwise a made-up uuid
+    // would reach the insert and come back as a foreign-key error.
+    if (eventId) {
+      const event = await eventRepository.findById(eventId, user.id);
+      if (!event) {
+        return reply.status(404).send({
+          error: {
+            code: 'EVENT_NOT_FOUND',
+            message: 'This event does not exist.'
+          }
+        });
+      }
+    }
+    try {
+      const group = await groupsRepository.createGroup(
+        user.id,
+        name,
+        description,
+        type,
+        visibility ?? 'open',
+        // DEC-0015: each group type starts from its own template. Passing []
+        // created a workspace with no modules at all - not even discussion.
+        modulesConfig ?? defaultModulesForGroupType(type),
+        eventId
+      );
+      return reply.status(201).send(groupResponseSchema.parse({ data: group }));
+    } catch (error: unknown) {
+      if (error instanceof EventGroupExistsError) {
+        return reply.status(409).send({
+          error: {
+            code: 'EVENT_GROUP_EXISTS',
+            message: error.message,
+            groupId: error.groupId
+          }
+        });
+      }
+      throw error;
+    }
   });
 
   app.patch('/groups/:id/modules', async (request, reply) => {

@@ -31,6 +31,18 @@ export class GroupNotFoundError extends Error {
   }
 }
 
+/**
+ * One group per event, enforced by the unique index on groups.event_id
+ * (migration 0022). Raised rather than silently joining the caller to the
+ * group that already exists: they were creating one, with their own name
+ * and their own join rule, and neither would survive.
+ */
+export class EventGroupExistsError extends Error {
+  constructor(readonly groupId: string) {
+    super('This event already has a group.');
+  }
+}
+
 export class NotGroupMemberError extends Error {
   constructor() {
     super('You must join this group before reading or posting in its feed.');
@@ -254,7 +266,9 @@ export interface GroupsRepository {
     description: string | undefined,
     type: GroupType,
     visibility: GroupVisibility,
-    modulesConfig: GroupModuleConfig[]
+    modulesConfig: GroupModuleConfig[],
+    /** Throws EventGroupExistsError if this event already has a group. */
+    eventId?: string
   ): Promise<Group>;
   listMyGroups(userId: string): Promise<Group[]>;
   getGroup(groupId: string, viewerId: string): Promise<Group | undefined>;
@@ -667,12 +681,24 @@ export class PostgresGroupsRepository implements GroupsRepository {
     description: string | undefined,
     type: GroupType,
     visibility: GroupVisibility,
-    modulesConfig: GroupModuleConfig[]
+    modulesConfig: GroupModuleConfig[],
+    eventId?: string
   ): Promise<Group> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       const id = randomUUID();
+      // Checked inside the transaction, and the unique index is still what
+      // decides: this only exists so the caller gets the id of the group
+      // that already exists instead of a bare constraint violation.
+      if (eventId) {
+        const clash = await client.query<{ id: string }>(
+          `SELECT id FROM groups WHERE event_id = $1`,
+          [eventId]
+        );
+        const existing = clash.rows[0];
+        if (existing) throw new EventGroupExistsError(existing.id);
+      }
       const inserted = await client.query<{
         id: string;
         name: string;
@@ -684,14 +710,15 @@ export class PostgresGroupsRepository implements GroupsRepository {
         visibility: GroupVisibility;
         modules_config: GroupModuleConfig[];
       }>(
-        `INSERT INTO groups (id, name, description, created_by, type, visibility, modules_config)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO groups (id, name, description, created_by, event_id, type, visibility, modules_config)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id, name, description, created_by, created_at, event_id, type, visibility, modules_config`,
         [
           id,
           name,
           description ?? null,
           creatorId,
+          eventId ?? null,
           type,
           visibility,
           JSON.stringify(modulesConfig)
@@ -710,11 +737,20 @@ export class PostgresGroupsRepository implements GroupsRepository {
          VALUES ($1, $2, 'Général', 0, false, $3)`,
         [randomUUID(), id, creatorId]
       );
-      await client.query(
-        `INSERT INTO group_outings (id, group_id, title, created_by)
-         VALUES ($1, $2, 'Prochaine sortie', $3)`,
-        [randomUUID(), id, creatorId]
-      );
+      if (eventId) {
+        await client.query(
+          `INSERT INTO group_outings (id, group_id, event_id, title, starts_at, created_by)
+           SELECT $1, $2, e.id, e.title, e.starts_at, $3
+           FROM events e WHERE e.id = $4`,
+          [randomUUID(), id, creatorId, eventId]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO group_outings (id, group_id, title, created_by)
+           VALUES ($1, $2, 'Prochaine sortie', $3)`,
+          [randomUUID(), id, creatorId]
+        );
+      }
       if (type === 'community') {
         await client.query(
           `INSERT INTO group_channels (id, group_id, name, position, staff_only, created_by)
@@ -724,6 +760,13 @@ export class PostgresGroupsRepository implements GroupsRepository {
       }
       await client.query('COMMIT');
       const row = inserted.rows[0]!;
+      // The literal projection below hardcodes event_title/event_starts_at
+      // to null, which is only true when there is no event. Read it back
+      // through the canonical query instead of growing a second one.
+      if (eventId) {
+        const linked = await this.getGroup(row.id, creatorId);
+        if (linked) return linked;
+      }
       return toGroup({
         ...row,
         member_count: '1',
