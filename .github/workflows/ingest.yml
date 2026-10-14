@@ -2,39 +2,26 @@ name: Ingestion
 
 on:
   schedule:
-    # Run at 10:00 and 20:00 every day (Events)
+    # Run at 10:00 and 20:00 every day (Events, free sources only: Ville de
+    # Montréal open data + Ticketmaster Discovery).
+    #
+    # This is the only schedule left. Every connector billed per call or per
+    # result - Parse.bot, Apify (Eventbrite, Instagram Stories), OpenRouter
+    # vision - was taken off the clock on 2026-10-14 at the owner's request:
+    # they get reworked in a dedicated session so that one ingestion is one
+    # traced set of calls, not hundreds per run. Until then the jobs below
+    # that use them run only when dispatched by hand. Their former cadence
+    # and the reasoning behind it are in DATA-0003.
     - cron: '0 10,20 * * *'
-    # Run at 17:00 every Monday (Venues)
-    - cron: '0 17 * * 1'
-    # Run at 17:00 on Tuesday, Thursday, and Saturday (Eventbrite - billed
-    # per result, kept on its own job so it never runs alongside the free
-    # connectors in the twice-daily events job). ~12-13 runs/month at this
-    # cadence (not a strict 10/month cap - cron can't enforce a monthly
-    # count natively), chosen to leave Apify budget for the upcoming
-    # Instagram scraper workstream. Revisit cadence/cost once real signal
-    # exists - see DATA-0003.
-    - cron: '0 17 * * 2,4,6'
-    # Run at 17:00 every Wednesday (Instagram Feed/Reels pilot). Feed posts
-    # are static once published - a daily vision-model scan of the same
-    # ~220 posts wastes OpenRouter budget for no new signal, so this only
-    # runs weekly. Reduced from a daily unified run after early results
-    # weren't significant enough to justify the cost - see instagram-
-    # unified-pilot.ts's --feed-only flag.
-    - cron: '0 17 * * 3'
-    # Run at 17:00 on Thursday, Friday, and Saturday (Instagram Stories
-    # pilot). Stories genuinely change day to day (24h expiry, unlike
-    # Feed), so they keep a tighter, weekend-focused cadence when nightlife
-    # activity is highest - see instagram-unified-pilot.ts's
-    # --stories-only flag.
-    - cron: '0 17 * * 4,5,6'
   workflow_dispatch:
     inputs:
       job_type:
-        description: 'Job to run (events, venues, eventbrite, instagram-feed, or instagram-stories)'
+        description: 'Job to run (census, events, venues, eventbrite, instagram-feed, or instagram-stories)'
         required: true
         default: 'events'
         type: choice
         options:
+          - census
           - events
           - venues
           - eventbrite
@@ -42,6 +29,32 @@ on:
           - instagram-stories
 
 jobs:
+  census:
+    name: Database Census (read-only)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.job_type == 'census'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 11.7.0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install
+      - name: Build packages
+        run: pnpm --filter "@pulso/database..." run build
+      - name: Count what the database holds
+        run: pnpm run --filter=@pulso/database db:census
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
   ingest-events:
     name: Run Events Ingestion
     runs-on: ubuntu-latest
@@ -75,15 +88,21 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - name: Run Events Ingestion
+        # Free sources only. PARSE_BOT_API_KEY is deliberately not passed:
+        # ingest.ts skips any connector whose key is unset.
         run: pnpm run --filter=@pulso/database db:ingest
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PARSE_BOT_API_KEY: ${{ secrets.PARSE_BOT_API_KEY }}
+          TICKETMASTER_API_KEY: ${{ secrets.TICKETMASTER_API_KEY }}
+      - name: Count what the database holds
+        run: pnpm run --filter=@pulso/database db:census
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
   ingest-venues:
     name: Run Venues Ingestion
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 17 * * 1' || github.event.inputs.job_type == 'venues'
+    if: github.event.inputs.job_type == 'venues'
 
     steps:
       - name: Check out repository
@@ -112,16 +131,34 @@ jobs:
         run: pnpm run --filter=@pulso/database db:migrate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      - name: Run Venues Ingestion
-        run: pnpm run --filter=@pulso/database db:ingest -- --venues
+      # The venue directory is built from free sources: OpenStreetMap via
+      # Overpass, Nominatim for missing addresses (1 req/s), then the
+      # hand-verified venues and categories kept in this repository. Manual
+      # only - Overpass and Nominatim are volunteer-run and ask for moderate
+      # use, and venues change slowly. The Parse.bot RA clubs connector
+      # (`db:ingest -- --venues`) is paid and waits for the rework.
+      - name: Import venues from OpenStreetMap
+        run: pnpm run --filter=@pulso/database db:import-osm-venues -- --write
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PARSE_BOT_API_KEY: ${{ secrets.PARSE_BOT_API_KEY }}
+      - name: Seed hand-verified venues
+        run: pnpm run --filter=@pulso/database db:seed-curated-venues
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Categorize known venues
+        run: pnpm run --filter=@pulso/database db:categorize-known-venues
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Count what the database holds
+        run: pnpm run --filter=@pulso/database db:census
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
   ingest-eventbrite:
     name: Run Eventbrite Ingestion
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 17 * * 2,4,6' || github.event.inputs.job_type == 'eventbrite'
+    # Billed per result: manual only until the dedicated rework.
+    if: github.event.inputs.job_type == 'eventbrite'
 
     steps:
       - name: Check out repository
@@ -157,9 +194,10 @@ jobs:
           APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
 
   ingest-instagram-feed:
-    name: Run Instagram Feed Pipeline (weekly)
+    name: Run Instagram Feed Pipeline
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 17 * * 3' || github.event.inputs.job_type == 'instagram-feed'
+    # OpenRouter vision is billed per call: manual only until the rework.
+    if: github.event.inputs.job_type == 'instagram-feed'
 
     steps:
       - name: Check out repository
@@ -192,9 +230,10 @@ jobs:
           retention-days: 14
 
   ingest-instagram-stories:
-    name: Run Instagram Stories Pipeline (Thu/Fri/Sat)
+    name: Run Instagram Stories Pipeline
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 17 * * 4,5,6' || github.event.inputs.job_type == 'instagram-stories'
+    # Apify + OpenRouter, billed per call: manual only until the rework.
+    if: github.event.inputs.job_type == 'instagram-stories'
 
     steps:
       - name: Check out repository
