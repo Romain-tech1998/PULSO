@@ -13,6 +13,7 @@
     "db:seed-curated-venues": "tsx src/seed-curated-venues.ts",
     "db:categorize-known-venues": "tsx src/categorize-known-venues.ts",
     "db:ingest": "tsx src/ingest.ts",
+    "db:census": "tsx src/db-census.ts",
     "db:cleanup-vdm-duplicates": "tsx src/cleanup-vdm-duplicates.ts",
     "db:merge-duplicate-venues": "tsx src/merge-duplicate-venues.ts",
     "db:rename-known-venues": "tsx src/rename-known-venues.ts",
